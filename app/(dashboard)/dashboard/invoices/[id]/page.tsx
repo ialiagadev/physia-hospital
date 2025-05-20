@@ -3,8 +3,8 @@ import { cookies } from "next/headers"
 import { createServerSupabaseClient } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { GeneratePdfButton } from "@/components/invoices/generate-pdf-button"
+import { InvoiceStatusSelector } from "@/components/invoices/invoice-status-selector"
 
 export default async function InvoiceDetailPage({
   params,
@@ -153,9 +153,7 @@ export default async function InvoiceDetailPage({
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Estado</p>
-                <Badge className={getStatusColor(invoice.status)} variant="outline">
-                  {getStatusText(invoice.status)}
-                </Badge>
+                <InvoiceStatusSelector invoiceId={invoice.id} currentStatus={invoice.status} />
               </div>
             </div>
 
@@ -216,7 +214,7 @@ export default async function InvoiceDetailPage({
                   <th className="text-right py-2">Precio</th>
                   <th className="text-right py-2">IVA %</th>
                   <th className="text-right py-2">IRPF %</th>
-                  <th className="text-right py-2">Retención %</th>
+                  <th className="text-right py-2">Ret. %</th>
                   <th className="text-right py-2">Importe</th>
                 </tr>
               </thead>

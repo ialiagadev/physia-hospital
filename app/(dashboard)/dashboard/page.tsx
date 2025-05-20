@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
+import { TrendIndicator } from "@/components/ui/trend-indicator"
 
 // Componente para mostrar las estadísticas de ingresos
 import { RevenueStats } from "@/components/dashboard/revenue-stats"
@@ -20,6 +21,11 @@ export default function DashboardPage() {
     invoices: 0,
     totalRevenue: 0,
     averageTicket: 0,
+  })
+  const [trends, setTrends] = useState({
+    clients: 0,
+    invoices: 0,
+    totalRevenue: 0,
   })
   const [recentInvoices, setRecentInvoices] = useState<any[]>([])
   const [recentClients, setRecentClients] = useState<any[]>([])
@@ -61,8 +67,6 @@ export default function DashboardPage() {
           return
         }
 
-        console.log("Invoices data:", invoices)
-
         // Calcular ingresos totales - NO filtramos por estado
         const totalRevenue = invoices ? invoices.reduce((sum, invoice) => sum + invoice.total_amount, 0) : 0
 
@@ -76,6 +80,13 @@ export default function DashboardPage() {
           invoices: invoices?.length || 0,
           totalRevenue,
           averageTicket,
+        })
+
+        // Simular tendencias (en un caso real, compararíamos con períodos anteriores)
+        setTrends({
+          clients: Math.random() * 20 - 10, // Entre -10% y +10%
+          invoices: Math.random() * 30 - 5, // Entre -5% y +25%
+          totalRevenue: Math.random() * 40 - 10, // Entre -10% y +30%
         })
 
         // Obtener facturas recientes
@@ -119,24 +130,31 @@ export default function DashboardPage() {
     loadDashboardData()
   }, [selectedOrgId, toast])
 
+  // Mapeo de estadísticas a colores y componentes
   const statsItems = [
     {
       title: "Organizaciones",
       value: stats.organizations,
       icon: Building2,
       description: "Total de organizaciones",
+      accentColor: "purple",
+      trend: null,
     },
     {
       title: "Clientes",
       value: stats.clients,
       icon: Users,
       description: selectedOrgId === "all" ? "Total de clientes" : "Clientes de esta organización",
+      accentColor: "indigo",
+      trend: trends.clients,
     },
     {
       title: "Facturas",
       value: stats.invoices,
       icon: FileText,
       description: selectedOrgId === "all" ? "Total de facturas" : "Facturas de esta organización",
+      accentColor: "emerald",
+      trend: trends.invoices,
     },
   ]
 
@@ -169,13 +187,16 @@ export default function DashboardPage() {
         <>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {statsItems.map((stat) => (
-              <Card key={stat.title}>
+              <Card key={stat.title} accentSide="left" accentColor={stat.accentColor as any} hover="subtle">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-                  <stat.icon className="h-4 w-4 text-muted-foreground" />
+                  <stat.icon className={`h-4 w-4 text-${stat.accentColor}-500`} />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{stat.value}</div>
+                  <div className="flex items-baseline justify-between">
+                    <div className="text-2xl font-bold">{stat.value}</div>
+                    {stat.trend !== null && <TrendIndicator value={stat.trend} />}
+                  </div>
                   <p className="text-xs text-muted-foreground">{stat.description}</p>
                 </CardContent>
               </Card>
@@ -183,7 +204,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            <Card className="col-span-2">
+            <Card className="col-span-2" accentSide="top" accentColor="blue" hover="subtle">
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle>Ingresos</CardTitle>
@@ -208,20 +229,23 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card accentSide="left" accentColor="cyan" hover="subtle">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Ticket Medio</CardTitle>
-                <CreditCard className="h-4 w-4 text-muted-foreground" />
+                <CreditCard className="h-4 w-4 text-cyan-500" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(stats.averageTicket)}</div>
+                <div className="flex items-baseline justify-between">
+                  <div className="text-2xl font-bold">{formatCurrency(stats.averageTicket)}</div>
+                  <TrendIndicator value={trends.totalRevenue} />
+                </div>
                 <p className="text-xs text-muted-foreground">Promedio de facturación por cliente</p>
               </CardContent>
             </Card>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <Card>
+            <Card accentSide="top" accentColor="emerald" hover="subtle">
               <CardHeader>
                 <CardTitle>Facturas recientes</CardTitle>
                 <CardDescription>Últimas facturas generadas</CardDescription>
@@ -230,7 +254,10 @@ export default function DashboardPage() {
                 {recentInvoices && recentInvoices.length > 0 ? (
                   <div className="space-y-2">
                     {recentInvoices.map((invoice) => (
-                      <div key={invoice.id} className="flex items-center justify-between">
+                      <div
+                        key={invoice.id}
+                        className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 transition-colors"
+                      >
                         <div>
                           <p className="font-medium">{invoice.invoice_number}</p>
                           <p className="text-sm text-muted-foreground">
@@ -248,7 +275,7 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card accentSide="top" accentColor="indigo" hover="subtle">
               <CardHeader>
                 <CardTitle>Clientes recientes</CardTitle>
                 <CardDescription>Últimos clientes añadidos</CardDescription>
@@ -257,7 +284,10 @@ export default function DashboardPage() {
                 {recentClients && recentClients.length > 0 ? (
                   <div className="space-y-2">
                     {recentClients.map((client) => (
-                      <div key={client.id} className="flex items-center justify-between">
+                      <div
+                        key={client.id}
+                        className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 transition-colors"
+                      >
                         <div>
                           <p className="font-medium">{client.name}</p>
                           <p className="text-sm text-muted-foreground">{client.tax_id}</p>

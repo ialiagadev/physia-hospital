@@ -6,9 +6,9 @@ import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Plus } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
 import { OrganizationSelector } from "@/components/organization-selector"
 import { useToast } from "@/hooks/use-toast"
+import { InvoiceStatusSelector } from "@/components/invoices/invoice-status-selector"
 
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<any[]>([])
@@ -16,78 +16,54 @@ export default function InvoicesPage() {
   const [selectedOrgId, setSelectedOrgId] = useState("all")
   const { toast } = useToast()
 
-  // Cargar facturas basadas en la organización seleccionada
-  useEffect(() => {
-    async function loadInvoices() {
-      setLoading(true)
+  // Función para cargar facturas
+  const loadInvoices = async () => {
+    setLoading(true)
 
-      try {
-        let query = supabase
-          .from("invoices")
-          .select(`
-            *,
-            clients (
-              name,
-              tax_id
-            )
-          `)
-          .order("created_at", { ascending: false })
+    try {
+      let query = supabase
+        .from("invoices")
+        .select(`
+          *,
+          clients (
+            name,
+            tax_id
+          )
+        `)
+        .order("created_at", { ascending: false })
 
-        // Filtrar por organización si se ha seleccionado una específica
-        if (selectedOrgId !== "all") {
-          query = query.eq("organization_id", selectedOrgId)
-        }
-
-        const { data, error } = await query
-
-        if (error) throw error
-
-        setInvoices(data || [])
-      } catch (error) {
-        console.error("Error al cargar facturas:", error)
-        toast({
-          title: "Error",
-          description: "No se pudieron cargar las facturas",
-          variant: "destructive",
-        })
-      } finally {
-        setLoading(false)
+      // Filtrar por organización si se ha seleccionado una específica
+      if (selectedOrgId !== "all") {
+        query = query.eq("organization_id", selectedOrgId)
       }
-    }
 
-    loadInvoices()
-  }, [selectedOrgId, toast])
+      const { data, error } = await query
 
-  // Función para obtener el color del estado
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "draft":
-        return "bg-yellow-100 text-yellow-800 hover:bg-yellow-100/80"
-      case "issued":
-        return "bg-blue-100 text-blue-800 hover:bg-blue-100/80"
-      case "paid":
-        return "bg-green-100 text-green-800 hover:bg-green-100/80"
-      case "rejected":
-        return "bg-red-100 text-red-800 hover:bg-red-100/80"
-      default:
-        return "bg-gray-100 text-gray-800 hover:bg-gray-100/80"
+      if (error) throw error
+
+      setInvoices(data || [])
+    } catch (error) {
+      console.error("Error al cargar facturas:", error)
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar las facturas",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
     }
   }
 
-  // Función para traducir el estado
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case "draft":
-        return "Borrador"
-      case "issued":
-        return "Emitida"
-      case "paid":
-        return "Pagada"
-      case "rejected":
-        return "Rechazada"
-      default:
-        return status
-    }
+  // Cargar facturas al inicio y cuando cambia la organización seleccionada
+  useEffect(() => {
+    loadInvoices()
+  }, [selectedOrgId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Función para actualizar el estado de una factura específica en el estado local
+  const handleStatusChange = (invoiceId: number, newStatus: string) => {
+    setInvoices((currentInvoices) =>
+      currentInvoices.map((invoice) => (invoice.id === invoiceId ? { ...invoice, status: newStatus } : invoice)),
+    )
   }
 
   return (
@@ -129,18 +105,21 @@ export default function InvoicesPage() {
               </TableRow>
             ) : invoices.length > 0 ? (
               invoices.map((invoice) => (
-                <TableRow key={invoice.id}>
+                <TableRow key={invoice.id} className="transition-colors hover:bg-muted/30">
                   <TableCell className="font-medium">{invoice.invoice_number}</TableCell>
                   <TableCell>{new Date(invoice.issue_date).toLocaleDateString()}</TableCell>
                   <TableCell>{invoice.clients?.name || "-"}</TableCell>
                   <TableCell>
-                    <Badge className={getStatusColor(invoice.status)} variant="outline">
-                      {getStatusText(invoice.status)}
-                    </Badge>
+                    <InvoiceStatusSelector
+                      invoiceId={invoice.id}
+                      currentStatus={invoice.status}
+                      size="sm"
+                      onStatusChange={(newStatus) => handleStatusChange(invoice.id, newStatus)}
+                    />
                   </TableCell>
                   <TableCell className="text-right">{invoice.total_amount.toFixed(2)} €</TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" asChild>
+                    <Button variant="ghost" size="sm" asChild className="transition-colors hover:bg-primary/10">
                       <Link href={`/dashboard/invoices/${invoice.id}`}>Ver</Link>
                     </Button>
                   </TableCell>
