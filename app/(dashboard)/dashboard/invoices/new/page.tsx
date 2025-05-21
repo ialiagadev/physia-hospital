@@ -14,9 +14,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { generatePdf } from "@/lib/pdf-generator"
 import { Switch } from "@/components/ui/switch"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-// En la parte superior del archivo, importar la nueva función
+// En la parte superior del archivo, importar las funciones necesarias
 import { generateUniqueInvoiceNumber } from "@/lib/invoice-utils"
-import { saveBase64ImageToStorage } from "@/lib/storage-utils"
+import { saveBase64ImageToStorage, savePdfToStorage } from "@/lib/storage-utils" // Añadido savePdfToStorage
 import {
   Dialog,
   DialogContent,
@@ -25,7 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Plus, Trash2 } from "lucide-react"
+import { Plus, Trash2 } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { SignaturePad } from "@/components/signature-pad"
 import { useToast } from "@/hooks/use-toast"
@@ -522,82 +522,139 @@ export default function NewInvoicePage() {
         }
       }
 
-      // Crear la factura en local primero (sin esperar a Supabase)
-      // Actualizar el objeto de factura para incluir la retención y la firma
-      const newInvoice = {
-        id: Date.now(), // ID temporal
-        organization_id: Number.parseInt(formData.organization_id),
-        invoice_number: invoiceNumberFormatted,
-        client_id: clientId,
-        issue_date: formData.issue_date,
-        invoice_type: "normal",
-        status: "draft",
-        base_amount: baseAmount,
-        vat_amount: vatAmount,
-        irpf_amount: irpfAmount,
-        retention_amount: retentionAmount,
-        total_amount: totalAmount,
-        notes: fullNotes,
-        signature: signature, // Usar la firma base64 para el PDF
-        organization: {
-          name: orgData.name,
-          tax_id: orgData.tax_id,
-          address: orgData.address,
-          postal_code: orgData.postal_code,
-          city: orgData.city,
-          province: orgData.province,
-          country: orgData.country,
-          email: orgData.email,
-          phone: orgData.phone,
-        },
-        client_data: {
-          name: formData.client_name,
-          tax_id: formData.client_tax_id,
-          address: formData.client_address,
-          postal_code: formData.client_postal_code,
-          city: formData.client_city,
-          province: formData.client_province,
-          country: formData.client_country,
-          email: formData.client_email,
-          phone: formData.client_phone,
-          client_type: formData.client_type,
-        },
-      }
+   // Crear la factura en local primero (sin esperar a Supabase)
+// Actualizar el objeto de factura para incluir la retención y la firma
+const newInvoice = {
+  id: Date.now(), // ID temporal
+  organization_id: Number.parseInt(formData.organization_id),
+  invoice_number: invoiceNumberFormatted,
+  client_id: clientId,
+  issue_date: formData.issue_date,
+  invoice_type: "normal",
+  status: "draft",
+  base_amount: baseAmount,
+  vat_amount: vatAmount,
+  irpf_amount: irpfAmount,
+  retention_amount: retentionAmount,
+  total_amount: totalAmount,
+  notes: fullNotes,
+  signature: signature, // Usar la firma base64 para el PDF
+  organization: {
+    name: orgData.name,
+    tax_id: orgData.tax_id,
+    address: orgData.address,
+    postal_code: orgData.postal_code,
+    city: orgData.city,
+    province: orgData.province,
+    country: orgData.country,
+    email: orgData.email,
+    phone: orgData.phone,
+  },
+  client_data: {
+    name: formData.client_name,
+    tax_id: formData.client_tax_id,
+    address: formData.client_address,
+    postal_code: formData.client_postal_code,
+    city: formData.client_city,
+    province: formData.client_province,
+    country: formData.client_country,
+    email: formData.client_email,
+    phone: formData.client_phone,
+    client_type: formData.client_type,
+  },
+}
 
-      // Generar y descargar el PDF inmediatamente
-      generatePdf(newInvoice, invoiceLines, `factura-${invoiceNumberFormatted}.pdf`)
+// Generar el PDF y obtener el Blob (sin descargarlo automáticamente)
+const pdfBlob = generatePdf(newInvoice, invoiceLines, `factura-${invoiceNumberFormatted}.pdf`, false);
 
-      // Ahora actualizamos la base de datos en segundo plano
-      // Actualizar el último número de factura en la organización
-      supabase
-        .from("organizations")
-        .update({ last_invoice_number: newInvoiceNumber })
-        .eq("id", selectedOrganization.id)
-        .then(({ error: updateOrgError }) => {
-          if (updateOrgError) {
-            console.error("Error al actualizar el número de factura:", updateOrgError)
-          }
-        })
+// Variable para almacenar la URL del PDF
+let pdfUrl: string | null = null;
 
-      // Actualizar la inserción en Supabase para incluir la retención y la firma
-      supabase
-        .from("invoices")
-        .insert({
-          organization_id: Number.parseInt(formData.organization_id),
-          invoice_number: invoiceNumberFormatted,
-          client_id: clientId,
-          issue_date: formData.issue_date,
-          invoice_type: "normal",
-          status: "draft",
-          base_amount: baseAmount,
-          vat_amount: vatAmount,
-          irpf_amount: irpfAmount,
-          retention_amount: retentionAmount,
-          total_amount: totalAmount,
-          notes: fullNotes,
-          signature: signature, // Guardar también la firma base64 en la base de datos
-          signature_url: signatureUrl, // Guardar la URL de la firma si se pudo subir
-        })
+// Verificar que el Blob se generó correctamente
+if (pdfBlob) {
+  try {
+    console.log("PDF Blob generado correctamente, tamaño:", pdfBlob.size, "bytes");
+    
+    // Guardar el PDF en Supabase Storage
+    pdfUrl = await savePdfToStorage(pdfBlob, `factura-${invoiceNumberFormatted}.pdf`);
+    
+    // Descargar el PDF manualmente para el usuario
+    const url = URL.createObjectURL(pdfBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `factura-${invoiceNumberFormatted}.pdf`;
+    a.click();
+    
+    // Limpiar el objeto URL creado
+    setTimeout(() => URL.revokeObjectURL(url), 100);
+    
+    if (pdfUrl) {
+      console.log("PDF guardado correctamente en Storage:", pdfUrl);
+    } else {
+      console.warn("No se pudo guardar el PDF en Storage, pero se ha descargado localmente");
+    }
+  } catch (pdfError) {
+    console.error("Error al guardar el PDF en Storage:", pdfError);
+    
+    // Asegurar que el usuario pueda descargar el PDF aunque falle el guardado
+    const url = URL.createObjectURL(pdfBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `factura-${invoiceNumberFormatted}.pdf`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 100);
+    
+    toast({
+      title: "Error al guardar el PDF en el servidor",
+      description: "El PDF se ha descargado localmente, pero no se pudo guardar en el servidor.",
+      variant: "destructive",
+    });
+  }
+} else {
+  console.error("No se pudo generar el PDF como Blob");
+  
+  // Intentar generar y descargar el PDF directamente como fallback
+  generatePdf(newInvoice, invoiceLines, `factura-${invoiceNumberFormatted}.pdf`, true);
+  
+  toast({
+    title: "Error al procesar el PDF",
+    description: "Se ha intentado descargar el PDF, pero no se pudo guardar en el servidor.",
+    variant: "destructive",
+  });
+}
+
+// Ahora actualizamos la base de datos en segundo plano
+// Actualizar el último número de factura en la organización
+supabase
+  .from("organizations")
+  .update({ last_invoice_number: newInvoiceNumber })
+  .eq("id", selectedOrganization.id)
+  .then(({ error: updateOrgError }) => {
+    if (updateOrgError) {
+      console.error("Error al actualizar el número de factura:", updateOrgError);
+    }
+  });
+
+// Actualizar la inserción en Supabase para incluir la retención, la firma y la URL del PDF
+supabase
+  .from("invoices")
+  .insert({
+    organization_id: Number.parseInt(formData.organization_id),
+    invoice_number: invoiceNumberFormatted,
+    client_id: clientId,
+    issue_date: formData.issue_date,
+    invoice_type: "normal",
+    status: "draft",
+    base_amount: baseAmount,
+    vat_amount: vatAmount,
+    irpf_amount: irpfAmount,
+    retention_amount: retentionAmount,
+    total_amount: totalAmount,
+    notes: fullNotes,
+    signature: signature, // Guardar también la firma base64 en la base de datos
+    signature_url: signatureUrl, // Guardar la URL de la firma si se pudo subir
+    pdf_url: pdfUrl, // Guardar la URL del PDF si se pudo subir
+  })
         .select()
         .then(({ data: invoiceData, error: invoiceError }) => {
           if (invoiceError) {
@@ -649,7 +706,9 @@ export default function NewInvoicePage() {
               } else {
                 toast({
                   title: "Factura creada correctamente",
-                  description: "La factura se ha creado y el PDF se ha descargado.",
+                  description: pdfUrl 
+                    ? "La factura se ha creado, el PDF se ha descargado y guardado en el servidor."
+                    : "La factura se ha creado y el PDF se ha descargado.",
                 })
               }
             })

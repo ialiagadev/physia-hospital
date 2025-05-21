@@ -320,6 +320,351 @@ export interface Database {
           active?: boolean
         }
       }
+      notifications: {
+        Row: {
+          id: string
+          created_at: string
+          user_id: string
+          title: string
+          message: string
+          type: string
+          read: boolean
+          related_entity_type: string | null
+          related_entity_id: string | null
+          action_url: string | null
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          user_id: string
+          title: string
+          message: string
+          type: string
+          read?: boolean
+          related_entity_type?: string | null
+          related_entity_id?: string | null
+          action_url?: string | null
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          user_id?: string
+          title?: string
+          message?: string
+          type?: string
+          read?: boolean
+          related_entity_type?: string | null
+          related_entity_id?: string | null
+          action_url?: string | null
+        }
+      }
+      // Nuevas tablas de historias clínicas
+      clinical_records: {
+        Row: {
+          id: number
+          created_at: string
+          updated_at: string
+          patient_id: number
+          professional_id: number
+          organization_id: number
+          title: string
+          description: string | null
+          start_date: string
+          end_date: string | null
+          status: string
+          is_confidential: boolean
+        }
+        Insert: {
+          id?: number
+          created_at?: string
+          updated_at?: string
+          patient_id: number
+          professional_id: number
+          organization_id: number
+          title: string
+          description?: string | null
+          start_date: string
+          end_date?: string | null
+          status?: string
+          is_confidential?: boolean
+        }
+        Update: {
+          id?: number
+          created_at?: string
+          updated_at?: string
+          patient_id?: number
+          professional_id?: number
+          organization_id?: number
+          title?: string
+          description?: string | null
+          start_date?: string
+          end_date?: string | null
+          status?: string
+          is_confidential?: boolean
+        }
+      }
+      clinical_consultations: {
+        Row: {
+          id: number
+          created_at: string
+          updated_at: string
+          clinical_record_id: number
+          professional_id: number
+          consultation_date: string
+          chief_complaint: string | null
+          subjective: string | null
+          objective: string | null
+          assessment: string | null
+          plan: string | null
+          notes: string | null
+          status: string
+          is_billed: boolean
+          invoice_id: number | null
+        }
+        Insert: {
+          id?: number
+          created_at?: string
+          updated_at?: string
+          clinical_record_id: number
+          professional_id: number
+          consultation_date: string
+          chief_complaint?: string | null
+          subjective?: string | null
+          objective?: string | null
+          assessment?: string | null
+          plan?: string | null
+          notes?: string | null
+          status?: string
+          is_billed?: boolean
+          invoice_id?: number | null
+        }
+        Update: {
+          id?: number
+          created_at?: string
+          updated_at?: string
+          clinical_record_id?: number
+          professional_id?: number
+          consultation_date?: string
+          chief_complaint?: string | null
+          subjective?: string | null
+          objective?: string | null
+          assessment?: string | null
+          plan?: string | null
+          notes?: string | null
+          status?: string
+          is_billed?: boolean
+          invoice_id?: number | null
+        }
+      }
+      clinical_diagnoses: {
+        Row: {
+          id: number
+          created_at: string
+          consultation_id: number
+          code: string | null
+          description: string
+          type: string | null
+          is_primary: boolean
+        }
+        Insert: {
+          id?: number
+          created_at?: string
+          consultation_id: number
+          code?: string | null
+          description: string
+          type?: string | null
+          is_primary?: boolean
+        }
+        Update: {
+          id?: number
+          created_at?: string
+          consultation_id?: number
+          code?: string | null
+          description?: string
+          type?: string | null
+          is_primary?: boolean
+        }
+      }
+      clinical_treatments: {
+        Row: {
+          id: number
+          created_at: string
+          updated_at: string
+          consultation_id: number
+          description: string
+          instructions: string | null
+          duration: string | null
+          frequency: string | null
+          status: string
+          start_date: string | null
+          end_date: string | null
+        }
+        Insert: {
+          id?: number
+          created_at?: string
+          updated_at?: string
+          consultation_id: number
+          description: string
+          instructions?: string | null
+          duration?: string | null
+          frequency?: string | null
+          status?: string
+          start_date?: string | null
+          end_date?: string | null
+        }
+        Update: {
+          id?: number
+          created_at?: string
+          updated_at?: string
+          consultation_id?: number
+          description?: string
+          instructions?: string | null
+          duration?: string | null
+          frequency?: string | null
+          status?: string
+          start_date?: string | null
+          end_date?: string | null
+        }
+      }
+      clinical_follow_ups: {
+        Row: {
+          id: number
+          created_at: string
+          clinical_record_id: number
+          professional_id: number
+          scheduled_date: string
+          description: string | null
+          status: string
+          completed_at: string | null
+          notes: string | null
+        }
+        Insert: {
+          id?: number
+          created_at?: string
+          clinical_record_id: number
+          professional_id: number
+          scheduled_date: string
+          description?: string | null
+          status?: string
+          completed_at?: string | null
+          notes?: string | null
+        }
+        Update: {
+          id?: number
+          created_at?: string
+          clinical_record_id?: number
+          professional_id?: number
+          scheduled_date?: string
+          description?: string | null
+          status?: string
+          completed_at?: string | null
+          notes?: string | null
+        }
+      }
+      clinical_tags: {
+        Row: {
+          id: number
+          created_at: string
+          organization_id: number
+          name: string
+          color: string | null
+        }
+        Insert: {
+          id?: number
+          created_at?: string
+          organization_id: number
+          name: string
+          color?: string | null
+        }
+        Update: {
+          id?: number
+          created_at?: string
+          organization_id?: number
+          name?: string
+          color?: string | null
+        }
+      }
+      clinical_record_tags: {
+        Row: {
+          clinical_record_id: number
+          tag_id: number
+        }
+        Insert: {
+          clinical_record_id: number
+          tag_id: number
+        }
+        Update: {
+          clinical_record_id?: number
+          tag_id?: number
+        }
+      }
+      clinical_templates: {
+        Row: {
+          id: number
+          created_at: string
+          updated_at: string
+          organization_id: number
+          name: string
+          description: string | null
+          template_data: Json
+          created_by: number
+          is_default: boolean
+        }
+        Insert: {
+          id?: number
+          created_at?: string
+          updated_at?: string
+          organization_id: number
+          name: string
+          description?: string | null
+          template_data: Json
+          created_by: number
+          is_default?: boolean
+        }
+        Update: {
+          id?: number
+          created_at?: string
+          updated_at?: string
+          organization_id?: number
+          name?: string
+          description?: string | null
+          template_data?: Json
+          created_by?: number
+          is_default?: boolean
+        }
+      }
+      clinical_audit_log: {
+        Row: {
+          id: number
+          created_at: string
+          user_id: number
+          record_type: string
+          record_id: number
+          action: string
+          previous_data: Json | null
+          new_data: Json | null
+        }
+        Insert: {
+          id?: number
+          created_at?: string
+          user_id: number
+          record_type: string
+          record_id: number
+          action: string
+          previous_data?: Json | null
+          new_data?: Json | null
+        }
+        Update: {
+          id?: number
+          created_at?: string
+          user_id?: number
+          record_type?: string
+          record_id?: number
+          action?: string
+          previous_data?: Json | null
+          new_data?: Json | null
+        }
+      }
     }
   }
 }

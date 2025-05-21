@@ -122,3 +122,52 @@ export async function getImageAsBase64(url: string): Promise<string | null> {
     return null
   }
 }
+
+/**
+ * Guarda un PDF en el bucket "factura-pdf" de Supabase Storage
+ * @param pdfBlob Blob del PDF a guardar
+ * @param fileName Nombre del archivo (ej: 'factura-001.pdf')
+ * @returns URL pública del PDF o null si hay error
+ */
+export async function savePdfToStorage(pdfBlob: Blob, fileName: string): Promise<string | null> {
+  try {
+    console.log("Guardando PDF en Storage:", fileName)
+
+    if (!pdfBlob || pdfBlob.size === 0) {
+      console.error("El blob del PDF no es válido")
+      return null
+    }
+
+    // Asegurarse de que el nombre del archivo tenga extensión .pdf
+    const safeName = fileName.endsWith(".pdf") ? fileName : `${fileName}.pdf`
+
+    // Ruta en el bucket factura-pdf
+    const path = `public/${safeName}`
+
+    // Subir el blob a Supabase Storage en el bucket factura-pdf
+    const { data, error } = await supabase.storage.from("factura-pdf").upload(path, pdfBlob, {
+      contentType: "application/pdf",
+      upsert: true,
+    })
+
+    if (error) {
+      console.error("Error al guardar el PDF en Storage:", error)
+      return null
+    }
+
+    // Obtener la URL pública
+    const { data: publicUrlData } = supabase.storage.from("factura-pdf").getPublicUrl(path)
+
+    if (!publicUrlData || !publicUrlData.publicUrl) {
+      console.error("No se pudo obtener la URL pública del PDF")
+      return null
+    }
+
+    console.log("PDF guardado con éxito, URL:", publicUrlData.publicUrl)
+
+    return publicUrlData.publicUrl
+  } catch (error) {
+    console.error("Error al guardar el PDF:", error)
+    return null
+  }
+}

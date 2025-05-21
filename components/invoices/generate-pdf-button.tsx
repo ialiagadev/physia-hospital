@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { FileText } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
-import { getImageAsBase64 } from "@/lib/storage-utils"
+import { getImageAsBase64, savePdfToStorage } from "@/lib/storage-utils"
 
 interface GeneratePdfButtonProps {
   invoiceId: number
@@ -110,20 +110,6 @@ export function GeneratePdfButton({ invoiceId }: GeneratePdfButtonProps) {
         console.log("No se encontró ninguna firma para esta factura")
       }
 
-      // Actualizar el estado de la factura
-      const { error: updateError } = await supabase
-        .from("invoices")
-        .update({
-          status: "issued",
-          pdf_path: `/invoices/${invoiceId}.pdf`,
-        })
-        .eq("id", invoiceId)
-
-      if (updateError) {
-        console.error("Error al actualizar estado de factura:", updateError)
-        throw new Error(updateError.message)
-      }
-
       console.log("Importando generador de PDF")
       // Importar el generador de PDF
       const { generatePdf } = await import("@/lib/pdf-generator")
@@ -170,13 +156,53 @@ export function GeneratePdfButton({ invoiceId }: GeneratePdfButtonProps) {
         hasSignature: !!pdfInvoice.signature,
       })
 
-      // Generar el PDF
-      generatePdf(pdfInvoice, invoiceLines || [], `factura-${invoice.invoice_number}.pdf`)
-      console.log("PDF generado correctamente")
+      // Nombre del archivo PDF
+      const pdfFileName = `factura-${invoice.invoice_number}.pdf`
+
+      // Generar el PDF sin descargarlo, obteniendo el Blob
+      const pdfBlob = generatePdf(pdfInvoice, invoiceLines || [], pdfFileName)
+
+      if (!pdfBlob) {
+        throw new Error("No se pudo generar el PDF")
+      }
+
+      console.log("PDF generado correctamente, guardando en Storage")
+
+      // Guardar el PDF en el bucket factura-pdf
+      const pdfUrl = await savePdfToStorage(pdfBlob, pdfFileName)
+
+      if (!pdfUrl) {
+        throw new Error("No se pudo guardar el PDF en Storage")
+      }
+
+      console.log("PDF guardado en Storage:", pdfUrl)
+
+      // Actualizar la factura con la URL del PDF
+      const { error: updateError } = await supabase
+        .from("invoices")
+        .update({
+          status: "issued",
+          pdf_url: pdfUrl,
+          pdf_path: `/public/${pdfFileName}`,
+        })
+        .eq("id", invoiceId)
+
+      if (updateError) {
+        console.error("Error al actualizar la factura con la URL del PDF:", updateError)
+        throw new Error("No se pudo actualizar la factura con la URL del PDF")
+      }
+
+      // Descargar el PDF para el usuario
+      const a = document.createElement("a")
+      a.href = URL.createObjectURL(pdfBlob)
+      a.download = pdfFileName
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
 
       toast({
-        title: "PDF generado correctamente",
-        description: "La factura ha sido generada en formato PDF",
+        title: "PDF generado y guardado correctamente",
+        description: "La factura ha sido generada en formato PDF y guardada en el sistema",
       })
     } catch (error) {
       console.error("Error al generar el PDF:", error)

@@ -18,6 +18,7 @@ import {
   GripVertical,
   Save,
   RotateCcw,
+  ClipboardList,
 } from "lucide-react"
 import {
   DndContext,
@@ -137,6 +138,14 @@ export function Sidebar({ className }: SidebarProps) {
       iconColor: "text-emerald-500",
     },
     {
+      id: "clinical-records",
+      label: "Historias Clínicas",
+      href: "/dashboard/clinical-records",
+      icon: <ClipboardList className="mr-2 h-4 w-4 text-teal-500" />,
+      matchPattern: "/dashboard/clinical-records",
+      iconColor: "text-teal-500",
+    },
+    {
       id: "statistics",
       label: "Estadísticas",
       href: "/dashboard/statistics",
@@ -174,6 +183,8 @@ export function Sidebar({ className }: SidebarProps) {
         return <UserRound className="mr-2 h-4 w-4 text-cyan-500" />
       case "invoices":
         return <FileText className="mr-2 h-4 w-4 text-emerald-500" />
+      case "clinical-records":
+        return <ClipboardList className="mr-2 h-4 w-4 text-teal-500" />
       case "statistics":
         return <BarChart2 className="mr-2 h-4 w-4 text-rose-500" />
       case "settings":
@@ -198,6 +209,8 @@ export function Sidebar({ className }: SidebarProps) {
         return "text-cyan-500"
       case "invoices":
         return "text-emerald-500"
+      case "clinical-records":
+        return "text-teal-500"
       case "statistics":
         return "text-rose-500"
       case "settings":
@@ -222,6 +235,8 @@ export function Sidebar({ className }: SidebarProps) {
         return "/dashboard/professionals"
       case "invoices":
         return "/dashboard/invoices"
+      case "clinical-records":
+        return "/dashboard/clinical-records"
       case "statistics":
         return "/dashboard/statistics"
       case "settings":
@@ -252,6 +267,8 @@ export function Sidebar({ className }: SidebarProps) {
         return "Profesionales"
       case "invoices":
         return "Facturas"
+      case "clinical-records":
+        return "Historias Clínicas"
       case "statistics":
         return "Estadísticas"
       case "settings":
