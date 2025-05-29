@@ -13,3 +13,5 @@ export const createServerSupabaseClient = () => {
     },
   })
 }
+
+export { createClient }

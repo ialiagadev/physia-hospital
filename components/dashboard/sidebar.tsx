@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import type React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -19,6 +19,11 @@ import {
   Save,
   RotateCcw,
   ClipboardList,
+  ChevronLeft,
+  ChevronRight,
+  Gift,
+  UserPlus,
+  LogOut,
 } from "lucide-react"
 import {
   DndContext,
@@ -47,6 +52,9 @@ interface NavItem {
   icon: React.ReactNode
   matchPattern: string
   iconColor: string
+  bgColor: string
+  hoverColor: string
+  activeColor: string
 }
 
 // Estructura simplificada para almacenamiento
@@ -56,8 +64,22 @@ interface StoredNavItem {
 }
 
 // Componente para un elemento sortable del sidebar
-function SortableNavItem({ item, active }: { item: NavItem; active: boolean }) {
+function SortableNavItem({
+  item,
+  active,
+  isCollapsed,
+  index,
+  activeIndex,
+}: {
+  item: NavItem
+  active: boolean
+  isCollapsed: boolean
+  index: number
+  activeIndex: number
+}) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id })
+  const [isHovered, setIsHovered] = useState(false)
+  const buttonRef = useRef<HTMLDivElement>(null)
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -66,20 +88,50 @@ function SortableNavItem({ item, active }: { item: NavItem; active: boolean }) {
   }
 
   return (
-    <div ref={setNodeRef} style={style} className={cn("flex items-center rounded-md", isDragging ? "z-50" : "")}>
-      <Button asChild variant={active ? "secondary" : "ghost"} className="w-full justify-start group relative">
-        <Link href={item.href}>
-          {item.icon}
-          {item.label}
-          <div
-            {...attributes}
-            {...listeners}
-            className="absolute right-2 opacity-0 group-hover:opacity-100 transition cursor-grab active:cursor-grabbing"
-          >
-            <GripVertical className="h-4 w-4 text-muted-foreground" />
-          </div>
-        </Link>
-      </Button>
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn("flex items-center rounded-md mb-1 relative", isDragging ? "z-50" : "")}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      data-index={index}
+    >
+      <div
+        ref={buttonRef}
+        className={cn(
+          "w-full rounded-md relative overflow-hidden transition-all duration-300",
+          active ? item.bgColor : isHovered ? item.hoverColor : "",
+        )}
+      >
+        <Button
+          asChild
+          variant="ghost"
+          className={cn(
+            "w-full justify-start group relative border-none",
+            active && "bg-transparent hover:bg-transparent",
+          )}
+        >
+          <Link href={item.href}>
+            <span className="flex items-center">
+              <span className="mr-2 h-5 w-5" style={{ color: item.iconColor }}>
+                {item.icon}
+              </span>
+              {!isCollapsed && (
+                <span className={cn("truncate font-medium", active && "text-foreground")}>{item.label}</span>
+              )}
+            </span>
+            {!isCollapsed && (
+              <div
+                {...attributes}
+                {...listeners}
+                className="absolute right-2 opacity-0 group-hover:opacity-100 transition cursor-grab active:cursor-grabbing"
+              >
+                <GripVertical className="h-4 w-4 text-muted-foreground" />
+              </div>
+            )}
+          </Link>
+        </Button>
+      </div>
     </div>
   )
 }
@@ -93,190 +145,176 @@ export function Sidebar({ className }: SidebarProps) {
       id: "dashboard",
       label: "Dashboard",
       href: "/dashboard",
-      icon: <LayoutDashboard className="mr-2 h-4 w-4 text-blue-500" />,
+      icon: <LayoutDashboard />,
       matchPattern: "",
-      iconColor: "text-blue-500",
+      iconColor: "#4285F4",
+      bgColor: "bg-blue-50",
+      hoverColor: "bg-blue-50/50",
+      activeColor: "#4285F4",
     },
     {
       id: "clients",
       label: "Clientes",
       href: "/dashboard/clients",
-      icon: <Users className="mr-2 h-4 w-4 text-indigo-500" />,
+      icon: <Users />,
       matchPattern: "/dashboard/clients",
-      iconColor: "text-indigo-500",
+      iconColor: "#7B68EE",
+      bgColor: "bg-indigo-50",
+      hoverColor: "bg-indigo-50/50",
+      activeColor: "#7B68EE",
     },
     {
       id: "organizations",
       label: "Organizaciones",
       href: "/dashboard/organizations",
-      icon: <Building2 className="mr-2 h-4 w-4 text-purple-500" />,
+      icon: <Building2 />,
       matchPattern: "/dashboard/organizations",
-      iconColor: "text-purple-500",
+      iconColor: "#9370DB",
+      bgColor: "bg-purple-50",
+      hoverColor: "bg-purple-50/50",
+      activeColor: "#9370DB",
     },
     {
       id: "services",
       label: "Servicios",
       href: "/dashboard/services",
-      icon: <Package className="mr-2 h-4 w-4 text-amber-500" />,
+      icon: <Package />,
       matchPattern: "/dashboard/services",
-      iconColor: "text-amber-500",
+      iconColor: "#F59E0B",
+      bgColor: "bg-amber-50",
+      hoverColor: "bg-amber-50/50",
+      activeColor: "#F59E0B",
     },
     {
       id: "professionals",
       label: "Profesionales",
       href: "/dashboard/professionals",
-      icon: <UserRound className="mr-2 h-4 w-4 text-cyan-500" />,
+      icon: <UserRound />,
       matchPattern: "/dashboard/professionals",
-      iconColor: "text-cyan-500",
+      iconColor: "#0EA5E9",
+      bgColor: "bg-sky-50",
+      hoverColor: "bg-sky-50/50",
+      activeColor: "#0EA5E9",
     },
     {
       id: "invoices",
       label: "Facturas",
       href: "/dashboard/invoices",
-      icon: <FileText className="mr-2 h-4 w-4 text-emerald-500" />,
+      icon: <FileText />,
       matchPattern: "/dashboard/invoices",
-      iconColor: "text-emerald-500",
+      iconColor: "#10B981",
+      bgColor: "bg-emerald-50",
+      hoverColor: "bg-emerald-50/50",
+      activeColor: "#10B981",
+    },
+    {
+      id: "loyalty-cards",
+      label: "Tarjetas de Fidelización",
+      href: "/dashboard/loyalty-cards",
+      icon: <Gift />,
+      matchPattern: "/dashboard/loyalty-cards",
+      iconColor: "#9333EA",
+      bgColor: "bg-purple-50",
+      hoverColor: "bg-purple-50/50",
+      activeColor: "#9333EA",
     },
     {
       id: "clinical-records",
       label: "Historias Clínicas",
       href: "/dashboard/clinical-records",
-      icon: <ClipboardList className="mr-2 h-4 w-4 text-teal-500" />,
+      icon: <ClipboardList />,
       matchPattern: "/dashboard/clinical-records",
-      iconColor: "text-teal-500",
+      iconColor: "#14B8A6",
+      bgColor: "bg-teal-50",
+      hoverColor: "bg-teal-50/50",
+      activeColor: "#14B8A6",
     },
     {
       id: "statistics",
       label: "Estadísticas",
       href: "/dashboard/statistics",
-      icon: <BarChart2 className="mr-2 h-4 w-4 text-rose-500" />,
+      icon: <BarChart2 />,
       matchPattern: "/dashboard/statistics",
-      iconColor: "text-rose-500",
+      iconColor: "#F43F5E",
+      bgColor: "bg-rose-50",
+      hoverColor: "bg-rose-50/50",
+      activeColor: "#F43F5E",
+    },
+    {
+      id: "user-management",
+      label: "Gestión de Usuarios",
+      href: "/dashboard/users",
+      icon: <UserPlus />,
+      matchPattern: "/dashboard",
+      iconColor: "#8B5CF6",
+      bgColor: "bg-violet-50",
+      hoverColor: "bg-violet-50/50",
+      activeColor: "#8B5CF6",
     },
     {
       id: "settings",
       label: "Configuración",
       href: "/dashboard/settings",
-      icon: <Settings className="mr-2 h-4 w-4 text-slate-500" />,
+      icon: <Settings />,
       matchPattern: "/dashboard/settings",
-      iconColor: "text-slate-500",
+      iconColor: "#64748B",
+      bgColor: "bg-slate-50",
+      hoverColor: "bg-slate-50/50",
+      activeColor: "#64748B",
+    },
+    {
+      id: "logout",
+      label: "Cerrar Sesión",
+      href: "/logout",
+      icon: <LogOut />,
+      matchPattern: "/logout",
+      iconColor: "#EF4444",
+      bgColor: "bg-red-50",
+      hoverColor: "bg-red-50/50",
+      activeColor: "#EF4444",
     },
   ]
 
   // Estado para los elementos de navegación
   const [navItems, setNavItems] = useState<NavItem[]>(defaultNavItems)
   const [hasChanges, setHasChanges] = useState(false)
+  // Añadir estado para controlar si el sidebar está colapsado
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(false)
   const pathname = usePathname()
 
-  // Función para obtener el icono según el ID
-  const getIconForItem = (id: string) => {
-    switch (id) {
-      case "dashboard":
-        return <LayoutDashboard className="mr-2 h-4 w-4 text-blue-500" />
-      case "clients":
-        return <Users className="mr-2 h-4 w-4 text-indigo-500" />
-      case "organizations":
-        return <Building2 className="mr-2 h-4 w-4 text-purple-500" />
-      case "services":
-        return <Package className="mr-2 h-4 w-4 text-amber-500" />
-      case "professionals":
-        return <UserRound className="mr-2 h-4 w-4 text-cyan-500" />
-      case "invoices":
-        return <FileText className="mr-2 h-4 w-4 text-emerald-500" />
-      case "clinical-records":
-        return <ClipboardList className="mr-2 h-4 w-4 text-teal-500" />
-      case "statistics":
-        return <BarChart2 className="mr-2 h-4 w-4 text-rose-500" />
-      case "settings":
-        return <Settings className="mr-2 h-4 w-4 text-slate-500" />
-      default:
-        return <LayoutDashboard className="mr-2 h-4 w-4 text-blue-500" />
-    }
+  // Estado para el índice del elemento activo
+  const [activeIndex, setActiveIndex] = useState(0)
+  const [activeColor, setActiveColor] = useState("#4285F4")
+
+  // Referencia al contenedor de elementos de navegación
+  const navContainerRef = useRef<HTMLDivElement>(null)
+
+  // Función para convertir string a boolean de forma segura
+  const parseBoolean = (value: string | null): boolean => {
+    return value === "true"
   }
 
-  // Función para obtener el color según el ID
-  const getIconColorForItem = (id: string) => {
-    switch (id) {
-      case "dashboard":
-        return "text-blue-500"
-      case "clients":
-        return "text-indigo-500"
-      case "organizations":
-        return "text-purple-500"
-      case "services":
-        return "text-amber-500"
-      case "professionals":
-        return "text-cyan-500"
-      case "invoices":
-        return "text-emerald-500"
-      case "clinical-records":
-        return "text-teal-500"
-      case "statistics":
-        return "text-rose-500"
-      case "settings":
-        return "text-slate-500"
-      default:
-        return "text-gray-500"
+  // Actualizar el índice activo cuando cambia la ruta
+  useEffect(() => {
+    const index = navItems.findIndex(
+      (item) => pathname === item.href || (item.matchPattern && pathname.includes(item.matchPattern)),
+    )
+    if (index !== -1) {
+      setActiveIndex(index)
+      setActiveColor(navItems[index].iconColor)
     }
-  }
+  }, [pathname, navItems])
 
-  // Función para obtener la URL según el ID
-  const getHrefForItem = (id: string) => {
-    switch (id) {
-      case "dashboard":
-        return "/dashboard"
-      case "clients":
-        return "/dashboard/clients"
-      case "organizations":
-        return "/dashboard/organizations"
-      case "services":
-        return "/dashboard/services"
-      case "professionals":
-        return "/dashboard/professionals"
-      case "invoices":
-        return "/dashboard/invoices"
-      case "clinical-records":
-        return "/dashboard/clinical-records"
-      case "statistics":
-        return "/dashboard/statistics"
-      case "settings":
-        return "/dashboard/settings"
-      default:
-        return "/dashboard"
-    }
-  }
+  // Cargar el estado de colapso guardado al iniciar
+  useEffect(() => {
+    const savedCollapsedState = localStorage.getItem("sidebarCollapsed")
+    setIsCollapsed(parseBoolean(savedCollapsedState))
+  }, [])
 
-  // Función para obtener el patrón de coincidencia según el ID
-  const getMatchPatternForItem = (id: string) => {
-    if (id === "dashboard") return ""
-    return `/dashboard/${id}`
-  }
-
-  // Función para obtener la etiqueta según el ID
-  const getLabelForItem = (id: string) => {
-    switch (id) {
-      case "dashboard":
-        return "Dashboard"
-      case "clients":
-        return "Clientes"
-      case "organizations":
-        return "Organizaciones"
-      case "services":
-        return "Servicios"
-      case "professionals":
-        return "Profesionales"
-      case "invoices":
-        return "Facturas"
-      case "clinical-records":
-        return "Historias Clínicas"
-      case "statistics":
-        return "Estadísticas"
-      case "settings":
-        return "Configuración"
-      default:
-        return id
-    }
-  }
+  // Guardar el estado de colapso cuando cambie
+  useEffect(() => {
+    localStorage.setItem("sidebarCollapsed", String(isCollapsed))
+  }, [isCollapsed])
 
   // Cargar el orden guardado al iniciar
   useEffect(() => {
@@ -363,25 +401,83 @@ export function Sidebar({ className }: SidebarProps) {
     })
   }
 
+  // Función para alternar el estado de colapso
+  const toggleCollapse = () => {
+    setIsCollapsed(!isCollapsed)
+  }
+
+  // Calcular la posición del indicador
+  const getIndicatorStyle = () => {
+    if (navContainerRef.current) {
+      const navItems = navContainerRef.current.querySelectorAll("[data-index]")
+      if (navItems.length > activeIndex) {
+        const activeItem = navItems[activeIndex] as HTMLElement
+        if (activeItem) {
+          return {
+            transform: `translateY(${activeItem.offsetTop}px)`,
+            height: `${activeItem.offsetHeight}px`,
+            backgroundColor: activeColor,
+          }
+        }
+      }
+    }
+    return {}
+  }
+
   return (
-    <div className={cn("pb-12", className)}>
+    <div className={cn("pb-12 relative transition-all duration-200", isCollapsed ? "w-16" : "w-64", className)}>
       <div className="space-y-4 py-4">
         <div className="px-4 py-2">
-          <h2 className="mb-2 px-2 text-xl font-semibold tracking-tight">Sistema de Facturación</h2>
+          {!isCollapsed && <h2 className="mb-2 px-2 text-xl font-semibold tracking-tight">Sistema de Facturación</h2>}
 
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={navItems.map((item) => item.id)} strategy={verticalListSortingStrategy}>
-              <div className="space-y-1">
-                {navItems.map((item) => (
-                  <SortableNavItem key={item.id} item={item} active={pathname.includes(item.matchPattern)} />
-                ))}
-              </div>
-            </SortableContext>
-          </DndContext>
+          {/* Botón para colapsar/expandir el sidebar */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleCollapse}
+            className="absolute -right-4 top-4 h-8 w-8 rounded-full border bg-background shadow-md"
+          >
+            {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </Button>
 
-          {hasChanges && (
+          <div className="relative">
+            {/* Indicador animado */}
+            <div
+              className="absolute left-0 w-1 rounded-r-full transition-all duration-300 ease-in-out z-10"
+              style={getIndicatorStyle()}
+            />
+
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={navItems.map((item) => item.id)} strategy={verticalListSortingStrategy}>
+                <div className="space-y-1" ref={navContainerRef}>
+                  {navItems.map((item, index) => {
+                    // Asegurarnos de que isActive sea explícitamente un booleano
+                    const isActive: boolean = Boolean(
+                      pathname === item.href || (item.matchPattern && pathname.includes(item.matchPattern)),
+                    )
+                    return (
+                      <SortableNavItem
+                        key={item.id}
+                        item={item}
+                        active={isActive}
+                        isCollapsed={isCollapsed}
+                        index={index}
+                        activeIndex={activeIndex}
+                      />
+                    )
+                  })}
+                </div>
+              </SortableContext>
+            </DndContext>
+          </div>
+
+          {hasChanges && !isCollapsed && (
             <div className="mt-4 space-y-2 px-2">
-              <Button onClick={saveOrder} size="sm" className="w-full flex items-center justify-center">
+              <Button
+                onClick={saveOrder}
+                size="sm"
+                className="w-full flex items-center justify-center bg-emerald-500/90 hover:bg-emerald-500 text-white"
+              >
                 <Save className="mr-2 h-4 w-4" />
                 Guardar orden
               </Button>
@@ -389,7 +485,7 @@ export function Sidebar({ className }: SidebarProps) {
                 onClick={resetOrder}
                 size="sm"
                 variant="outline"
-                className="w-full flex items-center justify-center"
+                className="w-full flex items-center justify-center border-slate-200 hover:bg-slate-50"
               >
                 <RotateCcw className="mr-2 h-4 w-4" />
                 Restablecer
