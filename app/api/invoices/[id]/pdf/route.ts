@@ -1,11 +1,12 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
-import { createServerSupabaseClient } from "@/lib/supabase"
+import { supabaseAdmin } from "@/lib/supabase/admin" // Importa supabaseAdmin
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const cookieStore = cookies()
-    const supabase = createServerSupabaseClient()
+    // const supabase = createServerSupabaseClient() // Eliminar esto
+    const supabase = supabaseAdmin // Usar supabaseAdmin
 
     // Verificar autenticación
     const {
@@ -71,7 +72,6 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       ${invoice.clients.tax_id}
       ${invoice.clients.address}
       ${invoice.clients.postal_code} ${invoice.clients.city}, ${invoice.clients.province}
-      ${invoice.clients.country || "España"}
       ${invoice.clients.email ? `Email: ${invoice.clients.email}` : ""}
       ${invoice.clients.phone ? `Teléfono: ${invoice.clients.phone}` : ""}
       

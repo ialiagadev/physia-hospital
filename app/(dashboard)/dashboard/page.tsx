@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { supabase } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase/client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Building2, FileText, Users, CreditCard } from "lucide-react"
 import { OrganizationSelector } from "@/components/organization-selector"
@@ -9,8 +9,10 @@ import { useToast } from "@/hooks/use-toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { TrendIndicator } from "@/components/ui/trend-indicator"
 import { useCountAnimation } from "@/hooks/use-count-animation"
+import { useAuth } from "@/app/contexts/auth-context"
 
 export default function DashboardPage() {
+  const { userProfile } = useAuth()
   const [stats, setStats] = useState({
     organizations: 0,
     clients: 0,
@@ -76,24 +78,23 @@ export default function DashboardPage() {
 
     switch (period) {
       case "day":
-        startDate.setHours(0, 0, 0, 0) // Inicio del día actual
+        startDate.setHours(0, 0, 0, 0)
         break
       case "week":
-        // Inicio de la semana actual (lunes)
         const day = startDate.getDay() || 7
         if (day !== 1) startDate.setHours(-24 * (day - 1))
         startDate.setHours(0, 0, 0, 0)
         break
       case "month":
-        startDate.setDate(1) // Primer día del mes actual
+        startDate.setDate(1)
         startDate.setHours(0, 0, 0, 0)
         break
       case "year":
-        startDate.setMonth(0, 1) // Primer día del año actual
+        startDate.setMonth(0, 1)
         startDate.setHours(0, 0, 0, 0)
         break
       default:
-        startDate.setDate(1) // Por defecto, mes actual
+        startDate.setDate(1)
         startDate.setHours(0, 0, 0, 0)
     }
 
@@ -112,62 +113,67 @@ export default function DashboardPage() {
           .gte("issue_date", startDate.toISOString().split("T")[0])
           .lte("issue_date", endDate.toISOString().split("T")[0])
 
-        if (selectedOrgId !== "all") {
+        // Filtrar por organización si no es admin de Physia
+        if (!userProfile?.is_physia_admin && userProfile?.organization_id) {
+          query = query.eq("organization_id", userProfile.organization_id)
+        } else if (selectedOrgId !== "all") {
           query = query.eq("organization_id", selectedOrgId)
         }
 
         const { data: invoices, error } = await query
 
-        if (error) {
-          console.error("Error fetching period revenue:", error)
-          return
-        }
+        if (error) return
 
-        const revenue = invoices ? invoices.reduce((sum, invoice) => sum + invoice.total_amount, 0) : 0
+        const revenue = invoices ? invoices.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0) : 0
         setPeriodRevenue(revenue)
 
-        // Simular tendencia
         setTrends((prev) => ({
           ...prev,
-          periodRevenue: Math.random() * 30 - 5, // Entre -5% y +25%
+          periodRevenue: Math.random() * 30 - 5,
         }))
       } catch (error) {
-        console.error("Error loading period revenue:", error)
+        // Silenciar errores en producción
       }
     }
 
     if (!loading) {
       loadPeriodRevenue()
     }
-  }, [selectedPeriod, selectedOrgId, loading])
+  }, [selectedPeriod, selectedOrgId, loading, userProfile])
 
   useEffect(() => {
     async function loadDashboardData() {
-      // Siempre comenzamos con loading=true para mostrar el estado de carga
       setLoading(true)
 
       try {
-        console.log("Loading dashboard data for organization:", selectedOrgId)
-
         // Obtener estadísticas básicas
         const { data: organizations } = await supabase.from("organizations").select("*", { count: "exact" })
 
         // Consulta de clientes con filtro opcional por organización
         let clientsQuery = supabase.from("clients").select("*", { count: "exact" })
-        if (selectedOrgId !== "all") {
+
+        // Filtrar por organización si no es admin de Physia
+        if (!userProfile?.is_physia_admin && userProfile?.organization_id) {
+          clientsQuery = clientsQuery.eq("organization_id", userProfile.organization_id)
+        } else if (selectedOrgId !== "all") {
           clientsQuery = clientsQuery.eq("organization_id", selectedOrgId)
         }
+
         const { data: clients } = await clientsQuery
 
         // Consulta de facturas con filtro opcional por organización
         let invoicesQuery = supabase.from("invoices").select("*", { count: "exact" })
-        if (selectedOrgId !== "all") {
+
+        // Filtrar por organización si no es admin de Physia
+        if (!userProfile?.is_physia_admin && userProfile?.organization_id) {
+          invoicesQuery = invoicesQuery.eq("organization_id", userProfile.organization_id)
+        } else if (selectedOrgId !== "all") {
           invoicesQuery = invoicesQuery.eq("organization_id", selectedOrgId)
         }
+
         const { data: invoices, error: invoicesError } = await invoicesQuery
 
         if (invoicesError) {
-          console.error("Error fetching invoices:", invoicesError)
           toast({
             title: "Error",
             description: "No se pudieron cargar las facturas",
@@ -177,9 +183,9 @@ export default function DashboardPage() {
         }
 
         // Calcular ingresos totales
-        const totalRevenue = invoices ? invoices.reduce((sum, invoice) => sum + invoice.total_amount, 0) : 0
+        const totalRevenue = invoices ? invoices.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0) : 0
 
-        // Calcular ticket medio (ingresos totales / número de clientes)
+        // Calcular ticket medio
         const averageTicket = clients && clients.length > 0 ? totalRevenue / clients.length : 0
 
         // Actualizar estadísticas
@@ -191,26 +197,26 @@ export default function DashboardPage() {
           averageTicket,
         })
 
-        // Simular tendencias (en un caso real, compararíamos con períodos anteriores)
+        // Simular tendencias
         setTrends({
-          clients: Math.random() * 20 - 10, // Entre -10% y +10%
-          invoices: Math.random() * 30 - 5, // Entre -5% y +25%
-          totalRevenue: Math.random() * 40 - 10, // Entre -10% y +30%
-          averageTicket: Math.random() * 15 - 5, // Entre -5% y +10%
-          periodRevenue: Math.random() * 30 - 5, // Entre -5% y +25%
+          clients: Math.random() * 20 - 10,
+          invoices: Math.random() * 30 - 5,
+          totalRevenue: Math.random() * 40 - 10,
+          averageTicket: Math.random() * 15 - 5,
+          periodRevenue: Math.random() * 30 - 5,
         })
 
         // Obtener facturas recientes
         let recentInvoicesQuery = supabase
           .from("invoices")
-          .select(`
-            *,
-            clients (name)
-          `)
+          .select(`*, clients (name)`)
           .order("created_at", { ascending: false })
           .limit(5)
 
-        if (selectedOrgId !== "all") {
+        // Filtrar por organización si no es admin de Physia
+        if (!userProfile?.is_physia_admin && userProfile?.organization_id) {
+          recentInvoicesQuery = recentInvoicesQuery.eq("organization_id", userProfile.organization_id)
+        } else if (selectedOrgId !== "all") {
           recentInvoicesQuery = recentInvoicesQuery.eq("organization_id", selectedOrgId)
         }
 
@@ -220,19 +226,18 @@ export default function DashboardPage() {
         // Obtener clientes recientes
         let recentClientsQuery = supabase.from("clients").select("*").order("created_at", { ascending: false }).limit(5)
 
-        if (selectedOrgId !== "all") {
+        // Filtrar por organización si no es admin de Physia
+        if (!userProfile?.is_physia_admin && userProfile?.organization_id) {
+          recentClientsQuery = recentClientsQuery.eq("organization_id", userProfile.organization_id)
+        } else if (selectedOrgId !== "all") {
           recentClientsQuery = recentClientsQuery.eq("organization_id", selectedOrgId)
         }
 
         const { data: recentClientsData } = await recentClientsQuery
         setRecentClients(recentClientsData || [])
 
-        // Pequeño retraso para evitar parpadeos en cargas rápidas
-        setTimeout(() => {
-          setLoading(false)
-        }, 300)
+        setLoading(false)
       } catch (error) {
-        console.error("Error al cargar datos del dashboard:", error)
         toast({
           title: "Error",
           description: "No se pudieron cargar los datos del dashboard",
@@ -242,9 +247,10 @@ export default function DashboardPage() {
       }
     }
 
-    loadDashboardData()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedOrgId])
+    if (userProfile) {
+      loadDashboardData()
+    }
+  }, [selectedOrgId, userProfile, toast])
 
   // Obtener el título y descripción del período para mostrar
   const getPeriodTitle = () => {
@@ -307,8 +313,10 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Selector de organización */}
-      <OrganizationSelector selectedOrgId={selectedOrgId} onSelectOrganization={setSelectedOrgId} className="mb-6" />
+      {/* Selector de organización - SOLO PARA ADMINS DE PHYSIA */}
+      {userProfile?.is_physia_admin && (
+        <OrganizationSelector selectedOrgId={selectedOrgId} onSelectOrganization={setSelectedOrgId} className="mb-6" />
+      )}
 
       {/* Primera fila: Organizaciones, Clientes, Facturas */}
       <div className="grid gap-4 md:grid-cols-3">
@@ -428,7 +436,7 @@ export default function DashboardPage() {
                         {invoice.clients?.name || "Cliente desconocido"}
                       </p>
                     </div>
-                    <div className="font-medium">{formatCurrency(invoice.total_amount)}</div>
+                    <div className="font-medium">{formatCurrency(invoice.total_amount || 0)}</div>
                   </div>
                 ))}
               </div>

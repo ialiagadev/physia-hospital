@@ -1,14 +1,15 @@
-// lib/supabase/client.ts
-import { createClient } from '@supabase/supabase-js'
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import type { Database } from "@/types/supabase"
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+// Crear una única instancia del cliente
+let supabaseClient: ReturnType<typeof createClientComponentClient<Database>> | null = null
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: true,
-    storageKey: 'physia-auth-session',
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
+export const getSupabaseClient = () => {
+  if (!supabaseClient) {
+    supabaseClient = createClientComponentClient<Database>()
   }
-})
+  return supabaseClient
+}
+
+// Exportar la instancia única
+export const supabase = getSupabaseClient()

@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase/client"
 
 /**
  * Guarda una imagen base64 en Supabase Storage

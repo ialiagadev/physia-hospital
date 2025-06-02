@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Plus, Users, Mail, Calendar, Shield, RefreshCw } from 'lucide-react'
-import { supabase } from "@/lib/supabase/client" // Asegúrate de que sea /client
+import { supabase } from "@/lib/supabase/client"
 
 interface User {
   id: string
@@ -33,7 +33,7 @@ export default function UsersPage() {
         console.log("🔍 Verificando sesión en /dashboard/users...")
         setDebugInfo("Verificando sesión...")
         
-        // 1. Obtener usuario actual - MÉTODO CORRECTO
+        // 1. Obtener usuario actual
         const { data: { user }, error: userError } = await supabase.auth.getUser()
         
         if (userError) {
@@ -103,6 +103,26 @@ export default function UsersPage() {
           .select("*")
           .eq("organization_id", profile.organization_id)
           .order("created_at", { ascending: false })
+
+        // LOGS DETALLADOS PARA DEBUG:
+        console.log("🔍 CONSULTA DETALLADA:")
+        console.log("- Organization ID buscado:", profile.organization_id)
+        console.log("- Usuarios encontrados:", usersData?.length || 0)
+        console.log("- Datos completos:", usersData)
+        console.log("- Error:", usersError)
+
+        // También logear cada usuario individualmente
+        if (usersData) {
+          usersData.forEach((user, index) => {
+            console.log(`Usuario ${index + 1}:`, {
+              id: user.id,
+              email: user.email,
+              name: user.name,
+              organization_id: user.organization_id,
+              role: user.role
+            })
+          })
+        }
         
         if (usersError) {
           console.error("❌ Error obteniendo usuarios:", usersError)
@@ -238,7 +258,7 @@ export default function UsersPage() {
               <h3 className="text-lg font-semibold mb-2">No hay usuarios</h3>
               <p className="text-muted-foreground mb-4">Comienza agregando tu primer usuario.</p>
               <Button asChild>
-                <Link href="/dashboard/users/new">
+                <Link href="/add-user">
                   <Plus className="mr-2 h-4 w-4" />
                   Crear Primer Usuario
                 </Link>

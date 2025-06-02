@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase/client"
 
 /**
  * Genera un número de factura único verificando en todas las organizaciones

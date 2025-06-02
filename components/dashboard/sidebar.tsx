@@ -245,7 +245,7 @@ export function Sidebar({ className }: SidebarProps) {
       label: "Gestión de Usuarios",
       href: "/dashboard/users",
       icon: <UserPlus />,
-      matchPattern: "/dashboard",
+      matchPattern: "/dashboard/users",
       iconColor: "#8B5CF6",
       bgColor: "bg-violet-50",
       hoverColor: "bg-violet-50/50",
