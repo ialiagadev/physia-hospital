@@ -12,6 +12,8 @@ interface Organization {
   country: string
   email: string
   phone: string
+  logo_url?: string | null
+  logo_path?: string | null
 }
 
 interface ClientData {
@@ -40,6 +42,9 @@ interface Invoice {
   signature?: string | null
   organization: Organization
   client_data: ClientData
+  invoice_type?: string | null
+  original_invoice_number?: string | null
+  rectification_reason?: string | null
 }
 
 interface InvoiceLine {
@@ -53,230 +58,402 @@ interface InvoiceLine {
 }
 
 /**
- * Genera un PDF para una factura
- * @param invoice Datos de la factura
- * @param invoiceLines Líneas de la factura
- * @param fileName Nombre del archivo PDF
- * @param downloadFile Si es true, descarga el archivo. Si es false, solo devuelve el Blob
- * @returns Blob del PDF generado o undefined si downloadFile es true
+ * Carga una imagen desde una URL con mejor manejo de errores
  */
-export function generatePdf(
+async function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.crossOrigin = "anonymous"
+
+    img.onload = () => {
+      console.log("Imagen cargada correctamente:", url)
+      resolve(img)
+    }
+
+    img.onerror = (error) => {
+      console.error("Error al cargar imagen:", url, error)
+      reject(new Error(`No se pudo cargar la imagen: ${url}`))
+    }
+
+    // Timeout para evitar esperas infinitas
+    setTimeout(() => {
+      reject(new Error(`Timeout al cargar imagen: ${url}`))
+    }, 10000)
+
+    img.src = url
+  })
+}
+
+/**
+ * Genera un PDF para una factura con logo, firma y diseño profesional
+ */
+export async function generatePdf(
   invoice: Invoice,
   invoiceLines: InvoiceLine[],
   fileName: string,
   downloadFile = true,
-): Blob | undefined {
-  // Crear un nuevo documento PDF
-  const doc = new jsPDF()
+): Promise<Blob | undefined> {
+  try {
+    console.log("Iniciando generación de PDF para:", invoice.invoice_number)
+    console.log("Logo URL:", invoice.organization.logo_url)
 
-  // Configuración de fuentes y colores
-  const primaryColor = [0, 0, 0] // Negro
-  const secondaryColor = [100, 100, 100] // Gris oscuro
-  const accentColor = [0, 102, 204] // Azul
+    const doc = new jsPDF()
 
-  // Función para formatear moneda
-  const formatCurrency = (amount: number) => {
-    return amount.toLocaleString("es-ES", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })
-  }
+    // Configuración de colores
+    const primaryColor = [0, 0, 0] // Negro
+    const secondaryColor = [100, 100, 100] // Gris oscuro
+    const accentColor = [0, 102, 204] // Azul
 
-  // Función para formatear fecha
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    return date.toLocaleDateString("es-ES", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    })
-  }
+    // Funciones de formato
+    const formatCurrency = (amount: number) => {
+      return amount.toLocaleString("es-ES", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
+    }
 
-  // Añadir cabecera con datos de la organización
-  doc.setFontSize(18)
-  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2])
-  doc.text(invoice.organization.name || "", 14, 20)
+    const formatDate = (dateString: string) => {
+      const date = new Date(dateString)
+      return date.toLocaleDateString("es-ES", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      })
+    }
 
-  doc.setFontSize(10)
-  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2])
-  doc.text(`CIF/NIF: ${invoice.organization.tax_id || ""}`, 14, 25)
-  doc.text(`${invoice.organization.address || ""}`, 14, 30)
-  doc.text(
-    `${invoice.organization.postal_code || ""} ${invoice.organization.city || ""}, ${invoice.organization.province || ""}`,
-    14,
-    35,
-  )
-  doc.text(`${invoice.organization.country || ""}`, 14, 40)
+    // Variables de layout
+    let logoHeight = 0
+    const leftColumnX = 14
+    const rightColumnX = 110
 
-  if (invoice.organization.email) {
-    doc.text(`Email: ${invoice.organization.email}`, 14, 45)
-  }
+    // === LOGO DE LA ORGANIZACIÓN ===
+    if (invoice.organization.logo_url || invoice.organization.logo_path) {
+      const logoUrl =
+        invoice.organization.logo_url ||
+        (invoice.organization.logo_path
+          ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/logos/${invoice.organization.logo_path}`
+          : null)
 
-  if (invoice.organization.phone) {
-    doc.text(`Teléfono: ${invoice.organization.phone}`, 14, 50)
-  }
+      if (logoUrl) {
+        try {
+          console.log("Cargando logo desde:", logoUrl)
+          const logoImg = await loadImage(logoUrl)
 
-  // Añadir información de la factura
-  doc.setFontSize(14)
-  doc.setTextColor(accentColor[0], accentColor[1], accentColor[2])
-  doc.text(`FACTURA Nº: ${invoice.invoice_number}`, 140, 20)
+          // Calcular dimensiones manteniendo proporción
+          const maxLogoWidth = 50
+          const maxLogoHeight = 30
+          const logoRatio = logoImg.width / logoImg.height
 
-  doc.setFontSize(10)
-  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2])
-  doc.text(`Fecha de emisión: ${formatDate(invoice.issue_date)}`, 140, 25)
+          let logoWidth = maxLogoWidth
+          logoHeight = maxLogoWidth / logoRatio
 
-  // Añadir datos del cliente
-  doc.setFontSize(12)
-  doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2])
-  doc.text("CLIENTE", 14, 65)
+          if (logoHeight > maxLogoHeight) {
+            logoHeight = maxLogoHeight
+            logoWidth = maxLogoHeight * logoRatio
+          }
 
-  doc.setFontSize(10)
-  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2])
-  doc.text(invoice.client_data.name || "", 14, 70)
-  doc.text(`CIF/NIF: ${invoice.client_data.tax_id || ""}`, 14, 75)
-  doc.text(`${invoice.client_data.address || ""}`, 14, 80)
-  doc.text(
-    `${invoice.client_data.postal_code || ""} ${invoice.client_data.city || ""}, ${invoice.client_data.province || ""}`,
-    14,
-    85,
-  )
-  doc.text(`${invoice.client_data.country || ""}`, 14, 90)
+          // Añadir logo en esquina superior izquierda
+          doc.addImage(logoImg, "JPEG", leftColumnX, 15, logoWidth, logoHeight)
+          console.log("Logo añadido correctamente al PDF")
+        } catch (error) {
+          console.error("Error al cargar el logo:", error)
+          logoHeight = 0
+        }
+      }
+    }
 
-  if (invoice.client_data.email) {
-    doc.text(`Email: ${invoice.client_data.email}`, 14, 95)
-  }
+    // === TÍTULO DE LA FACTURA ===
+    doc.setFontSize(20)
+    doc.setTextColor(accentColor[0], accentColor[1], accentColor[2])
 
-  if (invoice.client_data.phone) {
-    doc.text(`Teléfono: ${invoice.client_data.phone}`, 14, 100)
-  }
+    // Título según tipo de factura
+    let invoiceTitle = "FACTURA"
+    if (invoice.invoice_type === "rectificativa") {
+      invoiceTitle = "FACTURA RECTIFICATIVA"
+    } else if (invoice.invoice_type === "simplificada") {
+      invoiceTitle = "FACTURA SIMPLIFICADA"
+    }
 
-  // Añadir tabla de líneas de factura
-  const tableColumn = ["Descripción", "Cantidad", "Precio unitario", "IVA", "IRPF", "Retención", "Importe"]
-  const tableRows = invoiceLines.map((line) => [
-    line.description,
-    line.quantity,
-    `${formatCurrency(line.unit_price)} €`,
-    `${line.vat_rate}%`,
-    `${line.irpf_rate}%`,
-    `${line.retention_rate}%`,
-    `${formatCurrency(line.line_amount)} €`,
-  ])
+    doc.text(invoiceTitle, 200, 25, { align: "right" })
 
-  autoTable(doc, {
-    head: [tableColumn],
-    body: tableRows,
-    startY: 110,
-    theme: "grid",
-    headStyles: {
-      fillColor: [240, 240, 240],
-      textColor: [0, 0, 0],
-      fontStyle: "bold",
-    },
-    styles: {
-      fontSize: 8,
-    },
-    columnStyles: {
-      0: { cellWidth: 60 },
-      1: { cellWidth: 15, halign: "center" },
-      2: { cellWidth: 25, halign: "right" },
-      3: { cellWidth: 15, halign: "center" },
-      4: { cellWidth: 15, halign: "center" },
-      5: { cellWidth: 15, halign: "center" },
-      6: { cellWidth: 25, halign: "right" },
-    },
-  })
+    doc.setFontSize(14)
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2])
+    doc.text(`Nº: ${invoice.invoice_number}`, 200, 32, { align: "right" })
 
-  // Obtener la posición Y después de la tabla
-  const finalY = (doc as any).lastAutoTable.finalY + 10
-
-  // Añadir resumen de totales
-  doc.setFontSize(10)
-  doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2])
-  doc.text("Base imponible:", 130, finalY)
-  doc.text(`${formatCurrency(invoice.base_amount)} €`, 180, finalY, { align: "right" })
-
-  doc.text("IVA:", 130, finalY + 5)
-  doc.text(`${formatCurrency(invoice.vat_amount)} €`, 180, finalY + 5, { align: "right" })
-
-  if (invoice.irpf_amount > 0) {
-    doc.text("IRPF:", 130, finalY + 10)
-    doc.text(`-${formatCurrency(invoice.irpf_amount)} €`, 180, finalY + 10, { align: "right" })
-  }
-
-  if (invoice.retention_amount > 0) {
-    doc.text("Retención:", 130, finalY + 15)
-    doc.text(`-${formatCurrency(invoice.retention_amount)} €`, 180, finalY + 15, { align: "right" })
-  }
-
-  // Línea separadora
-  const lineY = finalY + (invoice.irpf_amount > 0 || invoice.retention_amount > 0 ? 20 : 10)
-  doc.setDrawColor(200, 200, 200)
-  doc.line(130, lineY, 180, lineY)
-
-  // Total
-  doc.setFont("helvetica", "bold")
-  doc.text("TOTAL:", 130, lineY + 5)
-  doc.text(`${formatCurrency(invoice.total_amount)} €`, 180, lineY + 5, { align: "right" })
-  doc.setFont("helvetica", "normal")
-
-  // Añadir notas si existen
-  if (invoice.notes && invoice.notes.trim() !== "") {
-    const notesY = lineY + 15
     doc.setFontSize(10)
     doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2])
-    doc.text("Notas:", 14, notesY)
+    doc.text(`Fecha: ${formatDate(invoice.issue_date)}`, 200, 38, { align: "right" })
 
-    // Dividir las notas en líneas para que no se salgan de la página
-    const notesText = invoice.notes || "" // Ensure notes is never undefined
-    const splitNotes = doc.splitTextToSize(notesText, 180)
-    doc.text(splitNotes, 14, notesY + 5)
-  }
-
-  // Añadir firma si existe
-  if (invoice.signature) {
-    try {
-      // Calcular la posición Y para la firma
-      let signatureY = lineY + 30
-      if (invoice.notes && invoice.notes.trim() !== "") {
-        // Si hay notas, ajustar la posición de la firma
-        const notesText = invoice.notes || "" // Ensure notes is never undefined
-        const splitNotes = doc.splitTextToSize(notesText, 180)
-        signatureY += splitNotes.length * 5
+    // Información adicional para facturas rectificativas
+    if (invoice.invoice_type === "rectificativa" && invoice.original_invoice_number) {
+      doc.text(`Rectifica: ${invoice.original_invoice_number}`, 200, 44, { align: "right" })
+      if (invoice.rectification_reason) {
+        const reasonLines = doc.splitTextToSize(`Motivo: ${invoice.rectification_reason}`, 80)
+        doc.text(reasonLines, 200, 50, { align: "right" })
       }
-
-      // Añadir título de firma
-      doc.setFontSize(10)
-      doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2])
-      doc.text("Firma:", 14, signatureY)
-
-      // Añadir la imagen de la firma
-      doc.addImage(invoice.signature, "PNG", 14, signatureY + 2, 50, 20)
-    } catch (error) {
-      console.error("Error al añadir la firma al PDF:", error)
     }
-  }
 
-  // Añadir pie de página
-  const pageCount = doc.getNumberOfPages()
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i)
-    doc.setFontSize(8)
-    doc.setTextColor(150, 150, 150)
-    doc.text(
-      `Página ${i} de ${pageCount}`,
-      doc.internal.pageSize.getWidth() / 2,
-      doc.internal.pageSize.getHeight() - 10,
-      { align: "center" },
-    )
-  }
+    // === DATOS DE LA EMPRESA ===
+    const sectionStartY = Math.max(logoHeight + 25, 50)
 
-  // Si se solicita descargar el archivo, hacerlo
-  if (downloadFile) {
-    doc.save(fileName)
-    return undefined
-  }
+    doc.setFontSize(12)
+    doc.setTextColor(accentColor[0], accentColor[1], accentColor[2])
+    doc.text("DATOS DE LA EMPRESA", leftColumnX, sectionStartY)
 
-  // Si no se solicita descargar, devolver el blob
-  const blob = doc.output("blob")
-  return blob
+    doc.setDrawColor(accentColor[0], accentColor[1], accentColor[2])
+    doc.line(leftColumnX, sectionStartY + 2, leftColumnX + 80, sectionStartY + 2)
+
+    doc.setFontSize(11)
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2])
+    doc.text(invoice.organization.name || "", leftColumnX, sectionStartY + 10)
+
+    doc.setFontSize(9)
+    doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2])
+
+    let orgY = sectionStartY + 16
+    doc.text(`CIF/NIF: ${invoice.organization.tax_id || ""}`, leftColumnX, orgY)
+
+    orgY += 6
+    if (invoice.organization.address) {
+      doc.text(invoice.organization.address, leftColumnX, orgY)
+      orgY += 6
+    }
+
+    if (invoice.organization.postal_code || invoice.organization.city) {
+      const addressLine =
+        `${invoice.organization.postal_code || ""} ${invoice.organization.city || ""}, ${invoice.organization.province || ""}`.trim()
+      doc.text(addressLine, leftColumnX, orgY)
+      orgY += 6
+    }
+
+    if (invoice.organization.country) {
+      doc.text(invoice.organization.country, leftColumnX, orgY)
+      orgY += 6
+    }
+
+    if (invoice.organization.email) {
+      doc.text(`Email: ${invoice.organization.email}`, leftColumnX, orgY)
+      orgY += 6
+    }
+
+    if (invoice.organization.phone) {
+      doc.text(`Teléfono: ${invoice.organization.phone}`, leftColumnX, orgY)
+      orgY += 6
+    }
+
+    // === DATOS DEL CLIENTE ===
+    doc.setFontSize(12)
+    doc.setTextColor(accentColor[0], accentColor[1], accentColor[2])
+    doc.text("FACTURAR A", rightColumnX, sectionStartY)
+
+    doc.setDrawColor(accentColor[0], accentColor[1], accentColor[2])
+    doc.line(rightColumnX, sectionStartY + 2, rightColumnX + 80, sectionStartY + 2)
+
+    doc.setFontSize(11)
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2])
+    doc.text(invoice.client_data.name || "", rightColumnX, sectionStartY + 10)
+
+    doc.setFontSize(9)
+    doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2])
+
+    let clientY = sectionStartY + 16
+    doc.text(`CIF/NIF: ${invoice.client_data.tax_id || ""}`, rightColumnX, clientY)
+
+    clientY += 6
+    if (invoice.client_data.address) {
+      doc.text(invoice.client_data.address, rightColumnX, clientY)
+      clientY += 6
+    }
+
+    if (invoice.client_data.postal_code || invoice.client_data.city) {
+      const addressLine =
+        `${invoice.client_data.postal_code || ""} ${invoice.client_data.city || ""}, ${invoice.client_data.province || ""}`.trim()
+      doc.text(addressLine, rightColumnX, clientY)
+      clientY += 6
+    }
+
+    if (invoice.client_data.country) {
+      doc.text(invoice.client_data.country, rightColumnX, clientY)
+      clientY += 6
+    }
+
+    if (invoice.client_data.email) {
+      doc.text(`Email: ${invoice.client_data.email}`, rightColumnX, clientY)
+      clientY += 6
+    }
+
+    if (invoice.client_data.phone) {
+      doc.text(`Teléfono: ${invoice.client_data.phone}`, rightColumnX, clientY)
+      clientY += 6
+    }
+
+    // === TABLA DE LÍNEAS ===
+    const tableStartY = Math.max(orgY, clientY) + 15
+
+    const tableColumn = ["Descripción", "Cant.", "Precio unit.", "IVA", "IRPF", "Ret.", "Importe"]
+    const tableRows = invoiceLines.map((line) => [
+      line.description,
+      line.quantity.toString(),
+      `${formatCurrency(line.unit_price)} €`,
+      `${line.vat_rate}%`,
+      `${line.irpf_rate}%`,
+      `${line.retention_rate}%`,
+      `${formatCurrency(line.line_amount)} €`,
+    ])
+
+    autoTable(doc, {
+      head: [tableColumn],
+      body: tableRows,
+      startY: tableStartY,
+      theme: "grid",
+      headStyles: {
+        fillColor: [240, 240, 240],
+        textColor: [0, 0, 0],
+        fontStyle: "bold",
+        fontSize: 9,
+        halign: "center",
+      },
+      styles: {
+        fontSize: 8,
+        cellPadding: 3,
+      },
+      columnStyles: {
+        0: { cellWidth: 70, halign: "left" },
+        1: { cellWidth: 15, halign: "center" },
+        2: { cellWidth: 25, halign: "right" },
+        3: { cellWidth: 15, halign: "center" },
+        4: { cellWidth: 15, halign: "center" },
+        5: { cellWidth: 15, halign: "center" },
+        6: { cellWidth: 25, halign: "right" },
+      },
+      margin: { left: 14, right: 14 },
+    })
+
+    // === TOTALES ===
+    const finalY = (doc as any).lastAutoTable.finalY + 15
+
+    const totalsBoxX = 120
+    const totalsBoxY = finalY
+    const totalsBoxWidth = 75
+    let totalsBoxHeight = 25
+
+    if (invoice.irpf_amount > 0) totalsBoxHeight += 5
+    if (invoice.retention_amount > 0) totalsBoxHeight += 5
+
+    // Recuadro de totales
+    doc.setDrawColor(200, 200, 200)
+    doc.setFillColor(250, 250, 250)
+    doc.rect(totalsBoxX, totalsBoxY, totalsBoxWidth, totalsBoxHeight, "FD")
+
+    doc.setFontSize(9)
+    doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2])
+
+    let totalsY = totalsBoxY + 8
+    doc.text("Base imponible:", totalsBoxX + 5, totalsY)
+    doc.text(`${formatCurrency(invoice.base_amount)} €`, totalsBoxX + totalsBoxWidth - 5, totalsY, { align: "right" })
+
+    totalsY += 5
+    doc.text("IVA:", totalsBoxX + 5, totalsY)
+    doc.text(`${formatCurrency(invoice.vat_amount)} €`, totalsBoxX + totalsBoxWidth - 5, totalsY, { align: "right" })
+
+    if (invoice.irpf_amount > 0) {
+      totalsY += 5
+      doc.text("IRPF:", totalsBoxX + 5, totalsY)
+      doc.text(`-${formatCurrency(invoice.irpf_amount)} €`, totalsBoxX + totalsBoxWidth - 5, totalsY, {
+        align: "right",
+      })
+    }
+
+    if (invoice.retention_amount > 0) {
+      totalsY += 5
+      doc.text("Retención:", totalsBoxX + 5, totalsY)
+      doc.text(`-${formatCurrency(invoice.retention_amount)} €`, totalsBoxX + totalsBoxWidth - 5, totalsY, {
+        align: "right",
+      })
+    }
+
+    // Total final
+    totalsY += 3
+    doc.setDrawColor(accentColor[0], accentColor[1], accentColor[2])
+    doc.line(totalsBoxX + 5, totalsY, totalsBoxX + totalsBoxWidth - 5, totalsY)
+
+    totalsY += 5
+    doc.setFont("helvetica", "bold")
+    doc.setFontSize(11)
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2])
+    doc.text("TOTAL:", totalsBoxX + 5, totalsY)
+    doc.text(`${formatCurrency(invoice.total_amount)} €`, totalsBoxX + totalsBoxWidth - 5, totalsY, { align: "right" })
+    doc.setFont("helvetica", "normal")
+
+    // === NOTAS ===
+    if (invoice.notes && invoice.notes.trim() !== "") {
+      const notesY = totalsBoxY + totalsBoxHeight + 15
+      doc.setFontSize(10)
+      doc.setTextColor(accentColor[0], accentColor[1], accentColor[2])
+      doc.text("OBSERVACIONES", leftColumnX, notesY)
+
+      doc.setDrawColor(accentColor[0], accentColor[1], accentColor[2])
+      doc.line(leftColumnX, notesY + 2, leftColumnX + 60, notesY + 2)
+
+      doc.setFontSize(9)
+      doc.setTextColor(secondaryColor[0], secondaryColor[1], secondaryColor[2])
+      const splitNotes = doc.splitTextToSize(invoice.notes, 180)
+      doc.text(splitNotes, leftColumnX, notesY + 8)
+    }
+
+    // === FIRMA ===
+    if (invoice.signature) {
+      try {
+        let signatureY = totalsBoxY + totalsBoxHeight + 25
+        if (invoice.notes && invoice.notes.trim() !== "") {
+          const splitNotes = doc.splitTextToSize(invoice.notes, 180)
+          signatureY += splitNotes.length * 5 + 10
+        }
+
+        doc.setFontSize(10)
+        doc.setTextColor(accentColor[0], accentColor[1], accentColor[2])
+        doc.text("FIRMA", leftColumnX, signatureY)
+
+        doc.setDrawColor(accentColor[0], accentColor[1], accentColor[2])
+        doc.line(leftColumnX, signatureY + 2, leftColumnX + 40, signatureY + 2)
+
+        // Añadir imagen de la firma
+        doc.addImage(invoice.signature, "PNG", leftColumnX, signatureY + 5, 50, 20)
+      } catch (error) {
+        console.error("Error al añadir la firma al PDF:", error)
+      }
+    }
+
+    // === PIE DE PÁGINA ===
+    const pageCount = doc.getNumberOfPages()
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i)
+      doc.setFontSize(8)
+      doc.setTextColor(150, 150, 150)
+
+      doc.setDrawColor(200, 200, 200)
+      doc.line(14, doc.internal.pageSize.getHeight() - 20, 200, doc.internal.pageSize.getHeight() - 20)
+
+      doc.text(
+        `Página ${i} de ${pageCount}`,
+        doc.internal.pageSize.getWidth() / 2,
+        doc.internal.pageSize.getHeight() - 10,
+        { align: "center" },
+      )
+    }
+
+    console.log("PDF generado correctamente")
+
+    const blob = doc.output("blob")
+
+    if (downloadFile) {
+      doc.save(fileName)
+      return undefined
+    }
+
+    return blob
+  } catch (error) {
+    console.error("Error al generar el PDF:", error)
+    throw error
+  }
 }

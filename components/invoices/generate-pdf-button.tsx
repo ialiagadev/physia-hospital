@@ -3,9 +3,8 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { FileText } from "lucide-react"
-import { supabase } from "@/lib/supabase/client"
+import { supabase } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
-import { getImageAsBase64, savePdfToStorage } from "@/lib/storage-utils"
 
 interface GeneratePdfButtonProps {
   invoiceId: number
@@ -33,16 +32,7 @@ export function GeneratePdfButton({ invoiceId }: GeneratePdfButtonProps) {
         .single()
 
       if (invoiceError || !invoice) {
-        console.error("Error al obtener la factura:", invoiceError)
         throw new Error("No se pudo obtener la información de la factura")
-      }
-
-      console.log("Datos de factura obtenidos:", invoice)
-
-      // Verificar que tenemos todos los datos de la organización
-      if (!invoice.organizations || !invoice.organizations.name || !invoice.organizations.tax_id) {
-        console.error("Datos de organización incompletos:", invoice.organizations)
-        throw new Error("Datos de organización incompletos. Por favor, verifica la configuración de la organización.")
       }
 
       // Obtener líneas de factura
@@ -53,64 +43,9 @@ export function GeneratePdfButton({ invoiceId }: GeneratePdfButtonProps) {
         .order("id", { ascending: true })
 
       if (linesError) {
-        console.error("Error al obtener líneas de factura:", linesError)
         throw new Error("No se pudieron obtener las líneas de la factura")
       }
 
-      console.log("Líneas de factura obtenidas:", invoiceLines)
-
-      // Verificar que el número de factura sea único
-      const { data: duplicateCheck } = await supabase
-        .from("invoices")
-        .select("id")
-        .eq("invoice_number", invoice.invoice_number)
-        .neq("id", invoiceId)
-        .limit(1)
-
-      if (duplicateCheck && duplicateCheck.length > 0) {
-        console.error("Número de factura duplicado:", invoice.invoice_number)
-        throw new Error(
-          "Esta factura tiene un número que ya existe. Por favor, contacte al administrador para resolverlo.",
-        )
-      }
-
-      // Obtener la firma como base64 si existe una URL de firma
-      let signatureBase64 = null
-      if (invoice.signature_url) {
-        try {
-          console.log("Intentando obtener firma desde URL:", invoice.signature_url)
-          signatureBase64 = await getImageAsBase64(invoice.signature_url)
-
-          if (!signatureBase64) {
-            console.warn("No se pudo obtener la firma desde la URL, intentando usar la firma base64 almacenada")
-            signatureBase64 = invoice.signature
-          } else {
-            console.log("Firma obtenida correctamente desde URL")
-          }
-        } catch (error) {
-          console.error("Error al obtener la firma como base64:", error)
-          // Intentar usar la firma base64 almacenada como respaldo
-          signatureBase64 = invoice.signature
-        }
-      } else if (invoice.signature) {
-        // Si hay una firma en base64 directamente en la factura, usarla
-        console.log("Usando firma base64 almacenada en la factura")
-        signatureBase64 = invoice.signature
-      }
-
-      // Verificar si tenemos una firma válida
-      if (signatureBase64) {
-        if (typeof signatureBase64 === "string" && signatureBase64.startsWith("data:image")) {
-          console.log("Firma válida encontrada")
-        } else {
-          console.warn("La firma no tiene un formato base64 válido")
-          signatureBase64 = null
-        }
-      } else {
-        console.log("No se encontró ninguna firma para esta factura")
-      }
-
-      console.log("Importando generador de PDF")
       // Importar el generador de PDF
       const { generatePdf } = await import("@/lib/pdf-generator")
 
@@ -125,7 +60,10 @@ export function GeneratePdfButton({ invoiceId }: GeneratePdfButtonProps) {
         retention_amount: invoice.retention_amount || 0,
         total_amount: invoice.total_amount,
         notes: invoice.notes || "",
-        signature: signatureBase64 || invoice.signature, // Usar la firma base64
+        signature: invoice.signature,
+        invoice_type: invoice.invoice_type,
+        original_invoice_number: invoice.original_invoice_number,
+        rectification_reason: invoice.rectification_reason,
         organization: {
           name: invoice.organizations.name,
           tax_id: invoice.organizations.tax_id,
@@ -136,6 +74,8 @@ export function GeneratePdfButton({ invoiceId }: GeneratePdfButtonProps) {
           country: invoice.organizations.country || "España",
           email: invoice.organizations.email || "",
           phone: invoice.organizations.phone || "",
+          logo_url: invoice.organizations.logo_url || null,
+          logo_path: invoice.organizations.logo_path || null,
         },
         client_data: {
           name: invoice.clients.name,
@@ -151,58 +91,15 @@ export function GeneratePdfButton({ invoiceId }: GeneratePdfButtonProps) {
         },
       }
 
-      console.log("Generando PDF con datos:", {
-        invoiceNumber: pdfInvoice.invoice_number,
-        hasSignature: !!pdfInvoice.signature,
-      })
-
       // Nombre del archivo PDF
       const pdfFileName = `factura-${invoice.invoice_number}.pdf`
 
-      // Generar el PDF sin descargarlo, obteniendo el Blob
-      const pdfBlob = generatePdf(pdfInvoice, invoiceLines || [], pdfFileName)
-
-      if (!pdfBlob) {
-        throw new Error("No se pudo generar el PDF")
-      }
-
-      console.log("PDF generado correctamente, guardando en Storage")
-
-      // Guardar el PDF en el bucket factura-pdf
-      const pdfUrl = await savePdfToStorage(pdfBlob, pdfFileName)
-
-      if (!pdfUrl) {
-        throw new Error("No se pudo guardar el PDF en Storage")
-      }
-
-      console.log("PDF guardado en Storage:", pdfUrl)
-
-      // Actualizar la factura con la URL del PDF
-      const { error: updateError } = await supabase
-        .from("invoices")
-        .update({
-          status: "issued",
-          pdf_url: pdfUrl,
-          pdf_path: `/public/${pdfFileName}`,
-        })
-        .eq("id", invoiceId)
-
-      if (updateError) {
-        console.error("Error al actualizar la factura con la URL del PDF:", updateError)
-        throw new Error("No se pudo actualizar la factura con la URL del PDF")
-      }
-
-      // Descargar el PDF para el usuario
-      const a = document.createElement("a")
-      a.href = URL.createObjectURL(pdfBlob)
-      a.download = pdfFileName
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
+      // Generar y descargar el PDF
+      await generatePdf(pdfInvoice, invoiceLines || [], pdfFileName, true)
 
       toast({
-        title: "PDF generado y guardado correctamente",
-        description: "La factura ha sido generada en formato PDF y guardada en el sistema",
+        title: "PDF generado correctamente",
+        description: "La factura ha sido generada en formato PDF",
       })
     } catch (error) {
       console.error("Error al generar el PDF:", error)

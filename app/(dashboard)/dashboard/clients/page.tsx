@@ -76,7 +76,6 @@ export default function ClientsPage() {
           throw error
         }
 
-        console.log("✅ Clientes cargados:", data?.length || 0)
         setClients(data || [])
       } catch (error) {
         console.error("Error al cargar clientes:", error)
@@ -214,16 +213,7 @@ export default function ClientsPage() {
         </Table>
       </div>
 
-      {/* Información adicional para debugging */}
-      {process.env.NODE_ENV === "development" && (
-        <div className="mt-8 p-4 bg-gray-100 rounded-lg text-sm">
-          <h3 className="font-semibold mb-2">Debug Info:</h3>
-          <p>Usuario: {user?.email}</p>
-          <p>Organización: {userProfile?.organizations?.name || userProfile?.organization_id}</p>
-          <p>Es admin de Physia: {userProfile?.is_physia_admin ? "Sí" : "No"}</p>
-          <p>Clientes mostrados: {clients.length}</p>
-        </div>
-      )}
+    
     </div>
   )
 }

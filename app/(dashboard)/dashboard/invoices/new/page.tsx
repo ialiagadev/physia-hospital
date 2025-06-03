@@ -25,16 +25,29 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { SignaturePad } from "@/components/signature-pad"
 import { useToast } from "@/hooks/use-toast"
+// Reemplaza esta línea:
+// import type { InvoiceWithClientData } from "@/types/supabase-joins"
 
+// Por esta línea más simple:
+// No necesitamos importar el tipo específico, usaremos any para esta consulta
+import { Loader2 } from "lucide-react"
+
+// Interfaces
 interface Organization {
   id: number
   name: string
   last_invoice_number: number
   invoice_prefix: string
+  invoice_number_format?: string
+  invoice_padding_length?: number
+  simplified_invoice_format?: string
+  rectificative_invoice_format?: string
+  logo_url?: string | null
+  logo_path?: string | null
 }
 
 // Actualizar la interfaz InvoiceLine para incluir el campo de profesional
@@ -91,16 +104,44 @@ export default function NewInvoicePage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { toast } = useToast()
+
+  // Estados principales
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [services, setServices] = useState<Service[]>([])
   const [professionals, setProfessionals] = useState<Professional[]>([])
+  const [existingInvoices, setExistingInvoices] = useState<
+    Array<{ id: number; invoice_number: string; issue_date: string; total_amount: number; client_name: string }>
+  >([])
+
   const [selectedOrganization, setSelectedOrganization] = useState<Organization | null>(null)
   const [isNewClient, setIsNewClient] = useState(true)
   const [selectedClientId, setSelectedClientId] = useState<string>("")
   const [serviceDialogOpen, setServiceDialogOpen] = useState(false)
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null)
+  const [suggestedInvoiceNumber, setSuggestedInvoiceNumber] = useState("")
+  const [isLoadingInitialData, setIsLoadingInitialData] = useState(true)
+  const [invoiceNumberConfigOpen, setInvoiceNumberConfigOpen] = useState(false)
+  const [isSavingConfig, setIsSavingConfig] = useState(false)
   const [signature, setSignature] = useState<string | null>(null)
+
+  // Estado para el tipo de factura - IMPORTANTE: Solo valores válidos de BD
+  const [invoiceType, setInvoiceType] = useState<"normal" | "rectificativa" | "simplificada">("normal")
+
+  // Campos específicos para facturas rectificativas
+  const [rectificativeData, setRectificativeData] = useState({
+    original_invoice_number: "",
+    rectification_reason: "",
+    rectification_type: "substitution" as "substitution" | "differences",
+  })
+
+  // Estado para la configuración de numeración de facturas
+  const [invoiceConfig, setInvoiceConfig] = useState({
+    prefix: "",
+    format: "simple",
+    paddingLength: 4,
+    lastInvoiceNumber: 0,
+  })
 
   // Modificar el estado inicial de las líneas de factura para incluir el profesional
   const [invoiceLines, setInvoiceLines] = useState<InvoiceLine[]>([
@@ -169,36 +210,59 @@ export default function NewInvoicePage() {
   // Actualizar el cálculo del total para incluir la retención
   const totalAmount = baseAmount + vatAmount - irpfAmount - retentionAmount
 
+  // Reemplazar todo el useEffect inicial con:
   useEffect(() => {
     const fetchData = async () => {
       try {
+        setIsLoadingInitialData(true)
+        setError(null)
+
         // Obtener organizaciones
-        const { data: orgsData, error: orgsError } = await supabase
-          .from("organizations")
-          .select("id, name, last_invoice_number, invoice_prefix")
-          .order("name")
+        const { data: orgsData, error: orgsError } = await supabase.from("organizations").select("*").order("name")
 
         if (orgsError) {
-          throw new Error("Error al obtener las organizaciones")
+          throw new Error(`Error al obtener las organizaciones: ${orgsError.message}`)
         }
 
-        setOrganizations(orgsData || [])
+        if (!orgsData || orgsData.length === 0) {
+          throw new Error("No se encontraron organizaciones")
+        }
 
-        if (orgsData && orgsData.length > 0) {
-          setFormData((prev) => ({ ...prev, organization_id: orgsData[0].id.toString() }))
-          setSelectedOrganization(orgsData[0])
+        setOrganizations(orgsData)
 
-          // Cargar clientes para esta organización
-          await fetchClients(orgsData[0].id)
+        // Seleccionar la primera organización por defecto
+        const firstOrg = orgsData[0]
+        setFormData((prev) => ({ ...prev, organization_id: firstOrg.id.toString() }))
+        setSelectedOrganization(firstOrg)
 
-          // Cargar servicios para esta organización
-          await fetchServices(orgsData[0].id)
+        // Después de setSelectedOrganization(firstOrg), añade:
+        setInvoiceConfig({
+          prefix: firstOrg.invoice_prefix || "FACT",
+          format: "simple",
+          paddingLength: firstOrg.invoice_padding_length || 4,
+          lastInvoiceNumber: firstOrg.last_invoice_number || 0,
+        })
 
-          // Cargar profesionales para esta organización
-          await fetchProfessionals(orgsData[0].id)
+        // Cargar datos para esta organización
+        await fetchClients(firstOrg.id)
+        await fetchServices(firstOrg.id)
+        await fetchProfessionals(firstOrg.id)
+        await fetchExistingInvoices(firstOrg.id)
+
+        // Generar número sugerido
+        try {
+          const { invoiceNumberFormatted } = await generateUniqueInvoiceNumber(firstOrg.id, invoiceType)
+          setSuggestedInvoiceNumber(invoiceNumberFormatted)
+        } catch (error) {
+          console.error("Error al generar número de factura sugerido:", error)
+          setSuggestedInvoiceNumber(`ERROR-${Date.now()}`)
+          setError(`Error al generar número de factura: ${error instanceof Error ? error.message : String(error)}`)
         }
       } catch (err) {
+        console.error("Error al cargar datos iniciales:", err)
         setError(err instanceof Error ? err.message : "Error al cargar los datos")
+      } finally {
+        setIsLoadingInitialData(false)
       }
     }
 
@@ -264,20 +328,95 @@ export default function NewInvoicePage() {
     }
   }
 
-  // Actualizar la organización seleccionada cuando cambia
+  const fetchExistingInvoices = async (organizationId: number) => {
+    try {
+      console.log(`Cargando facturas existentes para organización ${organizationId}...`)
+      const { data: invoicesData, error: invoicesError } = await supabase
+        .from("invoices")
+        .select(`
+        id,
+        invoice_number,
+        issue_date,
+        total_amount,
+        clients(name)
+      `)
+        .eq("organization_id", organizationId)
+        .eq("invoice_type", "normal")
+        .order("issue_date", { ascending: false })
+
+      if (invoicesError) {
+        console.error("Error al obtener facturas:", invoicesError)
+        throw new Error(`Error al obtener las facturas: ${invoicesError.message}`)
+      }
+
+      const formattedInvoices = ((invoicesData as any[]) || []).map((invoice) => {
+        let clientName = "Cliente no encontrado"
+
+        if (invoice.clients) {
+          if (Array.isArray(invoice.clients)) {
+            // Si clients es un array, tomar el primer elemento
+            clientName =
+              invoice.clients.length > 0 ? invoice.clients[0]?.name || "Cliente no encontrado" : "Cliente no encontrado"
+          } else if (typeof invoice.clients === "object" && invoice.clients.name) {
+            // Si clients es un objeto, acceder directamente a name
+            clientName = invoice.clients.name
+          }
+        }
+
+        return {
+          id: invoice.id,
+          invoice_number: invoice.invoice_number,
+          issue_date: invoice.issue_date,
+          total_amount: invoice.total_amount,
+          client_name: clientName,
+        }
+      })
+
+      console.log(`Se encontraron ${formattedInvoices.length} facturas`)
+      setExistingInvoices(formattedInvoices)
+    } catch (err) {
+      console.error("Error completo al cargar facturas:", err)
+      toast({
+        title: "Error al cargar facturas",
+        description: err instanceof Error ? err.message : "Error al cargar las facturas",
+        variant: "destructive",
+      })
+    }
+  }
+
+  // Efectos para actualizar datos cuando cambia la organización o tipo de factura
   useEffect(() => {
     if (formData.organization_id) {
       const org = organizations.find((o) => o.id.toString() === formData.organization_id) || null
       setSelectedOrganization(org)
 
-      // Cargar clientes, servicios y profesionales para esta organización
       if (org) {
         fetchClients(org.id)
         fetchServices(org.id)
         fetchProfessionals(org.id)
+        fetchExistingInvoices(org.id)
       }
     }
   }, [formData.organization_id, organizations])
+
+  // Actualizar el número de factura cuando cambia el tipo o la organización
+  useEffect(() => {
+    const updateSuggestedNumber = async () => {
+      if (!selectedOrganization) return
+
+      try {
+        setError(null)
+        const { invoiceNumberFormatted } = await generateUniqueInvoiceNumber(selectedOrganization.id, invoiceType)
+        setSuggestedInvoiceNumber(invoiceNumberFormatted)
+      } catch (error) {
+        console.error("Error al generar número de factura sugerido:", error)
+        setSuggestedInvoiceNumber(`ERROR-${Date.now()}`)
+        setError(`Error al generar número de factura: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+
+    updateSuggestedNumber()
+  }, [invoiceType, selectedOrganization])
 
   // Manejar la selección de un cliente existente
   const handleClientSelect = (clientId: string) => {
@@ -401,7 +540,6 @@ export default function NewInvoicePage() {
     }
   }
 
-  // Función para manejar la selección de un profesional
   const handleProfessionalSelect = (lineId: string, professionalId: string | null) => {
     setInvoiceLines((prev) =>
       prev.map((line) => {
@@ -449,7 +587,7 @@ export default function NewInvoicePage() {
       // Generar un número de factura único
       const { invoiceNumberFormatted, newInvoiceNumber } = await generateUniqueInvoiceNumber(
         Number.parseInt(formData.organization_id),
-        selectedOrganization.invoice_prefix,
+        invoiceType,
       )
 
       // Variable para almacenar el ID del cliente
@@ -522,139 +660,156 @@ export default function NewInvoicePage() {
         }
       }
 
-   // Crear la factura en local primero (sin esperar a Supabase)
-// Actualizar el objeto de factura para incluir la retención y la firma
-const newInvoice = {
-  id: Date.now(), // ID temporal
-  organization_id: Number.parseInt(formData.organization_id),
-  invoice_number: invoiceNumberFormatted,
-  client_id: clientId,
-  issue_date: formData.issue_date,
-  invoice_type: "normal",
-  status: "draft",
-  base_amount: baseAmount,
-  vat_amount: vatAmount,
-  irpf_amount: irpfAmount,
-  retention_amount: retentionAmount,
-  total_amount: totalAmount,
-  notes: fullNotes,
-  signature: signature, // Usar la firma base64 para el PDF
-  organization: {
-    name: orgData.name,
-    tax_id: orgData.tax_id,
-    address: orgData.address,
-    postal_code: orgData.postal_code,
-    city: orgData.city,
-    province: orgData.province,
-    country: orgData.country,
-    email: orgData.email,
-    phone: orgData.phone,
-  },
-  client_data: {
-    name: formData.client_name,
-    tax_id: formData.client_tax_id,
-    address: formData.client_address,
-    postal_code: formData.client_postal_code,
-    city: formData.client_city,
-    province: formData.client_province,
-    country: formData.client_country,
-    email: formData.client_email,
-    phone: formData.client_phone,
-    client_type: formData.client_type,
-  },
-}
+      // Debug del logo antes de crear la factura
+      console.log("Datos de organización para PDF:", {
+        logo_url: orgData.logo_url,
+        logo_path: orgData.logo_path,
+        name: orgData.name,
+      })
 
-// Generar el PDF y obtener el Blob (sin descargarlo automáticamente)
-const pdfBlob = generatePdf(newInvoice, invoiceLines, `factura-${invoiceNumberFormatted}.pdf`, false);
+      // Crear la factura en local primero (sin esperar a Supabase)
+      // Actualizar el objeto de factura para incluir la retención y la firma
+      const newInvoice = {
+        id: Date.now(), // ID temporal
+        organization_id: Number.parseInt(formData.organization_id),
+        invoice_number: invoiceNumberFormatted,
+        client_id: clientId,
+        issue_date: formData.issue_date,
+        invoice_type: invoiceType,
+        status: "draft",
+        base_amount: baseAmount,
+        vat_amount: vatAmount,
+        irpf_amount: irpfAmount,
+        retention_amount: retentionAmount,
+        total_amount: totalAmount,
+        notes: fullNotes,
+        signature: signature, // Usar la firma base64 para el PDF
+        organization: {
+          name: orgData.name,
+          tax_id: orgData.tax_id,
+          address: orgData.address,
+          postal_code: orgData.postal_code,
+          city: orgData.city,
+          province: orgData.province,
+          country: orgData.country,
+          email: orgData.email,
+          phone: orgData.phone,
+          invoice_prefix: orgData.invoice_prefix,
+          logo_url: orgData.logo_url,
+          logo_path: orgData.logo_path,
+        },
+        client_data: {
+          name: formData.client_name,
+          tax_id: formData.client_tax_id,
+          address: formData.client_address,
+          postal_code: formData.client_postal_code,
+          city: formData.client_city,
+          province: formData.client_province,
+          country: formData.client_country,
+          email: formData.client_email,
+          phone: formData.client_phone,
+          client_type: formData.client_type,
+        },
+      }
 
-// Variable para almacenar la URL del PDF
-let pdfUrl: string | null = null;
+      // En handleSubmit, reemplazar la sección de generación de PDF con:
+      // Generar el PDF de forma asíncrona
+      const pdfBlob = await generatePdf(newInvoice, invoiceLines, `factura-${invoiceNumberFormatted}.pdf`, false)
 
-// Verificar que el Blob se generó correctamente
-if (pdfBlob) {
-  try {
-    console.log("PDF Blob generado correctamente, tamaño:", pdfBlob.size, "bytes");
-    
-    // Guardar el PDF en Supabase Storage
-    pdfUrl = await savePdfToStorage(pdfBlob, `factura-${invoiceNumberFormatted}.pdf`);
-    
-    // Descargar el PDF manualmente para el usuario
-    const url = URL.createObjectURL(pdfBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `factura-${invoiceNumberFormatted}.pdf`;
-    a.click();
-    
-    // Limpiar el objeto URL creado
-    setTimeout(() => URL.revokeObjectURL(url), 100);
-    
-    if (pdfUrl) {
-      console.log("PDF guardado correctamente en Storage:", pdfUrl);
-    } else {
-      console.warn("No se pudo guardar el PDF en Storage, pero se ha descargado localmente");
-    }
-  } catch (pdfError) {
-    console.error("Error al guardar el PDF en Storage:", pdfError);
-    
-    // Asegurar que el usuario pueda descargar el PDF aunque falle el guardado
-    const url = URL.createObjectURL(pdfBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `factura-${invoiceNumberFormatted}.pdf`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 100);
-    
-    toast({
-      title: "Error al guardar el PDF en el servidor",
-      description: "El PDF se ha descargado localmente, pero no se pudo guardar en el servidor.",
-      variant: "destructive",
-    });
-  }
-} else {
-  console.error("No se pudo generar el PDF como Blob");
-  
-  // Intentar generar y descargar el PDF directamente como fallback
-  generatePdf(newInvoice, invoiceLines, `factura-${invoiceNumberFormatted}.pdf`, true);
-  
-  toast({
-    title: "Error al procesar el PDF",
-    description: "Se ha intentado descargar el PDF, pero no se pudo guardar en el servidor.",
-    variant: "destructive",
-  });
-}
+      // Variable para almacenar la URL del PDF
+      let pdfUrl: string | null = null
 
-// Ahora actualizamos la base de datos en segundo plano
-// Actualizar el último número de factura en la organización
-supabase
-  .from("organizations")
-  .update({ last_invoice_number: newInvoiceNumber })
-  .eq("id", selectedOrganization.id)
-  .then(({ error: updateOrgError }) => {
-    if (updateOrgError) {
-      console.error("Error al actualizar el número de factura:", updateOrgError);
-    }
-  });
+      // Verificar que el Blob se generó correctamente
+      if (pdfBlob && pdfBlob instanceof Blob) {
+        try {
+          console.log("PDF Blob generado correctamente, tamaño:", pdfBlob.size, "bytes")
 
-// Actualizar la inserción en Supabase para incluir la retención, la firma y la URL del PDF
-supabase
-  .from("invoices")
-  .insert({
-    organization_id: Number.parseInt(formData.organization_id),
-    invoice_number: invoiceNumberFormatted,
-    client_id: clientId,
-    issue_date: formData.issue_date,
-    invoice_type: "normal",
-    status: "draft",
-    base_amount: baseAmount,
-    vat_amount: vatAmount,
-    irpf_amount: irpfAmount,
-    retention_amount: retentionAmount,
-    total_amount: totalAmount,
-    notes: fullNotes,
-    signature: signature, // Guardar también la firma base64 en la base de datos
-    signature_url: signatureUrl, // Guardar la URL de la firma si se pudo subir
-    pdf_url: pdfUrl, // Guardar la URL del PDF si se pudo subir
-  })
+          // Guardar el PDF en Supabase Storage
+          pdfUrl = await savePdfToStorage(pdfBlob, `factura-${invoiceNumberFormatted}.pdf`)
+
+          // Descargar el PDF manualmente para el usuario
+          const url = URL.createObjectURL(pdfBlob)
+          const a = document.createElement("a")
+          a.href = url
+          a.download = `factura-${invoiceNumberFormatted}.pdf`
+          a.click()
+
+          // Limpiar el objeto URL creado
+          setTimeout(() => URL.revokeObjectURL(url), 100)
+
+          if (pdfUrl) {
+            console.log("PDF guardado correctamente en Storage:", pdfUrl)
+          } else {
+            console.warn("No se pudo guardar el PDF en Storage, pero se ha descargado localmente")
+          }
+        } catch (pdfError) {
+          console.error("Error al guardar el PDF en Storage:", pdfError)
+
+          // Asegurar que el usuario pueda descargar el PDF aunque falle el guardado
+          const url = URL.createObjectURL(pdfBlob)
+          const a = document.createElement("a")
+          a.href = url
+          a.download = `factura-${invoiceNumberFormatted}.pdf`
+          a.click()
+          setTimeout(() => URL.revokeObjectURL(url), 100)
+
+          toast({
+            title: "Error al guardar el PDF en el servidor",
+            description: "El PDF se ha descargado localmente, pero no se pudo guardar en el servidor.",
+            variant: "destructive",
+          })
+        }
+      } else {
+        console.error("No se pudo generar el PDF como Blob")
+
+        // Intentar generar y descargar el PDF directamente como fallback
+        generatePdf(newInvoice, invoiceLines, `factura-${invoiceNumberFormatted}.pdf`, true)
+
+        toast({
+          title: "Error al procesar el PDF",
+          description: "Se ha intentado descargar el PDF, pero no se pudo guardar en el servidor.",
+          variant: "destructive",
+        })
+      }
+
+      // Ahora actualizamos la base de datos en segundo plano
+      // Actualizar el último número de factura en la organización
+      supabase
+        .from("organizations")
+        .update({ last_invoice_number: newInvoiceNumber })
+        .eq("id", selectedOrganization.id)
+        .then(({ error: updateOrgError }) => {
+          if (updateOrgError) {
+            console.error("Error al actualizar el número de factura:", updateOrgError)
+          }
+        })
+
+      // Actualizar la inserción en Supabase para incluir la retención, la firma y la URL del PDF
+      supabase
+        .from("invoices")
+        .insert({
+          organization_id: Number.parseInt(formData.organization_id),
+          invoice_number: invoiceNumberFormatted,
+          client_id: clientId,
+          issue_date: formData.issue_date,
+          invoice_type: invoiceType,
+          status: "draft",
+          base_amount: baseAmount,
+          vat_amount: vatAmount,
+          irpf_amount: irpfAmount,
+          retention_amount: retentionAmount,
+          total_amount: totalAmount,
+          notes: fullNotes,
+          signature: signature, // Guardar también la firma base64 en la base de datos
+          signature_url: signatureUrl, // Guardar la URL de la firma si se pudo subir
+          pdf_url: pdfUrl, // Guardar la URL del PDF si se pudo subir
+          // Añadir campos específicos para facturas rectificativas
+          ...(invoiceType === "rectificativa" && {
+            original_invoice_number: rectificativeData.original_invoice_number,
+            rectification_reason: rectificativeData.rectification_reason,
+            rectification_type: rectificativeData.rectification_type,
+          }),
+        })
         .select()
         .then(({ data: invoiceData, error: invoiceError }) => {
           if (invoiceError) {
@@ -706,7 +861,7 @@ supabase
               } else {
                 toast({
                   title: "Factura creada correctamente",
-                  description: pdfUrl 
+                  description: pdfUrl
                     ? "La factura se ha creado, el PDF se ha descargado y guardado en el servidor."
                     : "La factura se ha creado y el PDF se ha descargado.",
                 })
@@ -722,6 +877,89 @@ supabase
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const saveInvoiceNumberConfig = async () => {
+    if (!selectedOrganization) return
+    setIsSavingConfig(true)
+
+    try {
+      const { error } = await supabase
+        .from("organizations")
+        .update({
+          invoice_prefix: invoiceConfig.prefix,
+          invoice_padding_length: invoiceConfig.paddingLength,
+          last_invoice_number: invoiceConfig.lastInvoiceNumber,
+        })
+        .eq("id", selectedOrganization.id)
+
+      if (error) throw error
+
+      // Actualizar el estado local
+      setSelectedOrganization((prev) =>
+        prev
+          ? {
+              ...prev,
+              invoice_prefix: invoiceConfig.prefix,
+              invoice_padding_length: invoiceConfig.paddingLength,
+              last_invoice_number: invoiceConfig.lastInvoiceNumber,
+            }
+          : null,
+      )
+
+      // Regenerar el número sugerido
+      try {
+        const { invoiceNumberFormatted } = await generateUniqueInvoiceNumber(selectedOrganization.id, invoiceType)
+        setSuggestedInvoiceNumber(invoiceNumberFormatted)
+      } catch (error) {
+        console.error("Error al regenerar número:", error)
+      }
+
+      toast({
+        title: "Configuración guardada",
+        description: "La configuración de numeración se ha actualizado correctamente.",
+      })
+      setInvoiceNumberConfigOpen(false)
+    } catch (error) {
+      console.error("Error al guardar la configuración:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo guardar la configuración. Por favor, intenta de nuevo.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSavingConfig(false)
+    }
+  }
+
+  const getInvoiceNumberExample = () => {
+    const exampleNumber = invoiceConfig.lastInvoiceNumber + 1
+    const paddedNumber = exampleNumber.toString().padStart(invoiceConfig.paddingLength, "0")
+
+    switch (invoiceType) {
+      case "rectificativa":
+        const currentYear = new Date().getFullYear()
+        return `REC${currentYear}${paddedNumber}`
+      case "simplificada":
+        return `SIMP${paddedNumber}`
+      case "normal":
+      default:
+        return `${invoiceConfig.prefix}${paddedNumber}`
+    }
+  }
+
+  if (isLoadingInitialData) {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <h1 className="text-3xl font-bold tracking-tight mb-6">Nueva Factura</h1>
+        <div className="flex items-center justify-center py-12">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-4"></div>
+            <p>Cargando datos...</p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -778,6 +1016,135 @@ supabase
                   required
                 />
               </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="invoice_type">Tipo de Factura</Label>
+                <Select
+                  value={invoiceType}
+                  onValueChange={(value: "normal" | "rectificativa" | "simplificada") => setInvoiceType(value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona el tipo de factura" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="normal">Factura Normal</SelectItem>
+                    <SelectItem value="rectificativa">Factura Rectificativa</SelectItem>
+                    <SelectItem value="simplificada">Factura Simplificada</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="invoice_number">Número de Factura</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setInvoiceNumberConfigOpen(true)}
+                    className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    <Settings className="h-3 w-3 mr-1" />
+                    Configurar
+                  </Button>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Input id="invoice_number" value={suggestedInvoiceNumber} readOnly className="bg-muted" />
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  El número de factura se genera automáticamente según la configuración de la organización
+                </p>
+              </div>
+
+              {/* Campos específicos para factura rectificativa */}
+              {invoiceType === "rectificativa" && (
+                <div className="space-y-4 border p-4 rounded-md bg-yellow-50">
+                  <h3 className="font-medium text-yellow-800">Datos de Rectificación</h3>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="original_invoice_number">Factura Original a Rectificar *</Label>
+                    <Select
+                      value={rectificativeData.original_invoice_number}
+                      onValueChange={(value) =>
+                        setRectificativeData((prev) => ({
+                          ...prev,
+                          original_invoice_number: value,
+                        }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecciona la factura a rectificar" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {existingInvoices.map((invoice) => (
+                          <SelectItem key={invoice.id} value={invoice.invoice_number}>
+                            <div className="flex flex-col">
+                              <span className="font-medium">{invoice.invoice_number}</span>
+                              <span className="text-sm text-muted-foreground">
+                                {invoice.client_name} - {new Date(invoice.issue_date).toLocaleDateString()} -{" "}
+                                {invoice.total_amount.toFixed(2)}€
+                              </span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {existingInvoices.length === 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        No hay facturas disponibles para rectificar en esta organización
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="rectification_reason">Motivo de Rectificación *</Label>
+                    <Textarea
+                      id="rectification_reason"
+                      value={rectificativeData.rectification_reason}
+                      onChange={(e) =>
+                        setRectificativeData((prev) => ({
+                          ...prev,
+                          rectification_reason: e.target.value,
+                        }))
+                      }
+                      placeholder="Describe el motivo de la rectificación..."
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Tipo de Rectificación</Label>
+                    <RadioGroup
+                      value={rectificativeData.rectification_type}
+                      onValueChange={(value: "substitution" | "differences") =>
+                        setRectificativeData((prev) => ({ ...prev, rectification_type: value }))
+                      }
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="substitution" id="substitution" />
+                        <Label htmlFor="substitution">Por sustitución (anula la factura original)</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="differences" id="differences" />
+                        <Label htmlFor="differences">Por diferencias (ajusta importes)</Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+                </div>
+              )}
+
+              {/* Información para factura simplificada */}
+              {invoiceType === "simplificada" && (
+                <div className="space-y-2">
+                  <div className="p-4 border rounded-md bg-blue-50">
+                    <h3 className="font-medium text-blue-800 mb-2">Factura Simplificada</h3>
+                    <p className="text-sm text-blue-700">
+                      Las facturas simplificadas están limitadas a importes inferiores a 400€ y no requieren todos los
+                      datos del cliente. Solo se necesita el nombre o razón social.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="notes">Notas</Label>
@@ -1158,6 +1525,42 @@ supabase
 
           <Card>
             <CardHeader>
+              <CardTitle>Resumen de Totales</CardTitle>
+              <CardDescription>Resumen de los importes de la factura</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span>Base imponible:</span>
+                  <span>{baseAmount.toFixed(2)} €</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>IVA:</span>
+                  <span>{vatAmount.toFixed(2)} €</span>
+                </div>
+                {irpfAmount > 0 && (
+                  <div className="flex justify-between">
+                    <span>IRPF:</span>
+                    <span>-{irpfAmount.toFixed(2)} €</span>
+                  </div>
+                )}
+                {retentionAmount > 0 && (
+                  <div className="flex justify-between">
+                    <span>Retención:</span>
+                    <span>-{retentionAmount.toFixed(2)} €</span>
+                  </div>
+                )}
+                <hr />
+                <div className="flex justify-between font-bold text-lg">
+                  <span>Total:</span>
+                  <span>{totalAmount.toFixed(2)} €</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle>Firma Digital</CardTitle>
               <CardDescription>Firme la factura utilizando el ratón o pantalla táctil</CardDescription>
             </CardHeader>
@@ -1206,7 +1609,88 @@ supabase
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
+          {/* Diálogo de configuración de numeración */}
+          <Dialog open={invoiceNumberConfigOpen} onOpenChange={setInvoiceNumberConfigOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Configuración de Numeración</DialogTitle>
+                <DialogDescription>Ajusta el prefijo y número inicial para esta organización</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="config_prefix">Prefijo de Facturas</Label>
+                  <Input
+                    id="config_prefix"
+                    value={invoiceConfig.prefix}
+                    onChange={(e) => setInvoiceConfig((prev) => ({ ...prev, prefix: e.target.value }))}
+                    placeholder="Ej: FACT, FAC, INV"
+                    maxLength={10}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Prefijo que aparecerá al inicio de cada número de factura normal
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="config_last_number">Último Número Usado</Label>
+                  <Input
+                    id="config_last_number"
+                    type="number"
+                    min="0"
+                    value={invoiceConfig.lastInvoiceNumber}
+                    onChange={(e) =>
+                      setInvoiceConfig((prev) => ({ ...prev, lastInvoiceNumber: Number.parseInt(e.target.value) || 0 }))
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    La próxima factura será este número + 1. Útil para migrar desde otro sistema.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="config_padding">Longitud de Dígitos</Label>
+                  <Input
+                    id="config_padding"
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={invoiceConfig.paddingLength}
+                    onChange={(e) =>
+                      setInvoiceConfig((prev) => ({ ...prev, paddingLength: Number.parseInt(e.target.value) || 4 }))
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Número de dígitos para la parte numérica (se rellenará con ceros)
+                  </p>
+                </div>
+
+                <div className="p-3 bg-muted rounded-md">
+                  <p className="text-sm font-medium mb-1">Vista previa:</p>
+                  <p className="text-sm text-muted-foreground">
+                    Próxima factura: <span className="font-mono font-medium">{getInvoiceNumberExample()}</span>
+                  </p>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setInvoiceNumberConfigOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button onClick={saveInvoiceNumberConfig} disabled={isSavingConfig}>
+                  {isSavingConfig ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Guardando...
+                    </>
+                  ) : (
+                    "Guardar"
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
+
         <div className="mt-6 flex justify-end">
           <Button type="submit" disabled={isLoading} className="w-full md:w-auto">
             {isLoading ? (

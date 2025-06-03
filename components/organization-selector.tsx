@@ -91,8 +91,9 @@ export function OrganizationSelector({
               {org.name}
             </SelectItem>
           ))}
+          {/* ✅ CORREGIDO: Usar valor no vacío */}
           {organizations.length === 0 && !loading && (
-            <SelectItem value="" disabled>
+            <SelectItem value="no-organizations" disabled>
               No hay organizaciones disponibles
             </SelectItem>
           )}
