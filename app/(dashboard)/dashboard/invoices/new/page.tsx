@@ -132,7 +132,7 @@ export default function NewInvoicePage() {
   const [rectificativeData, setRectificativeData] = useState({
     original_invoice_number: "",
     rectification_reason: "",
-    rectification_type: "substitution" as "substitution" | "differences",
+    rectification_type: "cancellation" as "cancellation" | "amount_correction",
   })
 
   // Estado para la configuración de numeración de facturas
@@ -1116,17 +1116,17 @@ export default function NewInvoicePage() {
                     <Label>Tipo de Rectificación</Label>
                     <RadioGroup
                       value={rectificativeData.rectification_type}
-                      onValueChange={(value: "substitution" | "differences") =>
+                      onValueChange={(value: "cancellation" | "amount_correction") =>
                         setRectificativeData((prev) => ({ ...prev, rectification_type: value }))
                       }
                     >
                       <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="substitution" id="substitution" />
-                        <Label htmlFor="substitution">Por sustitución (anula la factura original)</Label>
+                        <RadioGroupItem value="cancellation" id="cancellation" />
+                        <Label htmlFor="cancellation">Por sustitución (anula la factura original)</Label>
                       </div>
                       <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="differences" id="differences" />
-                        <Label htmlFor="differences">Por diferencias (ajusta importes)</Label>
+                        <RadioGroupItem value="amount_correction" id="amount_correction" />
+                        <Label htmlFor="amount_correction">Por diferencias (ajusta importes)</Label>
                       </div>
                     </RadioGroup>
                   </div>
