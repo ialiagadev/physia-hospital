@@ -774,15 +774,15 @@ export default function NewInvoicePage() {
 
       // Ahora actualizamos la base de datos en segundo plano
       // Actualizar el último número de factura en la organización
-      supabase
+      const { error: updateOrgError } = await supabase
         .from("organizations")
         .update({ last_invoice_number: newInvoiceNumber })
         .eq("id", selectedOrganization.id)
-        .then(({ error: updateOrgError }) => {
-          if (updateOrgError) {
-            console.error("Error al actualizar el número de factura:", updateOrgError)
-          }
-        })
+
+      if (updateOrgError) {
+        console.error("Error al actualizar el número de factura:", updateOrgError)
+        // No fallar por esto, pero loggearlo
+      }
 
       // Actualizar la inserción en Supabase para incluir la retención, la firma y la URL del PDF
       supabase

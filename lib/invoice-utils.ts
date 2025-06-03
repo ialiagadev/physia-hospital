@@ -39,99 +39,28 @@ export async function generateUniqueInvoiceNumber(
     const invoice_padding_length = orgData.invoice_padding_length || 4
     const last_invoice_number = orgData.last_invoice_number || 0
 
-    let newInvoiceNumber = 1
+    const newInvoiceNumber = last_invoice_number + 1
     let invoiceNumberFormatted = ""
 
     switch (invoiceType) {
       case "rectificativa": {
-        // Para rectificativas: buscar el último número con formato REC + año
+        // Para rectificativas: usar formato REC + año + número
         const currentYear = new Date().getFullYear()
-        const rectPrefix = `REC${currentYear}`
-
-        const { data: lastRectInvoice, error: rectError } = await supabase
-          .from("invoices")
-          .select("invoice_number")
-          .eq("organization_id", organizationId)
-          .eq("invoice_type", "rectificativa")
-          .like("invoice_number", `${rectPrefix}%`)
-          .order("invoice_number", { ascending: false })
-          .limit(1)
-
-        if (rectError) {
-          console.error("Error al buscar facturas rectificativas:", rectError)
-        }
-
-        if (lastRectInvoice && lastRectInvoice.length > 0) {
-          // Extraer el número de la última factura rectificativa
-          const lastNumber = lastRectInvoice[0].invoice_number.replace(rectPrefix, "")
-          newInvoiceNumber = Number.parseInt(lastNumber) + 1
-        } else {
-          // Si no hay facturas rectificativas, empezar desde 1
-          newInvoiceNumber = 1
-        }
-
         const paddedNumber = newInvoiceNumber.toString().padStart(invoice_padding_length, "0")
-        invoiceNumberFormatted = `${rectPrefix}${paddedNumber}`
+        invoiceNumberFormatted = `REC${currentYear}${paddedNumber}`
         break
       }
 
       case "simplificada": {
-        // Para simplificadas: buscar el último número con formato SIMP
-        const simpPrefix = "SIMP"
-
-        const { data: lastSimpInvoice, error: simpError } = await supabase
-          .from("invoices")
-          .select("invoice_number")
-          .eq("organization_id", organizationId)
-          .eq("invoice_type", "simplificada")
-          .like("invoice_number", `${simpPrefix}%`)
-          .order("invoice_number", { ascending: false })
-          .limit(1)
-
-        if (simpError) {
-          console.error("Error al buscar facturas simplificadas:", simpError)
-        }
-
-        if (lastSimpInvoice && lastSimpInvoice.length > 0) {
-          // Extraer el número de la última factura simplificada
-          const lastNumber = lastSimpInvoice[0].invoice_number.replace(simpPrefix, "")
-          newInvoiceNumber = Number.parseInt(lastNumber) + 1
-        } else {
-          // Si no hay facturas simplificadas, empezar desde 1
-          newInvoiceNumber = 1
-        }
-
+        // Para simplificadas: usar formato SIMP + número
         const paddedNumber = newInvoiceNumber.toString().padStart(invoice_padding_length, "0")
-        invoiceNumberFormatted = `${simpPrefix}${paddedNumber}`
+        invoiceNumberFormatted = `SIMP${paddedNumber}`
         break
       }
 
       case "normal":
       default: {
-        // Para normales: buscar el último número con el prefijo de la organización
-        const { data: lastNormalInvoice, error: normalError } = await supabase
-          .from("invoices")
-          .select("invoice_number")
-          .eq("organization_id", organizationId)
-          .eq("invoice_type", "normal")
-          .like("invoice_number", `${invoice_prefix}%`)
-          .order("invoice_number", { ascending: false })
-          .limit(1)
-
-        if (normalError) {
-          console.error("Error al buscar facturas normales:", normalError)
-        }
-
-        if (lastNormalInvoice && lastNormalInvoice.length > 0) {
-          // Extraer el número de la última factura normal
-          const lastNumber = lastNormalInvoice[0].invoice_number.replace(invoice_prefix, "")
-          const extractedNumber = Number.parseInt(lastNumber)
-          newInvoiceNumber = extractedNumber + 1
-        } else {
-          // Si no hay facturas normales, usar el número inicial de la organización + 1
-          newInvoiceNumber = last_invoice_number + 1
-        }
-
+        // Para normales: usar prefijo de la organización + número
         const paddedNumber = newInvoiceNumber.toString().padStart(invoice_padding_length, "0")
         invoiceNumberFormatted = `${invoice_prefix}${paddedNumber}`
         break
