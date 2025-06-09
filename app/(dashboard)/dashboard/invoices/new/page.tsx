@@ -684,6 +684,12 @@ export default function NewInvoicePage() {
         total_amount: totalAmount,
         notes: fullNotes,
         signature: signature, // Usar la firma base64 para el PDF
+        // Añadir campos específicos para facturas rectificativas en el objeto del PDF
+        ...(invoiceType === "rectificativa" && {
+          original_invoice_number: rectificativeData.original_invoice_number,
+          rectification_reason: rectificativeData.rectification_reason,
+          rectification_type: rectificativeData.rectification_type,
+        }),
         organization: {
           name: orgData.name,
           tax_id: orgData.tax_id,
@@ -784,6 +790,42 @@ export default function NewInvoicePage() {
         // No fallar por esto, pero loggearlo
       }
 
+      // Variable para almacenar el ID de la factura original (para rectificativas)
+      let originalInvoiceId: number | null = null
+
+      // Si es una factura rectificativa, obtener el ID de la factura original
+      if (invoiceType === "rectificativa" && rectificativeData.original_invoice_number) {
+        console.log(
+          `🔍 Buscando factura original: ${rectificativeData.original_invoice_number} en organización ${formData.organization_id}`,
+        )
+
+        const { data: originalInvoice, error: originalError } = await supabase
+          .from("invoices")
+          .select("id, invoice_number")
+          .eq("invoice_number", rectificativeData.original_invoice_number)
+          .eq("organization_id", Number.parseInt(formData.organization_id))
+          .single()
+
+        console.log("Resultado de búsqueda:", { originalInvoice, originalError })
+
+        if (originalError) {
+          console.error("Error al buscar factura original:", originalError)
+          throw new Error(`Error al buscar la factura original: ${originalError.message}`)
+        }
+
+        if (!originalInvoice) {
+          console.error("Factura original no encontrada")
+          throw new Error(`No se pudo encontrar la factura original: ${rectificativeData.original_invoice_number}`)
+        }
+
+        originalInvoiceId = originalInvoice.id
+        console.log(
+          `✅ Factura original encontrada: ${rectificativeData.original_invoice_number} -> ID: ${originalInvoiceId}`,
+        )
+      } else if (invoiceType === "rectificativa") {
+        throw new Error("Debes seleccionar una factura original para rectificar")
+      }
+
       // Actualizar la inserción en Supabase para incluir la retención, la firma y la URL del PDF
       supabase
         .from("invoices")
@@ -805,7 +847,7 @@ export default function NewInvoicePage() {
           pdf_url: pdfUrl, // Guardar la URL del PDF si se pudo subir
           // Añadir campos específicos para facturas rectificativas
           ...(invoiceType === "rectificativa" && {
-            original_invoice_number: rectificativeData.original_invoice_number,
+            original_invoice_id: originalInvoiceId,
             rectification_reason: rectificativeData.rectification_reason,
             rectification_type: rectificativeData.rectification_type,
           }),

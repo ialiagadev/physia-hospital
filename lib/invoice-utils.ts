@@ -17,10 +17,10 @@ export async function generateUniqueInvoiceNumber(
       throw new Error("Cliente de Supabase no está disponible")
     }
 
-    // Obtener configuración de la organización
+    // Obtener configuración de la organización (solo para prefijo y padding)
     const { data: orgData, error: orgError } = await supabase
       .from("organizations")
-      .select("last_invoice_number, invoice_prefix, invoice_padding_length")
+      .select("invoice_prefix, invoice_padding_length")
       .eq("id", organizationId)
       .single()
 
@@ -37,22 +37,67 @@ export async function generateUniqueInvoiceNumber(
     // Valores por defecto
     const invoice_prefix = orgData.invoice_prefix || "FACT"
     const invoice_padding_length = orgData.invoice_padding_length || 4
-    const last_invoice_number = orgData.last_invoice_number || 0
 
-    const newInvoiceNumber = last_invoice_number + 1
     let invoiceNumberFormatted = ""
+    let newInvoiceNumber = 1
 
     switch (invoiceType) {
       case "rectificativa": {
-        // Para rectificativas: usar formato REC + año + número
+        // Para rectificativas: buscar la última del año actual
         const currentYear = new Date().getFullYear()
+        const { data: lastRectificativa, error: rectError } = await supabase
+          .from("invoices")
+          .select("invoice_number")
+          .eq("organization_id", organizationId)
+          .eq("invoice_type", "rectificativa")
+          .like("invoice_number", `REC${currentYear}%`)
+          .order("created_at", { ascending: false })
+          .limit(1)
+
+        if (rectError) {
+          console.error("Error al consultar facturas rectificativas:", rectError)
+          throw new Error(`Error al consultar facturas rectificativas: ${rectError.message}`)
+        }
+
+        if (lastRectificativa && lastRectificativa.length > 0) {
+          // Extraer el número de la última rectificativa (ej: REC20250005 -> 5)
+          const lastNumber = lastRectificativa[0].invoice_number
+          const match = lastNumber.match(/REC\d{4}(\d+)$/)
+          if (match) {
+            newInvoiceNumber = parseInt(match[1]) + 1
+          }
+        }
+
         const paddedNumber = newInvoiceNumber.toString().padStart(invoice_padding_length, "0")
         invoiceNumberFormatted = `REC${currentYear}${paddedNumber}`
         break
       }
 
       case "simplificada": {
-        // Para simplificadas: usar formato SIMP + número
+        // Para simplificadas: buscar la última
+        const { data: lastSimplificada, error: simpError } = await supabase
+          .from("invoices")
+          .select("invoice_number")
+          .eq("organization_id", organizationId)
+          .eq("invoice_type", "simplificada")
+          .like("invoice_number", "SIMP%")
+          .order("created_at", { ascending: false })
+          .limit(1)
+
+        if (simpError) {
+          console.error("Error al consultar facturas simplificadas:", simpError)
+          throw new Error(`Error al consultar facturas simplificadas: ${simpError.message}`)
+        }
+
+        if (lastSimplificada && lastSimplificada.length > 0) {
+          // Extraer el número de la última simplificada (ej: SIMP0005 -> 5)
+          const lastNumber = lastSimplificada[0].invoice_number
+          const match = lastNumber.match(/SIMP(\d+)$/)
+          if (match) {
+            newInvoiceNumber = parseInt(match[1]) + 1
+          }
+        }
+
         const paddedNumber = newInvoiceNumber.toString().padStart(invoice_padding_length, "0")
         invoiceNumberFormatted = `SIMP${paddedNumber}`
         break
@@ -60,14 +105,37 @@ export async function generateUniqueInvoiceNumber(
 
       case "normal":
       default: {
-        // Para normales: usar prefijo de la organización + número
+        // Para normales: buscar la última con el prefijo de la organización
+        const { data: lastNormal, error: normalError } = await supabase
+          .from("invoices")
+          .select("invoice_number")
+          .eq("organization_id", organizationId)
+          .eq("invoice_type", "normal")
+          .like("invoice_number", `${invoice_prefix}%`)
+          .order("created_at", { ascending: false })
+          .limit(1)
+
+        if (normalError) {
+          console.error("Error al consultar facturas normales:", normalError)
+          throw new Error(`Error al consultar facturas normales: ${normalError.message}`)
+        }
+
+        if (lastNormal && lastNormal.length > 0) {
+          // Extraer el número de la última normal (ej: FACT0010 -> 10)
+          const lastNumber = lastNormal[0].invoice_number
+          const match = lastNumber.match(new RegExp(`${invoice_prefix}(\\d+)$`))
+          if (match) {
+            newInvoiceNumber = parseInt(match[1]) + 1
+          }
+        }
+
         const paddedNumber = newInvoiceNumber.toString().padStart(invoice_padding_length, "0")
         invoiceNumberFormatted = `${invoice_prefix}${paddedNumber}`
         break
       }
     }
 
-    console.log(`✅ Número generado: ${invoiceNumberFormatted}`)
+    console.log(`✅ Número generado: ${invoiceNumberFormatted} (siguiente: ${newInvoiceNumber})`)
 
     return {
       invoiceNumberFormatted,

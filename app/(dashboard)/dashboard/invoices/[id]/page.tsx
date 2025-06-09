@@ -1,68 +1,135 @@
+"use client"
+
+import { useState, useEffect } from "react"
 import Link from "next/link"
-import { cookies } from "next/headers"
-import { createServerSupabaseClient } from "@/lib/supabase"
+import { useParams } from "next/navigation"
+import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { GeneratePdfButton } from "@/components/invoices/generate-pdf-button"
 import { InvoiceStatusSelector } from "@/components/invoices/invoice-status-selector"
+import { useToast } from "@/hooks/use-toast"
+import { Loader2 } from "lucide-react"
 
-export default async function InvoiceDetailPage({
-  params,
-}: {
-  params: { id: string }
-}) {
-  const cookieStore = cookies()
-  const supabase = createServerSupabaseClient()
+interface InvoiceData {
+  id: number
+  invoice_number: string
+  issue_date: string
+  status: string
+  notes?: string
+  base_amount: number
+  vat_amount: number
+  irpf_amount: number
+  retention_amount: number
+  total_amount: number
+  clients?: {
+    name: string
+    tax_id: string
+    address: string
+    postal_code: string
+    city: string
+    province: string
+    country: string
+    email: string
+    phone: string
+    client_type: string
+    dir3_codes: any
+  }
+  organizations?: {
+    name: string
+  }
+}
 
-  // Obtener factura con información del cliente y líneas
-  const { data: invoice, error } = await supabase
-    .from("invoices")
-    .select(`
-      *,
-      clients (
-        *
-      ),
-      organizations (
-        *
-      )
-    `)
-    .eq("id", params.id)
-    .single()
+interface InvoiceLine {
+  id: number
+  description: string
+  quantity: number
+  unit_price: number
+  vat_rate: number
+  irpf_rate: number
+  retention_rate: number
+  line_amount: number
+}
 
-  if (error || !invoice) {
-    return (
-      <div className="flex flex-col items-center justify-center h-[60vh]">
-        <h1 className="text-2xl font-bold mb-4">Factura no encontrada</h1>
-        <p className="text-muted-foreground mb-6">
-          La factura que estás buscando no existe o no tienes permisos para verla.
-        </p>
-        <Button asChild>
-          <Link href="/dashboard/invoices">Volver a Facturas</Link>
-        </Button>
-      </div>
-    )
+export default function InvoiceDetailPage() {
+  const params = useParams()
+  const { toast } = useToast()
+  const [invoice, setInvoice] = useState<InvoiceData | null>(null)
+  const [invoiceLines, setInvoiceLines] = useState<InvoiceLine[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const invoiceId = params.id as string
+
+  // Función para cargar la factura
+  const loadInvoice = async () => {
+    setLoading(true)
+    setError(null)
+
+    try {
+      // Obtener factura con información del cliente y organización
+      const { data: invoiceData, error: invoiceError } = await supabase
+        .from("invoices")
+        .select(`
+          *,
+          clients (
+            *
+          ),
+          organizations (
+            *
+          )
+        `)
+        .eq("id", invoiceId)
+        .single()
+
+      if (invoiceError) {
+        throw invoiceError
+      }
+
+      if (!invoiceData) {
+        setError("Factura no encontrada")
+        return
+      }
+
+      setInvoice(invoiceData)
+
+      // Obtener líneas de factura
+      const { data: linesData, error: linesError } = await supabase
+        .from("invoice_lines")
+        .select("*")
+        .eq("invoice_id", invoiceId)
+        .order("id", { ascending: true })
+
+      if (linesError) {
+        console.error("Error al cargar líneas:", linesError)
+        // No es un error crítico, continuamos sin las líneas
+      } else {
+        setInvoiceLines(linesData || [])
+      }
+    } catch (error) {
+      console.error("Error al cargar factura:", error)
+      setError("Error al cargar la factura")
+      toast({
+        title: "Error",
+        description: "No se pudo cargar la factura",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
   }
 
-  // Obtener líneas de factura
-  const { data: invoiceLines } = await supabase
-    .from("invoice_lines")
-    .select("*")
-    .eq("invoice_id", params.id)
-    .order("id", { ascending: true })
+  // Cargar factura al inicio
+  useEffect(() => {
+    if (invoiceId) {
+      loadInvoice()
+    }
+  }, [invoiceId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Función para obtener el color del estado
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "draft":
-        return "bg-yellow-100 text-yellow-800 hover:bg-yellow-100/80"
-      case "issued":
-        return "bg-blue-100 text-blue-800 hover:bg-blue-100/80"
-      case "paid":
-        return "bg-green-100 text-green-800 hover:bg-green-100/80"
-      case "rejected":
-        return "bg-red-100 text-red-800 hover:bg-red-100/80"
-      default:
-        return "bg-gray-100 text-gray-800 hover:bg-gray-100/80"
+  // Función para actualizar el estado de la factura
+  const handleStatusChange = (newStatus: string) => {
+    if (invoice) {
+      setInvoice({ ...invoice, status: newStatus })
     }
   }
 
@@ -80,6 +147,29 @@ export default async function InvoiceDetailPage({
       default:
         return status
     }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[60vh]">
+        <Loader2 className="h-8 w-8 animate-spin mb-4" />
+        <p className="text-muted-foreground">Cargando factura...</p>
+      </div>
+    )
+  }
+
+  if (error || !invoice) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[60vh]">
+        <h1 className="text-2xl font-bold mb-4">Factura no encontrada</h1>
+        <p className="text-muted-foreground mb-6">
+          {error || "La factura que estás buscando no existe o no tienes permisos para verla."}
+        </p>
+        <Button asChild>
+          <Link href="/dashboard/invoices">Volver a Facturas</Link>
+        </Button>
+      </div>
+    )
   }
 
   // Obtener datos del cliente (desde la relación o desde las notas)
@@ -121,7 +211,7 @@ export default async function InvoiceDetailPage({
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Factura {invoice.invoice_number}</h1>
-          <p className="text-muted-foreground">{new Date(invoice.issue_date).toLocaleDateString()}</p>
+          <p className="text-muted-foreground">{new Date(invoice.issue_date).toLocaleDateString("es-ES")}</p>
         </div>
         <div className="flex space-x-2">
           <GeneratePdfButton invoiceId={invoice.id} />
@@ -145,7 +235,7 @@ export default async function InvoiceDetailPage({
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Fecha</p>
-                <p>{new Date(invoice.issue_date).toLocaleDateString()}</p>
+                <p>{new Date(invoice.issue_date).toLocaleDateString("es-ES")}</p>
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Tipo</p>
@@ -153,7 +243,11 @@ export default async function InvoiceDetailPage({
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Estado</p>
-                <InvoiceStatusSelector invoiceId={invoice.id} currentStatus={invoice.status} />
+                <InvoiceStatusSelector
+                  invoiceId={invoice.id}
+                  currentStatus={invoice.status}
+                  onStatusChange={handleStatusChange}
+                />
               </div>
             </div>
 
@@ -191,6 +285,18 @@ export default async function InvoiceDetailPage({
                     </p>
                   )}
                 </div>
+                {clientData.email && (
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Email</p>
+                    <p>{clientData.email}</p>
+                  </div>
+                )}
+                {clientData.phone && (
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Teléfono</p>
+                    <p>{clientData.phone}</p>
+                  </div>
+                )}
               </>
             ) : (
               <p className="text-muted-foreground">No hay información del cliente disponible</p>
@@ -219,7 +325,7 @@ export default async function InvoiceDetailPage({
                 </tr>
               </thead>
               <tbody>
-                {invoiceLines &&
+                {invoiceLines && invoiceLines.length > 0 ? (
                   invoiceLines.map((line) => (
                     <tr key={line.id} className="border-b">
                       <td className="py-2">{line.description}</td>
@@ -230,40 +336,49 @@ export default async function InvoiceDetailPage({
                       <td className="text-right py-2">{line.retention_rate}%</td>
                       <td className="text-right py-2">{line.line_amount.toFixed(2)} €</td>
                     </tr>
-                  ))}
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={7} className="text-center py-4 text-muted-foreground">
+                      No hay líneas de factura disponibles
+                    </td>
+                  </tr>
+                )}
               </tbody>
-              <tfoot>
-                <tr>
-                  <td colSpan={6} className="text-right py-2 font-medium">
-                    Base Imponible:
-                  </td>
-                  <td className="text-right py-2">{invoice.base_amount.toFixed(2)} €</td>
-                </tr>
-                <tr>
-                  <td colSpan={6} className="text-right py-2 font-medium">
-                    IVA:
-                  </td>
-                  <td className="text-right py-2">{invoice.vat_amount.toFixed(2)} €</td>
-                </tr>
-                <tr>
-                  <td colSpan={6} className="text-right py-2 font-medium">
-                    IRPF:
-                  </td>
-                  <td className="text-right py-2">-{invoice.irpf_amount.toFixed(2)} €</td>
-                </tr>
-                <tr>
-                  <td colSpan={6} className="text-right py-2 font-medium">
-                    Retención:
-                  </td>
-                  <td className="text-right py-2">-{invoice.retention_amount.toFixed(2)} €</td>
-                </tr>
-                <tr>
-                  <td colSpan={6} className="text-right py-2 font-bold">
-                    Total:
-                  </td>
-                  <td className="text-right py-2 font-bold">{invoice.total_amount.toFixed(2)} €</td>
-                </tr>
-              </tfoot>
+              {invoiceLines && invoiceLines.length > 0 && (
+                <tfoot>
+                  <tr>
+                    <td colSpan={6} className="text-right py-2 font-medium">
+                      Base Imponible:
+                    </td>
+                    <td className="text-right py-2">{invoice.base_amount?.toFixed(2) || "0.00"} €</td>
+                  </tr>
+                  <tr>
+                    <td colSpan={6} className="text-right py-2 font-medium">
+                      IVA:
+                    </td>
+                    <td className="text-right py-2">{invoice.vat_amount?.toFixed(2) || "0.00"} €</td>
+                  </tr>
+                  <tr>
+                    <td colSpan={6} className="text-right py-2 font-medium">
+                      IRPF:
+                    </td>
+                    <td className="text-right py-2">-{invoice.irpf_amount?.toFixed(2) || "0.00"} €</td>
+                  </tr>
+                  <tr>
+                    <td colSpan={6} className="text-right py-2 font-medium">
+                      Retención:
+                    </td>
+                    <td className="text-right py-2">-{invoice.retention_amount?.toFixed(2) || "0.00"} €</td>
+                  </tr>
+                  <tr>
+                    <td colSpan={6} className="text-right py-2 font-bold">
+                      Total:
+                    </td>
+                    <td className="text-right py-2 font-bold">{invoice.total_amount?.toFixed(2) || "0.00"} €</td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         </CardContent>
