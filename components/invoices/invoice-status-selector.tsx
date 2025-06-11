@@ -1,11 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Check } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { supabase } from "@/lib/supabase/client"
 
 interface InvoiceStatusSelectorProps {
   invoiceId: number
@@ -25,12 +26,19 @@ export function InvoiceStatusSelector({
   const { toast } = useToast()
   const router = useRouter()
 
-  // Definir los estados disponibles
+  // Sincronizar el estado interno con el prop currentStatus
+  useEffect(() => {
+    setStatus(currentStatus)
+  }, [currentStatus])
+
+  // Definir los estados disponibles según la restricción de la base de datos
   const statuses = [
     { value: "draft", label: "Borrador", color: "bg-yellow-100 text-yellow-800 hover:bg-yellow-200" },
-    { value: "issued", label: "Emitida", color: "bg-blue-100 text-blue-800 hover:bg-blue-200" },
+    { value: "sent", label: "Enviada", color: "bg-blue-100 text-blue-800 hover:bg-blue-200" },
     { value: "paid", label: "Pagada", color: "bg-green-100 text-green-800 hover:bg-green-200" },
-    { value: "rejected", label: "Rechazada", color: "bg-red-100 text-red-800 hover:bg-red-200" },
+    { value: "cancelled", label: "Cancelada", color: "bg-red-100 text-red-800 hover:bg-red-200" },
+    { value: "rectified", label: "Rectificada", color: "bg-purple-100 text-purple-800 hover:bg-purple-200" },
+    { value: "overdue", label: "Vencida", color: "bg-orange-100 text-orange-800 hover:bg-orange-200" },
   ]
 
   // Obtener el estado actual
@@ -46,18 +54,14 @@ export function InvoiceStatusSelector({
     setIsLoading(true)
 
     try {
-      const response = await fetch(`/api/invoices/${invoiceId}/status`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ status: newStatus }),
-      })
+      // Actualizar directamente con Supabase
+      const { error } = await supabase.from("invoices").update({ status: newStatus }).eq("id", invoiceId)
 
-      if (!response.ok) {
-        throw new Error("Error al actualizar el estado")
+      if (error) {
+        throw new Error(`Error al actualizar el estado: ${error.message}`)
       }
 
+      // Notificar éxito
       toast({
         title: "Estado actualizado",
         description: `La factura ha sido actualizada a "${
@@ -65,7 +69,7 @@ export function InvoiceStatusSelector({
         }"`,
       })
 
-      // Llamar al callback si existe
+      // Llamar al callback si existe - IMPORTANTE para actualizar el estado en el componente padre
       if (onStatusChange) {
         onStatusChange(newStatus)
       }
@@ -100,16 +104,16 @@ export function InvoiceStatusSelector({
         </div>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-[150px]">
-        {statuses.map((status) => (
+        {statuses.map((statusOption) => (
           <DropdownMenuItem
-            key={status.value}
-            className={`${status.value === currentStatus ? "bg-muted" : ""} cursor-pointer text-sm`}
-            onClick={() => updateStatus(status.value)}
+            key={statusOption.value}
+            className={`${statusOption.value === status ? "bg-muted" : ""} cursor-pointer text-sm`}
+            onClick={() => updateStatus(statusOption.value)}
             disabled={isLoading}
           >
-            <div className={`mr-2 h-1.5 w-1.5 rounded-full ${status.color.split(" ")[0]}`} />
-            {status.label}
-            {status.value === currentStatus && <Check className="ml-auto h-3.5 w-3.5" />}
+            <div className={`mr-2 h-1.5 w-1.5 rounded-full ${statusOption.color.split(" ")[0]}`} />
+            {statusOption.label}
+            {statusOption.value === status && <Check className="ml-auto h-3.5 w-3.5" />}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

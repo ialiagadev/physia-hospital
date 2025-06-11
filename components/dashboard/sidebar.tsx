@@ -1,3 +1,4 @@
+// components/dashboard/sidebar.tsx
 "use client"
 
 import { useState, useEffect, useRef } from "react"
@@ -6,25 +7,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import {
-  LayoutDashboard,
-  Users,
-  Building2,
-  FileText,
-  Settings,
-  Package,
-  UserRound,
-  BarChart2,
-  GripVertical,
-  Save,
-  RotateCcw,
-  ClipboardList,
-  ChevronLeft,
-  ChevronRight,
-  Gift,
-  UserPlus,
-  LogOut,
-} from "lucide-react"
+import { LayoutDashboard, Users, Building2, FileText, Settings, Package, UserRound, BarChart2, GripVertical, Save, RotateCcw, ClipboardList, ChevronLeft, ChevronRight, Gift, UserPlus, LogOut, Menu } from 'lucide-react'
 import {
   DndContext,
   closestCenter,
@@ -140,140 +123,143 @@ interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {}
 
 export function Sidebar({ className }: SidebarProps) {
   // Lista predeterminada de elementos de navegación con colores
-  const defaultNavItems: NavItem[] = [
-    {
-      id: "dashboard",
-      label: "Dashboard",
-      href: "/dashboard",
-      icon: <LayoutDashboard />,
-      matchPattern: "",
-      iconColor: "#4285F4",
-      bgColor: "bg-blue-50",
-      hoverColor: "bg-blue-50/50",
-      activeColor: "#4285F4",
-    },
-    {
-      id: "clients",
-      label: "Clientes",
-      href: "/dashboard/clients",
-      icon: <Users />,
-      matchPattern: "/dashboard/clients",
-      iconColor: "#7B68EE",
-      bgColor: "bg-indigo-50",
-      hoverColor: "bg-indigo-50/50",
-      activeColor: "#7B68EE",
-    },
-    {
-      id: "organizations",
-      label: "Organizaciones",
-      href: "/dashboard/organizations",
-      icon: <Building2 />,
-      matchPattern: "/dashboard/organizations",
-      iconColor: "#9370DB",
-      bgColor: "bg-purple-50",
-      hoverColor: "bg-purple-50/50",
-      activeColor: "#9370DB",
-    },
-    {
-      id: "services",
-      label: "Servicios",
-      href: "/dashboard/services",
-      icon: <Package />,
-      matchPattern: "/dashboard/services",
-      iconColor: "#F59E0B",
-      bgColor: "bg-amber-50",
-      hoverColor: "bg-amber-50/50",
-      activeColor: "#F59E0B",
-    },
-    {
-      id: "professionals",
-      label: "Profesionales",
-      href: "/dashboard/professionals",
-      icon: <UserRound />,
-      matchPattern: "/dashboard/professionals",
-      iconColor: "#0EA5E9",
-      bgColor: "bg-sky-50",
-      hoverColor: "bg-sky-50/50",
-      activeColor: "#0EA5E9",
-    },
-    {
-      id: "invoices",
-      label: "Facturas",
-      href: "/dashboard/invoices",
-      icon: <FileText />,
-      matchPattern: "/dashboard/invoices",
-      iconColor: "#10B981",
-      bgColor: "bg-emerald-50",
-      hoverColor: "bg-emerald-50/50",
-      activeColor: "#10B981",
-    },
-    {
-      id: "loyalty-cards",
-      label: "Tarjetas de Fidelización",
-      href: "/dashboard/loyalty-cards",
-      icon: <Gift />,
-      matchPattern: "/dashboard/loyalty-cards",
-      iconColor: "#9333EA",
-      bgColor: "bg-purple-50",
-      hoverColor: "bg-purple-50/50",
-      activeColor: "#9333EA",
-    },
-    {
-      id: "clinical-records",
-      label: "Historias Clínicas",
-      href: "/dashboard/clinical-records",
-      icon: <ClipboardList />,
-      matchPattern: "/dashboard/clinical-records",
-      iconColor: "#14B8A6",
-      bgColor: "bg-teal-50",
-      hoverColor: "bg-teal-50/50",
-      activeColor: "#14B8A6",
-    },
-    {
-      id: "statistics",
-      label: "Estadísticas",
-      href: "/dashboard/statistics",
-      icon: <BarChart2 />,
-      matchPattern: "/dashboard/statistics",
-      iconColor: "#F43F5E",
-      bgColor: "bg-rose-50",
-      hoverColor: "bg-rose-50/50",
-      activeColor: "#F43F5E",
-    },
-    {
-      id: "user-management",
-      label: "Gestión de Usuarios",
-      href: "/dashboard/users",
-      icon: <UserPlus />,
-      matchPattern: "/dashboard/users",
-      iconColor: "#8B5CF6",
-      bgColor: "bg-violet-50",
-      hoverColor: "bg-violet-50/50",
-      activeColor: "#8B5CF6",
-    },
-    {
-      id: "settings",
-      label: "Configuración",
-      href: "/dashboard/settings",
-      icon: <Settings />,
-      matchPattern: "/dashboard/settings",
-      iconColor: "#64748B",
-      bgColor: "bg-slate-50",
-      hoverColor: "bg-slate-50/50",
-      activeColor: "#64748B",
-    },
-    {
-      id: "logout",
-      label: "Cerrar Sesión",
-      href: "/logout",
-      icon: <LogOut />,
-      matchPattern: "/logout",
-      iconColor: "#EF4444",
-      bgColor: "bg-red-50",
-      hoverColor: "bg-red-50/50",
-      activeColor: "#EF4444",
-    },
-  ]
+ // components/dashboard/sidebar.tsx
+// ... (mantener todo el código anterior hasta defaultNavItems)
+
+const defaultNavItems: NavItem[] = [
+  {
+    id: "dashboard",
+    label: "Dashboard",
+    href: "/dashboard/facturacion",  // ✅ CORREGIDO
+    icon: <LayoutDashboard />,
+    matchPattern: "/dashboard/facturacion∫",
+    iconColor: "#4285F4",
+    bgColor: "bg-blue-50",
+    hoverColor: "bg-blue-50/50",
+    activeColor: "#4285F4",
+  },
+  {
+    id: "clients",
+    label: "Clientes",
+    href: "/dashboard/facturacion/clients",  // ✅ CORREGIDO
+    icon: <Users />,
+    matchPattern: "/dashboard/facturacion/clients",
+    iconColor: "#7B68EE",
+    bgColor: "bg-indigo-50",
+    hoverColor: "bg-indigo-50/50",
+    activeColor: "#7B68EE",
+  },
+  {
+    id: "organizations",
+    label: "Organizaciones",
+    href: "/dashboard/facturacion/organizations",  // ✅ CORREGIDO
+    icon: <Building2 />,
+    matchPattern: "/dashboard/facturacion/organizations",
+    iconColor: "#9370DB",
+    bgColor: "bg-purple-50",
+    hoverColor: "bg-purple-50/50",
+    activeColor: "#9370DB",
+  },
+  {
+    id: "services",
+    label: "Servicios",
+    href: "/dashboard/facturacion/services",  // ✅ CORREGIDO
+    icon: <Package />,
+    matchPattern: "/dashboard/facturacion/services",
+    iconColor: "#F59E0B",
+    bgColor: "bg-amber-50",
+    hoverColor: "bg-amber-50/50",
+    activeColor: "#F59E0B",
+  },
+  {
+    id: "professionals",
+    label: "Profesionales",
+    href: "/dashboard/facturacion/professionals",  // ✅ CORREGIDO
+    icon: <UserRound />,
+    matchPattern: "/dashboard/facturacion/professionals",
+    iconColor: "#0EA5E9",
+    bgColor: "bg-sky-50",
+    hoverColor: "bg-sky-50/50",
+    activeColor: "#0EA5E9",
+  },
+  {
+    id: "invoices",
+    label: "Facturas",
+    href: "/dashboard/facturacion/invoices",  // ✅ CORREGIDO
+    icon: <FileText />,
+    matchPattern: "/dashboard/facturacion/invoices",
+    iconColor: "#10B981",
+    bgColor: "bg-emerald-50",
+    hoverColor: "bg-emerald-50/50",
+    activeColor: "#10B981",
+  },
+  {
+    id: "loyalty-cards",
+    label: "Tarjetas de Fidelización",
+    href: "/dashboard/facturacion/loyalty-cards",  // ✅ CORREGIDO
+    icon: <Gift />,
+    matchPattern: "/dashboard/facturacion/loyalty-cards",
+    iconColor: "#9333EA",
+    bgColor: "bg-purple-50",
+    hoverColor: "bg-purple-50/50",
+    activeColor: "#9333EA",
+  },
+  {
+    id: "clinical-records",
+    label: "Historias Clínicas",
+    href: "/dashboard/facturacion/clinical-records",  // ✅ CORREGIDO
+    icon: <ClipboardList />,
+    matchPattern: "/dashboard/facturacion/clinical-records",
+    iconColor: "#14B8A6",
+    bgColor: "bg-teal-50",
+    hoverColor: "bg-teal-50/50",
+    activeColor: "#14B8A6",
+  },
+  {
+    id: "statistics",
+    label: "Estadísticas",
+    href: "/dashboard/facturacion/statistics",  // ✅ CORREGIDO
+    icon: <BarChart2 />,
+    matchPattern: "/dashboard/facturacion/statistics",
+    iconColor: "#F43F5E",
+    bgColor: "bg-rose-50",
+    hoverColor: "bg-rose-50/50",
+    activeColor: "#F43F5E",
+  },
+  {
+    id: "user-management",
+    label: "Gestión de Usuarios",
+    href: "/dashboard/facturacion/users",  // ✅ CORREGIDO
+    icon: <UserPlus />,
+    matchPattern: "/dashboard/facturacion/users",
+    iconColor: "#8B5CF6",
+    bgColor: "bg-violet-50",
+    hoverColor: "bg-violet-50/50",
+    activeColor: "#8B5CF6",
+  },
+  {
+    id: "settings",
+    label: "Configuración",
+    href: "/dashboard/facturacion/settings",  // ✅ CORREGIDO
+    icon: <Settings />,
+    matchPattern: "/dashboard/facturacion/settings",
+    iconColor: "#64748B",
+    bgColor: "bg-slate-50",
+    hoverColor: "bg-slate-50/50",
+    activeColor: "#64748B",
+  },
+  {
+    id: "logout",
+    label: "Cerrar Sesión",
+    href: "/logout",  // ✅ Esta se mantiene igual
+    icon: <LogOut />,
+    matchPattern: "/logout",
+    iconColor: "#EF4444",
+    bgColor: "bg-red-50",
+    hoverColor: "bg-red-50/50",
+    activeColor: "#EF4444",
+  },
+]
 
   // Estado para los elementos de navegación
   const [navItems, setNavItems] = useState<NavItem[]>(defaultNavItems)
@@ -307,13 +293,13 @@ export function Sidebar({ className }: SidebarProps) {
 
   // Cargar el estado de colapso guardado al iniciar
   useEffect(() => {
-    const savedCollapsedState = localStorage.getItem("sidebarCollapsed")
+    const savedCollapsedState = localStorage.getItem("facturacionSidebarCollapsed")
     setIsCollapsed(parseBoolean(savedCollapsedState))
   }, [])
 
   // Guardar el estado de colapso cuando cambie
   useEffect(() => {
-    localStorage.setItem("sidebarCollapsed", String(isCollapsed))
+    localStorage.setItem("facturacionSidebarCollapsed", String(isCollapsed))
   }, [isCollapsed])
 
   // Cargar el orden guardado al iniciar
@@ -428,17 +414,27 @@ export function Sidebar({ className }: SidebarProps) {
     <div className={cn("pb-12 relative transition-all duration-200", isCollapsed ? "w-16" : "w-64", className)}>
       <div className="space-y-4 py-4">
         <div className="px-4 py-2">
-          {!isCollapsed && <h2 className="mb-2 px-2 text-xl font-semibold tracking-tight">Sistema de Facturación</h2>}
-
-          {/* Botón para colapsar/expandir el sidebar */}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={toggleCollapse}
-            className="absolute -right-4 top-4 h-8 w-8 rounded-full border bg-background shadow-md"
-          >
-            {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-          </Button>
+          {/* Header con botón de colapso integrado */}
+          <div className="flex items-center justify-between mb-4">
+            {!isCollapsed && <h2 className="text-lg font-semibold">Sistema de Facturación</h2>}
+            
+            {/* Botón mejorado */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleCollapse}
+              className={cn(
+                "h-8 w-8 rounded-md hover:bg-accent transition-all duration-200",
+                isCollapsed ? "mx-auto" : "ml-auto"
+              )}
+            >
+              {isCollapsed ? (
+                <Menu className="h-4 w-4" />
+              ) : (
+                <ChevronLeft className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
 
           <div className="relative">
             {/* Indicador animado */}

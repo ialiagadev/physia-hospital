@@ -99,7 +99,7 @@ export default function OrganizationsPage() {
           </p>
         </div>
         <Button asChild>
-          <Link href="/dashboard/organizations/new">
+          <Link href="/dashboard/facturacion/organizations/new">
             <Plus className="mr-2 h-4 w-4" />
             Nueva Organización
           </Link>
@@ -136,7 +136,7 @@ export default function OrganizationsPage() {
                   </TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="sm" asChild>
-                      <Link href={`/dashboard/organizations/${org.id}`}>Ver</Link>
+                      <Link href={`/dashboard/facturacion/organizations/${org.id}`}>Ver</Link>
                     </Button>
                   </TableCell>
                 </TableRow>

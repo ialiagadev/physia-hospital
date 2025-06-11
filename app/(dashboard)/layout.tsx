@@ -1,28 +1,36 @@
-import type React from "react"
-import { Sidebar } from "@/components/dashboard/sidebar"
-import { Header } from "@/components/dashboard/header"
-import { Breadcrumbs } from "@/components/breadcrumbs"
+// app/(dashboard)/dashboard/layout.tsx
+"use client"
 
-export const revalidate = 0
+import { MainSidebar } from "@/components/main-sidebar"
+import { UserNav } from "@/components/dashboard/user-nav"
 
-export default async function DashboardLayout({
+export default function MainDashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  // Eliminamos la verificación de autenticación
   return (
-    <div className="flex min-h-screen flex-col">
-      <Header />
-      <div className="flex flex-1">
-        <aside className="hidden w-64 border-r md:block">
-          <Sidebar />
-        </aside>
-        <main className="flex-1 flex flex-col">
-          <div className="px-6 py-2 border-b">
-            <Breadcrumbs />
+    <div className="flex h-screen">
+      {/* Sidebar principal */}
+      <div className="hidden md:block">
+        <MainSidebar />
+      </div>
+
+      {/* Contenido principal */}
+      <div className="flex flex-col flex-1 overflow-hidden">
+        {/* Header */}
+        <header className="border-b bg-background">
+          <div className="flex h-16 items-center px-4 gap-4 justify-between">
+            <h2 className="text-lg font-semibold">Sistema Integrado</h2>
+            <div className="flex items-center gap-4">
+              <UserNav />
+            </div>
           </div>
-          <div className="p-6 flex-1">{children}</div>
+        </header>
+
+        {/* Contenido de la página */}
+        <main className="flex-1 overflow-auto p-6">
+          {children}
         </main>
       </div>
     </div>

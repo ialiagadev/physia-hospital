@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
-import { Plus, Calendar, Filter, X } from "lucide-react"
+import { Plus, Calendar, Filter, X, ChevronDown } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Checkbox } from "@/components/ui/checkbox"
 import { OrganizationSelector } from "@/components/organization-selector"
@@ -18,6 +18,7 @@ import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { BulkDownloadButton } from "@/components/invoices/bulk-download-button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
 interface DateFilters {
   startDate?: Date
@@ -26,6 +27,16 @@ interface DateFilters {
   month?: string
 }
 
+// Actualizar los estados según la restricción de la base de datos
+const statusOptions = [
+  { value: "draft", label: "Borrador", color: "bg-yellow-100 text-yellow-800" },
+  { value: "sent", label: "Enviada", color: "bg-blue-100 text-blue-800" },
+  { value: "paid", label: "Pagada", color: "bg-green-100 text-green-800" },
+  { value: "cancelled", label: "Cancelada", color: "bg-red-100 text-red-800" },
+  { value: "rectified", label: "Rectificada", color: "bg-purple-100 text-purple-800" },
+  { value: "overdue", label: "Vencida", color: "bg-orange-100 text-orange-800" },
+]
+
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -33,6 +44,7 @@ export default function InvoicesPage() {
   const [selectedInvoices, setSelectedInvoices] = useState<Set<number>>(new Set())
   const [dateFilters, setDateFilters] = useState<DateFilters>({})
   const [showFilters, setShowFilters] = useState(false)
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
   const { toast } = useToast()
 
   // Función para cargar facturas
@@ -103,9 +115,89 @@ export default function InvoicesPage() {
 
   // Función para actualizar el estado de una factura específica en el estado local
   const handleStatusChange = (invoiceId: number, newStatus: string) => {
+    // Actualizar el estado local inmediatamente
     setInvoices((currentInvoices) =>
-      currentInvoices.map((invoice) => (invoice.id === invoiceId ? { ...invoice, status: newStatus } : invoice)),
+      currentInvoices.map((invoice) => {
+        if (invoice.id === invoiceId) {
+          return { ...invoice, status: newStatus }
+        }
+        return invoice
+      }),
     )
+  }
+
+  // Función para cambiar el estado de múltiples facturas
+  const handleBulkStatusChange = async (newStatus: string) => {
+    if (selectedInvoices.size === 0) return
+
+    setIsUpdatingStatus(true)
+
+    try {
+      const invoiceIds = Array.from(selectedInvoices)
+
+      // Actualización optimista de la UI - Actualizar inmediatamente antes de la llamada a la API
+      setInvoices((currentInvoices) => {
+        return currentInvoices.map((invoice) => {
+          if (selectedInvoices.has(invoice.id)) {
+            return { ...invoice, status: newStatus }
+          }
+          return invoice
+        })
+      })
+
+      // Actualizar en Supabase
+      const { error } = await supabase.from("invoices").update({ status: newStatus }).in("id", invoiceIds)
+
+      if (error) {
+        console.error("Error de Supabase:", error)
+        throw new Error(`Error al actualizar el estado: ${error.message}`)
+      }
+
+      const statusLabel = statusOptions.find((option) => option.value === newStatus)?.label || newStatus
+
+      toast({
+        title: "Estado actualizado",
+        description: `Se ha cambiado el estado de ${selectedInvoices.size} factura${selectedInvoices.size !== 1 ? "s" : ""} a "${statusLabel}".`,
+      })
+
+      // Limpiar selección después de la actualización exitosa
+      setSelectedInvoices(new Set())
+    } catch (error) {
+      console.error("Error al actualizar el estado:", error)
+
+      // En caso de error, recargar los datos originales
+      await loadInvoices()
+
+      toast({
+        title: "Error",
+        description: "No se pudo actualizar el estado de las facturas",
+        variant: "destructive",
+      })
+    } finally {
+      setIsUpdatingStatus(false)
+    }
+  }
+
+  // Función para actualizar facturas a "sent" cuando se descargan
+  const handleInvoicesDownloaded = (invoiceIds: number[]) => {
+    // Actualizar el estado local inmediatamente
+    setInvoices((currentInvoices) =>
+      currentInvoices.map((invoice) =>
+        invoiceIds.includes(invoice.id) && invoice.status === "draft" ? { ...invoice, status: "sent" } : invoice,
+      ),
+    )
+
+    // Actualizar cada factura individualmente usando Supabase directamente
+    invoiceIds.forEach(async (id) => {
+      const invoice = invoices.find((inv) => inv.id === id)
+      if (invoice?.status === "draft") {
+        try {
+          await supabase.from("invoices").update({ status: "sent" }).eq("id", id)
+        } catch (error) {
+          console.error("Error al actualizar estado después de descarga:", error)
+        }
+      }
+    })
   }
 
   // Funciones para manejar selección múltiple
@@ -318,10 +410,30 @@ export default function InvoicesPage() {
                 {selectedInvoices.size !== 1 ? "s" : ""}
               </span>
               <div className="flex gap-2">
-                <BulkDownloadButton selectedInvoiceIds={Array.from(selectedInvoices)} />
-                <Button variant="outline" size="sm">
-                  Cambiar estado
-                </Button>
+                <BulkDownloadButton
+                  selectedInvoiceIds={Array.from(selectedInvoices)}
+                  onDownloadComplete={handleInvoicesDownloaded}
+                />
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" disabled={isUpdatingStatus}>
+                      {isUpdatingStatus ? "Actualizando..." : "Cambiar estado"}
+                      <ChevronDown className="ml-1 h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {statusOptions.map((status) => (
+                      <DropdownMenuItem
+                        key={status.value}
+                        onClick={() => handleBulkStatusChange(status.value)}
+                        className="flex items-center gap-2"
+                      >
+                        <div className={`w-2 h-2 rounded-full ${status.color.split(" ")[0]}`} />
+                        {status.label}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <Button variant="ghost" size="sm" onClick={() => setSelectedInvoices(new Set())}>
                   Limpiar selección
                 </Button>
@@ -336,7 +448,15 @@ export default function InvoicesPage() {
           <TableHeader>
             <TableRow>
               <TableHead className="w-12">
-                <Checkbox checked={isAllSelected} onCheckedChange={handleSelectAll} />
+                <Checkbox
+                  checked={isAllSelected}
+                  onCheckedChange={handleSelectAll}
+                  className={
+                    isIndeterminate
+                      ? "data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
+                      : ""
+                  }
+                />
               </TableHead>
               <TableHead>Número</TableHead>
               <TableHead>Fecha</TableHead>
