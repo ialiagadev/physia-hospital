@@ -1,14 +1,10 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { supabase } from "@/lib/supabase/client"
-import type { Conversation, Message } from "@/types/chat"
+import type { Conversation, ConversationWithLastMessage } from "@/types/chat"
 
-interface ConversationWithLastMessage extends Conversation {
-  last_message?: Message
-}
-
-export function useConversations(organizationId: number | undefined) {
+export function useConversations(organizationId: string | undefined, viewMode: "all" | "assigned" = "all") {
   const [conversations, setConversations] = useState<ConversationWithLastMessage[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -20,8 +16,16 @@ export function useConversations(organizationId: number | undefined) {
         setLoading(true)
 
         if (!organizationId) {
-          console.log("No organization ID provided")
           setConversations([])
+          setLoading(false)
+          return
+        }
+
+        // Convertir string a number para la consulta
+        const orgIdNumber = Number(organizationId)
+        if (isNaN(orgIdNumber)) {
+          console.error("Invalid organization ID:", organizationId)
+          setError("ID de organización inválido")
           setLoading(false)
           return
         }
@@ -31,9 +35,18 @@ export function useConversations(organizationId: number | undefined) {
           .from("conversations")
           .select(`
             *,
-            client:clients(*)
+            client:clients(*),
+            canales_organization:canales_organizations(
+              id,
+              canal:canales(
+                id,
+                nombre,
+                descripcion,
+                imagen
+              )
+            )
           `)
-          .eq("organization_id", organizationId)
+          .eq("organization_id", orgIdNumber)
           .order("last_message_at", { ascending: false, nullsFirst: false })
 
         if (conversationsError) {
@@ -60,11 +73,9 @@ export function useConversations(organizationId: number | undefined) {
           }),
         )
 
-        console.log("Conversations with messages loaded:", conversationsWithMessages)
         setConversations(conversationsWithMessages)
         setError(null)
       } catch (err) {
-        console.error("Unexpected error:", err)
         setError("Error inesperado al cargar conversaciones")
       } finally {
         setLoading(false)
@@ -74,47 +85,77 @@ export function useConversations(organizationId: number | undefined) {
     fetchConversations()
 
     if (organizationId) {
-      // Suscribirse a cambios en tiempo real
-      const channel = supabase
-        .channel("conversations-changes")
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "conversations",
-            filter: `organization_id=eq.${organizationId}`,
-          },
-          (payload) => {
-            console.log("Conversation change:", payload)
-            fetchConversations()
-          },
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "messages",
-          },
-          (payload) => {
-            console.log("Message change:", payload)
-            fetchConversations()
-          },
-        )
-        .subscribe()
+      const orgIdNumber = Number(organizationId)
+      if (!isNaN(orgIdNumber)) {
+        // Suscribirse a cambios en tiempo real
+        const channel = supabase
+          .channel("conversations-changes")
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "conversations",
+              filter: `organization_id=eq.${orgIdNumber}`,
+            },
+            (payload) => {
+              fetchConversations()
+            },
+          )
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "messages",
+            },
+            (payload) => {
+              fetchConversations()
+            },
+          )
+          .subscribe()
 
-      return () => {
-        supabase.removeChannel(channel)
+        return () => {
+          supabase.removeChannel(channel)
+        }
       }
     }
-  }, [organizationId])
+  }, [organizationId, viewMode])
 
   const refetch = () => {
     setLoading(true)
   }
 
   return { conversations, loading, error, refetch }
+}
+
+// Hook para obtener conversaciones filtradas por asignación
+export function useFilteredConversations(
+  organizationId: string | undefined,
+  currentUserId: string | undefined,
+  viewMode: "all" | "assigned" = "all",
+) {
+  const { conversations, loading, error, refetch } = useConversations(organizationId, viewMode)
+
+  const filteredConversations = useMemo(() => {
+    if (viewMode === "all") {
+      return conversations
+    }
+
+    if (viewMode === "assigned" && currentUserId) {
+      return conversations.filter((conv) => conv.assigned_user_ids && conv.assigned_user_ids.includes(currentUserId))
+    }
+
+    return conversations
+  }, [conversations, viewMode, currentUserId])
+
+  return {
+    conversations: filteredConversations,
+    allConversations: conversations,
+    loading,
+    error,
+    refetch,
+  }
 }
 
 // Hook para obtener una conversación específica
@@ -133,13 +174,21 @@ export function useConversation(conversationId: string | null) {
     const fetchConversation = async () => {
       try {
         setLoading(true)
-        console.log("Fetching conversation:", conversationId)
 
         const { data, error } = await supabase
           .from("conversations")
           .select(`
             *,
-            client:clients(*)
+            client:clients(*),
+            canales_organization:canales_organizations(
+              id,
+              canal:canales(
+                id,
+                nombre,
+                descripcion,
+                imagen
+              )
+            )
           `)
           .eq("id", conversationId)
           .single()
@@ -148,12 +197,10 @@ export function useConversation(conversationId: string | null) {
           console.error("Error fetching conversation:", error)
           setError(error.message)
         } else {
-          console.log("Conversation loaded:", data)
           setConversation(data)
           setError(null)
         }
       } catch (err) {
-        console.error("Unexpected error:", err)
         setError("Error inesperado al cargar conversación")
       } finally {
         setLoading(false)
@@ -174,7 +221,6 @@ export function useConversation(conversationId: string | null) {
           filter: `id=eq.${conversationId}`,
         },
         (payload) => {
-          console.log("Conversation updated:", payload)
           fetchConversation()
         },
       )

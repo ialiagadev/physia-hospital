@@ -230,8 +230,8 @@ export default function LoyaltyCardDetailPage({ params }: { params: { id: string
       <div className="space-y-6">
         <Breadcrumbs
           items={[
-            { label: "Dashboard", href: "/dashboard" },
-            { label: "Tarjetas de Fidelización", href: "/dashboard/loyalty-cards" },
+            { label: "Dashboard", href: "/dashboard/facturacion" },
+            { label: "Tarjetas de Fidelización", href: "/dashboard/facturacion/loyalty-cards" },
             { label: "Error", href: "#" },
           ]}
         />
@@ -260,9 +260,9 @@ export default function LoyaltyCardDetailPage({ params }: { params: { id: string
   }
 
   const breadcrumbItems = [
-    { label: "Dashboard", href: "/dashboard" },
-    { label: "Tarjetas de Fidelización", href: "/dashboard/loyalty-cards" },
-    { label: `Tarjeta #${card.id}`, href: `/dashboard/loyalty-cards/${card.id}` },
+    { label: "Dashboard", href: "/dashboard/facturacion" },
+    { label: "Tarjetas de Fidelización", href: "/dashboard/facturacion/loyalty-cards" },
+    { label: `Tarjeta #${card.id}`, href: `/dashboard/facturacion/loyalty-cards/${card.id}` },
   ]
 
   const isCardActive = card.status === "active"

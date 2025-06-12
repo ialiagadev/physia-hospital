@@ -19,23 +19,16 @@ export function useMessages(conversationId: string | null) {
     // Función para cargar mensajes
     const fetchMessages = async () => {
       try {
-        console.log("=== FETCHING MESSAGES ===")
-        console.log("Conversation ID:", conversationId)
-        console.log("Type of conversationId:", typeof conversationId)
-
         const { data, error } = await supabase
           .from("messages")
           .select("*")
           .eq("conversation_id", conversationId)
           .order("created_at", { ascending: true })
 
-        console.log("Messages query result:", { data, error, count: data?.length })
-
         if (error) {
           console.error("Error fetching messages:", error)
           setError(error.message)
         } else {
-          console.log("Messages loaded successfully:", data)
           setMessages(data || [])
           setError(null)
         }
@@ -61,7 +54,6 @@ export function useMessages(conversationId: string | null) {
           filter: `conversation_id=eq.${conversationId}`,
         },
         (payload) => {
-          console.log("New message:", payload)
           setMessages((prev) => [...prev, payload.new as Message])
         },
       )
@@ -74,7 +66,6 @@ export function useMessages(conversationId: string | null) {
           filter: `conversation_id=eq.${conversationId}`,
         },
         (payload) => {
-          console.log("Message updated:", payload)
           setMessages((prev) => prev.map((msg) => (msg.id === payload.new.id ? (payload.new as Message) : msg)))
         },
       )

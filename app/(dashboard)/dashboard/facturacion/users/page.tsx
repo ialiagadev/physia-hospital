@@ -207,7 +207,7 @@ export default function UsersPage() {
           </p>
         </div>
         <Button asChild>
-          <Link href="/dashboard/users/new">
+          <Link href="/dashboard/facturacion/users/new">
             <Plus className="mr-2 h-4 w-4" />
             Nuevo Usuario
           </Link>

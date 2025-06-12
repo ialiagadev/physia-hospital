@@ -145,7 +145,7 @@ export default function LoyaltyCardsPage() {
           <p className="text-muted-foreground">Gestiona las tarjetas de fidelización para tus clientes</p>
         </div>
         <Button asChild>
-          <Link href="/dashboard/loyalty-cards/new">
+          <Link href="/dashboard/facturacion/loyalty-cards/new">
             <Plus className="mr-2 h-4 w-4" />
             Nueva Tarjeta
           </Link>
@@ -195,7 +195,7 @@ export default function LoyaltyCardsPage() {
       ) : filteredCards.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredCards.map((card) => (
-            <Link key={card.id} href={`/dashboard/loyalty-cards/${card.id}`} className="block">
+            <Link key={card.id} href={`/dashboard/facturacion/loyalty-cards/${card.id}`} className="block">
               <PhysiaCard
                 card={card}
                 customerName={card.clients?.name || "Cliente"}
@@ -212,7 +212,7 @@ export default function LoyaltyCardsPage() {
           <CardContent className="flex flex-col items-center justify-center py-10">
             <p className="text-muted-foreground mb-4">No hay tarjetas de fidelización disponibles</p>
             <Button asChild>
-              <Link href="/dashboard/loyalty-cards/new">
+              <Link href="/dashboard/facturacion/loyalty-cards/new">
                 <Plus className="mr-2 h-4 w-4" />
                 Crear nueva tarjeta
               </Link>

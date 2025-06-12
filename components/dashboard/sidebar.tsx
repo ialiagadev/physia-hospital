@@ -7,7 +7,25 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { LayoutDashboard, Users, Building2, FileText, Settings, Package, UserRound, BarChart2, GripVertical, Save, RotateCcw, ClipboardList, ChevronLeft, ChevronRight, Gift, UserPlus, LogOut, Menu } from 'lucide-react'
+import {
+  LayoutDashboard,
+  Users,
+  Building2,
+  FileText,
+  Settings,
+  Package,
+  UserRound,
+  BarChart2,
+  GripVertical,
+  Save,
+  RotateCcw,
+  ClipboardList,
+  ChevronLeft,
+  Gift,
+  UserPlus,
+  LogOut,
+  Menu,
+} from "lucide-react"
 import {
   DndContext,
   closestCenter,
@@ -51,14 +69,10 @@ function SortableNavItem({
   item,
   active,
   isCollapsed,
-  index,
-  activeIndex,
 }: {
   item: NavItem
   active: boolean
   isCollapsed: boolean
-  index: number
-  activeIndex: number
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id })
   const [isHovered, setIsHovered] = useState(false)
@@ -77,7 +91,6 @@ function SortableNavItem({
       className={cn("flex items-center rounded-md mb-1 relative", isDragging ? "z-50" : "")}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      data-index={index}
     >
       <div
         ref={buttonRef}
@@ -123,143 +136,143 @@ interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {}
 
 export function Sidebar({ className }: SidebarProps) {
   // Lista predeterminada de elementos de navegación con colores
- // components/dashboard/sidebar.tsx
-// ... (mantener todo el código anterior hasta defaultNavItems)
+  // components/dashboard/sidebar.tsx
+  // ... (mantener todo el código anterior hasta defaultNavItems)
 
-const defaultNavItems: NavItem[] = [
-  {
-    id: "dashboard",
-    label: "Dashboard",
-    href: "/dashboard/facturacion",  // ✅ CORREGIDO
-    icon: <LayoutDashboard />,
-    matchPattern: "/dashboard/facturacion∫",
-    iconColor: "#4285F4",
-    bgColor: "bg-blue-50",
-    hoverColor: "bg-blue-50/50",
-    activeColor: "#4285F4",
-  },
-  {
-    id: "clients",
-    label: "Clientes",
-    href: "/dashboard/facturacion/clients",  // ✅ CORREGIDO
-    icon: <Users />,
-    matchPattern: "/dashboard/facturacion/clients",
-    iconColor: "#7B68EE",
-    bgColor: "bg-indigo-50",
-    hoverColor: "bg-indigo-50/50",
-    activeColor: "#7B68EE",
-  },
-  {
-    id: "organizations",
-    label: "Organizaciones",
-    href: "/dashboard/facturacion/organizations",  // ✅ CORREGIDO
-    icon: <Building2 />,
-    matchPattern: "/dashboard/facturacion/organizations",
-    iconColor: "#9370DB",
-    bgColor: "bg-purple-50",
-    hoverColor: "bg-purple-50/50",
-    activeColor: "#9370DB",
-  },
-  {
-    id: "services",
-    label: "Servicios",
-    href: "/dashboard/facturacion/services",  // ✅ CORREGIDO
-    icon: <Package />,
-    matchPattern: "/dashboard/facturacion/services",
-    iconColor: "#F59E0B",
-    bgColor: "bg-amber-50",
-    hoverColor: "bg-amber-50/50",
-    activeColor: "#F59E0B",
-  },
-  {
-    id: "professionals",
-    label: "Profesionales",
-    href: "/dashboard/facturacion/professionals",  // ✅ CORREGIDO
-    icon: <UserRound />,
-    matchPattern: "/dashboard/facturacion/professionals",
-    iconColor: "#0EA5E9",
-    bgColor: "bg-sky-50",
-    hoverColor: "bg-sky-50/50",
-    activeColor: "#0EA5E9",
-  },
-  {
-    id: "invoices",
-    label: "Facturas",
-    href: "/dashboard/facturacion/invoices",  // ✅ CORREGIDO
-    icon: <FileText />,
-    matchPattern: "/dashboard/facturacion/invoices",
-    iconColor: "#10B981",
-    bgColor: "bg-emerald-50",
-    hoverColor: "bg-emerald-50/50",
-    activeColor: "#10B981",
-  },
-  {
-    id: "loyalty-cards",
-    label: "Tarjetas de Fidelización",
-    href: "/dashboard/facturacion/loyalty-cards",  // ✅ CORREGIDO
-    icon: <Gift />,
-    matchPattern: "/dashboard/facturacion/loyalty-cards",
-    iconColor: "#9333EA",
-    bgColor: "bg-purple-50",
-    hoverColor: "bg-purple-50/50",
-    activeColor: "#9333EA",
-  },
-  {
-    id: "clinical-records",
-    label: "Historias Clínicas",
-    href: "/dashboard/facturacion/clinical-records",  // ✅ CORREGIDO
-    icon: <ClipboardList />,
-    matchPattern: "/dashboard/facturacion/clinical-records",
-    iconColor: "#14B8A6",
-    bgColor: "bg-teal-50",
-    hoverColor: "bg-teal-50/50",
-    activeColor: "#14B8A6",
-  },
-  {
-    id: "statistics",
-    label: "Estadísticas",
-    href: "/dashboard/facturacion/statistics",  // ✅ CORREGIDO
-    icon: <BarChart2 />,
-    matchPattern: "/dashboard/facturacion/statistics",
-    iconColor: "#F43F5E",
-    bgColor: "bg-rose-50",
-    hoverColor: "bg-rose-50/50",
-    activeColor: "#F43F5E",
-  },
-  {
-    id: "user-management",
-    label: "Gestión de Usuarios",
-    href: "/dashboard/facturacion/users",  // ✅ CORREGIDO
-    icon: <UserPlus />,
-    matchPattern: "/dashboard/facturacion/users",
-    iconColor: "#8B5CF6",
-    bgColor: "bg-violet-50",
-    hoverColor: "bg-violet-50/50",
-    activeColor: "#8B5CF6",
-  },
-  {
-    id: "settings",
-    label: "Configuración",
-    href: "/dashboard/facturacion/settings",  // ✅ CORREGIDO
-    icon: <Settings />,
-    matchPattern: "/dashboard/facturacion/settings",
-    iconColor: "#64748B",
-    bgColor: "bg-slate-50",
-    hoverColor: "bg-slate-50/50",
-    activeColor: "#64748B",
-  },
-  {
-    id: "logout",
-    label: "Cerrar Sesión",
-    href: "/logout",  // ✅ Esta se mantiene igual
-    icon: <LogOut />,
-    matchPattern: "/logout",
-    iconColor: "#EF4444",
-    bgColor: "bg-red-50",
-    hoverColor: "bg-red-50/50",
-    activeColor: "#EF4444",
-  },
-]
+  const defaultNavItems: NavItem[] = [
+    {
+      id: "dashboard",
+      label: "Dashboard",
+      href: "/dashboard/facturacion", // ✅ CORREGIDO
+      icon: <LayoutDashboard />,
+      matchPattern: "/dashboard/facturacion∫",
+      iconColor: "#4285F4",
+      bgColor: "bg-blue-50",
+      hoverColor: "bg-blue-50/50",
+      activeColor: "#4285F4",
+    },
+    {
+      id: "clients",
+      label: "Clientes",
+      href: "/dashboard/facturacion/clients", // ✅ CORREGIDO
+      icon: <Users />,
+      matchPattern: "/dashboard/facturacion/clients",
+      iconColor: "#7B68EE",
+      bgColor: "bg-indigo-50",
+      hoverColor: "bg-indigo-50/50",
+      activeColor: "#7B68EE",
+    },
+    {
+      id: "organizations",
+      label: "Organizaciones",
+      href: "/dashboard/facturacion/organizations", // ✅ CORREGIDO
+      icon: <Building2 />,
+      matchPattern: "/dashboard/facturacion/organizations",
+      iconColor: "#9370DB",
+      bgColor: "bg-purple-50",
+      hoverColor: "bg-purple-50/50",
+      activeColor: "#9370DB",
+    },
+    {
+      id: "services",
+      label: "Servicios",
+      href: "/dashboard/facturacion/services", // ✅ CORREGIDO
+      icon: <Package />,
+      matchPattern: "/dashboard/facturacion/services",
+      iconColor: "#F59E0B",
+      bgColor: "bg-amber-50",
+      hoverColor: "bg-amber-50/50",
+      activeColor: "#F59E0B",
+    },
+    {
+      id: "professionals",
+      label: "Profesionales",
+      href: "/dashboard/facturacion/professionals", // ✅ CORREGIDO
+      icon: <UserRound />,
+      matchPattern: "/dashboard/facturacion/professionals",
+      iconColor: "#0EA5E9",
+      bgColor: "bg-sky-50",
+      hoverColor: "bg-sky-50/50",
+      activeColor: "#0EA5E9",
+    },
+    {
+      id: "invoices",
+      label: "Facturas",
+      href: "/dashboard/facturacion/invoices", // ✅ CORREGIDO
+      icon: <FileText />,
+      matchPattern: "/dashboard/facturacion/invoices",
+      iconColor: "#10B981",
+      bgColor: "bg-emerald-50",
+      hoverColor: "bg-emerald-50/50",
+      activeColor: "#10B981",
+    },
+    {
+      id: "loyalty-cards",
+      label: "Tarjetas de Fidelización",
+      href: "/dashboard/facturacion/loyalty-cards", // ✅ CORREGIDO
+      icon: <Gift />,
+      matchPattern: "/dashboard/facturacion/loyalty-cards",
+      iconColor: "#9333EA",
+      bgColor: "bg-purple-50",
+      hoverColor: "bg-purple-50/50",
+      activeColor: "#9333EA",
+    },
+    {
+      id: "clinical-records",
+      label: "Historias Clínicas",
+      href: "/dashboard/facturacion/clinical-records", // ✅ CORREGIDO
+      icon: <ClipboardList />,
+      matchPattern: "/dashboard/facturacion/clinical-records",
+      iconColor: "#14B8A6",
+      bgColor: "bg-teal-50",
+      hoverColor: "bg-teal-50/50",
+      activeColor: "#14B8A6",
+    },
+    {
+      id: "statistics",
+      label: "Estadísticas",
+      href: "/dashboard/facturacion/statistics", // ✅ CORREGIDO
+      icon: <BarChart2 />,
+      matchPattern: "/dashboard/facturacion/statistics",
+      iconColor: "#F43F5E",
+      bgColor: "bg-rose-50",
+      hoverColor: "bg-rose-50/50",
+      activeColor: "#F43F5E",
+    },
+    {
+      id: "user-management",
+      label: "Gestión de Usuarios",
+      href: "/dashboard/facturacion/users", // ✅ CORREGIDO
+      icon: <UserPlus />,
+      matchPattern: "/dashboard/facturacion/users",
+      iconColor: "#8B5CF6",
+      bgColor: "bg-violet-50",
+      hoverColor: "bg-violet-50/50",
+      activeColor: "#8B5CF6",
+    },
+    {
+      id: "settings",
+      label: "Configuración",
+      href: "/dashboard/facturacion/settings", // ✅ CORREGIDO
+      icon: <Settings />,
+      matchPattern: "/dashboard/facturacion/settings",
+      iconColor: "#64748B",
+      bgColor: "bg-slate-50",
+      hoverColor: "bg-slate-50/50",
+      activeColor: "#64748B",
+    },
+    {
+      id: "logout",
+      label: "Cerrar Sesión",
+      href: "/logout", // ✅ Esta se mantiene igual
+      icon: <LogOut />,
+      matchPattern: "/logout",
+      iconColor: "#EF4444",
+      bgColor: "bg-red-50",
+      hoverColor: "bg-red-50/50",
+      activeColor: "#EF4444",
+    },
+  ]
 
   // Estado para los elementos de navegación
   const [navItems, setNavItems] = useState<NavItem[]>(defaultNavItems)
@@ -268,12 +281,7 @@ const defaultNavItems: NavItem[] = [
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false)
   const pathname = usePathname()
 
-  // Estado para el índice del elemento activo
-  const [activeIndex, setActiveIndex] = useState(0)
-  const [activeColor, setActiveColor] = useState("#4285F4")
-
-  // Referencia al contenedor de elementos de navegación
-  const navContainerRef = useRef<HTMLDivElement>(null)
+  // Cargar el estado de colapso guardado al iniciar
 
   // Función para convertir string a boolean de forma segura
   const parseBoolean = (value: string | null): boolean => {
@@ -281,17 +289,7 @@ const defaultNavItems: NavItem[] = [
   }
 
   // Actualizar el índice activo cuando cambia la ruta
-  useEffect(() => {
-    const index = navItems.findIndex(
-      (item) => pathname === item.href || (item.matchPattern && pathname.includes(item.matchPattern)),
-    )
-    if (index !== -1) {
-      setActiveIndex(index)
-      setActiveColor(navItems[index].iconColor)
-    }
-  }, [pathname, navItems])
 
-  // Cargar el estado de colapso guardado al iniciar
   useEffect(() => {
     const savedCollapsedState = localStorage.getItem("facturacionSidebarCollapsed")
     setIsCollapsed(parseBoolean(savedCollapsedState))
@@ -393,22 +391,6 @@ const defaultNavItems: NavItem[] = [
   }
 
   // Calcular la posición del indicador
-  const getIndicatorStyle = () => {
-    if (navContainerRef.current) {
-      const navItems = navContainerRef.current.querySelectorAll("[data-index]")
-      if (navItems.length > activeIndex) {
-        const activeItem = navItems[activeIndex] as HTMLElement
-        if (activeItem) {
-          return {
-            transform: `translateY(${activeItem.offsetTop}px)`,
-            height: `${activeItem.offsetHeight}px`,
-            backgroundColor: activeColor,
-          }
-        }
-      }
-    }
-    return {}
-  }
 
   return (
     <div className={cn("pb-12 relative transition-all duration-200", isCollapsed ? "w-16" : "w-64", className)}>
@@ -417,7 +399,7 @@ const defaultNavItems: NavItem[] = [
           {/* Header con botón de colapso integrado */}
           <div className="flex items-center justify-between mb-4">
             {!isCollapsed && <h2 className="text-lg font-semibold">Sistema de Facturación</h2>}
-            
+
             {/* Botón mejorado */}
             <Button
               variant="ghost"
@@ -425,42 +407,25 @@ const defaultNavItems: NavItem[] = [
               onClick={toggleCollapse}
               className={cn(
                 "h-8 w-8 rounded-md hover:bg-accent transition-all duration-200",
-                isCollapsed ? "mx-auto" : "ml-auto"
+                isCollapsed ? "mx-auto" : "ml-auto",
               )}
             >
-              {isCollapsed ? (
-                <Menu className="h-4 w-4" />
-              ) : (
-                <ChevronLeft className="h-4 w-4" />
-              )}
+              {isCollapsed ? <Menu className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
             </Button>
           </div>
 
           <div className="relative">
             {/* Indicador animado */}
-            <div
-              className="absolute left-0 w-1 rounded-r-full transition-all duration-300 ease-in-out z-10"
-              style={getIndicatorStyle()}
-            />
 
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={navItems.map((item) => item.id)} strategy={verticalListSortingStrategy}>
-                <div className="space-y-1" ref={navContainerRef}>
-                  {navItems.map((item, index) => {
+                <div className="space-y-1">
+                  {navItems.map((item) => {
                     // Asegurarnos de que isActive sea explícitamente un booleano
                     const isActive: boolean = Boolean(
                       pathname === item.href || (item.matchPattern && pathname.includes(item.matchPattern)),
                     )
-                    return (
-                      <SortableNavItem
-                        key={item.id}
-                        item={item}
-                        active={isActive}
-                        isCollapsed={isCollapsed}
-                        index={index}
-                        activeIndex={activeIndex}
-                      />
-                    )
+                    return <SortableNavItem key={item.id} item={item} active={isActive} isCollapsed={isCollapsed} />
                   })}
                 </div>
               </SortableContext>

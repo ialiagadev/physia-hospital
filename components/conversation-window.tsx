@@ -3,15 +3,16 @@
 import type React from "react"
 
 import { useState, useRef, useEffect } from "react"
-import { Phone, Video, Search, MoreVertical, Smile, Mic, Send, Plus } from "lucide-react"
+import { Phone, Video, Search, MoreVertical, Smile, Paperclip, Mic, Send } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useMessages } from "@/hooks/useMessages"
-import { sendMessage } from "@/lib/chatActions"
-import type { User } from "@/types/chat"
 import { useConversation } from "@/hooks/use-conversations"
-import ContactInfoDialog from "./contact-info-dialog"
+import { sendMessage } from "@/lib/chatActions"
+import { AssignUsersDialog } from "@/components/assign-users-dialog"
+import { ContactInfoDialog } from "@/components/contact-info-dialog"
+import type { User } from "@/types/chat"
 
 interface ConversationWindowProps {
   chatId: string
@@ -21,49 +22,18 @@ interface ConversationWindowProps {
 export default function ConversationWindow({ chatId, currentUser }: ConversationWindowProps) {
   const [message, setMessage] = useState("")
   const [sending, setSending] = useState(false)
-  const { messages, loading, error } = useMessages(chatId)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const messagesContainerRef = useRef<HTMLDivElement>(null)
   const [showContactInfo, setShowContactInfo] = useState(false)
+  const { messages, loading: messagesLoading, error: messagesError } = useMessages(chatId)
   const { conversation, loading: conversationLoading, displayName } = useConversation(chatId)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth" })
-    }
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }
 
-  const scrollToBottomInstant = () => {
-    if (messagesContainerRef.current) {
-      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
-    }
-  }
-
-  // Scroll automático cuando cambian los mensajes
   useEffect(() => {
-    if (messages.length > 0) {
-      // Scroll instantáneo al cargar mensajes por primera vez
-      setTimeout(() => {
-        scrollToBottomInstant()
-      }, 100)
-    }
-  }, [messages.length])
-
-  // Scroll suave cuando se añade un nuevo mensaje
-  useEffect(() => {
-    if (messages.length > 0) {
-      scrollToBottom()
-    }
+    scrollToBottom()
   }, [messages])
-
-  // Scroll instantáneo cuando cambia la conversación
-  useEffect(() => {
-    if (chatId) {
-      setTimeout(() => {
-        scrollToBottomInstant()
-      }, 200)
-    }
-  }, [chatId])
 
   const handleSendMessage = async () => {
     if (message.trim() && currentUser && !sending) {
@@ -76,10 +46,6 @@ export default function ConversationWindow({ chatId, currentUser }: Conversation
           messageType: "text",
         })
         setMessage("")
-        // Scroll después de enviar mensaje
-        setTimeout(() => {
-          scrollToBottom()
-        }, 100)
       } catch (error) {
         console.error("Error sending message:", error)
       } finally {
@@ -108,7 +74,27 @@ export default function ConversationWindow({ chatId, currentUser }: Conversation
     return previousMessage.sender_type !== currentMessage.sender_type
   }
 
-  if (loading || conversationLoading) {
+  // Función para obtener el estado del contacto
+  const getContactStatus = () => {
+    if (!conversation?.client) return "Desconocido"
+
+    // Aquí podrías implementar lógica más compleja para determinar el estado
+    return "En línea"
+  }
+
+  // Función para obtener información adicional del contacto
+  const getContactInfo = () => {
+    if (!conversation?.client) return ""
+
+    const assignedCount = conversation.assigned_user_ids?.length || 0
+    if (assignedCount > 0) {
+      return `• ${assignedCount} usuario${assignedCount !== 1 ? "s" : ""} asignado${assignedCount !== 1 ? "s" : ""}`
+    }
+
+    return ""
+  }
+
+  if (messagesLoading || conversationLoading) {
     return (
       <div className="flex flex-col h-full">
         <div className="flex-1 flex items-center justify-center">
@@ -118,13 +104,13 @@ export default function ConversationWindow({ chatId, currentUser }: Conversation
     )
   }
 
-  if (error) {
+  if (messagesError) {
     return (
       <div className="flex flex-col h-full">
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center text-red-500">
             <p>Error al cargar mensajes</p>
-            <p className="text-sm">{error}</p>
+            <p className="text-sm">{messagesError}</p>
           </div>
         </div>
       </div>
@@ -132,7 +118,7 @@ export default function ConversationWindow({ chatId, currentUser }: Conversation
   }
 
   return (
-    <div className="flex flex-col h-screen w-full relative">
+    <div className="flex flex-col h-full">
       {/* Header de la conversación */}
       <div className="flex items-center justify-between p-4 bg-gray-50 border-b border-gray-200">
         <div
@@ -140,11 +126,17 @@ export default function ConversationWindow({ chatId, currentUser }: Conversation
           onClick={() => setShowContactInfo(true)}
         >
           <Avatar className="h-10 w-10">
-            <AvatarImage src={conversation?.client?.avatar_url || "/placeholder.svg"} alt={displayName} />
-            <AvatarFallback>{displayName.charAt(0)}</AvatarFallback>
+            {conversation?.client?.avatar_url && (
+              <AvatarImage src={conversation.client.avatar_url || "/placeholder.svg"} alt={displayName} />
+            )}
+            <AvatarFallback>{displayName.charAt(0).toUpperCase()}</AvatarFallback>
           </Avatar>
           <div className="ml-3">
             <h2 className="font-medium text-gray-900">{displayName}</h2>
+            <div className="flex items-center text-sm text-gray-500">
+              <span>{getContactStatus()}</span>
+              <span className="ml-1">{getContactInfo()}</span>
+            </div>
           </div>
         </div>
 
@@ -158,16 +150,19 @@ export default function ConversationWindow({ chatId, currentUser }: Conversation
           <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
             <Search className="h-4 w-4" />
           </Button>
+          <AssignUsersDialog conversationId={chatId} assignedUserIds={conversation?.assigned_user_ids || []} />
           <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
             <MoreVertical className="h-4 w-4" />
           </Button>
         </div>
       </div>
 
+      {/* Diálogo de información del contacto */}
+      <ContactInfoDialog client={conversation?.client} open={showContactInfo} onOpenChange={setShowContactInfo} />
+
       {/* Área de mensajes */}
       <div
-        ref={messagesContainerRef}
-        className="flex-1 overflow-y-auto p-4 bg-gray-50 min-h-0 pb-20"
+        className="flex-1 overflow-y-auto p-4 bg-gray-50"
         style={{
           backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fillRule='evenodd'%3E%3Cg fill='%23f0f0f0' fillOpacity='0.1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
         }}
@@ -177,6 +172,7 @@ export default function ConversationWindow({ chatId, currentUser }: Conversation
             <div className="flex items-center justify-center h-32 text-gray-500">
               <div className="text-center">
                 <p>No hay mensajes en esta conversación</p>
+                <p className="text-sm mt-1">Envía un mensaje para comenzar</p>
               </div>
             </div>
           ) : (
@@ -218,69 +214,47 @@ export default function ConversationWindow({ chatId, currentUser }: Conversation
         </div>
       </div>
 
-      {/* Input de mensaje - Fijo abajo a la derecha */}
-      <div className="absolute bottom-0 right-0 left-0 px-3 py-2 bg-gray-100 border-t border-gray-200">
-        <div className="flex items-center gap-2 justify-end">
-          {/* Botón Plus separado */}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 w-8 p-0 rounded-full text-gray-600 hover:bg-gray-200 flex-shrink-0"
-          >
-            <Plus className="h-5 w-5" />
+      {/* Input de mensaje */}
+      <div className="p-4 bg-gray-50 border-t border-gray-200">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+            <Smile className="h-5 w-5 text-gray-500" />
+          </Button>
+          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+            <Paperclip className="h-5 w-5 text-gray-500" />
           </Button>
 
-          {/* Contenedor del input - más ancho y alineado a la derecha */}
-          <div className="flex-1 max-w-2xl bg-white rounded-full border border-gray-200 shadow-sm ml-auto">
+          <div className="flex-1 relative">
             <Input
               placeholder="Escribe un mensaje"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               onKeyPress={handleKeyPress}
               disabled={sending}
-              className="border-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 rounded-full h-8 px-3 text-sm text-gray-900 placeholder:text-gray-500"
+              className="pr-12 rounded-full border-gray-300 focus:border-green-500"
             />
           </div>
-
-          {/* Botones de la derecha separados */}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 w-8 p-0 rounded-full text-gray-600 hover:bg-gray-200 flex-shrink-0"
-          >
-            <Smile className="h-5 w-5" />
-          </Button>
 
           {message.trim() ? (
             <Button
               onClick={handleSendMessage}
               disabled={sending}
               size="sm"
-              className="h-8 w-8 p-0 rounded-full bg-green-500 hover:bg-green-600 text-white flex-shrink-0"
+              className="h-8 w-8 p-0 bg-green-500 hover:bg-green-600 rounded-full"
             >
               {sending ? (
-                <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
               ) : (
                 <Send className="h-4 w-4" />
               )}
             </Button>
           ) : (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0 rounded-full text-gray-600 hover:bg-gray-200 flex-shrink-0"
-            >
-              <Mic className="h-5 w-5" />
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+              <Mic className="h-5 w-5 text-gray-500" />
             </Button>
           )}
         </div>
       </div>
-      {/* Diálogo de información del contacto */}
-      <ContactInfoDialog
-        client={conversation?.client || null}
-        open={showContactInfo}
-        onOpenChange={setShowContactInfo}
-      />
     </div>
   )
 }

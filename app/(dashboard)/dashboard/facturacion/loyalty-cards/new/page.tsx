@@ -262,9 +262,9 @@ export default function NewLoyaltyCardPage() {
   const selectedClient = clients.find((c) => c.id === formData.client_id)
 
   const breadcrumbItems = [
-    { label: "Dashboard", href: "/dashboard" },
-    { label: "Tarjetas de Fidelización", href: "/dashboard/loyalty-cards" },
-    { label: "Nueva Tarjeta", href: "/dashboard/loyalty-cards/new" },
+    { label: "Dashboard", href: "/dashboard/facturacion" },
+    { label: "Tarjetas de Fidelización", href: "/dashboard/facturacion/loyalty-cards" },
+    { label: "Nueva Tarjeta", href: "/dashboard/facturacion/loyalty-cards/new" },
   ]
 
   return (

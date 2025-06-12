@@ -14,6 +14,39 @@ import { createConversation } from "@/lib/chatActions"
 import { useConversations } from "@/hooks/use-conversations"
 import { useClients } from "@/hooks/use-clients"
 import { useAuth } from "@/app/contexts/auth-context"
+import type { ConversationWithLastMessage } from "@/types/chat"
+
+// Componente para mostrar el icono del canal con letra
+function ChannelIcon({ channelName }: { channelName?: string }) {
+  const getChannelConfig = (name: string) => {
+    switch (name?.toLowerCase()) {
+      case "whatsapp":
+        return { letter: "W", bgColor: "bg-green-500", textColor: "text-white" }
+      case "email":
+        return { letter: "E", bgColor: "bg-blue-500", textColor: "text-white" }
+      case "sms":
+        return { letter: "S", bgColor: "bg-orange-500", textColor: "text-white" }
+      case "webchat":
+        return { letter: "C", bgColor: "bg-purple-500", textColor: "text-white" }
+      case "facebook":
+        return { letter: "F", bgColor: "bg-blue-600", textColor: "text-white" }
+      case "instagram":
+        return { letter: "I", bgColor: "bg-pink-500", textColor: "text-white" }
+      case "telegram":
+        return { letter: "T", bgColor: "bg-sky-500", textColor: "text-white" }
+      default:
+        return { letter: "?", bgColor: "bg-gray-500", textColor: "text-white" }
+    }
+  }
+
+  const config = getChannelConfig(channelName || "")
+
+  return (
+    <div className={`w-5 h-5 rounded-full ${config.bgColor} flex items-center justify-center`}>
+      <span className={`text-xs font-bold ${config.textColor}`}>{config.letter}</span>
+    </div>
+  )
+}
 
 function NewConversationDialog({ onConversationCreated }: { onConversationCreated: () => void }) {
   const [selectedClientId, setSelectedClientId] = useState<string>("")
@@ -22,7 +55,6 @@ function NewConversationDialog({ onConversationCreated }: { onConversationCreate
   const [open, setOpen] = useState(false)
   const { userProfile } = useAuth()
 
-  // Convertir organization_id de string a number
   const organizationId = userProfile?.organization_id ? Number(userProfile.organization_id) : undefined
   const { clients, loading: clientsLoading, error: clientsError } = useClients(organizationId)
 
@@ -42,7 +74,7 @@ function NewConversationDialog({ onConversationCreated }: { onConversationCreate
           phone: selectedClient.phone,
           email: selectedClient.email,
           external_id: selectedClient.external_id || `client-${selectedClient.id}`,
-          avatar_url: selectedClient.avatar_url || "/placeholder.svg?height=40&width=40",
+          avatar_url: selectedClient.avatar_url,
         },
         initialMessage: initialMessage || "¡Hola! ¿En qué puedo ayudarte?",
         existingClientId: selectedClient.id,
@@ -113,7 +145,9 @@ function NewConversationDialog({ onConversationCreated }: { onConversationCreate
                     <SelectItem key={client.id} value={client.id.toString()}>
                       <div className="flex items-center gap-2">
                         <Avatar className="h-6 w-6">
-                          <AvatarImage src={client.avatar_url || "/placeholder.svg"} alt={client.name} />
+                          {client.avatar_url && (
+                            <AvatarImage src={client.avatar_url || "/placeholder.svg"} alt={client.name} />
+                          )}
                           <AvatarFallback className="text-xs">{client.name.charAt(0)}</AvatarFallback>
                         </Avatar>
                         <div>
@@ -159,11 +193,11 @@ interface ChatListProps {
 
 export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps) {
   const [searchQuery, setSearchQuery] = useState("")
+  const [viewMode, setViewMode] = useState<"all" | "assigned">("all")
   const { userProfile } = useAuth()
 
-  // Convertir organization_id de string a number
-  const organizationId = userProfile?.organization_id ? Number(userProfile.organization_id) : undefined
-  const { conversations, loading, error, refetch } = useConversations(organizationId)
+  const organizationId = userProfile?.organization_id
+  const { conversations, loading, error, refetch } = useConversations(organizationId, viewMode)
 
   const filteredConversations = conversations.filter(
     (conv) =>
@@ -195,14 +229,13 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
     return "Nueva conversación"
   }
 
+  const assignedCount = conversations.filter((conv) => conv.assigned_user_ids?.includes(userProfile?.id || "")).length
+
   if (loading) {
     return (
       <div className="flex flex-col h-full">
-        {/* Header fijo */}
-        <div className="flex-shrink-0">
-          <div className="flex items-center justify-between p-4 bg-gray-50 border-b border-gray-200">
-            <h1 className="text-xl font-semibold text-gray-800">Chats</h1>
-          </div>
+        <div className="flex items-center justify-between p-4 bg-gray-50 border-b border-gray-200">
+          <h1 className="text-xl font-semibold text-gray-800">Chats</h1>
         </div>
         <div className="flex-1 flex items-center justify-center">
           <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-500"></div>
@@ -214,11 +247,8 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
   if (error) {
     return (
       <div className="flex flex-col h-full">
-        {/* Header fijo */}
-        <div className="flex-shrink-0">
-          <div className="flex items-center justify-between p-4 bg-gray-50 border-b border-gray-200">
-            <h1 className="text-xl font-semibold text-gray-800">Chats</h1>
-          </div>
+        <div className="flex items-center justify-between p-4 bg-gray-50 border-b border-gray-200">
+          <h1 className="text-xl font-semibold text-gray-800">Chats</h1>
         </div>
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center text-red-500">
@@ -232,50 +262,67 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header fijo - No hace scroll */}
-      <div className="flex-shrink-0 bg-white">
-        {/* Título y botones */}
-        <div className="flex items-center justify-between p-4 bg-gray-50 border-b border-gray-200">
-          <h1 className="text-xl font-semibold text-gray-800">Chats</h1>
-          <div className="flex items-center gap-2">
-            <NewConversationDialog onConversationCreated={refetch} />
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-              <Users className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-              <MoreVertical className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-
-        {/* Barra de búsqueda */}
-        <div className="p-3 bg-white border-b border-gray-200">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <Input
-              placeholder="Buscar conversaciones..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 bg-gray-50 border-none focus:bg-white"
-            />
-          </div>
-        </div>
-
-        {/* Filtros */}
-        <div className="flex gap-2 p-3 bg-white border-b border-gray-200">
-          <Button variant="secondary" size="sm" className="rounded-full">
-            Todos ({conversations.length})
+      {/* Header */}
+      <div className="flex items-center justify-between p-4 bg-gray-50 border-b border-gray-200">
+        <h1 className="text-xl font-semibold text-gray-800">Chats</h1>
+        <div className="flex items-center gap-2">
+          <NewConversationDialog onConversationCreated={refetch} />
+          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+            <Users className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="sm" className="rounded-full">
-            Activos ({conversations.filter((c) => c.status === "active").length})
-          </Button>
-          <Button variant="ghost" size="sm" className="rounded-full">
-            No leídos ({conversations.filter((c) => c.unread_count > 0).length})
+          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+            <MoreVertical className="h-4 w-4" />
           </Button>
         </div>
       </div>
 
-      {/* Lista de chats - Hace scroll */}
+      {/* Filtros principales */}
+      <div className="bg-white border-b border-gray-200">
+        <div
+          className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-50 ${
+            viewMode === "assigned" ? "bg-green-50 border-r-4 border-green-500" : ""
+          }`}
+          onClick={() => setViewMode("assigned")}
+        >
+          <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+            <MessageCircle className="h-4 w-4 text-green-600" />
+          </div>
+          <div className="flex-1">
+            <span className="font-medium text-gray-900">Asignados</span>
+            <span className="ml-2 text-gray-500">({assignedCount})</span>
+          </div>
+        </div>
+
+        <div
+          className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-50 ${
+            viewMode === "all" ? "bg-green-50 border-r-4 border-green-500" : ""
+          }`}
+          onClick={() => setViewMode("all")}
+        >
+          <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+            <Users className="h-4 w-4 text-gray-600" />
+          </div>
+          <div className="flex-1">
+            <span className="font-medium text-gray-900">Todos</span>
+            <span className="ml-2 text-gray-500">({conversations.length})</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Barra de búsqueda */}
+      <div className="p-3 bg-white border-b border-gray-200">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Input
+            placeholder="Buscar conversaciones..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10 bg-gray-50 border-none focus:bg-white"
+          />
+        </div>
+      </div>
+
+      {/* Lista de chats */}
       <div className="flex-1 overflow-y-auto">
         {filteredConversations.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-32 text-gray-500 p-4">
@@ -283,7 +330,7 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
             <p className="text-sm text-center">Haz clic en el botón de mensaje para iniciar una nueva conversación</p>
           </div>
         ) : (
-          filteredConversations.map((conversation) => (
+          filteredConversations.map((conversation: ConversationWithLastMessage) => (
             <div
               key={conversation.id}
               onClick={() => onChatSelect(conversation.id)}
@@ -291,14 +338,22 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
                 selectedChatId === conversation.id ? "bg-gray-100" : ""
               }`}
             >
+              {/* Avatar con icono del canal en la esquina */}
               <div className="relative">
                 <Avatar className="h-12 w-12">
-                  <AvatarImage
-                    src={conversation.client?.avatar_url || "/placeholder.svg"}
-                    alt={conversation.client?.name || "Usuario"}
-                  />
+                  {conversation.client?.avatar_url && (
+                    <AvatarImage
+                      src={conversation.client.avatar_url || "/placeholder.svg"}
+                      alt={conversation.client?.name || "Usuario"}
+                    />
+                  )}
                   <AvatarFallback>{conversation.client?.name?.charAt(0) || "U"}</AvatarFallback>
                 </Avatar>
+
+                {/* Icono del canal en la esquina inferior derecha - SIEMPRE mostrar para debug */}
+                <div className="absolute -bottom-0.5 -right-0.5 bg-white rounded-full p-0.5 border border-gray-200 shadow-sm">
+                  <ChannelIcon channelName={conversation.canales_organization?.canal?.nombre || "whatsapp"} />
+                </div>
               </div>
 
               <div className="flex-1 ml-3 min-w-0">

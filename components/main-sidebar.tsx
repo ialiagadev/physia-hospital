@@ -1,4 +1,3 @@
-// components/main-sidebar.tsx
 "use client"
 
 import { useState, useEffect } from "react"
@@ -6,7 +5,17 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { LayoutDashboard, FileText, MessageSquare, BarChart2, Settings, PanelLeft,CheckSquare } from 'lucide-react'
+import {
+  LayoutDashboard,
+  FileText,
+  MessageSquare,
+  BarChart2,
+  Settings,
+  PanelLeft,
+  CheckSquare,
+  Bot,
+  Radio,
+} from "lucide-react"
 
 export function MainSidebar() {
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false)
@@ -41,54 +50,63 @@ export function MainSidebar() {
       label: "Dashboard",
       href: "/dashboard",
       icon: LayoutDashboard,
-      isActive: pathname === "/dashboard"
+      isActive: pathname === "/dashboard",
     },
     {
       id: "facturacion",
       label: "Facturación",
       href: "/dashboard/facturacion",
       icon: FileText,
-      isActive: isInSection("facturacion")
+      isActive: isInSection("facturacion"),
+    },
+    {
+      id: "canales",
+      label: "Canales",
+      href: "/dashboard/canales",
+      icon: Radio,
+      isActive: isInSection("canales"),
     },
     {
       id: "whatsapp",
       label: "WhatsApp",
       href: "/dashboard/whatsapp",
       icon: MessageSquare,
-      isActive: isInSection("whatsapp")
+      isActive: isInSection("whatsapp"),
     },
     {
       id: "tareas",
-      label: "tareas",
+      label: "Tareas",
       href: "/dashboard/tareas",
       icon: CheckSquare,
-      isActive: isInSection("tareas")
+      isActive: isInSection("tareas"),
+    },
+    {
+      id: "agents",
+      label: "Agentes IA",
+      href: "/dashboard/agents",
+      icon: Bot,
+      isActive: isInSection("agents"),
     },
     {
       id: "reports",
       label: "Reportes",
       href: "/dashboard/reports",
       icon: BarChart2,
-      isActive: isInSection("reports")
+      isActive: isInSection("reports"),
     },
     {
       id: "settings",
       label: "Configuración",
       href: "/dashboard/settings",
       icon: Settings,
-      isActive: isInSection("settings")
-    }
+      isActive: isInSection("settings"),
+    },
   ]
 
   if (isCollapsed) {
     return (
       <div className="w-16 h-screen bg-white border-r border-gray-200 flex flex-col items-center py-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={toggleCollapse}
-          className="h-8 w-8 mb-4"
-        >
+        <Button variant="ghost" size="icon" onClick={toggleCollapse} className="h-8 w-8 mb-4">
           <PanelLeft className="h-4 w-4" />
         </Button>
         <div className="w-10 h-10 bg-purple-500 rounded-xl flex items-center justify-center mb-6">
@@ -126,9 +144,7 @@ export function MainSidebar() {
       {/* Navigation */}
       <div className="flex-1 px-6 py-6">
         <div className="mb-6">
-          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
-            PRINCIPAL
-          </h2>
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">PRINCIPAL</h2>
           <nav className="space-y-1">
             {menuItems.map((item) => {
               const Icon = item.icon
@@ -140,13 +156,10 @@ export function MainSidebar() {
                     "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
                     item.isActive
                       ? "text-purple-600 bg-purple-50"
-                      : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                      : "text-gray-600 hover:text-gray-900 hover:bg-gray-50",
                   )}
                 >
-                  <Icon className={cn(
-                    "h-5 w-5",
-                    item.isActive ? "text-purple-600" : "text-gray-400"
-                  )} />
+                  <Icon className={cn("h-5 w-5", item.isActive ? "text-purple-600" : "text-gray-400")} />
                   <span>{item.label}</span>
                 </Link>
               )
