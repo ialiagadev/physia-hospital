@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useMemo } from "react"
+import { useEffect, useState, useMemo, useCallback, useRef } from "react"
 import { supabase } from "@/lib/supabase/client"
 import type { Conversation, ConversationWithLastMessage } from "@/types/chat"
 
@@ -8,16 +8,29 @@ export function useConversations(organizationId: string | undefined, viewMode: "
   const [conversations, setConversations] = useState<ConversationWithLastMessage[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const isMounted = useRef(true)
+  const lastFetchRef = useRef<number>(0)
 
-  useEffect(() => {
-    // Función para cargar conversaciones con el último mensaje
-    const fetchConversations = async () => {
+  // Memoizar la función fetchConversations para evitar recreaciones
+  const fetchConversations = useCallback(
+    async (skipLoading = false) => {
+      // Evitar múltiples llamadas simultáneas
+      const now = Date.now()
+      if (now - lastFetchRef.current < 500) {
+        return
+      }
+      lastFetchRef.current = now
+
       try {
-        setLoading(true)
+        if (!skipLoading) {
+          setLoading(true)
+        }
 
         if (!organizationId) {
-          setConversations([])
-          setLoading(false)
+          if (isMounted.current) {
+            setConversations([])
+            setLoading(false)
+          }
           return
         }
 
@@ -25,8 +38,10 @@ export function useConversations(organizationId: string | undefined, viewMode: "
         const orgIdNumber = Number(organizationId)
         if (isNaN(orgIdNumber)) {
           console.error("Invalid organization ID:", organizationId)
-          setError("ID de organización inválido")
-          setLoading(false)
+          if (isMounted.current) {
+            setError("ID de organización inválido")
+            setLoading(false)
+          }
           return
         }
 
@@ -34,60 +49,90 @@ export function useConversations(organizationId: string | undefined, viewMode: "
         const { data: conversationsData, error: conversationsError } = await supabase
           .from("conversations")
           .select(`
-            *,
-            client:clients(*),
-            canales_organization:canales_organizations(
+          *,
+          client:clients(*),
+          canales_organization:canales_organizations(
+            id,
+            canal:canales(
               id,
-              canal:canales(
-                id,
-                nombre,
-                descripcion,
-                imagen
-              )
+              nombre,
+              descripcion,
+              imagen
             )
-          `)
+          )
+        `)
           .eq("organization_id", orgIdNumber)
           .order("last_message_at", { ascending: false, nullsFirst: false })
 
         if (conversationsError) {
           console.error("Error fetching conversations:", conversationsError)
-          setError(conversationsError.message)
+          if (isMounted.current) {
+            setError(conversationsError.message)
+          }
           return
         }
 
-        // Para cada conversación, obtenemos su último mensaje
-        const conversationsWithMessages = await Promise.all(
-          (conversationsData || []).map(async (conversation) => {
-            const { data: lastMessage } = await supabase
-              .from("messages")
-              .select("*")
-              .eq("conversation_id", conversation.id)
-              .order("created_at", { ascending: false })
-              .limit(1)
-              .single()
+        // Optimización: Obtener todos los últimos mensajes en una sola consulta
+        const conversationIds = (conversationsData || []).map((conv) => conv.id)
 
-            return {
-              ...conversation,
-              last_message: lastMessage || null,
+        if (conversationIds.length === 0) {
+          if (isMounted.current) {
+            setConversations([])
+            setError(null)
+            setLoading(false)
+          }
+          return
+        }
+
+        const { data: lastMessages } = await supabase
+          .from("messages")
+          .select("*")
+          .in("conversation_id", conversationIds)
+          .order("created_at", { ascending: false })
+
+        // Crear un mapa de los últimos mensajes por conversation_id
+        const lastMessageMap = new Map()
+        if (lastMessages) {
+          for (const msg of lastMessages) {
+            if (!lastMessageMap.has(msg.conversation_id)) {
+              lastMessageMap.set(msg.conversation_id, msg)
             }
-          }),
-        )
+          }
+        }
 
-        setConversations(conversationsWithMessages)
-        setError(null)
+        // Combinar conversaciones con sus últimos mensajes
+        const conversationsWithMessages = (conversationsData || []).map((conversation) => {
+          return {
+            ...conversation,
+            last_message: lastMessageMap.get(conversation.id) || null,
+          }
+        })
+
+        if (isMounted.current) {
+          setConversations(conversationsWithMessages)
+          setError(null)
+        }
       } catch (err) {
-        setError("Error inesperado al cargar conversaciones")
+        if (isMounted.current) {
+          setError("Error inesperado al cargar conversaciones")
+        }
       } finally {
-        setLoading(false)
+        if (isMounted.current) {
+          setLoading(false)
+        }
       }
-    }
+    },
+    [organizationId],
+  )
 
+  useEffect(() => {
+    isMounted.current = true
     fetchConversations()
 
     if (organizationId) {
       const orgIdNumber = Number(organizationId)
       if (!isNaN(orgIdNumber)) {
-        // Suscribirse a cambios en tiempo real
+        // Suscribirse a cambios en tiempo real con optimización
         const channel = supabase
           .channel("conversations-changes")
           .on(
@@ -99,7 +144,8 @@ export function useConversations(organizationId: string | undefined, viewMode: "
               filter: `organization_id=eq.${orgIdNumber}`,
             },
             (payload) => {
-              fetchConversations()
+              // Actualizar de forma optimista sin mostrar el indicador de carga
+              fetchConversations(true)
             },
           )
           .on(
@@ -110,26 +156,38 @@ export function useConversations(organizationId: string | undefined, viewMode: "
               table: "messages",
             },
             (payload) => {
-              fetchConversations()
+              // Solo actualizar si el mensaje pertenece a una conversación que ya tenemos
+              const messageData = payload.new as any
+              if (messageData && messageData.conversation_id) {
+                const conversationExists = conversations.some((c) => c.id === messageData.conversation_id)
+                if (conversationExists) {
+                  fetchConversations(true)
+                }
+              }
             },
           )
           .subscribe()
 
         return () => {
+          isMounted.current = false
           supabase.removeChannel(channel)
         }
       }
     }
-  }, [organizationId, viewMode])
 
-  const refetch = () => {
-    setLoading(true)
-  }
+    return () => {
+      isMounted.current = false
+    }
+  }, [organizationId, fetchConversations])
+
+  const refetch = useCallback(() => {
+    fetchConversations()
+  }, [fetchConversations])
 
   return { conversations, loading, error, refetch }
 }
 
-// Hook para obtener conversaciones filtradas por asignación
+// El resto del código permanece igual
 export function useFilteredConversations(
   organizationId: string | undefined,
   currentUserId: string | undefined,
@@ -163,17 +221,24 @@ export function useConversation(conversationId: string | null) {
   const [conversation, setConversation] = useState<Conversation | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const isMounted = useRef(true)
 
   useEffect(() => {
+    isMounted.current = true
+
     if (!conversationId) {
-      setConversation(null)
-      setLoading(false)
+      if (isMounted.current) {
+        setConversation(null)
+        setLoading(false)
+      }
       return
     }
 
     const fetchConversation = async () => {
       try {
-        setLoading(true)
+        if (isMounted.current) {
+          setLoading(true)
+        }
 
         const { data, error } = await supabase
           .from("conversations")
@@ -195,15 +260,21 @@ export function useConversation(conversationId: string | null) {
 
         if (error) {
           console.error("Error fetching conversation:", error)
-          setError(error.message)
-        } else {
+          if (isMounted.current) {
+            setError(error.message)
+          }
+        } else if (isMounted.current) {
           setConversation(data)
           setError(null)
         }
       } catch (err) {
-        setError("Error inesperado al cargar conversación")
+        if (isMounted.current) {
+          setError("Error inesperado al cargar conversación")
+        }
       } finally {
-        setLoading(false)
+        if (isMounted.current) {
+          setLoading(false)
+        }
       }
     }
 
@@ -227,12 +298,13 @@ export function useConversation(conversationId: string | null) {
       .subscribe()
 
     return () => {
+      isMounted.current = false
       supabase.removeChannel(channel)
     }
   }, [conversationId])
 
   // Función para obtener el nombre a mostrar
-  const getDisplayName = () => {
+  const getDisplayName = useCallback(() => {
     if (!conversation?.client) return "Contacto desconocido"
 
     // Si tiene nombre, mostrarlo
@@ -247,7 +319,7 @@ export function useConversation(conversationId: string | null) {
 
     // Si no tiene ni nombre ni teléfono
     return "Contacto desconocido"
-  }
+  }, [conversation])
 
   return {
     conversation,

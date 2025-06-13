@@ -95,9 +95,9 @@ export function MainSidebar() {
       isActive: isInSection("reports"),
     },
     {
-      id: "settings",
-      label: "Configuración",
-      href: "/dashboard/settings",
+      id: "login",
+      label: "login",
+      href: "/login",
       icon: Settings,
       isActive: isInSection("settings"),
     },
