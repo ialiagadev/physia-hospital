@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState } from "react"
-import { Search, MoreVertical, Users, MessageCircle } from "lucide-react"
+import { Search, MoreVertical, Users, MessageCircle, Plus, Phone } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -48,17 +48,112 @@ function ChannelIcon({ channelName }: { channelName?: string }) {
   )
 }
 
-function NewConversationDialog({ onConversationCreated }: { onConversationCreated: () => void }) {
+// Prefijos de países más comunes
+const countryPrefixes = [
+  { code: "ES", prefix: "+34", name: "España", flag: "🇪🇸" },
+  { code: "US", prefix: "+1", name: "Estados Unidos", flag: "🇺🇸" },
+  { code: "MX", prefix: "+52", name: "México", flag: "🇲🇽" },
+  { code: "AR", prefix: "+54", name: "Argentina", flag: "🇦🇷" },
+  { code: "CO", prefix: "+57", name: "Colombia", flag: "🇨🇴" },
+  { code: "PE", prefix: "+51", name: "Perú", flag: "🇵🇪" },
+  { code: "CL", prefix: "+56", name: "Chile", flag: "🇨🇱" },
+  { code: "VE", prefix: "+58", name: "Venezuela", flag: "🇻🇪" },
+  { code: "EC", prefix: "+593", name: "Ecuador", flag: "🇪🇨" },
+  { code: "UY", prefix: "+598", name: "Uruguay", flag: "🇺🇾" },
+  { code: "PY", prefix: "+595", name: "Paraguay", flag: "🇵🇾" },
+  { code: "BO", prefix: "+591", name: "Bolivia", flag: "🇧🇴" },
+  { code: "BR", prefix: "+55", name: "Brasil", flag: "🇧🇷" },
+  { code: "FR", prefix: "+33", name: "Francia", flag: "🇫🇷" },
+  { code: "IT", prefix: "+39", name: "Italia", flag: "🇮🇹" },
+  { code: "DE", prefix: "+49", name: "Alemania", flag: "🇩🇪" },
+  { code: "GB", prefix: "+44", name: "Reino Unido", flag: "🇬🇧" },
+]
+
+// Plantillas de ejemplo (mock data)
+const messageTemplates = [
+  {
+    id: "welcome",
+    name: "Bienvenida",
+    content: "¡Hola! 👋 Bienvenido/a a nuestro servicio. ¿En qué podemos ayudarte hoy?",
+    category: "Saludo",
+  },
+  {
+    id: "appointment",
+    name: "Recordatorio de cita",
+    content: "Hola, te recordamos que tienes una cita programada. ¿Necesitas confirmar o reprogramar?",
+    category: "Citas",
+  },
+  {
+    id: "promotion",
+    name: "Promoción especial",
+    content: "🎉 ¡Oferta especial! Aprovecha nuestros descuentos exclusivos. ¡No te lo pierdas!",
+    category: "Marketing",
+  },
+  {
+    id: "support",
+    name: "Soporte técnico",
+    content: "Hola, somos el equipo de soporte. Estamos aquí para ayudarte con cualquier consulta técnica.",
+    category: "Soporte",
+  },
+  {
+    id: "followup",
+    name: "Seguimiento",
+    content: "Hola, queremos saber cómo ha sido tu experiencia con nosotros. ¿Podrías compartir tu opinión?",
+    category: "Seguimiento",
+  },
+]
+
+// Reemplazar las dos funciones de modal (NewConversationModal y NewConversationDialog) con esta versión unificada:
+
+// Modal unificado para nueva conversación
+function UnifiedNewConversationModal({ onConversationCreated }: { onConversationCreated: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<"new" | "existing">("new")
+
+  // Estados para nuevo contacto
+  const [selectedPrefix, setSelectedPrefix] = useState("+34")
+  const [phoneNumber, setPhoneNumber] = useState("")
+  const [contactName, setContactName] = useState("")
+  const [selectedTemplate, setSelectedTemplate] = useState("")
+
+  // Estados para contacto existente
   const [selectedClientId, setSelectedClientId] = useState<string>("")
   const [initialMessage, setInitialMessage] = useState("")
+
   const [loading, setLoading] = useState(false)
-  const [open, setOpen] = useState(false)
   const { userProfile } = useAuth()
 
   const organizationId = userProfile?.organization_id ? Number(userProfile.organization_id) : undefined
   const { clients, loading: clientsLoading, error: clientsError } = useClients(organizationId)
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmitNew = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!phoneNumber.trim() || !selectedTemplate || !contactName.trim()) return
+
+    setLoading(true)
+    try {
+      // Aquí irá la lógica para crear la conversación con nuevo contacto
+      console.log("Crear conversación con nuevo contacto:", {
+        name: contactName,
+        phone: selectedPrefix + phoneNumber,
+        template: selectedTemplate,
+      })
+
+      // Simular delay
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+
+      // Limpiar formulario y cerrar modal
+      resetForm()
+      setOpen(false)
+      onConversationCreated()
+    } catch (error) {
+      console.error("Error creating conversation:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSubmitExisting = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedClientId || !organizationId) return
 
@@ -80,8 +175,7 @@ function NewConversationDialog({ onConversationCreated }: { onConversationCreate
         existingClientId: selectedClient.id,
       })
 
-      setSelectedClientId("")
-      setInitialMessage("")
+      resetForm()
       setOpen(false)
       onConversationCreated()
     } catch (error) {
@@ -91,96 +185,241 @@ function NewConversationDialog({ onConversationCreated }: { onConversationCreate
     }
   }
 
-  if (!organizationId) {
-    return (
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogTrigger asChild>
-          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-            <MessageCircle className="h-4 w-4" />
-            <span className="sr-only">Nueva conversación</span>
-          </Button>
-        </DialogTrigger>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Error</DialogTitle>
-          </DialogHeader>
-          <p>No se pudo obtener la información de la organización.</p>
-        </DialogContent>
-      </Dialog>
-    )
+  const resetForm = () => {
+    setPhoneNumber("")
+    setContactName("")
+    setSelectedTemplate("")
+    setSelectedClientId("")
+    setInitialMessage("")
   }
+
+  const selectedTemplateData = messageTemplates.find((t) => t.id === selectedTemplate)
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-          <MessageCircle className="h-4 w-4" />
-          <span className="sr-only">Nueva conversación</span>
+        <Button className="bg-green-600 hover:bg-green-700 text-white shadow-sm transition-all duration-200 hover:shadow-md rounded-lg h-9 font-medium">
+          <Plus className="h-4 w-4 mr-1.5" />
+          Nueva
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Iniciar conversación</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <MessageCircle className="h-5 w-5 text-green-600" />
+            Nueva conversación
+          </DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="client">Seleccionar contacto</Label>
-            {clientsLoading ? (
-              <div className="flex items-center justify-center p-4">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-500"></div>
-                <span className="ml-2">Cargando contactos...</span>
+        {/* Pestañas */}
+        <div className="flex border-b border-gray-200 mb-4">
+          <button
+            type="button"
+            onClick={() => setActiveTab("new")}
+            className={`flex-1 py-2 px-4 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === "new"
+                ? "border-green-500 text-green-600 bg-green-50"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            <Phone className="h-4 w-4 inline mr-2" />
+            Nuevo contacto
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("existing")}
+            className={`flex-1 py-2 px-4 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === "existing"
+                ? "border-green-500 text-green-600 bg-green-50"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            <Users className="h-4 w-4 inline mr-2" />
+            Contacto existente
+          </button>
+        </div>
+
+        {/* Contenido de la pestaña "Nuevo contacto" */}
+        {activeTab === "new" && (
+          <form onSubmit={handleSubmitNew} className="space-y-4">
+            {/* Nombre del contacto */}
+            <div className="space-y-2">
+              <Label htmlFor="contactName">Nombre del contacto</Label>
+              <Input
+                id="contactName"
+                value={contactName}
+                onChange={(e) => setContactName(e.target.value)}
+                placeholder="Nombre completo"
+                required
+              />
+            </div>
+
+            {/* Número de teléfono */}
+            <div className="space-y-2">
+              <Label htmlFor="phone">Número de teléfono</Label>
+              <div className="flex gap-2">
+                <Select value={selectedPrefix} onValueChange={setSelectedPrefix}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {countryPrefixes.map((country) => (
+                      <SelectItem key={country.code} value={country.prefix}>
+                        <div className="flex items-center gap-2">
+                          <span>{country.flag}</span>
+                          <span>{country.prefix}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  id="phone"
+                  type="tel"
+                  placeholder="Número de teléfono"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ""))}
+                  className="flex-1"
+                  required
+                />
               </div>
-            ) : clientsError ? (
-              <div className="text-red-500 p-2">Error: {clientsError}</div>
-            ) : clients.length === 0 ? (
-              <div className="text-gray-500 p-2">No hay contactos disponibles</div>
-            ) : (
-              <Select value={selectedClientId} onValueChange={setSelectedClientId}>
+              <p className="text-sm text-gray-500">
+                Número completo: {selectedPrefix}
+                {phoneNumber}
+              </p>
+            </div>
+
+            {/* Plantilla de mensaje */}
+            <div className="space-y-2">
+              <Label htmlFor="template">Plantilla de mensaje</Label>
+              <Select value={selectedTemplate} onValueChange={setSelectedTemplate}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Elige un contacto existente" />
+                  <SelectValue placeholder="Selecciona una plantilla" />
                 </SelectTrigger>
                 <SelectContent>
-                  {clients.map((client) => (
-                    <SelectItem key={client.id} value={client.id.toString()}>
-                      <div className="flex items-center gap-2">
-                        <Avatar className="h-6 w-6">
-                          {client.avatar_url && (
-                            <AvatarImage src={client.avatar_url || "/placeholder.svg"} alt={client.name} />
-                          )}
-                          <AvatarFallback className="text-xs">{client.name.charAt(0)}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <div className="font-medium">{client.name}</div>
-                          {client.phone && <div className="text-xs text-gray-500">{client.phone}</div>}
-                        </div>
+                  {messageTemplates.map((template) => (
+                    <SelectItem key={template.id} value={template.id}>
+                      <div>
+                        <div className="font-medium">{template.name}</div>
+                        <div className="text-xs text-gray-500">{template.category}</div>
                       </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Vista previa de la plantilla */}
+            {selectedTemplateData && (
+              <div className="space-y-2">
+                <Label>Vista previa del mensaje</Label>
+                <div className="p-3 bg-gray-50 rounded-lg border">
+                  <p className="text-sm text-gray-700">{selectedTemplateData.content}</p>
+                </div>
+              </div>
             )}
-          </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="message">Mensaje inicial (opcional)</Label>
-            <Input
-              id="message"
-              value={initialMessage}
-              onChange={(e) => setInitialMessage(e.target.value)}
-              placeholder="¡Hola! ¿En qué puedo ayudarte?"
-            />
-          </div>
+            {/* Botones */}
+            <div className="flex justify-end gap-2 pt-4">
+              <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={loading}>
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={loading || !phoneNumber.trim() || !selectedTemplate || !contactName.trim()}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                {loading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Enviando...
+                  </>
+                ) : (
+                  <>
+                    <Phone className="h-4 w-4 mr-2" />
+                    Enviar mensaje
+                  </>
+                )}
+              </Button>
+            </div>
+          </form>
+        )}
 
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={loading || !selectedClientId || clientsLoading}>
-              {loading ? "Creando..." : "Iniciar conversación"}
-            </Button>
-          </div>
-        </form>
+        {/* Contenido de la pestaña "Contacto existente" */}
+        {activeTab === "existing" && (
+          <form onSubmit={handleSubmitExisting} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="client">Seleccionar contacto</Label>
+              {clientsLoading ? (
+                <div className="flex items-center justify-center p-4">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-500"></div>
+                  <span className="ml-2">Cargando contactos...</span>
+                </div>
+              ) : clientsError ? (
+                <div className="text-red-500 p-2">Error: {clientsError}</div>
+              ) : clients.length === 0 ? (
+                <div className="text-gray-500 p-2">No hay contactos disponibles</div>
+              ) : (
+                <Select value={selectedClientId} onValueChange={setSelectedClientId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Elige un contacto existente" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {clients.map((client) => (
+                      <SelectItem key={client.id} value={client.id.toString()}>
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-6 w-6">
+                            {client.avatar_url && (
+                              <AvatarImage src={client.avatar_url || "/placeholder.svg"} alt={client.name} />
+                            )}
+                            <AvatarFallback className="text-xs">{client.name.charAt(0)}</AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <div className="font-medium">{client.name}</div>
+                            {client.phone && <div className="text-xs text-gray-500">{client.phone}</div>}
+                          </div>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="message">Mensaje inicial (opcional)</Label>
+              <Input
+                id="message"
+                value={initialMessage}
+                onChange={(e) => setInitialMessage(e.target.value)}
+                placeholder="¡Hola! ¿En qué puedo ayudarte?"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={loading}>
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={loading || !selectedClientId || clientsLoading}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                {loading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Creando...
+                  </>
+                ) : (
+                  <>
+                    <MessageCircle className="h-4 w-4 mr-2" />
+                    Iniciar conversación
+                  </>
+                )}
+              </Button>
+            </div>
+          </form>
+        )}
       </DialogContent>
     </Dialog>
   )
@@ -265,8 +504,10 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
       {/* Header */}
       <div className="flex items-center justify-between p-4 bg-gray-50 border-b border-gray-200">
         <h1 className="text-xl font-semibold text-gray-800">Chats</h1>
+        {/* En el componente principal ChatList, reemplazar las dos llamadas de modal por una sola:
+        // Cambiar esta línea en el header: */}
         <div className="flex items-center gap-2">
-          <NewConversationDialog onConversationCreated={refetch} />
+          <UnifiedNewConversationModal onConversationCreated={refetch} />
           <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
             <Users className="h-4 w-4" />
           </Button>

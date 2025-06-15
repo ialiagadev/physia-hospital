@@ -12,8 +12,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { ContactInfoDialog } from "@/components/contact-info-dialog"
+import { AssignUsersDialog } from "@/components/assign-users-dialog"
 import { useMediaQuery } from "@/hooks/use-media-query"
-import type { Message, User, Client } from "@/types/chat" // Using the provided types
+import type { Message, User, Client } from "@/types/chat"
 
 interface ConversationWindowSimpleProps {
   chatId: string
@@ -35,7 +36,12 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
 
   // Hooks personalizados
   const { messages, loading: messagesLoading, error: messagesError } = useMessages(chatId)
-  const { conversation, loading: conversationLoading, error: conversationError } = useConversation(chatId)
+  const {
+    conversation,
+    loading: conversationLoading,
+    error: conversationError,
+    refetch: refetchConversation,
+  } = useConversation(chatId)
   const isMobile = useMediaQuery("(max-width: 768px)")
 
   // Estado combinado de carga y error
@@ -215,6 +221,12 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
     return messages[index].sender_type !== messages[index + 1].sender_type
   }
 
+  // Handle assignment change callback
+  const handleAssignmentChange = () => {
+    // Refrescar la conversación para obtener los usuarios asignados actualizados
+    refetchConversation?.()
+  }
+
   const messageGroups = groupMessagesByDate(messages)
   const client = conversation?.client
 
@@ -254,10 +266,7 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
   return (
     <div className="flex flex-col h-full bg-[#e5ddd5] bg-opacity-30">
       {/* Header con información del contacto */}
-      <div
-        className="bg-white border-b p-2 flex items-center gap-3 shadow-sm cursor-pointer"
-        onClick={handleOpenContactInfo}
-      >
+      <div className="bg-white border-b p-2 flex items-center gap-3 shadow-sm">
         {isMobile && onBack && (
           <Button
             variant="ghost"
@@ -272,33 +281,94 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
           </Button>
         )}
 
-        <div className="relative">
-          <Avatar className="h-10 w-10">
-            <AvatarImage src={client?.avatar_url || "/placeholder.svg"} alt={clientName} />
-            <AvatarFallback>{clientName.charAt(0).toUpperCase()}</AvatarFallback>
-          </Avatar>
-          {client?.channel && (
-            <div
-              className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border border-white ${getChannelColor(client.channel)}`}
-            ></div>
-          )}
+        {/* Información del contacto - clickeable */}
+        <div
+          className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer hover:bg-gray-50 rounded-lg p-1 transition-colors"
+          onClick={handleOpenContactInfo}
+        >
+          <div className="relative">
+            <Avatar className="h-10 w-10">
+              <AvatarImage src={client?.avatar_url || "/placeholder.svg"} alt={clientName} />
+              <AvatarFallback>{clientName.charAt(0).toUpperCase()}</AvatarFallback>
+            </Avatar>
+            {client?.channel && (
+              <div
+                className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border border-white ${getChannelColor(client.channel)}`}
+              ></div>
+            )}
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <h3 className="font-medium text-sm truncate">{clientName}</h3>
+            <p className="text-xs text-gray-500 truncate">{getOnlineStatus(client)}</p>
+          </div>
         </div>
 
-        <div className="flex-1 min-w-0">
-          <h3 className="font-medium text-sm truncate">{clientName}</h3>
-          <p className="text-xs text-gray-500 truncate">{getOnlineStatus(client)}</p>
-        </div>
+        {/* Botones de acción */}
+        <div className="flex items-center gap-1">
+          {/* Botón de asignar usuarios */}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>
+                  <AssignUsersDialog
+                    conversationId={chatId}
+                    assignedUserIds={conversation?.assigned_user_ids || []}
+                    onAssignmentChange={handleAssignmentChange}
+                  />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>Asignar usuarios</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
 
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="rounded-full h-8 w-8" onClick={(e) => e.stopPropagation()}>
-            <Phone className="h-4 w-4 text-gray-600" />
-          </Button>
-          <Button variant="ghost" size="icon" className="rounded-full h-8 w-8" onClick={(e) => e.stopPropagation()}>
-            <Video className="h-4 w-4 text-gray-600" />
-          </Button>
-          <Button variant="ghost" size="icon" className="rounded-full h-8 w-8" onClick={(e) => e.stopPropagation()}>
-            <MoreVertical className="h-4 w-4 text-gray-600" />
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="rounded-full h-8 w-8"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Phone className="h-4 w-4 text-gray-600" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Llamar</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="rounded-full h-8 w-8"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Video className="h-4 w-4 text-gray-600" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Videollamada</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="rounded-full h-8 w-8"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <MoreVertical className="h-4 w-4 text-gray-600" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Más opciones</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
       </div>
 
@@ -324,6 +394,18 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
                 const isFirst = isFirstInGroup(idx, dateMessages)
                 const isLast = isLastInGroup(idx, dateMessages)
 
+                // Renderizado especial para mensajes de sistema
+                if (msg.message_type === "system") {
+                  return (
+                    <div key={msg.id} className="flex justify-center my-2">
+                      <div className="bg-blue-100 text-blue-800 px-3 py-2 rounded-full text-xs font-medium shadow-sm border border-blue-200">
+                        {msg.content}
+                      </div>
+                    </div>
+                  )
+                }
+
+                // Renderizado normal para otros mensajes
                 return (
                   <div
                     key={msg.id}

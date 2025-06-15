@@ -68,15 +68,22 @@ export interface Canal {
   export interface Message {
     id: string
     conversation_id: string
-    sender_type: "contact" | "agent"
+    sender_type: "contact" | "agent" | "system"
     user_id?: string
     content: string
-    message_type: "text" | "image" | "audio" | "video" | "document" | "location"
+    message_type: "text" | "image" | "audio" | "video" | "document" | "location" | "system"
     media_url?: string
     is_read: boolean
     external_message_id?: string
     created_at: string
-    metadata?: any
+    metadata?: {
+      system_message?: boolean
+      visible_to_user?: string
+      action?: SystemMessageAction
+      target_users?: string[]
+      timestamp?: string
+      [key: string]: any
+    }
   }
   
   export interface User {
@@ -130,5 +137,20 @@ export interface Canal {
     total: number
     page: number
     limit: number
+  }
+  
+  // Tipos para las acciones de mensajes de sistema
+  export type SystemMessageAction =
+    | "user_assigned"
+    | "user_unassigned"
+    | "multiple_users_assigned"
+    | "multiple_users_unassigned"
+  
+  export interface SystemMessageMetadata {
+    system_message: boolean
+    visible_to_user: string
+    action: SystemMessageAction
+    target_users: string[]
+    timestamp: string
   }
   

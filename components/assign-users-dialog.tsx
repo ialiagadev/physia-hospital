@@ -1,30 +1,35 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Users } from "lucide-react"
+import { Users, User, Bot } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Badge } from "@/components/ui/badge"
 import { useOrganizationUsers } from "@/hooks/use-organization-users"
 import { supabase } from "@/lib/supabase/client"
 import { useAuth } from "@/app/contexts/auth-context"
+import { createSystemMessage, getUserNamesByIds } from "@/lib/system-messages"
 
 interface AssignUsersDialogProps {
   conversationId: string
   assignedUserIds: string[]
+  onAssignmentChange?: () => void
 }
 
-export function AssignUsersDialog({ conversationId, assignedUserIds = [] }: AssignUsersDialogProps) {
+export function AssignUsersDialog({
+  conversationId,
+  assignedUserIds = [],
+  onAssignmentChange,
+}: AssignUsersDialogProps) {
   const [open, setOpen] = useState(false)
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>(assignedUserIds || [])
   const [saving, setSaving] = useState(false)
   const { userProfile } = useAuth()
 
-  // Cargar usuarios de la organización
-  const { users, loading } = useOrganizationUsers(userProfile?.organization_id)
+  const { users, loading, error } = useOrganizationUsers(userProfile?.organization_id)
 
-  // Actualizar selección cuando cambien los usuarios asignados
   useEffect(() => {
     setSelectedUserIds(assignedUserIds || [])
   }, [assignedUserIds])
@@ -34,10 +39,19 @@ export function AssignUsersDialog({ conversationId, assignedUserIds = [] }: Assi
   }
 
   const handleSave = async () => {
+    if (!userProfile?.id) return
+
     try {
       setSaving(true)
 
-      // Actualizar la conversación con los usuarios seleccionados
+      // Determinar qué usuarios fueron añadidos y cuáles removidos
+      const previousIds = new Set(assignedUserIds)
+      const newIds = new Set(selectedUserIds)
+
+      const addedUsers = selectedUserIds.filter((id) => !previousIds.has(id))
+      const removedUsers = assignedUserIds.filter((id) => !newIds.has(id))
+
+      // Actualizar la conversación
       const { error } = await supabase
         .from("conversations")
         .update({ assigned_user_ids: selectedUserIds })
@@ -48,6 +62,32 @@ export function AssignUsersDialog({ conversationId, assignedUserIds = [] }: Assi
         return
       }
 
+      // Crear mensajes de sistema para los cambios
+      if (addedUsers.length > 0 || removedUsers.length > 0) {
+        const userNames = await getUserNamesByIds([...addedUsers, ...removedUsers])
+
+        // Mensajes para usuarios añadidos
+        for (const userId of addedUsers) {
+          await createSystemMessage({
+            conversationId,
+            userId: userProfile.id,
+            action: "user_assigned",
+            targetUserName: userNames[userId] || "Usuario desconocido",
+          })
+        }
+
+        // Mensajes para usuarios removidos
+        for (const userId of removedUsers) {
+          await createSystemMessage({
+            conversationId,
+            userId: userProfile.id,
+            action: "user_unassigned",
+            targetUserName: userNames[userId] || "Usuario desconocido",
+          })
+        }
+      }
+
+      onAssignmentChange?.()
       setOpen(false)
     } catch (err) {
       console.error("Error inesperado:", err)
@@ -56,52 +96,108 @@ export function AssignUsersDialog({ conversationId, assignedUserIds = [] }: Assi
     }
   }
 
+  const getUserTypeIcon = (userType?: number) => {
+    if (userType === 2) {
+      return <Bot className="h-3 w-3" />
+    }
+    return <User className="h-3 w-3" />
+  }
+
+  const getUserTypeBadge = (userType?: number) => {
+    if (userType === 2) {
+      return (
+        <Badge variant="secondary" className="text-xs">
+          Agente IA
+        </Badge>
+      )
+    }
+    return (
+      <Badge variant="outline" className="text-xs">
+        Usuario
+      </Badge>
+    )
+  }
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Asignar usuarios">
           <Users className="h-4 w-4" />
           <span className="sr-only">Asignar usuarios</span>
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Usuarios asignados</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5" />
+            Asignar usuarios a la conversación
+          </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
           {loading ? (
-            <div className="flex justify-center p-4">
+            <div className="flex justify-center p-8">
               <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-500"></div>
             </div>
-          ) : (
-            <div className="max-h-80 overflow-y-auto space-y-2">
-              {users.map((user) => (
-                <div
-                  key={user.id}
-                  className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer"
-                  onClick={() => handleUserToggle(user.id)}
-                >
-                  <Checkbox checked={selectedUserIds.includes(user.id)} />
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage src={user.avatar_url || "/placeholder.svg"} alt={user.name || user.email} />
-                    <AvatarFallback>{(user.name || user.email).charAt(0).toUpperCase()}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">{user.name || user.email}</p>
-                    {user.name && <p className="text-xs text-gray-500">{user.email}</p>}
-                  </div>
-                </div>
-              ))}
+          ) : error ? (
+            <div className="text-center p-4 text-red-500">
+              <p>Error al cargar usuarios</p>
+              <p className="text-sm">{error}</p>
             </div>
+          ) : users.length === 0 ? (
+            <div className="text-center p-4 text-gray-500">
+              <p>No hay usuarios disponibles</p>
+            </div>
+          ) : (
+            <>
+              <div className="text-sm text-gray-600 mb-3">
+                Selecciona los usuarios que pueden ver y responder esta conversación:
+              </div>
+              <div className="max-h-80 overflow-y-auto space-y-2">
+                {users.map((user) => (
+                  <div
+                    key={user.id}
+                    className="flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-50 cursor-pointer border border-gray-100"
+                    onClick={() => handleUserToggle(user.id)}
+                  >
+                    <Checkbox checked={selectedUserIds.includes(user.id)} onChange={() => handleUserToggle(user.id)} />
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={user.avatar_url || "/placeholder.svg"} alt={user.name || user.email} />
+                      <AvatarFallback>{getUserTypeIcon(user.type)}</AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="text-sm font-medium truncate">{user.name || user.email}</p>
+                        {getUserTypeBadge(user.type)}
+                      </div>
+                      {user.name && <p className="text-xs text-gray-500 truncate">{user.email}</p>}
+                      {user.type === 2 && user.prompt && (
+                        <p className="text-xs text-blue-600 truncate mt-1">Prompt: {user.prompt.substring(0, 50)}...</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
+                <strong>Usuarios seleccionados:</strong> {selectedUserIds.length}
+              </div>
+            </>
           )}
 
           <div className="flex justify-end gap-2 pt-4 border-t">
-            <Button variant="outline" onClick={() => setOpen(false)}>
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>
               Cancelar
             </Button>
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? "Guardando..." : "Guardar"}
+            <Button onClick={handleSave} disabled={saving || loading}>
+              {saving ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Guardando...
+                </>
+              ) : (
+                "Guardar asignación"
+              )}
             </Button>
           </div>
         </div>
