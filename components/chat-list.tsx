@@ -435,6 +435,38 @@ interface ChatListProps {
   onChatSelect: (chatId: string) => void
 }
 
+// Reemplazar la interface ConversationTagsProps y el componente ConversationTags con esto:
+interface ConversationTagsProps {
+  tags: Array<{ id: string; tag_name: string; created_at: string }> | undefined
+}
+
+const ConversationTags: React.FC<ConversationTagsProps> = ({ tags }) => {
+  if (!tags || tags.length === 0) {
+    return null
+  }
+
+  const visibleTags = tags.slice(0, 2)
+  const remainingCount = tags.length - 2
+
+  return (
+    <div className="flex items-center gap-1 mt-1">
+      {visibleTags.map((tag) => (
+        <span
+          key={tag.id}
+          className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200"
+        >
+          {tag.tag_name}
+        </span>
+      ))}
+      {remainingCount > 0 && (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">
+          +{remainingCount}
+        </span>
+      )}
+    </div>
+  )
+}
+
 export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [viewMode, setViewMode] = useState<"all" | "assigned">("all")
@@ -602,14 +634,13 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
             <div
               key={conversation.id}
               onClick={() => onChatSelect(conversation.id)}
-              className={`flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-50 transition-all duration-200 ${
+              className={`flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 transition-colors ${
                 selectedChatId === conversation.id
-                  ? "bg-blue-50 hover:bg-blue-100 border-l-4 border-l-blue-500 shadow-sm"
+                  ? "bg-blue-50"
                   : conversation.unread_count > 0
-                    ? "bg-green-50 hover:bg-green-100 border-l-4 border-l-green-500 shadow-sm"
-                    : "hover:shadow-sm"
+                    ? "bg-green-50 hover:bg-green-100 border-l-4 border-l-green-500"
+                    : ""
               }`}
-            
             >
               {/* Avatar con icono del canal en la esquina */}
               <div className="relative">
@@ -648,6 +679,8 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
                     </div>
                   )}
                 </div>
+                {/* Agregar esta línea para mostrar las etiquetas */}
+                <ConversationTags tags={conversation.conversation_tags} />
               </div>
             </div>
           ))
