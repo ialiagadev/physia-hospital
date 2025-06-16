@@ -15,6 +15,7 @@ import {
   CheckSquare,
   Bot,
   Radio,
+  Clock,
 } from "lucide-react"
 
 export function MainSidebar() {
@@ -86,6 +87,13 @@ export function MainSidebar() {
       href: "/dashboard/agents",
       icon: Bot,
       isActive: isInSection("agents"),
+    },
+    {
+      id: "fichaje",
+      label: "Fichaje",
+      href: "/dashboard/fichaje",
+      icon: Clock,
+      isActive: isInSection("fichaje"),
     },
     {
       id: "reports",
