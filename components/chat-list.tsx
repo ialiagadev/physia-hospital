@@ -11,11 +11,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { createConversation } from "@/lib/chatActions"
-import { useConversations } from "@/hooks/use-conversations"
 import { useClients } from "@/hooks/use-clients"
 import { useAuth } from "@/app/contexts/auth-context"
 import type { ConversationWithLastMessage } from "@/types/chat"
 import { useTotalUnreadMessages } from "@/hooks/use-unread-messages"
+import { useConversations } from "@/hooks/use-conversations"
 
 // Componente para mostrar el icono del canal con letra
 function ChannelIcon({ channelName }: { channelName?: string }) {
@@ -103,8 +103,6 @@ const messageTemplates = [
     category: "Seguimiento",
   },
 ]
-
-// Reemplazar las dos funciones de modal (NewConversationModal y NewConversationDialog) con esta versión unificada:
 
 // Modal unificado para nueva conversación
 function UnifiedNewConversationModal({ onConversationCreated }: { onConversationCreated: () => void }) {
@@ -433,6 +431,9 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
 interface ChatListProps {
   selectedChatId: string | null
   onChatSelect: (chatId: string) => void
+  currentUser: any
+  viewMode: "all" | "assigned"
+  onViewModeChange: (mode: "all" | "assigned") => void
 }
 
 // Reemplazar la interface ConversationTagsProps y el componente ConversationTags con esto:
@@ -483,14 +484,21 @@ const ConversationTags: React.FC<ConversationTagsProps> = ({ tags }) => {
   )
 }
 
-export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps) {
+export default function ChatList({
+  selectedChatId,
+  onChatSelect,
+  currentUser,
+  viewMode,
+  onViewModeChange,
+}: ChatListProps) {
   const [searchQuery, setSearchQuery] = useState("")
-  const [viewMode, setViewMode] = useState<"all" | "assigned">("all")
   const { userProfile } = useAuth()
 
   const organizationId = userProfile?.organization_id
   const organizationIdNumber = organizationId ? Number(organizationId) : undefined
-  const { conversations, loading, error, refetch } = useConversations(organizationId, viewMode)
+
+  // Cambiar de useFilteredConversations a useConversations
+  const { conversations, loading, error, refetch } = useConversations(organizationId, viewMode, currentUser?.id)
 
   // Hook para conteo total de mensajes no leídos
   const { totalUnread } = useTotalUnreadMessages(organizationIdNumber)
@@ -536,7 +544,11 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
     return "Nueva conversación"
   }
 
-  const assignedCount = conversations.filter((conv) => conv.assigned_user_ids?.includes(userProfile?.id || "")).length
+  // Agregar un hook separado para obtener el conteo de asignados
+  const { conversations: allConversations } = useConversations(organizationId, "all", currentUser?.id)
+  const assignedCount = allConversations.filter((conv) =>
+    conv.assigned_user_ids?.includes(currentUser?.id || ""),
+  ).length
 
   if (loading) {
     return (
@@ -579,8 +591,6 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
             </span>
           )}
         </h1>
-        {/* En el componente principal ChatList, reemplazar las dos llamadas de modal por una sola:
-        // Cambiar esta línea en el header: */}
         <div className="flex items-center gap-2">
           <UnifiedNewConversationModal onConversationCreated={refetch} />
           <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
@@ -598,7 +608,7 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
           className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-50 ${
             viewMode === "assigned" ? "bg-green-50 border-r-4 border-green-500" : ""
           }`}
-          onClick={() => setViewMode("assigned")}
+          onClick={() => onViewModeChange("assigned")}
         >
           <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
             <MessageCircle className="h-4 w-4 text-green-600" />
@@ -613,14 +623,14 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
           className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-50 ${
             viewMode === "all" ? "bg-green-50 border-r-4 border-green-500" : ""
           }`}
-          onClick={() => setViewMode("all")}
+          onClick={() => onViewModeChange("all")}
         >
           <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
             <Users className="h-4 w-4 text-gray-600" />
           </div>
           <div className="flex-1">
             <span className="font-medium text-gray-900">Todos</span>
-            <span className="ml-2 text-gray-500">({conversations.length})</span>
+            <span className="ml-2 text-gray-500">({allConversations.length})</span>
           </div>
         </div>
       </div>
@@ -642,8 +652,14 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
       <div className="flex-1 overflow-y-auto">
         {filteredConversations.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-32 text-gray-500 p-4">
-            <p className="text-center mb-2">No hay conversaciones</p>
-            <p className="text-sm text-center">Haz clic en el botón de mensaje para iniciar una nueva conversación</p>
+            <p className="text-center mb-2">
+              {viewMode === "assigned" ? "No tienes conversaciones asignadas" : "No hay conversaciones"}
+            </p>
+            <p className="text-sm text-center">
+              {viewMode === "assigned"
+                ? "Las conversaciones aparecerán aquí cuando te las asignen"
+                : "Haz clic en el botón de mensaje para iniciar una nueva conversación"}
+            </p>
           </div>
         ) : (
           filteredConversations.map((conversation: ConversationWithLastMessage) => (
@@ -670,7 +686,7 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
                   <AvatarFallback>{conversation.client?.name?.charAt(0) || "U"}</AvatarFallback>
                 </Avatar>
 
-                {/* Icono del canal en la esquina inferior derecha - SIEMPRE mostrar para debug */}
+                {/* Icono del canal en la esquina inferior derecha */}
                 <div className="absolute -bottom-0.5 -right-0.5 bg-white rounded-full p-0.5 border border-gray-200 shadow-sm">
                   <ChannelIcon channelName={conversation.canales_organization?.canal?.nombre || "whatsapp"} />
                 </div>
@@ -695,7 +711,6 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
                     </div>
                   )}
                 </div>
-                {/* Agregar esta línea para mostrar las etiquetas */}
                 <ConversationTags tags={conversation.conversation_tags} />
               </div>
             </div>

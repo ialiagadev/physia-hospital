@@ -8,8 +8,7 @@ import { useAuth } from "@/app/contexts/auth-context"
 export default function ChatPage() {
   const { userProfile, isLoading } = useAuth()
   const [selectedChat, setSelectedChat] = useState<string | null>(null)
-  // Eliminar esta línea:
-  // const [viewMode, setViewMode] = useState<"all" | "assigned">("all")
+  const [viewMode, setViewMode] = useState<"all" | "assigned">("all")
 
   if (isLoading) {
     return (
@@ -37,7 +36,13 @@ export default function ChatPage() {
     <div className="flex h-full w-full bg-gray-100 overflow-hidden m-0 p-0">
       {/* Lista de chats - Sidebar izquierdo - 25% del ancho */}
       <div className="w-[25%] min-w-[280px] max-w-[350px] bg-white border-r border-gray-200 flex flex-col">
-        <ChatList selectedChatId={selectedChat} onChatSelect={setSelectedChat} />
+        <ChatList
+          selectedChatId={selectedChat}
+          onChatSelect={setSelectedChat}
+          currentUser={userProfile}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+        />
       </div>
 
       {/* Ventana de conversación - 75% del ancho */}
