@@ -412,7 +412,7 @@ export function ConversationProfilePanel({
 
   const getTagColor = (tagName: string) => {
     const predefined = predefinedTags.find((t) => t.name === tagName)
-    return predefined?.color || "bg-gray-100 text-gray-800"
+    return predefined?.color || "bg-blue-100 text-blue-800" // Azul para etiquetas personalizadas
   }
 
   if (!conversation) return null

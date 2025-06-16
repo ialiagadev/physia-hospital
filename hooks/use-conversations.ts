@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useMemo, useCallback, useRef } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { supabase } from "@/lib/supabase/client"
 import type { ConversationWithLastMessage, ConversationTag } from "@/types/chat"
 
@@ -48,7 +48,9 @@ export function useConversations(
           return
         }
 
-        let query = supabase
+        // Siempre obtener todas las conversaciones de la organización
+        // El filtrado por asignación se hace en el frontend para mejor flexibilidad
+        const query = supabase
           .from("conversations")
           .select(`
             *,
@@ -72,8 +74,9 @@ export function useConversations(
           `)
           .eq("organization_id", orgIdNumber)
 
+        // Aplicar filtro de asignación si es necesario
         if (viewMode === "assigned" && currentUserId) {
-          query = query.contains("assigned_user_ids", [currentUserId])
+          query.contains("assigned_user_ids", [currentUserId])
         }
 
         const { data: conversationsData, error: conversationsError } = await query.order("last_message_at", {
@@ -140,13 +143,11 @@ export function useConversations(
         }
       }
     },
-    [organizationId, currentUserId, viewMode],
+    [organizationId, viewMode, currentUserId],
   )
 
   const updateConversationTags = useCallback(async (conversationId: string) => {
     try {
-      console.log("🔍 Fetching updated tags for conversation:", conversationId)
-
       const { data: tags, error } = await supabase
         .from("conversation_tags")
         .select("id, conversation_id, tag_name, created_by, created_at")
@@ -157,8 +158,6 @@ export function useConversations(
         console.error("Error fetching tags:", error)
         return
       }
-
-      console.log("📊 Fetched tags from DB:", tags)
 
       // Actualizar caché
       tagsCache.current.set(conversationId, (tags || []) as ConversationTag[])
@@ -178,8 +177,6 @@ export function useConversations(
   // Función optimizada para manejar DELETE events usando el caché
   const handleTagDelete = useCallback(
     (tagId: string) => {
-      console.log("🗑️ Handling tag delete optimistically:", tagId)
-
       // Buscar en qué conversación estaba este tag usando el caché
       let targetConversationId: string | null = null
 
@@ -191,8 +188,6 @@ export function useConversations(
       }
 
       if (targetConversationId) {
-        console.log("🎯 Found conversation for deleted tag:", targetConversationId)
-
         // Actualizar caché local inmediatamente
         const currentTags = tagsCache.current.get(targetConversationId) || []
         const updatedTags = currentTags.filter((tag) => tag.id !== tagId)
@@ -212,7 +207,6 @@ export function useConversations(
           updateConversationTags(targetConversationId!)
         }, 500)
       } else {
-        console.log("⚠️ Could not find conversation for deleted tag, doing full refetch")
         // Fallback: refetch completo solo si no encontramos la conversación
         setTimeout(() => {
           fetchConversations(true)
@@ -240,7 +234,6 @@ export function useConversations(
               filter: `organization_id=eq.${orgIdNumber}`,
             },
             (payload) => {
-              console.log("📢 Conversation change detected:", payload)
               fetchConversations(true)
             },
           )
@@ -252,13 +245,11 @@ export function useConversations(
               table: "messages",
             },
             (payload) => {
-              console.log("💬 Message change detected:", payload)
               const messageData = payload.new as any
               if (messageData && messageData.conversation_id) {
                 setConversations((currentConversations) => {
                   const conversationExists = currentConversations.some((c) => c.id === messageData.conversation_id)
                   if (conversationExists) {
-                    console.log("🔄 Updating conversations due to message change")
                     fetchConversations(true)
                   }
                   return currentConversations
@@ -274,9 +265,6 @@ export function useConversations(
               table: "conversation_tags",
             },
             (payload) => {
-              console.log("🏷️ Tag change detected:", payload)
-              console.log("🏷️ Event type:", payload.eventType)
-
               if (payload.eventType === "DELETE") {
                 const deletedTagId = (payload.old as any)?.id
                 if (deletedTagId) {
@@ -288,19 +276,15 @@ export function useConversations(
               // Para INSERT y UPDATE
               const tagData = payload.new as any
               if (tagData && tagData.conversation_id) {
-                console.log("🔄 Will update tags for conversation:", tagData.conversation_id)
                 setTimeout(() => {
                   updateConversationTags(tagData.conversation_id)
                 }, 100)
               }
             },
           )
-          .subscribe((status) => {
-            console.log("📡 Realtime subscription status:", status)
-          })
+          .subscribe()
 
         return () => {
-          console.log("🔌 Cleaning up realtime subscriptions")
           isMounted.current = false
           supabase.removeChannel(channel)
         }
@@ -310,40 +294,11 @@ export function useConversations(
     return () => {
       isMounted.current = false
     }
-  }, [organizationId, currentUserId, viewMode, fetchConversations, updateConversationTags, handleTagDelete])
+  }, [organizationId, fetchConversations, updateConversationTags, handleTagDelete])
 
   const refetch = useCallback(() => {
     fetchConversations()
   }, [fetchConversations])
 
   return { conversations, loading, error, refetch }
-}
-
-// El resto del código permanece igual...
-export function useFilteredConversations(
-  organizationId: string | undefined,
-  currentUserId: string | undefined,
-  viewMode: "all" | "assigned" = "all",
-) {
-  const { conversations, loading, error, refetch } = useConversations(organizationId, viewMode, currentUserId)
-
-  const filteredConversations = useMemo(() => {
-    if (viewMode === "all") {
-      return conversations
-    }
-
-    if (viewMode === "assigned" && currentUserId) {
-      return conversations.filter((conv) => conv.assigned_user_ids && conv.assigned_user_ids.includes(currentUserId))
-    }
-
-    return conversations
-  }, [conversations, viewMode, currentUserId])
-
-  return {
-    conversations: filteredConversations,
-    allConversations: conversations,
-    loading,
-    error,
-    refetch,
-  }
 }
