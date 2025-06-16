@@ -146,6 +146,8 @@ export function useConversations(
   // Función optimizada para actualizar solo las etiquetas de una conversación específica
   const updateConversationTags = useCallback(async (conversationId: string) => {
     try {
+      console.log("🔍 Fetching updated tags for conversation:", conversationId)
+
       const { data: tags, error } = await supabase
         .from("conversation_tags")
         .select("id, conversation_id, tag_name, created_by, created_at")
@@ -157,12 +159,22 @@ export function useConversations(
         return
       }
 
+      console.log("📊 Fetched tags from DB:", tags)
+
       if (isMounted.current) {
         setConversations((prev) => {
-          console.log("🔄 Updating tags for conversation:", conversationId, "New tags:", tags)
-          return prev.map((conv) =>
+          console.log(
+            "🔄 Before update - conversation tags:",
+            prev.find((c) => c.id === conversationId)?.conversation_tags,
+          )
+          const updated = prev.map((conv) =>
             conv.id === conversationId ? { ...conv, conversation_tags: (tags || []) as ConversationTag[] } : conv,
           )
+          console.log(
+            "🔄 After update - conversation tags:",
+            updated.find((c) => c.id === conversationId)?.conversation_tags,
+          )
+          return updated
         })
       }
     } catch (err) {
@@ -221,24 +233,33 @@ export function useConversations(
           .on(
             "postgres_changes",
             {
-              event: "*",
+              event: "*", // Escuchar INSERT, UPDATE y DELETE
               schema: "public",
               table: "conversation_tags",
             },
             (payload) => {
               console.log("🏷️ Tag change detected:", payload)
-              // Actualizar solo las etiquetas de la conversación específica
-              const tagData = (payload.new as any) || (payload.old as any)
+              console.log("🏷️ Event type:", payload.eventType)
+              console.log("🏷️ New data:", payload.new)
+              console.log("🏷️ Old data:", payload.old)
+
+              // Para eventos DELETE, necesitamos hacer un refetch completo
+              // porque Supabase no incluye conversation_id en payload.old
+              if (payload.eventType === "DELETE") {
+                console.log("🔄 DELETE event detected, doing full refetch")
+                setTimeout(() => {
+                  fetchConversations(true)
+                }, 100)
+                return
+              }
+
+              // Para INSERT y UPDATE, podemos actualizar solo la conversación específica
+              const tagData = payload.new as any
               if (tagData && tagData.conversation_id) {
-                // Usar una función para acceder al estado actual
-                setConversations((currentConversations) => {
-                  const conversationExists = currentConversations.some((c) => c.id === tagData.conversation_id)
-                  if (conversationExists) {
-                    console.log("🔄 Updating tags for conversation:", tagData.conversation_id)
-                    updateConversationTags(tagData.conversation_id)
-                  }
-                  return currentConversations
-                })
+                console.log("🔄 Will update tags for conversation:", tagData.conversation_id)
+                setTimeout(() => {
+                  updateConversationTags(tagData.conversation_id)
+                }, 100)
               }
             },
           )

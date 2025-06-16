@@ -20,6 +20,7 @@ interface ConversationProfilePanelProps {
   conversation: Conversation | null
   currentUser: User
   onAssignmentChange: () => void
+  onTagsChange?: () => void // Agregar esta línea
 }
 
 // Etiquetas predefinidas para conversaciones médicas
@@ -100,6 +101,7 @@ export function ConversationProfilePanel({
   conversation,
   currentUser,
   onAssignmentChange,
+  onTagsChange,
 }: ConversationProfilePanelProps) {
   const [newTagName, setNewTagName] = useState("")
   const [selectedTags, setSelectedTags] = useState<ConversationTag[]>([])
@@ -273,6 +275,10 @@ export function ConversationProfilePanel({
       setSelectedTags((prev) => [data, ...prev])
       setNewTagName("")
 
+      if (onTagsChange) {
+        onTagsChange()
+      }
+
       toast({
         title: "Etiqueta agregada",
         description: `Se agregó la etiqueta "${tagName}" a la conversación`,
@@ -318,6 +324,10 @@ export function ConversationProfilePanel({
 
       setSelectedTags((prev) => [data, ...prev])
 
+      if (onTagsChange) {
+        onTagsChange()
+      }
+
       toast({
         title: "Etiqueta agregada",
         description: `Se agregó la etiqueta "${tagName}" a la conversación`,
@@ -337,16 +347,26 @@ export function ConversationProfilePanel({
   const handleRemoveTag = async (tagId: string) => {
     setTagsLoading(true)
     try {
+      console.log("🗑️ Attempting to delete tag:", tagId)
+
       const { error } = await supabase.from("conversation_tags").delete().eq("id", tagId)
 
       if (error) throw error
 
+      // Actualizar el estado local inmediatamente
       setSelectedTags((prev) => prev.filter((tag) => tag.id !== tagId))
+
+      // Llamar al callback para actualizar el ChatList
+      if (onTagsChange) {
+        onTagsChange()
+      }
 
       toast({
         title: "Etiqueta eliminada",
         description: "La etiqueta ha sido eliminada de la conversación",
       })
+
+      console.log("✅ Tag deleted successfully:", tagId)
     } catch (error) {
       console.error("Error removing tag:", error)
       toast({
