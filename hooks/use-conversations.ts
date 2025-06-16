@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from "react"
 import { supabase } from "@/lib/supabase/client"
-import type { Conversation, ConversationWithLastMessage, ConversationTag } from "@/types/chat"
+import type { ConversationWithLastMessage, ConversationTag } from "@/types/chat"
 
 export function useConversations(
   organizationId: string | undefined,
@@ -15,10 +15,11 @@ export function useConversations(
   const isMounted = useRef(true)
   const lastFetchRef = useRef<number>(0)
 
-  // Memoizar la función fetchConversations para evitar recreaciones
+  // Caché local de tags por conversation_id para optimizar DELETE events
+  const tagsCache = useRef<Map<string, ConversationTag[]>>(new Map())
+
   const fetchConversations = useCallback(
     async (skipLoading = false) => {
-      // Evitar múltiples llamadas simultáneas
       const now = Date.now()
       if (now - lastFetchRef.current < 500) {
         return
@@ -38,7 +39,6 @@ export function useConversations(
           return
         }
 
-        // Convertir string a number para la consulta
         const orgIdNumber = Number(organizationId)
         if (isNaN(orgIdNumber)) {
           if (isMounted.current) {
@@ -48,7 +48,6 @@ export function useConversations(
           return
         }
 
-        // Primero obtenemos las conversaciones con sus clientes y etiquetas
         let query = supabase
           .from("conversations")
           .select(`
@@ -73,7 +72,6 @@ export function useConversations(
           `)
           .eq("organization_id", orgIdNumber)
 
-        // Agregar filtro por usuario asignado si es necesario
         if (viewMode === "assigned" && currentUserId) {
           query = query.contains("assigned_user_ids", [currentUserId])
         }
@@ -90,7 +88,6 @@ export function useConversations(
           return
         }
 
-        // Optimización: Obtener todos los últimos mensajes en una sola consulta
         const conversationIds = (conversationsData || []).map((conv) => conv.id)
 
         if (conversationIds.length === 0) {
@@ -108,7 +105,6 @@ export function useConversations(
           .in("conversation_id", conversationIds)
           .order("created_at", { ascending: false })
 
-        // Crear un mapa de los últimos mensajes por conversation_id
         const lastMessageMap = new Map()
         if (lastMessages) {
           for (const msg of lastMessages) {
@@ -118,8 +114,12 @@ export function useConversations(
           }
         }
 
-        // Combinar conversaciones con sus últimos mensajes
         const conversationsWithMessages = (conversationsData || []).map((conversation) => {
+          // Actualizar caché de tags
+          if (conversation.conversation_tags) {
+            tagsCache.current.set(conversation.id, conversation.conversation_tags)
+          }
+
           return {
             ...conversation,
             last_message: lastMessageMap.get(conversation.id) || null,
@@ -143,7 +143,6 @@ export function useConversations(
     [organizationId, currentUserId, viewMode],
   )
 
-  // Función optimizada para actualizar solo las etiquetas de una conversación específica
   const updateConversationTags = useCallback(async (conversationId: string) => {
     try {
       console.log("🔍 Fetching updated tags for conversation:", conversationId)
@@ -161,26 +160,67 @@ export function useConversations(
 
       console.log("📊 Fetched tags from DB:", tags)
 
+      // Actualizar caché
+      tagsCache.current.set(conversationId, (tags || []) as ConversationTag[])
+
       if (isMounted.current) {
         setConversations((prev) => {
-          console.log(
-            "🔄 Before update - conversation tags:",
-            prev.find((c) => c.id === conversationId)?.conversation_tags,
-          )
-          const updated = prev.map((conv) =>
+          return prev.map((conv) =>
             conv.id === conversationId ? { ...conv, conversation_tags: (tags || []) as ConversationTag[] } : conv,
           )
-          console.log(
-            "🔄 After update - conversation tags:",
-            updated.find((c) => c.id === conversationId)?.conversation_tags,
-          )
-          return updated
         })
       }
     } catch (err) {
       console.error("Error updating conversation tags:", err)
     }
   }, [])
+
+  // Función optimizada para manejar DELETE events usando el caché
+  const handleTagDelete = useCallback(
+    (tagId: string) => {
+      console.log("🗑️ Handling tag delete optimistically:", tagId)
+
+      // Buscar en qué conversación estaba este tag usando el caché
+      let targetConversationId: string | null = null
+
+      for (const [conversationId, tags] of tagsCache.current.entries()) {
+        if (tags.some((tag) => tag.id === tagId)) {
+          targetConversationId = conversationId
+          break
+        }
+      }
+
+      if (targetConversationId) {
+        console.log("🎯 Found conversation for deleted tag:", targetConversationId)
+
+        // Actualizar caché local inmediatamente
+        const currentTags = tagsCache.current.get(targetConversationId) || []
+        const updatedTags = currentTags.filter((tag) => tag.id !== tagId)
+        tagsCache.current.set(targetConversationId, updatedTags)
+
+        // Actualizar estado inmediatamente (optimistic update)
+        if (isMounted.current) {
+          setConversations((prev) => {
+            return prev.map((conv) =>
+              conv.id === targetConversationId ? { ...conv, conversation_tags: updatedTags } : conv,
+            )
+          })
+        }
+
+        // Verificar con la DB después (para consistencia)
+        setTimeout(() => {
+          updateConversationTags(targetConversationId!)
+        }, 500)
+      } else {
+        console.log("⚠️ Could not find conversation for deleted tag, doing full refetch")
+        // Fallback: refetch completo solo si no encontramos la conversación
+        setTimeout(() => {
+          fetchConversations(true)
+        }, 100)
+      }
+    },
+    [updateConversationTags, fetchConversations],
+  )
 
   useEffect(() => {
     isMounted.current = true
@@ -189,7 +229,6 @@ export function useConversations(
     if (organizationId) {
       const orgIdNumber = Number(organizationId)
       if (!isNaN(orgIdNumber)) {
-        // Suscribirse a cambios en tiempo real con optimización
         const channel = supabase
           .channel(`conversations-changes-${orgIdNumber}`)
           .on(
@@ -202,7 +241,6 @@ export function useConversations(
             },
             (payload) => {
               console.log("📢 Conversation change detected:", payload)
-              // Actualizar de forma optimista sin mostrar el indicador de carga
               fetchConversations(true)
             },
           )
@@ -215,10 +253,8 @@ export function useConversations(
             },
             (payload) => {
               console.log("💬 Message change detected:", payload)
-              // Solo actualizar si el mensaje pertenece a una conversación que ya tenemos
               const messageData = payload.new as any
               if (messageData && messageData.conversation_id) {
-                // Usar una función para acceder al estado actual
                 setConversations((currentConversations) => {
                   const conversationExists = currentConversations.some((c) => c.id === messageData.conversation_id)
                   if (conversationExists) {
@@ -233,50 +269,29 @@ export function useConversations(
           .on(
             "postgres_changes",
             {
-              event: "*", // Escuchar INSERT, UPDATE y DELETE
+              event: "*",
               schema: "public",
               table: "conversation_tags",
             },
             (payload) => {
               console.log("🏷️ Tag change detected:", payload)
               console.log("🏷️ Event type:", payload.eventType)
-              console.log("🏷️ New data:", payload.new)
-              console.log("🏷️ Old data:", payload.old)
 
-              // Para eventos DELETE, necesitamos hacer un refetch completo
-              // porque Supabase no incluye conversation_id en payload.old
               if (payload.eventType === "DELETE") {
-                console.log("🔄 DELETE event detected, doing full refetch")
-                setTimeout(() => {
-                  fetchConversations(true)
-                }, 100)
+                const deletedTagId = (payload.old as any)?.id
+                if (deletedTagId) {
+                  handleTagDelete(deletedTagId)
+                }
                 return
               }
 
-              // Para INSERT y UPDATE, podemos actualizar solo la conversación específica
+              // Para INSERT y UPDATE
               const tagData = payload.new as any
               if (tagData && tagData.conversation_id) {
                 console.log("🔄 Will update tags for conversation:", tagData.conversation_id)
                 setTimeout(() => {
                   updateConversationTags(tagData.conversation_id)
                 }, 100)
-              }
-            },
-          )
-          .on(
-            "postgres_changes",
-            {
-              event: "*",
-              schema: "public",
-              table: "conversation_notes",
-            },
-            (payload) => {
-              console.log("📝 Note change detected:", payload)
-              // Para las notas, solo necesitamos un log ya que no se muestran en el ChatList
-              const noteData = (payload.new as any) || (payload.old as any)
-              if (noteData && noteData.conversation_id) {
-                console.log("📝 Note change detected for conversation:", noteData.conversation_id)
-                // Las notas no se muestran en ChatList, pero podrían usarse para otros propósitos
               }
             },
           )
@@ -295,7 +310,7 @@ export function useConversations(
     return () => {
       isMounted.current = false
     }
-  }, [organizationId, currentUserId, viewMode, fetchConversations, updateConversationTags])
+  }, [organizationId, currentUserId, viewMode, fetchConversations, updateConversationTags, handleTagDelete])
 
   const refetch = useCallback(() => {
     fetchConversations()
@@ -304,7 +319,7 @@ export function useConversations(
   return { conversations, loading, error, refetch }
 }
 
-// El resto del código permanece igual
+// El resto del código permanece igual...
 export function useFilteredConversations(
   organizationId: string | undefined,
   currentUserId: string | undefined,
@@ -330,117 +345,5 @@ export function useFilteredConversations(
     loading,
     error,
     refetch,
-  }
-}
-
-// Hook para obtener una conversación específica
-export function useConversation(conversationId: string | null) {
-  const [conversation, setConversation] = useState<Conversation | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const isMounted = useRef(true)
-
-  useEffect(() => {
-    isMounted.current = true
-
-    if (!conversationId) {
-      if (isMounted.current) {
-        setConversation(null)
-        setLoading(false)
-      }
-      return
-    }
-
-    const fetchConversation = async () => {
-      try {
-        if (isMounted.current) {
-          setLoading(true)
-        }
-
-        const { data, error } = await supabase
-          .from("conversations")
-          .select(`
-            *,
-            client:clients(*),
-            canales_organization:canales_organizations(
-              id,
-              canal:canales(
-                id,
-                nombre,
-                descripcion,
-                imagen
-              )
-            )
-          `)
-          .eq("id", conversationId)
-          .single()
-
-        if (error) {
-          if (isMounted.current) {
-            setError(error.message)
-          }
-        } else if (isMounted.current) {
-          setConversation(data)
-          setError(null)
-        }
-      } catch (err) {
-        if (isMounted.current) {
-          setError("Error inesperado al cargar conversación")
-        }
-      } finally {
-        if (isMounted.current) {
-          setLoading(false)
-        }
-      }
-    }
-
-    fetchConversation()
-
-    // Suscribirse a cambios en tiempo real
-    const channel = supabase
-      .channel(`conversation-${conversationId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "conversations",
-          filter: `id=eq.${conversationId}`,
-        },
-        (payload) => {
-          fetchConversation()
-        },
-      )
-      .subscribe()
-
-    return () => {
-      isMounted.current = false
-      supabase.removeChannel(channel)
-    }
-  }, [conversationId])
-
-  // Función para obtener el nombre a mostrar
-  const getDisplayName = useCallback(() => {
-    if (!conversation?.client) return "Contacto desconocido"
-
-    // Si tiene nombre, mostrarlo
-    if (conversation.client.name && conversation.client.name.trim() !== "") {
-      return conversation.client.name
-    }
-
-    // Si no tiene nombre pero tiene teléfono, mostrar el número
-    if (conversation.client.phone) {
-      return conversation.client.phone
-    }
-
-    // Si no tiene ni nombre ni teléfono
-    return "Contacto desconocido"
-  }, [conversation])
-
-  return {
-    conversation,
-    loading,
-    error,
-    displayName: getDisplayName(),
   }
 }
