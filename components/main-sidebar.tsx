@@ -67,11 +67,11 @@ export function MainSidebar() {
       isActive: isInSection("canales"),
     },
     {
-      id: "whatsapp",
-      label: "WhatsApp",
-      href: "/dashboard/whatsapp",
+      id: "Chat",
+      label: "Chat",
+      href: "/dashboard/chat",
       icon: MessageSquare,
-      isActive: isInSection("whatsapp"),
+      isActive: isInSection("chat"),
     },
     {
       id: "tareas",

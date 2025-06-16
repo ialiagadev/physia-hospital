@@ -72,7 +72,7 @@ function AgentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-full">
         <DialogHeader>
           <DialogTitle>{agent ? "Editar Agente IA" : "Crear Agente IA"}</DialogTitle>
         </DialogHeader>
@@ -96,7 +96,7 @@ function AgentDialog({
               value={formData.prompt}
               onChange={(e) => setFormData({ ...formData, prompt: e.target.value })}
               placeholder="Eres un asistente de ventas especializado en..."
-              rows={4}
+              rows={25}
               required
             />
           </div>

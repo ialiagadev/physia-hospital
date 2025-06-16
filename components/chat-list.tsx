@@ -15,6 +15,7 @@ import { useConversations } from "@/hooks/use-conversations"
 import { useClients } from "@/hooks/use-clients"
 import { useAuth } from "@/app/contexts/auth-context"
 import type { ConversationWithLastMessage } from "@/types/chat"
+import { useTotalUnreadMessages } from "@/hooks/use-unread-messages"
 
 // Componente para mostrar el icono del canal con letra
 function ChannelIcon({ channelName }: { channelName?: string }) {
@@ -123,8 +124,12 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
   const [loading, setLoading] = useState(false)
   const { userProfile } = useAuth()
 
-  const organizationId = userProfile?.organization_id ? Number(userProfile.organization_id) : undefined
-  const { clients, loading: clientsLoading, error: clientsError } = useClients(organizationId)
+  const organizationId = userProfile?.organization_id
+  const organizationIdNumber = organizationId ? Number(organizationId) : undefined
+  const { clients, loading: clientsLoading, error: clientsError } = useClients(organizationIdNumber)
+
+  // Hook para conteo total de mensajes no leídos
+  const { totalUnread } = useTotalUnreadMessages(organizationIdNumber)
 
   const handleSubmitNew = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -155,7 +160,7 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
 
   const handleSubmitExisting = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!selectedClientId || !organizationId) return
+    if (!selectedClientId || !organizationIdNumber) return
 
     const selectedClient = clients.find((c) => c.id.toString() === selectedClientId)
     if (!selectedClient) return
@@ -163,7 +168,7 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
     setLoading(true)
     try {
       await createConversation({
-        organizationId,
+        organizationId: organizationIdNumber,
         clientData: {
           name: selectedClient.name,
           phone: selectedClient.phone,
@@ -436,14 +441,29 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
   const { userProfile } = useAuth()
 
   const organizationId = userProfile?.organization_id
+  const organizationIdNumber = organizationId ? Number(organizationId) : undefined
   const { conversations, loading, error, refetch } = useConversations(organizationId, viewMode)
 
-  const filteredConversations = conversations.filter(
-    (conv) =>
-      conv.client?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      conv.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      conv.last_message?.content.toLowerCase().includes(searchQuery.toLowerCase()),
-  )
+  // Hook para conteo total de mensajes no leídos
+  const { totalUnread } = useTotalUnreadMessages(organizationIdNumber)
+
+  const filteredConversations = conversations
+    .filter(
+      (conv) =>
+        conv.client?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        conv.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        conv.last_message?.content.toLowerCase().includes(searchQuery.toLowerCase()),
+    )
+    .sort((a, b) => {
+      // Primero: conversaciones con mensajes no leídos
+      if (a.unread_count > 0 && b.unread_count === 0) return -1
+      if (a.unread_count === 0 && b.unread_count > 0) return 1
+
+      // Segundo: por fecha del último mensaje
+      const aTime = new Date(a.last_message_at || a.updated_at || 0).getTime()
+      const bTime = new Date(b.last_message_at || b.updated_at || 0).getTime()
+      return bTime - aTime
+    })
 
   const formatTimestamp = (timestamp: string | null | undefined) => {
     if (!timestamp) return ""
@@ -503,7 +523,14 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center justify-between p-4 bg-gray-50 border-b border-gray-200">
-        <h1 className="text-xl font-semibold text-gray-800">Chats</h1>
+        <h1 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
+          Chats
+          {totalUnread > 0 && (
+            <span className="bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+              {totalUnread > 99 ? "99+" : totalUnread}
+            </span>
+          )}
+        </h1>
         {/* En el componente principal ChatList, reemplazar las dos llamadas de modal por una sola:
         // Cambiar esta línea en el header: */}
         <div className="flex items-center gap-2">
@@ -575,8 +602,12 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
             <div
               key={conversation.id}
               onClick={() => onChatSelect(conversation.id)}
-              className={`flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 ${
-                selectedChatId === conversation.id ? "bg-gray-100" : ""
+              className={`flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 transition-colors ${
+                selectedChatId === conversation.id
+                  ? "bg-gray-100"
+                  : conversation.unread_count > 0
+                    ? "bg-green-50 hover:bg-green-100 border-l-4 border-l-green-500"
+                    : ""
               }`}
             >
               {/* Avatar con icono del canal en la esquina */}
@@ -609,9 +640,11 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
                 <div className="flex items-center justify-between">
                   <p className="text-sm text-gray-600 truncate flex-1">{getLastMessagePreview(conversation)}</p>
                   {conversation.unread_count > 0 && (
-                    <span className="ml-2 bg-green-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center flex-shrink-0">
-                      {conversation.unread_count}
-                    </span>
+                    <div className="ml-2 flex items-center gap-1">
+                      <span className="bg-green-500 text-white text-xs rounded-full h-5 min-w-[20px] flex items-center justify-center px-1.5 flex-shrink-0 font-medium">
+                        {conversation.unread_count > 99 ? "99+" : conversation.unread_count}
+                      </span>
+                    </div>
                   )}
                 </div>
               </div>

@@ -43,19 +43,35 @@ export async function sendMessage({
   }
 }
 
-export async function markMessagesAsRead(conversationId: string) {
+export async function markMessagesAsRead(conversationId: string, userId?: string) {
   try {
-    const { error } = await supabase
-      .from("messages")
-      .update({ is_read: true })
-      .eq("conversation_id", conversationId)
-      .eq("sender_type", "contact")
-      .eq("is_read", false)
+    console.log(`Marcando mensajes como leídos para conversación: ${conversationId}`)
+
+    // Usar la función de PostgreSQL que creamos
+    const { data, error } = await supabase.rpc("mark_conversation_as_read", {
+      conversation_uuid: conversationId,
+    })
 
     if (error) {
       console.error("Error marking messages as read:", error)
       throw error
     }
+
+    console.log(`Mensajes marcados como leídos:`, data)
+
+    // Opcional: Actualizar el timestamp de última interacción del cliente
+    if (userId) {
+      const { error: clientError } = await supabase
+        .from("clients")
+        .update({ last_interaction_at: new Date().toISOString() })
+        .eq("id", userId)
+
+      if (clientError) {
+        console.warn("Error updating client last interaction:", clientError)
+      }
+    }
+
+    return data
   } catch (error) {
     console.error("Error in markMessagesAsRead:", error)
     throw error
@@ -222,5 +238,45 @@ export async function updateConversationStatus(
   } catch (error) {
     console.error("Error in updateConversationStatus:", error)
     throw error
+  }
+}
+
+export async function getUnreadMessagesCount(conversationId: string) {
+  try {
+    const { data, error } = await supabase
+      .from("conversations")
+      .select("unread_count")
+      .eq("id", conversationId)
+      .single()
+
+    if (error) {
+      console.error("Error getting unread count:", error)
+      return 0
+    }
+
+    return data?.unread_count || 0
+  } catch (error) {
+    console.error("Error in getUnreadMessagesCount:", error)
+    return 0
+  }
+}
+
+export async function getTotalUnreadCount(organizationId: number) {
+  try {
+    const { data, error } = await supabase
+      .from("conversations")
+      .select("unread_count")
+      .eq("organization_id", organizationId)
+      .gt("unread_count", 0)
+
+    if (error) {
+      console.error("Error getting total unread count:", error)
+      return 0
+    }
+
+    return data?.reduce((total, conv) => total + (conv.unread_count || 0), 0) || 0
+  } catch (error) {
+    console.error("Error in getTotalUnreadCount:", error)
+    return 0
   }
 }

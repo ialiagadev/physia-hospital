@@ -1,5 +1,7 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect } from "react"
 import { Users, User, Bot } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -16,12 +18,14 @@ interface AssignUsersDialogProps {
   conversationId: string
   assignedUserIds: string[]
   onAssignmentChange?: () => void
+  trigger?: React.ReactNode
 }
 
 export function AssignUsersDialog({
   conversationId,
   assignedUserIds = [],
   onAssignmentChange,
+  trigger,
 }: AssignUsersDialogProps) {
   const [open, setOpen] = useState(false)
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>(assignedUserIds || [])
@@ -118,14 +122,17 @@ export function AssignUsersDialog({
     )
   }
 
+  // Trigger por defecto si no se proporciona uno personalizado
+  const defaultTrigger = (
+    <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Asignar usuarios">
+      <Users className="h-4 w-4" />
+      <span className="sr-only">Asignar usuarios</span>
+    </Button>
+  )
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Asignar usuarios">
-          <Users className="h-4 w-4" />
-          <span className="sr-only">Asignar usuarios</span>
-        </Button>
-      </DialogTrigger>
+      <DialogTrigger asChild>{trigger || defaultTrigger}</DialogTrigger>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

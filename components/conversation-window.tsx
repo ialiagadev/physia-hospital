@@ -7,14 +7,24 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useMessages } from "@/hooks/useMessages"
 import { useConversation } from "@/hooks/useConversation"
+import { useUnreadMessages } from "@/hooks/use-unread-messages"
 import { sendMessage } from "@/lib/chatActions"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { ContactInfoDialog } from "@/components/contact-info-dialog"
 import { AssignUsersDialog } from "@/components/assign-users-dialog"
+import { TemplateSelectorDialog } from "@/components/template-selector-dialog"
+import { ConversationProfilePanel } from "@/components/conversation-profile-panel"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import type { Message, User, Client } from "@/types/chat"
+
+interface Template {
+  id: string
+  name: string
+  content: string
+  category: string
+  variables?: string[]
+}
 
 interface ConversationWindowSimpleProps {
   chatId: string
@@ -28,7 +38,8 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
   const [sending, setSending] = useState(false)
   const [showScrollButton, setShowScrollButton] = useState(false)
   const [isNearBottom, setIsNearBottom] = useState(true)
-  const [showContactInfo, setShowContactInfo] = useState(false)
+  const [showProfilePanel, setShowProfilePanel] = useState(false)
+  const [isWindowVisible, setIsWindowVisible] = useState(true)
 
   // Referencias
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -42,11 +53,57 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
     error: conversationError,
     refetch: refetchConversation,
   } = useConversation(chatId)
+  const { unreadCount, markAsRead } = useUnreadMessages(chatId)
   const isMobile = useMediaQuery("(max-width: 768px)")
 
   // Estado combinado de carga y error
   const loading = messagesLoading || conversationLoading
   const error = messagesError || conversationError
+
+  // Auto-marcar como leído cuando se abre la conversación
+  useEffect(() => {
+    console.log(`ConversationWindow: chatId cambió a ${chatId}`)
+
+    // Marcar como leído inmediatamente al abrir
+    if (chatId && unreadCount > 0) {
+      console.log(`Auto-marcando ${unreadCount} mensajes como leídos`)
+      markAsRead()
+    }
+  }, [chatId, markAsRead, unreadCount])
+
+  // Marcar como leído cuando la ventana está visible y hay mensajes no leídos
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      setIsWindowVisible(!document.hidden)
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange)
+  }, [])
+
+  // Auto-marcar como leído cuando la ventana es visible y hay mensajes no leídos
+  useEffect(() => {
+    if (isWindowVisible && unreadCount > 0 && chatId) {
+      console.log(`Ventana visible con ${unreadCount} mensajes no leídos - marcando como leído`)
+      const timer = setTimeout(() => {
+        markAsRead()
+      }, 1000) // Delay de 1 segundo para mejor UX
+
+      return () => clearTimeout(timer)
+    }
+  }, [isWindowVisible, unreadCount, chatId, markAsRead])
+
+  // Marcar como leído cuando el usuario hace scroll hasta abajo
+  useEffect(() => {
+    if (isNearBottom && unreadCount > 0) {
+      console.log(`Usuario en la parte inferior con ${unreadCount} mensajes no leídos - marcando como leído`)
+      const timer = setTimeout(() => {
+        markAsRead()
+      }, 500) // Delay más corto cuando está en el fondo
+
+      return () => clearTimeout(timer)
+    }
+  }, [isNearBottom, unreadCount, markAsRead])
 
   // Debug: Verificar si tenemos datos del cliente
   useEffect(() => {
@@ -170,6 +227,26 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
     }
   }
 
+  // Handle template selection
+  const handleTemplateSelect = async (template: Template) => {
+    if (currentUser && !sending) {
+      setSending(true)
+
+      try {
+        await sendMessage({
+          conversationId: chatId,
+          content: template.content,
+          userId: currentUser.id,
+          messageType: "text",
+        })
+      } catch (error) {
+        console.error("Error sending template:", error)
+      } finally {
+        setSending(false)
+      }
+    }
+  }
+
   // Handle Enter key press
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -230,12 +307,12 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
   const messageGroups = groupMessagesByDate(messages)
   const client = conversation?.client
 
-  // Función para abrir el modal de información de contacto
-  const handleOpenContactInfo = (e: React.MouseEvent) => {
+  // Función para abrir el panel de perfil
+  const handleOpenProfilePanel = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    console.log("Abriendo modal de contacto")
-    setShowContactInfo(true)
+    console.log("Abriendo panel de perfil")
+    setShowProfilePanel(true)
   }
 
   if (loading) {
@@ -284,7 +361,7 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
         {/* Información del contacto - clickeable */}
         <div
           className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer hover:bg-gray-50 rounded-lg p-1 transition-colors"
-          onClick={handleOpenContactInfo}
+          onClick={handleOpenProfilePanel}
         >
           <div className="relative">
             <Avatar className="h-10 w-10">
@@ -299,7 +376,15 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
           </div>
 
           <div className="flex-1 min-w-0">
-            <h3 className="font-medium text-sm truncate">{clientName}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="font-medium text-sm truncate">{clientName}</h3>
+              {/* Indicador de mensajes no leídos en el header */}
+              {unreadCount > 0 && (
+                <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5 font-medium">
+                  {unreadCount > 99 ? "99+" : unreadCount} nuevos
+                </span>
+              )}
+            </div>
             <p className="text-xs text-gray-500 truncate">{getOnlineStatus(client)}</p>
           </div>
         </div>
@@ -385,7 +470,7 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
           Object.entries(messageGroups).map(([date, dateMessages]) => (
             <div key={date} className="space-y-2">
               <div className="flex justify-center">
-                <div className="bg-white px-3 py-1 rounded-full text-xs text-gray-500 shadow-sm">
+                <div className="bg-white/80 backdrop-blur-sm px-4 py-2 rounded-full text-xs font-medium text-gray-600 shadow-sm border border-gray-100">
                   {getDateDisplay(date)}
                 </div>
               </div>
@@ -394,18 +479,21 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
                 const isFirst = isFirstInGroup(idx, dateMessages)
                 const isLast = isLastInGroup(idx, dateMessages)
 
-                // Renderizado especial para mensajes de sistema
+                // Renderizado especial para mensajes de sistema con diseño mejorado
                 if (msg.message_type === "system") {
                   return (
-                    <div key={msg.id} className="flex justify-center my-2">
-                      <div className="bg-blue-100 text-blue-800 px-3 py-2 rounded-full text-xs font-medium shadow-sm border border-blue-200">
-                        {msg.content}
+                    <div key={msg.id} className="flex justify-center my-3">
+                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 px-4 py-2 rounded-full text-xs font-medium shadow-sm border border-blue-100 backdrop-blur-sm">
+                        <div className="flex items-center gap-1">
+                          <div className="w-1.5 h-1.5 bg-blue-400 rounded-full"></div>
+                          {msg.content}
+                        </div>
                       </div>
                     </div>
                   )
                 }
 
-                // Renderizado normal para otros mensajes
+                // Renderizado con diseño exacto de WhatsApp
                 return (
                   <div
                     key={msg.id}
@@ -414,70 +502,48 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
                     }`}
                   >
                     <div
-                      className={`relative p-3 max-w-[80%] ${
+                      className={`relative px-2 py-1 max-w-[85%] ${
                         msg.sender_type === "agent"
-                          ? "bg-[#dcf8c6] rounded-tl-lg rounded-bl-lg rounded-tr-lg"
-                          : "bg-white rounded-tr-lg rounded-br-lg rounded-tl-lg"
+                          ? "bg-[#dcf8c6] rounded-lg rounded-br-none"
+                          : "bg-white rounded-lg rounded-bl-none shadow-sm"
                       }`}
                     >
-                      <div className="whitespace-pre-wrap break-words">{msg.content}</div>
-                      <div className="flex items-center justify-end gap-1 mt-1">
-                        {/* Usar created_at en lugar de timestamp */}
-                        <span className="text-[10px] text-gray-500">{formatTime(msg.created_at)}</span>
-                        {msg.sender_type === "agent" && (
-                          <span>
-                            {msg.is_read ? (
-                              <svg
-                                className="w-3 h-3 text-blue-500"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                xmlns="http://www.w3.org/2000/svg"
-                              >
-                                <path
-                                  d="M4.5 12.75L10.5 18.75L19.5 5.25"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                />
-                                <path
-                                  d="M4.5 5.25L10.5 11.25"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                />
-                              </svg>
-                            ) : (
-                              <svg
-                                className="w-3 h-3 text-gray-400"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                xmlns="http://www.w3.org/2000/svg"
-                              >
-                                <path
-                                  d="M4.5 12.75L10.5 18.75L19.5 5.25"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                />
-                              </svg>
-                            )}
+                      {/* Contenedor flexible para texto y metadata */}
+                      <div className="flex items-end gap-1">
+                        <div className="whitespace-pre-wrap break-words text-[14px] leading-[1.3] text-gray-900 min-w-0 flex-1">
+                          {msg.content}
+                        </div>
+
+                        {/* Hora y checkmarks */}
+                        <div className="flex items-center gap-1 flex-shrink-0 ml-2 pb-[1px]">
+                          <span className="text-[11px] text-gray-500 font-normal whitespace-nowrap">
+                            {formatTime(msg.created_at)}
                           </span>
-                        )}
+
+                          {/* Doble checkmark solo para mensajes enviados */}
+                          {msg.sender_type === "agent" && (
+                            <div className="flex items-center">
+                              <svg className="w-4 h-4 text-gray-400" viewBox="0 0 16 15" fill="none">
+                                <path
+                                  d="M15.01 3.316l-.478-.372a.365.365 0 0 0-.51.063L8.666 9.879a.32.32 0 0 1-.484.033l-.358-.325a.319.319 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.063-.51zm-4.1 0l-.478-.372a.365.365 0 0 0-.51.063L4.566 9.879a.32.32 0 0 1-.484.033L3.724 9.587a.319.319 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.063-.51z"
+                                  fill="currentColor"
+                                />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
                       </div>
 
-                      {/* Message tail */}
+                      {/* Cola del mensaje estilo WhatsApp */}
                       <div
-                        className={`absolute top-0 w-4 h-4 ${
-                          msg.sender_type === "agent" ? "right-[-8px] bg-[#dcf8c6]" : "left-[-8px] bg-white"
+                        className={`absolute bottom-0 w-2 h-2 ${
+                          msg.sender_type === "agent" ? "right-[-2px] bg-[#dcf8c6]" : "left-[-2px] bg-white"
                         }`}
                         style={{
                           clipPath:
                             msg.sender_type === "agent"
-                              ? "polygon(0 0, 0% 100%, 100% 0)"
-                              : "polygon(100% 0, 100% 100%, 0 0)",
+                              ? "polygon(0 0, 0 100%, 100% 100%)"
+                              : "polygon(100% 0, 0 100%, 100% 100%)",
                         }}
                       />
                     </div>
@@ -539,6 +605,18 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
             <Paperclip className="h-5 w-5" />
           </Button>
 
+          {/* Botón de plantillas */}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>
+                  <TemplateSelectorDialog onTemplateSelect={handleTemplateSelect} disabled={sending} />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>Enviar plantilla</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
           <Input
             placeholder="Escribe un mensaje"
             value={message}
@@ -565,8 +643,14 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
         </div>
       </div>
 
-      {/* Diálogo de información del contacto */}
-      {client && <ContactInfoDialog client={client} open={showContactInfo} onOpenChange={setShowContactInfo} />}
+      {/* Panel de perfil de conversación */}
+      <ConversationProfilePanel
+        isOpen={showProfilePanel}
+        onOpenChange={setShowProfilePanel}
+        conversation={conversation}
+        currentUser={currentUser}
+        onAssignmentChange={handleAssignmentChange}
+      />
     </div>
   )
 }
