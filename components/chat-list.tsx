@@ -602,13 +602,14 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
             <div
               key={conversation.id}
               onClick={() => onChatSelect(conversation.id)}
-              className={`flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 transition-colors ${
+              className={`flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-50 transition-all duration-200 ${
                 selectedChatId === conversation.id
-                  ? "bg-gray-100"
+                  ? "bg-blue-50 hover:bg-blue-100 border-l-4 border-l-blue-500 shadow-sm"
                   : conversation.unread_count > 0
-                    ? "bg-green-50 hover:bg-green-100 border-l-4 border-l-green-500"
-                    : ""
+                    ? "bg-green-50 hover:bg-green-100 border-l-4 border-l-green-500 shadow-sm"
+                    : "hover:shadow-sm"
               }`}
+            
             >
               {/* Avatar con icono del canal en la esquina */}
               <div className="relative">

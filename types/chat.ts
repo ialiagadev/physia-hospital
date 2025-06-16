@@ -60,9 +60,10 @@ export interface Canal {
     canales_organization?: CanalesOrganization
   }
   
-  // Interface que extiende Conversation con el último mensaje
+  // Interface que extiende Conversation con el último mensaje y etiquetas
   export interface ConversationWithLastMessage extends Conversation {
     last_message?: Message
+    conversation_tags?: ConversationTag[]
   }
   
   export interface Message {
@@ -97,6 +98,34 @@ export interface Canal {
     type?: number // 1 = Usuario normal, 2 = Agente IA
     prompt?: string // Prompt para agentes IA
     created_at?: string
+  }
+  
+  // Nuevas interfaces para notas y etiquetas
+  export interface ConversationNote {
+    id: string
+    conversation_id: string
+    content: string
+    created_by: string
+    created_at: string
+    updated_at: string
+    // Relación con usuario
+    user?: User
+  }
+  
+  export interface ConversationTag {
+    id: string
+    conversation_id: string
+    tag_name: string
+    created_by: string
+    created_at: string
+    // Relación con usuario
+    user?: User
+  }
+  
+  // Interface extendida de Conversation con notas y etiquetas
+  export interface ConversationWithNotesAndTags extends ConversationWithLastMessage {
+    notes?: ConversationNote[]
+    tags?: ConversationTag[]
   }
   
   // Alias para mantener compatibilidad

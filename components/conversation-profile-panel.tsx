@@ -10,9 +10,9 @@ import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/hooks/use-toast"
 import { AssignUsersDialog } from "@/components/assign-users-dialog"
 import { Users, UserPlus, StickyNote, X, Bot, UserIcon, Sparkles, Tag } from "lucide-react"
-import { useConversationNotes } from "@/hooks/use-conversation-notes"
 import { useAssignedUsers } from "@/hooks/use-assigned-users"
-import type { Conversation, User } from "@/types/chat"
+import { supabase } from "@/lib/supabase/client"
+import type { Conversation, User, ConversationTag, ConversationNote } from "@/types/chat"
 
 interface ConversationProfilePanelProps {
   isOpen: boolean
@@ -22,23 +22,16 @@ interface ConversationProfilePanelProps {
   onAssignmentChange: () => void
 }
 
-interface ConversationTag {
-  id: string
-  name: string
-  color: string
-  isCustom: boolean
-}
-
 // Etiquetas predefinidas para conversaciones médicas
-const predefinedTags: ConversationTag[] = [
-  { id: "1", name: "Consulta General", color: "bg-blue-100 text-blue-800", isCustom: false },
-  { id: "2", name: "Urgente", color: "bg-red-100 text-red-800", isCustom: false },
-  { id: "3", name: "Seguimiento", color: "bg-green-100 text-green-800", isCustom: false },
-  { id: "4", name: "Cita Pendiente", color: "bg-yellow-100 text-yellow-800", isCustom: false },
-  { id: "5", name: "Tratamiento", color: "bg-purple-100 text-purple-800", isCustom: false },
-  { id: "6", name: "Rehabilitación", color: "bg-indigo-100 text-indigo-800", isCustom: false },
-  { id: "7", name: "Dolor Crónico", color: "bg-orange-100 text-orange-800", isCustom: false },
-  { id: "8", name: "Primera Consulta", color: "bg-cyan-100 text-cyan-800", isCustom: false },
+const predefinedTags = [
+  { name: "Consulta General", color: "bg-blue-100 text-blue-800" },
+  { name: "Urgente", color: "bg-red-100 text-red-800" },
+  { name: "Seguimiento", color: "bg-green-100 text-green-800" },
+  { name: "Cita Pendiente", color: "bg-yellow-100 text-yellow-800" },
+  { name: "Tratamiento", color: "bg-purple-100 text-purple-800" },
+  { name: "Rehabilitación", color: "bg-indigo-100 text-indigo-800" },
+  { name: "Dolor Crónico", color: "bg-orange-100 text-orange-800" },
+  { name: "Primera Consulta", color: "bg-cyan-100 text-cyan-800" },
 ]
 
 const getChannelIcon = (channel?: string) => {
@@ -87,6 +80,20 @@ const getUserTypeInfo = (user: User) => {
   }
 }
 
+const formatTime = (dateStr: string) => {
+  try {
+    return new Date(dateStr).toLocaleString("es-ES", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+  } catch (error) {
+    return dateStr
+  }
+}
+
 export function ConversationProfilePanel({
   isOpen,
   onOpenChange,
@@ -94,10 +101,15 @@ export function ConversationProfilePanel({
   currentUser,
   onAssignmentChange,
 }: ConversationProfilePanelProps) {
-  const [availableTags, setAvailableTags] = useState<ConversationTag[]>(predefinedTags)
   const [newTagName, setNewTagName] = useState("")
-  const [selectedTags, setSelectedTags] = useState<string[]>([])
+  const [selectedTags, setSelectedTags] = useState<ConversationTag[]>([])
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false)
+  const [tagsLoading, setTagsLoading] = useState(false)
+
+  // Estados para notas
+  const [notes, setNotes] = useState<ConversationNote[]>([])
+  const [newNote, setNewNote] = useState("")
+  const [notesLoading, setNotesLoading] = useState(false)
 
   // Hook para obtener usuarios asignados REALES
   const {
@@ -106,60 +118,245 @@ export function ConversationProfilePanel({
     error: usersError,
   } = useAssignedUsers(conversation?.assigned_user_ids)
 
-  // Hook para gestión de notas
-  const {
-    notes,
-    newNote,
-    setNewNote,
-    isLoading: notesLoading,
-    addNote,
-    deleteNote,
-  } = useConversationNotes(conversation?.id || "")
-
-  // Cargar etiquetas de la conversación
+  // Cargar datos cuando cambia la conversación
   useEffect(() => {
-    if (conversation) {
-      const savedTags = localStorage.getItem(`conversation_${conversation.id}_tags`)
-      if (savedTags) {
-        setSelectedTags(JSON.parse(savedTags))
-      } else {
-        setSelectedTags([])
-      }
+    if (conversation?.id) {
+      loadConversationTags()
+      loadConversationNotes()
     }
-  }, [conversation])
+  }, [conversation?.id])
 
-  const handleAddTag = () => {
-    if (newTagName.trim() && conversation) {
-      const newTag: ConversationTag = {
-        id: Date.now().toString(),
-        name: newTagName.trim(),
-        color: "bg-orange-100 text-orange-800",
-        isCustom: true,
-      }
+  const loadConversationTags = async () => {
+    if (!conversation?.id) return
 
-      setAvailableTags([...availableTags, newTag])
-      const newTags = [...selectedTags, newTag.name]
-      setSelectedTags(newTags)
-      setNewTagName("")
+    setTagsLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from("conversation_tags")
+        .select("*")
+        .eq("conversation_id", conversation.id)
+        .order("created_at", { ascending: false })
 
-      localStorage.setItem(`conversation_${conversation.id}_tags`, JSON.stringify(newTags))
+      if (error) throw error
 
+      setSelectedTags(data || [])
+    } catch (error) {
+      console.error("Error loading tags:", error)
       toast({
-        title: "Etiqueta agregada",
-        description: `Se agregó la etiqueta "${newTag.name}" a la conversación`,
+        title: "Error",
+        description: "No se pudieron cargar las etiquetas",
+        variant: "destructive",
       })
+    } finally {
+      setTagsLoading(false)
     }
   }
 
-  const handleToggleTag = (tagName: string) => {
-    if (!conversation) return
+  const loadConversationNotes = async () => {
+    if (!conversation?.id) return
 
-    const newTags = selectedTags.includes(tagName)
-      ? selectedTags.filter((t) => t !== tagName)
-      : [...selectedTags, tagName]
+    setNotesLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from("conversation_notes")
+        .select("*")
+        .eq("conversation_id", conversation.id)
+        .order("created_at", { ascending: false })
 
-    setSelectedTags(newTags)
-    localStorage.setItem(`conversation_${conversation.id}_tags`, JSON.stringify(newTags))
+      if (error) throw error
+
+      setNotes(data || [])
+    } catch (error) {
+      console.error("Error loading notes:", error)
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar las notas",
+        variant: "destructive",
+      })
+    } finally {
+      setNotesLoading(false)
+    }
+  }
+
+  const handleAddNote = async () => {
+    if (!newNote.trim() || !conversation?.id) return
+
+    const noteContent = newNote.trim()
+
+    setNotesLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from("conversation_notes")
+        .insert({
+          conversation_id: conversation.id,
+          content: noteContent,
+          created_by: currentUser.id,
+        })
+        .select("*")
+        .single()
+
+      if (error) throw error
+
+      setNotes((prev) => [data, ...prev])
+      setNewNote("")
+
+      toast({
+        title: "Nota guardada",
+        description: "La nota se ha guardado correctamente",
+      })
+    } catch (error) {
+      console.error("Error adding note:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo guardar la nota",
+        variant: "destructive",
+      })
+    } finally {
+      setNotesLoading(false)
+    }
+  }
+
+  const handleDeleteNote = async (noteId: string) => {
+    setNotesLoading(true)
+    try {
+      const { error } = await supabase.from("conversation_notes").delete().eq("id", noteId)
+
+      if (error) throw error
+
+      setNotes((prev) => prev.filter((note) => note.id !== noteId))
+
+      toast({
+        title: "Nota eliminada",
+        description: "La nota se ha eliminado correctamente",
+      })
+    } catch (error) {
+      console.error("Error deleting note:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo eliminar la nota",
+        variant: "destructive",
+      })
+    } finally {
+      setNotesLoading(false)
+    }
+  }
+
+  const handleAddTag = async () => {
+    if (!newTagName.trim() || !conversation?.id) return
+
+    const tagName = newTagName.trim()
+
+    // Verificar si la etiqueta ya existe
+    if (selectedTags.some((tag) => tag.tag_name === tagName)) {
+      toast({
+        title: "Etiqueta duplicada",
+        description: "Esta etiqueta ya existe en la conversación",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setTagsLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from("conversation_tags")
+        .insert({
+          conversation_id: conversation.id,
+          tag_name: tagName,
+          created_by: currentUser.id,
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      setSelectedTags((prev) => [data, ...prev])
+      setNewTagName("")
+
+      toast({
+        title: "Etiqueta agregada",
+        description: `Se agregó la etiqueta "${tagName}" a la conversación`,
+      })
+    } catch (error) {
+      console.error("Error adding tag:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo agregar la etiqueta",
+        variant: "destructive",
+      })
+    } finally {
+      setTagsLoading(false)
+    }
+  }
+
+  const handleAddPredefinedTag = async (tagName: string) => {
+    if (!conversation?.id) return
+
+    // Verificar si la etiqueta ya existe
+    if (selectedTags.some((tag) => tag.tag_name === tagName)) {
+      toast({
+        title: "Etiqueta duplicada",
+        description: "Esta etiqueta ya existe en la conversación",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setTagsLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from("conversation_tags")
+        .insert({
+          conversation_id: conversation.id,
+          tag_name: tagName,
+          created_by: currentUser.id,
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      setSelectedTags((prev) => [data, ...prev])
+
+      toast({
+        title: "Etiqueta agregada",
+        description: `Se agregó la etiqueta "${tagName}" a la conversación`,
+      })
+    } catch (error) {
+      console.error("Error adding predefined tag:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo agregar la etiqueta",
+        variant: "destructive",
+      })
+    } finally {
+      setTagsLoading(false)
+    }
+  }
+
+  const handleRemoveTag = async (tagId: string) => {
+    setTagsLoading(true)
+    try {
+      const { error } = await supabase.from("conversation_tags").delete().eq("id", tagId)
+
+      if (error) throw error
+
+      setSelectedTags((prev) => prev.filter((tag) => tag.id !== tagId))
+
+      toast({
+        title: "Etiqueta eliminada",
+        description: "La etiqueta ha sido eliminada de la conversación",
+      })
+    } catch (error) {
+      console.error("Error removing tag:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo eliminar la etiqueta",
+        variant: "destructive",
+      })
+    } finally {
+      setTagsLoading(false)
+    }
   }
 
   const handleGenerateSummary = async () => {
@@ -182,7 +379,6 @@ export function ConversationProfilePanel({
   }
 
   const handleRemoveUser = (userId: string) => {
-    console.log("Removing user:", userId)
     toast({
       title: "Usuario desasignado",
       description: "El usuario ha sido desasignado de la conversación",
@@ -191,8 +387,12 @@ export function ConversationProfilePanel({
   }
 
   const handleAssignmentChangeInternal = () => {
-    // Llamar al callback padre para refrescar la conversación
     onAssignmentChange()
+  }
+
+  const getTagColor = (tagName: string) => {
+    const predefined = predefinedTags.find((t) => t.name === tagName)
+    return predefined?.color || "bg-gray-100 text-gray-800"
   }
 
   if (!conversation) return null
@@ -347,7 +547,7 @@ export function ConversationProfilePanel({
                 placeholder="Agregar una nota sobre esta conversación..."
                 disabled={notesLoading}
               />
-              <Button size="sm" className="w-full" disabled={!newNote.trim() || notesLoading} onClick={addNote}>
+              <Button size="sm" className="w-full" disabled={!newNote.trim() || notesLoading} onClick={handleAddNote}>
                 {notesLoading ? "Guardando..." : "Guardar Nota"}
               </Button>
 
@@ -356,12 +556,14 @@ export function ConversationProfilePanel({
                   {notes.slice(0, 3).map((note) => (
                     <div key={note.id} className="p-2 bg-gray-50 rounded text-xs relative group">
                       <p className="text-gray-800 pr-6">{note.content}</p>
-                      <p className="text-gray-500 mt-1">{note.timestamp}</p>
+                      <div className="flex items-center justify-between mt-1">
+                        <p className="text-gray-500">{formatTime(note.created_at)}</p>
+                      </div>
                       <Button
                         variant="ghost"
                         size="sm"
                         className="absolute top-1 right-1 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={() => deleteNote(note.id)}
+                        onClick={() => handleDeleteNote(note.id)}
                       >
                         <X className="h-3 w-3" />
                       </Button>
@@ -403,55 +605,60 @@ export function ConversationProfilePanel({
               <h4 className="font-medium">Etiquetas</h4>
             </div>
 
+            {/* Etiquetas seleccionadas */}
             {selectedTags.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-3">
-                {selectedTags.map((tagName) => {
-                  const tag = availableTags.find((t) => t.name === tagName)
-                  return (
-                    <Badge
-                      key={tagName}
-                      variant="secondary"
-                      className={`text-xs ${tag?.color || "bg-gray-100 text-gray-800"} cursor-pointer`}
-                      onClick={() => handleToggleTag(tagName)}
-                    >
-                      {tagName}
-                      <X className="w-3 h-3 ml-1" />
-                    </Badge>
-                  )
-                })}
+                {selectedTags.map((tag) => (
+                  <Badge
+                    key={tag.id}
+                    variant="secondary"
+                    className={`text-xs ${getTagColor(tag.tag_name)} cursor-pointer`}
+                    onClick={() => handleRemoveTag(tag.id)}
+                  >
+                    {tag.tag_name}
+                    <X className="w-3 h-3 ml-1" />
+                  </Badge>
+                ))}
               </div>
             )}
 
+            {/* Input para nueva etiqueta */}
             <div className="flex gap-2 mb-3">
               <Input
                 placeholder="Nueva etiqueta..."
                 value={newTagName}
                 onChange={(e) => setNewTagName(e.target.value)}
                 className="text-sm"
+                disabled={tagsLoading}
                 onKeyPress={(e) => {
                   if (e.key === "Enter") {
                     handleAddTag()
                   }
                 }}
               />
-              <Button size="sm" onClick={handleAddTag} disabled={!newTagName.trim()}>
-                <Tag className="w-4 h-4" />
+              <Button size="sm" onClick={handleAddTag} disabled={!newTagName.trim() || tagsLoading}>
+                {tagsLoading ? (
+                  <div className="w-4 h-4 border border-gray-400 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Tag className="w-4 h-4" />
+                )}
               </Button>
             </div>
 
+            {/* Etiquetas predefinidas disponibles */}
             <div className="space-y-2">
               <p className="text-sm font-medium text-gray-700">Etiquetas disponibles:</p>
               <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
-                {availableTags
-                  .filter((tag) => !selectedTags.includes(tag.name))
-                  .map((tag) => (
+                {predefinedTags
+                  .filter((predefinedTag) => !selectedTags.some((tag) => tag.tag_name === predefinedTag.name))
+                  .map((predefinedTag) => (
                     <Badge
-                      key={tag.id}
+                      key={predefinedTag.name}
                       variant="outline"
                       className="text-xs cursor-pointer hover:bg-gray-50"
-                      onClick={() => handleToggleTag(tag.name)}
+                      onClick={() => handleAddPredefinedTag(predefinedTag.name)}
                     >
-                      {tag.name}
+                      {predefinedTag.name}
                     </Badge>
                   ))}
               </div>

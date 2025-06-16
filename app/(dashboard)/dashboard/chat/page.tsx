@@ -8,6 +8,8 @@ import { useAuth } from "@/app/contexts/auth-context"
 export default function ChatPage() {
   const { userProfile, isLoading } = useAuth()
   const [selectedChat, setSelectedChat] = useState<string | null>(null)
+  // Eliminar esta línea:
+  // const [viewMode, setViewMode] = useState<"all" | "assigned">("all")
 
   if (isLoading) {
     return (
