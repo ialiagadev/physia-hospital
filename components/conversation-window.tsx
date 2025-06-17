@@ -6,7 +6,7 @@ import { Send, Paperclip, Smile, ArrowDown, Phone, Video, MoreVertical, ArrowLef
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useMessages } from "@/hooks/useMessages"
-import { useConversation } from "@/hooks/useConversation"
+import { useConversation } from "@/hooks/useChatWindow"
 import { useUnreadMessages } from "@/hooks/use-unread-messages"
 import { sendMessage } from "@/lib/chatActions"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
