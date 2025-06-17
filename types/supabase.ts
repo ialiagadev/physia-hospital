@@ -23,6 +23,16 @@ export interface Database {
           active: boolean
           subscription_tier: string
           subscription_expires: string | null
+          invoice_number_format: string | null
+          invoice_start_number: number | null
+          logo_url: string | null
+          invoice_format: string | null
+          invoice_padding_length: number | null
+          last_simplified_invoice_number: number | null
+          last_rectificative_invoice_number: number | null
+          simplified_invoice_format: string | null
+          rectificative_invoice_format: string | null
+          created_by: string | null
         }
         Insert: {
           id?: number
@@ -43,6 +53,16 @@ export interface Database {
           active?: boolean
           subscription_tier?: string
           subscription_expires?: string | null
+          invoice_number_format?: string | null
+          invoice_start_number?: number | null
+          logo_url?: string | null
+          invoice_format?: string | null
+          invoice_padding_length?: number | null
+          last_simplified_invoice_number?: number | null
+          last_rectificative_invoice_number?: number | null
+          simplified_invoice_format?: string | null
+          rectificative_invoice_format?: string | null
+          created_by?: string | null
         }
         Update: {
           id?: number
@@ -63,40 +83,125 @@ export interface Database {
           active?: boolean
           subscription_tier?: string
           subscription_expires?: string | null
+          invoice_number_format?: string | null
+          invoice_start_number?: number | null
+          logo_url?: string | null
+          invoice_format?: string | null
+          invoice_padding_length?: number | null
+          last_simplified_invoice_number?: number | null
+          last_rectificative_invoice_number?: number | null
+          simplified_invoice_format?: string | null
+          rectificative_invoice_format?: string | null
+          created_by?: string | null
         }
       }
       users: {
         Row: {
           id: string
-          created_at: string
-          email: string
+          created_at: string | null
+          email: string | null
           organization_id: number | null
-          role: string
+          role: string | null // 'admin' | 'user' | 'viewer'
           name: string | null
           avatar_url: string | null
-          is_physia_admin: boolean
+          is_physia_admin: boolean | null
+          type: number | null
+          prompt: string | null
         }
         Insert: {
           id: string
-          created_at?: string
-          email: string
+          created_at?: string | null
+          email?: string | null
           organization_id?: number | null
-          role?: string
+          role?: string | null
           name?: string | null
           avatar_url?: string | null
-          is_physia_admin?: boolean
+          is_physia_admin?: boolean | null
+          type?: number | null
+          prompt?: string | null
         }
         Update: {
           id?: string
-          created_at?: string
-          email?: string
+          created_at?: string | null
+          email?: string | null
           organization_id?: number | null
-          role?: string
+          role?: string | null
           name?: string | null
           avatar_url?: string | null
-          is_physia_admin?: boolean
+          is_physia_admin?: boolean | null
+          type?: number | null
+          prompt?: string | null
         }
       }
+      // TABLAS DE FICHAJE
+      time_entries: {
+        Row: {
+          id: string
+          user_id: string
+          organization_id: number
+          entry_type: string
+          timestamp: string
+          notes: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          organization_id: number
+          entry_type: string
+          timestamp?: string
+          notes?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          organization_id?: number
+          entry_type?: string
+          timestamp?: string
+          notes?: string | null
+          created_at?: string | null
+        }
+      }
+      work_sessions: {
+        Row: {
+          id: string
+          user_id: string
+          organization_id: number
+          work_date: string
+          clock_in_time: string | null
+          clock_out_time: string | null
+          total_minutes: number | null
+          status: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          organization_id: number
+          work_date: string
+          clock_in_time?: string | null
+          clock_out_time?: string | null
+          total_minutes?: number | null
+          status?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          organization_id?: number
+          work_date?: string
+          clock_in_time?: string | null
+          clock_out_time?: string | null
+          total_minutes?: number | null
+          status?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      // TUS OTRAS TABLAS EXISTENTES...
       clients: {
         Row: {
           id: number
@@ -358,7 +463,6 @@ export interface Database {
           action_url?: string | null
         }
       }
-      // Nuevas tablas de historias clínicas
       clinical_records: {
         Row: {
           id: number
@@ -665,6 +769,64 @@ export interface Database {
           new_data?: Json | null
         }
       }
+    }
+    Views: {
+      time_entries_with_user: {
+        Row: {
+          id: string | null
+          user_id: string | null
+          organization_id: number | null
+          entry_type: string | null
+          timestamp: string | null
+          local_timestamp: string | null
+          notes: string | null
+          created_at: string | null
+          user_name: string | null
+          user_email: string | null
+          user_role: string | null
+        }
+      }
+      work_sessions_with_user: {
+        Row: {
+          id: string | null
+          user_id: string | null
+          organization_id: number | null
+          work_date: string | null
+          clock_in_time: string | null
+          clock_out_time: string | null
+          local_clock_in: string | null
+          local_clock_out: string | null
+          total_minutes: number | null
+          total_hours: number | null
+          status: string | null
+          created_at: string | null
+          updated_at: string | null
+          user_name: string | null
+          user_email: string | null
+          user_role: string | null
+        }
+      }
+      organization_time_stats: {
+        Row: {
+          organization_id: number | null
+          organization_name: string | null
+          active_users: number | null
+          total_work_days: number | null
+          total_minutes_worked: number | null
+          avg_hours_per_day: number | null
+          complete_days: number | null
+          incomplete_days: number | null
+        }
+      }
+    }
+    Functions: {
+      [_ in never]: never
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
     }
   }
 }

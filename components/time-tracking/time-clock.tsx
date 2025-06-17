@@ -2,108 +2,85 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Clock } from "lucide-react"
-import { useToast } from "@/hooks/use-toast"
+import { User } from "lucide-react"
+import { format } from "date-fns"
+import { es } from "date-fns/locale"
 
 interface TimeClockProps {
   user: {
     id: string
-    name: string
-    email: string
+    name: string | null
+    email: string | null // Cambiado a string | null
   }
-  onClockInOut: (userId: string, type: "entrada" | "salida") => Promise<void>
   lastEntry?: {
     entry_type: string
-    entry_timestamp: string
-  }
+    local_timestamp: string
+  } | null
+  onClockInOut: (entryType: "entrada" | "salida") => Promise<void>
+  isLoading: boolean
 }
 
-export function TimeClock({ user, onClockInOut, lastEntry }: TimeClockProps) {
+export function TimeClock({ user, lastEntry, onClockInOut, isLoading }: TimeClockProps) {
   const [currentTime, setCurrentTime] = useState(new Date())
-  const [isLoading, setIsLoading] = useState(false)
-  const { toast } = useToast()
 
-  // Actualizar reloj cada segundo
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000)
     return () => clearInterval(timer)
   }, [])
 
   const nextAction = lastEntry?.entry_type === "entrada" ? "salida" : "entrada"
-  const buttonText = nextAction === "entrada" ? "FICHAR ENTRADA" : "FICHAR SALIDA"
-  const buttonColor = nextAction === "entrada" ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"
+  const buttonText = nextAction === "entrada" ? "Entrada" : "Salida"
+  const buttonVariant = nextAction === "entrada" ? "default" : "destructive"
 
   const handleClock = async () => {
-    setIsLoading(true)
-    try {
-      await onClockInOut(user.id, nextAction)
-      toast({
-        title: "✅ Fichaje registrado",
-        description: `${buttonText} a las ${currentTime.toLocaleTimeString("es-ES", { timeZone: "Europe/Madrid" })}`,
-      })
-    } catch (error) {
-      toast({
-        title: "❌ Error",
-        description: "No se pudo registrar el fichaje",
-        variant: "destructive",
-      })
-    } finally {
-      setIsLoading(false)
-    }
+    await onClockInOut(nextAction)
   }
 
   return (
-    <div className="max-w-sm mx-auto space-y-4">
-      {/* Reloj */}
-      <Card>
-        <CardHeader className="text-center pb-2">
-          <CardTitle className="flex items-center justify-center gap-2">
-            <Clock className="h-5 w-5" />
-            Control Horario
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-center space-y-4">
-          <div className="text-4xl font-mono font-bold">
-            {currentTime.toLocaleTimeString("es-ES", { timeZone: "Europe/Madrid" })}
+    <div className="max-w-md mx-auto">
+      <Card className="border-0 shadow-sm">
+        <CardContent className="p-8 text-center space-y-6">
+          {/* Usuario */}
+          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <User className="h-4 w-4" />
+            {user.name || user.email || "Usuario sin nombre"}
           </div>
-          <div className="text-sm text-muted-foreground">
-            {currentTime.toLocaleDateString("es-ES", {
-              weekday: "long",
-              day: "numeric",
-              month: "long",
-              timeZone: "Europe/Madrid",
-            })}
+
+          {/* Reloj */}
+          <div className="space-y-2">
+            <div className="text-5xl font-light tabular-nums tracking-tight">{format(currentTime, "HH:mm:ss")}</div>
+            <div className="text-sm text-muted-foreground">
+              {format(currentTime, "EEEE, d MMMM yyyy", { locale: es })}
+            </div>
           </div>
-          <Badge variant="outline" className="text-sm">
-            {user.email} - {user.name}
-          </Badge>
+
+          {/* Estado actual */}
+          {lastEntry && (
+            <div className="py-3 px-4 bg-muted/50 rounded-lg">
+              <div className="text-xs text-muted-foreground mb-1">Último registro</div>
+              <div className="flex items-center justify-center gap-2">
+                <Badge variant={lastEntry.entry_type === "entrada" ? "default" : "secondary"} className="text-xs">
+                  {lastEntry.entry_type.toUpperCase()}
+                </Badge>
+                <span className="text-sm tabular-nums">{format(new Date(lastEntry.local_timestamp), "HH:mm:ss")}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Botón de fichaje */}
+          <Button
+            onClick={handleClock}
+            disabled={isLoading}
+            variant={buttonVariant}
+            size="lg"
+            className="w-full h-12 text-base font-medium"
+          >
+            {isLoading ? "Procesando..." : buttonText}
+          </Button>
         </CardContent>
       </Card>
-
-      {/* Estado actual */}
-      {lastEntry && (
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-sm text-muted-foreground">Último fichaje:</p>
-            <p className="font-semibold text-lg">{lastEntry.entry_type.toUpperCase()}</p>
-            <p className="text-sm">
-              {new Date(lastEntry.entry_timestamp).toLocaleString("es-ES", { timeZone: "Europe/Madrid" })}
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Botón de fichaje */}
-      <Button onClick={handleClock} disabled={isLoading} className={`w-full h-16 text-xl font-bold ${buttonColor}`}>
-        {isLoading ? "FICHANDO..." : buttonText}
-      </Button>
-
-      {/* Aviso legal mínimo */}
-      <div className="text-xs text-center text-muted-foreground bg-muted p-2 rounded">
-        📋 Sistema conforme RD-ley 8/2019 • Conservación 4 años
-      </div>
     </div>
   )
 }
