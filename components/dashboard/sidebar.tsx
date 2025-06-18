@@ -151,17 +151,7 @@ export function Sidebar({ className }: SidebarProps) {
       hoverColor: "bg-blue-50/50",
       activeColor: "#4285F4",
     },
-    {
-      id: "clients",
-      label: "Clientes",
-      href: "/dashboard/facturacion/clients", // ✅ CORREGIDO
-      icon: <Users />,
-      matchPattern: "/dashboard/facturacion/clients",
-      iconColor: "#7B68EE",
-      bgColor: "bg-indigo-50",
-      hoverColor: "bg-indigo-50/50",
-      activeColor: "#7B68EE",
-    },
+    
     {
       id: "organizations",
       label: "Organizaciones",
@@ -173,17 +163,7 @@ export function Sidebar({ className }: SidebarProps) {
       hoverColor: "bg-purple-50/50",
       activeColor: "#9370DB",
     },
-    {
-      id: "services",
-      label: "Servicios",
-      href: "/dashboard/facturacion/services", // ✅ CORREGIDO
-      icon: <Package />,
-      matchPattern: "/dashboard/facturacion/services",
-      iconColor: "#F59E0B",
-      bgColor: "bg-amber-50",
-      hoverColor: "bg-amber-50/50",
-      activeColor: "#F59E0B",
-    },
+   
     {
       id: "professionals",
       label: "Profesionales",

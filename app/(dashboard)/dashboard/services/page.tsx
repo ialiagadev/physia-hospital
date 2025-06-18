@@ -124,7 +124,7 @@ export default function ServicesPage() {
           <p className="text-muted-foreground">Gestiona tu catálogo de servicios para facturación</p>
         </div>
         <Button asChild>
-          <Link href="/dashboard/services/new">
+          <Link href="/dashboard/facturacion/services/new">
             <Plus className="mr-2 h-4 w-4" />
             Nuevo Servicio
           </Link>

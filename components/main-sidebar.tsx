@@ -16,6 +16,8 @@ import {
   Bot,
   Radio,
   Clock,
+  Users,
+  Package,
 } from "lucide-react"
 
 export function MainSidebar() {
@@ -73,6 +75,20 @@ export function MainSidebar() {
       href: "/dashboard/chat",
       icon: MessageSquare,
       isActive: isInSection("chat"),
+    },
+    {
+      id: "clientes",
+      label: "Clientes",
+      href: "/dashboard//clients",
+      icon: Users,
+      isActive: isInSection("clients"),
+    },
+    {
+      id: "servicios",
+      label: "Servicios",
+      href: "/dashboard/services",
+      icon: Package,
+      isActive: isInSection("services"),
     },
     {
       id: "tareas",
