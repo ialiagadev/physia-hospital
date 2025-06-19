@@ -8,40 +8,24 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
-import { FileText, Download, Copy, Loader2, User, Calendar, Phone, Mail, AlertTriangle, FileDown } from "lucide-react"
-
-interface PatientData {
-  id: string
-  nombre: string
-  telefono: string
-  email: string
-  fechaNacimiento: string
-  ultimaVisita: string
-  proximaCita?: string
-  notas: string
-  alergias: string[]
-  diagnosticos: string[]
-  medicacion: string[]
-}
+import { FileText, Download, Copy, Loader2, User, Calendar, Phone, Mail, AlertTriangle, FileDown, AlertCircle } from 'lucide-react'
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { ClinicalReportData } from "@/lib/actions/clinical-report-data"
 
 interface ClinicalReportModalProps {
   isOpen: boolean
   onClose: () => void
-  paciente: PatientData
-  historialCompleto?: any
-  seguimientos?: any[]
-  citas?: any[]
-  documentos?: any[]
+  reportData: ClinicalReportData | null
+  isLoading: boolean
+  error: string | null
 }
 
 export function ClinicalReportModal({
   isOpen,
   onClose,
-  paciente,
-  historialCompleto,
-  seguimientos = [],
-  citas = [],
-  documentos = [],
+  reportData,
+  isLoading,
+  error,
 }: ClinicalReportModalProps) {
   const [observaciones, setObservaciones] = useState("")
   const [isGenerating, setIsGenerating] = useState(false)
@@ -49,7 +33,7 @@ export function ClinicalReportModal({
   const [cleanedReport, setCleanedReport] = useState("")
   const { toast } = useToast()
 
-  const calcularEdad = (fechaNacimiento: string) => {
+  const calcularEdad = (fechaNacimiento: string | null) => {
     if (!fechaNacimiento) return "N/A"
     try {
       const hoy = new Date()
@@ -66,7 +50,7 @@ export function ClinicalReportModal({
     }
   }
 
-  const formatearFecha = (fechaISO: string) => {
+  const formatearFecha = (fechaISO: string | null) => {
     if (!fechaISO) return "Fecha no válida"
     try {
       const fecha = new Date(fechaISO)
@@ -109,25 +93,73 @@ export function ClinicalReportModal({
     return cleaned
   }
 
+  // Función para extraer alergias del historial médico
+  const getAlergias = () => {
+    if (!reportData?.historialMedico) return []
+    
+    const alergias = []
+    if (reportData.historialMedico.alergiasMedicamentosas) {
+      alergias.push(reportData.historialMedico.alergiasMedicamentosas)
+    }
+    if (reportData.historialMedico.alergiasAlimentarias) {
+      alergias.push(reportData.historialMedico.alergiasAlimentarias)
+    }
+    if (reportData.historialMedico.alergiasAmbientales) {
+      alergias.push(reportData.historialMedico.alergiasAmbientales)
+    }
+    return alergias.filter(Boolean)
+  }
+
+  // Función para extraer diagnósticos
+  const getDiagnosticos = () => {
+    if (!reportData?.historialMedico?.diagnostico) return []
+    return [reportData.historialMedico.diagnostico].filter(Boolean)
+  }
+
+  // Función para extraer medicación
+  const getMedicacion = () => {
+    const medicacion = []
+    if (reportData?.historialMedico?.medicacionHabitual) {
+      medicacion.push(reportData.historialMedico.medicacionHabitual)
+    }
+    if (reportData?.historialMedico?.medicacion) {
+      medicacion.push(reportData.historialMedico.medicacion)
+    }
+    return medicacion.filter(Boolean)
+  }
+
   const generateReport = async () => {
+    if (!reportData) {
+      toast({
+        title: "Error",
+        description: "No hay datos disponibles para generar el informe",
+        variant: "destructive",
+      })
+      return
+    }
+
     setIsGenerating(true)
     setGeneratedReport("")
     setCleanedReport("")
 
     try {
-      const patientData = {
-        ...paciente,
-        edad: calcularEdad(paciente.fechaNacimiento),
+      const pacienteData = {
+        ...reportData.pacienteInfo,
+        edad: calcularEdad(reportData.pacienteInfo.fechaNacimiento),
+        ultimaVisita: reportData.metadatos.ultimaVisita,
+        proximaCita: "", // No disponible en la nueva estructura
+        notas: reportData.historialMedico?.observacionesAdicionales || "",
+        alergias: getAlergias(),
+        diagnosticos: getDiagnosticos(),
+        medicacion: getMedicacion(),
       }
 
-      const historialMedico = historialCompleto?.historialMedico || []
-
       const requestData = {
-        paciente: patientData,
-        historialMedico: historialMedico,
-        seguimientos: seguimientos || [],
-        citas: citas || [],
-        documentos: documentos || [],
+        paciente: pacienteData,
+        historialMedico: reportData.historialMedico,
+        seguimientos: reportData.seguimientos,
+        citas: [], // No disponible en la nueva estructura
+        documentos: [], // No disponible en la nueva estructura
         observaciones: observaciones.trim(),
       }
 
@@ -181,10 +213,12 @@ export function ClinicalReportModal({
   }
 
   const handleDownloadTXT = () => {
+    if (!reportData) return
+    
     const element = document.createElement("a")
     const file = new Blob([cleanedReport], { type: "text/plain;charset=utf-8" })
     element.href = URL.createObjectURL(file)
-    element.download = `Informe_Clinico_${paciente.nombre.replace(/\s+/g, "_")}_${new Date().toISOString().split("T")[0]}.txt`
+    element.download = `Informe_Clinico_${reportData.pacienteInfo.nombre.replace(/\s+/g, "_")}_${new Date().toISOString().split("T")[0]}.txt`
     document.body.appendChild(element)
     element.click()
     document.body.removeChild(element)
@@ -196,6 +230,8 @@ export function ClinicalReportModal({
   }
 
   const handleDownloadWord = () => {
+    if (!reportData) return
+    
     const sections = cleanedReport.split(/\n\s*\n/).filter((section) => section.trim())
 
     const htmlContent = `
@@ -203,7 +239,7 @@ export function ClinicalReportModal({
       <html>
       <head>
         <meta charset="utf-8">
-        <title>Informe Clínico - ${paciente.nombre}</title>
+        <title>Informe Clínico - ${reportData.pacienteInfo.nombre}</title>
         <style>
           body { font-family: 'Times New Roman', serif; font-size: 12pt; line-height: 1.6; margin: 2cm; }
           .header { text-align: center; margin-bottom: 30pt; border-bottom: 2px solid #333; padding-bottom: 15pt; }
@@ -218,7 +254,7 @@ export function ClinicalReportModal({
         <div class="header">
           <h1>INFORME CLÍNICO</h1>
           <p><strong>Fecha del informe:</strong> ${new Date().toLocaleDateString("es-ES")}</p>
-          <p><strong>Paciente:</strong> ${paciente.nombre}</p>
+          <p><strong>Paciente:</strong> ${reportData.pacienteInfo.nombre}</p>
         </div>
         <div class="content">
           ${sections
@@ -246,7 +282,7 @@ export function ClinicalReportModal({
     const blob = new Blob([htmlContent], { type: "application/msword;charset=utf-8" })
     const element = document.createElement("a")
     element.href = URL.createObjectURL(blob)
-    element.download = `Informe_Clinico_${paciente.nombre.replace(/\s+/g, "_")}_${new Date().toISOString().split("T")[0]}.doc`
+    element.download = `Informe_Clinico_${reportData.pacienteInfo.nombre.replace(/\s+/g, "_")}_${new Date().toISOString().split("T")[0]}.doc`
     document.body.appendChild(element)
     element.click()
     document.body.removeChild(element)
@@ -258,6 +294,8 @@ export function ClinicalReportModal({
   }
 
   const handleDownloadPDF = async () => {
+    if (!reportData) return
+    
     try {
       const sections = cleanedReport.split(/\n\s*\n/).filter((section) => section.trim())
 
@@ -289,11 +327,11 @@ export function ClinicalReportModal({
           
           <div class="patient-info">
             <table>
-              <tr><td>Paciente:</td><td>${paciente.nombre}</td></tr>
-              <tr><td>Edad:</td><td>${calcularEdad(paciente.fechaNacimiento)} años</td></tr>
-              <tr><td>Teléfono:</td><td>${paciente.telefono}</td></tr>
-              <tr><td>Email:</td><td>${paciente.email}</td></tr>
-              <tr><td>Última visita:</td><td>${formatearFecha(paciente.ultimaVisita)}</td></tr>
+              <tr><td>Paciente:</td><td>${reportData.pacienteInfo.nombre}</td></tr>
+              <tr><td>Edad:</td><td>${calcularEdad(reportData.pacienteInfo.fechaNacimiento)} años</td></tr>
+              <tr><td>Teléfono:</td><td>${reportData.pacienteInfo.telefono || 'No registrado'}</td></tr>
+              <tr><td>Email:</td><td>${reportData.pacienteInfo.email || 'No registrado'}</td></tr>
+              <tr><td>Última visita:</td><td>${formatearFecha(reportData.metadatos.ultimaVisita)}</td></tr>
             </table>
           </div>
           
@@ -351,13 +389,84 @@ export function ClinicalReportModal({
     onClose()
   }
 
+  // Mostrar loading mientras se cargan los datos
+  if (isLoading) {
+    return (
+      <Dialog open={isOpen} onOpenChange={handleClose}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="w-6 h-6 text-blue-600" />
+              Cargando datos del paciente...
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          </div>
+        </DialogContent>
+      </Dialog>
+    )
+  }
+
+  // Mostrar error si hay algún problema
+  if (error) {
+    return (
+      <Dialog open={isOpen} onOpenChange={handleClose}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertCircle className="w-6 h-6 text-red-600" />
+              Error al cargar datos
+            </DialogTitle>
+          </DialogHeader>
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+          <div className="flex justify-end">
+            <Button onClick={handleClose}>Cerrar</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    )
+  }
+
+  // Si no hay datos del reporte
+  if (!reportData) {
+    return (
+      <Dialog open={isOpen} onOpenChange={handleClose}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertCircle className="w-6 h-6 text-yellow-600" />
+              Sin datos disponibles
+            </DialogTitle>
+          </DialogHeader>
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              No se encontraron datos del paciente para generar el informe.
+            </AlertDescription>
+          </Alert>
+          <div className="flex justify-end">
+            <Button onClick={handleClose}>Cerrar</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    )
+  }
+
+  const alergias = getAlergias()
+  const diagnosticos = getDiagnosticos()
+  const medicacion = getMedicacion()
+
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl font-semibold">
             <FileText className="w-6 h-6 text-blue-600" />
-            Generar Informe Clínico - {paciente?.nombre}
+            Generar Informe Clínico - {reportData.pacienteInfo.nombre}
           </DialogTitle>
         </DialogHeader>
 
@@ -376,50 +485,48 @@ export function ClinicalReportModal({
                   <div className="flex items-center gap-2 text-sm">
                     <User className="w-4 h-4 text-gray-500" />
                     <span className="font-medium">Nombre:</span>
-                    <span>{paciente?.nombre}</span>
+                    <span>{reportData.pacienteInfo.nombre}</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     <Calendar className="w-4 h-4 text-gray-500" />
                     <span className="font-medium">Edad:</span>
-                    <span>{calcularEdad(paciente?.fechaNacimiento)} años</span>
+                    <span>{calcularEdad(reportData.pacienteInfo.fechaNacimiento)} años</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     <Phone className="w-4 h-4 text-gray-500" />
                     <span className="font-medium">Teléfono:</span>
-                    <span>{paciente?.telefono}</span>
+                    <span>{reportData.pacienteInfo.telefono || 'No registrado'}</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     <Mail className="w-4 h-4 text-gray-500" />
                     <span className="font-medium">Email:</span>
-                    <span>{paciente?.email}</span>
+                    <span>{reportData.pacienteInfo.email || 'No registrado'}</span>
                   </div>
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-sm">
                     <Calendar className="w-4 h-4 text-gray-500" />
                     <span className="font-medium">Última visita:</span>
-                    <span>{formatearFecha(paciente?.ultimaVisita)}</span>
+                    <span>{formatearFecha(reportData.metadatos.ultimaVisita)}</span>
                   </div>
-                  {paciente?.proximaCita && (
-                    <div className="flex items-center gap-2 text-sm">
-                      <Calendar className="w-4 h-4 text-green-500" />
-                      <span className="font-medium">Próxima cita:</span>
-                      <span>{formatearFecha(paciente?.proximaCita)}</span>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2 text-sm">
+                    <FileText className="w-4 h-4 text-blue-500" />
+                    <span className="font-medium">Total seguimientos:</span>
+                    <span>{reportData.metadatos.totalSeguimientos}</span>
+                  </div>
                 </div>
               </div>
 
               {/* Información médica */}
               <div className="pt-4 border-t space-y-3">
-                {paciente?.alergias?.length > 0 && (
+                {alergias.length > 0 && (
                   <div>
                     <div className="flex items-center gap-2 mb-2">
                       <AlertTriangle className="w-4 h-4 text-red-500" />
                       <span className="font-medium text-red-700">Alergias:</span>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {paciente.alergias.map((alergia: string, index: number) => (
+                      {alergias.map((alergia: string, index: number) => (
                         <Badge key={index} variant="destructive" className="text-xs">
                           {alergia}
                         </Badge>
@@ -428,11 +535,11 @@ export function ClinicalReportModal({
                   </div>
                 )}
 
-                {paciente?.diagnosticos?.length > 0 && (
+                {diagnosticos.length > 0 && (
                   <div>
                     <span className="font-medium text-blue-700">Diagnósticos:</span>
                     <div className="flex flex-wrap gap-2 mt-1">
-                      {paciente.diagnosticos.map((diagnostico: string, index: number) => (
+                      {diagnosticos.map((diagnostico: string, index: number) => (
                         <Badge key={index} variant="secondary" className="text-xs">
                           {diagnostico}
                         </Badge>
@@ -441,11 +548,11 @@ export function ClinicalReportModal({
                   </div>
                 )}
 
-                {paciente?.medicacion?.length > 0 && (
+                {medicacion.length > 0 && (
                   <div>
                     <span className="font-medium text-purple-700">Medicación:</span>
                     <div className="flex flex-wrap gap-2 mt-1">
-                      {paciente.medicacion.map((medicamento: string, index: number) => (
+                      {medicacion.map((medicamento: string, index: number) => (
                         <Badge key={index} variant="outline" className="text-xs">
                           {medicamento}
                         </Badge>
@@ -454,10 +561,12 @@ export function ClinicalReportModal({
                   </div>
                 )}
 
-                {paciente?.notas && (
+                {reportData.historialMedico?.observacionesAdicionales && (
                   <div>
                     <span className="font-medium text-gray-700">Notas:</span>
-                    <p className="text-sm text-gray-600 mt-1 bg-gray-50 p-2 rounded">{paciente.notas}</p>
+                    <p className="text-sm text-gray-600 mt-1 bg-gray-50 p-2 rounded">
+                      {reportData.historialMedico.observacionesAdicionales}
+                    </p>
                   </div>
                 )}
               </div>

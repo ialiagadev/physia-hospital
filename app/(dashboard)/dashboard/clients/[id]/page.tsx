@@ -17,6 +17,7 @@ import { Breadcrumbs } from "@/components/breadcrumbs"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Checkbox } from "@/components/ui/checkbox"
+import { getClinicalReportData, type ClinicalReportData } from "@/lib/actions/clinical-report-data"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   Dialog,
@@ -202,8 +203,12 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
 
   // Estados para historial médico
   const [showClinicalReport, setShowClinicalReport] = useState(false)
-
+// Agregar estos estados después de los existentes
+const [isLoadingReport, setIsLoadingReport] = useState(false)
+const [reportError, setReportError] = useState<string | null>(null)
+const [reportData, setReportData] = useState<ClinicalReportData | null>(null)
   const [isEditingMedical, setIsEditingMedical] = useState(false)
+  const [seguimientos, setSeguimientos] = useState<any[]>([])
   const [medicalTab, setMedicalTab] = useState("motivo")
   const [showAddField, setShowAddField] = useState<string | null>(null)
   const [newField, setNewField] = useState({
@@ -665,14 +670,26 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
             },
           })
 
-          // Cargar historial médico desde la base de datos
-          const { data: medicalData } = await getMedicalHistory(clientId)
+         // Cargar historial médico desde la base de datos
+const { data: medicalData } = await getMedicalHistory(clientId)
 
-          if (medicalData) {
-            const convertedData = convertDbToComponent(medicalData)
-            setHistorial(convertedData)
-            setOriginalHistorial(convertedData)
-          }
+if (medicalData) {
+  const convertedData = convertDbToComponent(medicalData)
+  setHistorial(convertedData)
+  setOriginalHistorial(convertedData)
+}
+
+// Cargar seguimientos
+const { data: seguimientosData } = await supabase
+  .from("patient_follow_ups")
+  .select("*")
+  .eq("client_id", clientId)
+  .order("created_at", { ascending: false })
+
+if (seguimientosData) {
+  setSeguimientos(seguimientosData)
+}
+
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Error al cargar los datos")
@@ -702,62 +719,112 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
     const { name, value } = e.target
     setFormData((prev) => ({ ...prev, [name]: value }))
   }
-
-  const handleSelectChange = (name: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [name]: value }))
-  }
-
-  const handleDir3Change = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target
-    setFormData((prev) => ({
-      ...prev,
-      dir3_codes: { ...prev.dir3_codes, [name]: value },
-    }))
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsSaving(true)
-    setError(null)
-
-    try {
-      if (!formData.organization_id) {
-        throw new Error("Debes seleccionar una organización")
-      }
-
-      const { error: updateError } = await supabase
-        .from("clients")
-        .update({
-          organization_id: Number.parseInt(formData.organization_id),
-          name: formData.name,
-          tax_id: formData.tax_id,
-          address: formData.address,
-          postal_code: formData.postal_code,
-          city: formData.city,
-          province: formData.province,
-          country: formData.country,
-          client_type: formData.client_type,
-          email: formData.email || null,
-          phone: formData.phone || null,
-          birth_date: formData.birth_date || null, // Agregar este campo
-          gender: formData.gender || null, // Opcional
-          dir3_codes: formData.client_type === "public" ? formData.dir3_codes : null,
-        })
-        .eq("id", clientId)
-
-      if (updateError) {
-        throw new Error(updateError.message)
-      }
-
-      setIsEditing(false)
-      router.refresh()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al actualizar el cliente")
-    } finally {
-      setIsSaving(false)
+// Función para manejar la generación del reporte
+const handleGenerateReport = async () => {
+  console.log('=== INICIANDO GENERACIÓN DE REPORTE ===')
+  console.log('Client ID:', clientId)
+  
+  setIsLoadingReport(true)
+  setReportError(null)
+  
+  try {
+    console.log('Llamando a getClinicalReportData...')
+    const { data, error } = await getClinicalReportData(clientId)
+    
+    console.log('Respuesta de getClinicalReportData:')
+    console.log('- Data:', data)
+    console.log('- Error:', error)
+    
+    if (error) {
+      console.log('❌ Error encontrado:', error)
+      setReportError(error)
+      toast({
+        title: "Error",
+        description: error,
+        variant: "destructive",
+      })
+      return
     }
+    
+    if (!data) {
+      console.log('❌ No hay datos disponibles')
+      setReportError("No se pudieron obtener los datos del paciente")
+      return
+    }
+    
+    console.log('✅ Datos obtenidos correctamente, abriendo modal')
+    setReportData(data)
+    setShowClinicalReport(true)
+    
+  } catch (error) {
+    console.log('❌ Error en catch:', error)
+    const errorMessage = error instanceof Error ? error.message : "Error desconocido"
+    setReportError(errorMessage)
+    toast({
+      title: "Error",
+      description: "No se pudo generar el informe clínico",
+      variant: "destructive",
+    })
+  } finally {
+    setIsLoadingReport(false)
+    console.log('=== FIN GENERACIÓN DE REPORTE ===')
   }
+}
 
+const handleSelectChange = (name: string, value: string) => {
+  setFormData((prev) => ({ ...prev, [name]: value }))
+}
+
+const handleDir3Change = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const { name, value } = e.target
+  setFormData((prev) => ({
+    ...prev,
+    dir3_codes: { ...prev.dir3_codes, [name]: value },
+  }))
+}
+
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault()
+  setIsSaving(true)
+  setError(null)
+
+  try {
+    if (!formData.organization_id) {
+      throw new Error("Debes seleccionar una organización")
+    }
+
+    const { error: updateError } = await supabase
+      .from("clients")
+      .update({
+        organization_id: Number.parseInt(formData.organization_id),
+        name: formData.name,
+        tax_id: formData.tax_id,
+        address: formData.address,
+        postal_code: formData.postal_code,
+        city: formData.city,
+        province: formData.province,
+        country: formData.country,
+        client_type: formData.client_type,
+        email: formData.email || null,
+        phone: formData.phone || null,
+        birth_date: formData.birth_date || null,
+        gender: formData.gender || null,
+        dir3_codes: formData.client_type === "public" ? formData.dir3_codes : null,
+      })
+      .eq("id", clientId)
+
+    if (updateError) {
+      throw new Error(updateError.message)
+    }
+
+    setIsEditing(false)
+    router.refresh()
+  } catch (err) {
+    setError(err instanceof Error ? err.message : "Error al actualizar el cliente")
+  } finally {
+    setIsSaving(false)
+  }
+}
   // Funciones para el historial médico
   const updateMedicalField = (field: keyof HistorialMedicoCompleto, value: string | boolean) => {
     setHistorial((prev) => ({
@@ -1052,13 +1119,23 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
       </Button>
     )}
     <Button
-      onClick={() => setShowClinicalReport(true)}
-      variant="outline"
-      className="bg-green-50 hover:bg-green-100 border-green-200"
-    >
+  onClick={handleGenerateReport}
+  disabled={isLoadingReport}
+  variant="outline"
+  className="bg-green-50 hover:bg-green-100 border-green-200"
+>
+  {isLoadingReport ? (
+    <>
+      <div className="w-4 h-4 mr-2 animate-spin rounded-full border-2 border-green-600 border-t-transparent" />
+      Generando...
+    </>
+  ) : (
+    <>
       <FileText className="w-4 h-4 mr-2" />
       Generar Informe Clínico
-    </Button>
+    </>
+  )}
+</Button>
   </div>
 </div>
 
@@ -3346,40 +3423,18 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
       </Tabs>
 
       {/* Modal de Informe Clínico */}
-      <ClinicalReportModal
-        isOpen={showClinicalReport}
-        onClose={() => setShowClinicalReport(false)}
-        paciente={{
-          id: clientId,
-          nombre: formData.name,
-          telefono: formData.phone || "",
-          email: formData.email || "",
-          fechaNacimiento: formData.birth_date || "",
-          ultimaVisita: clinicalStats.lastVisit || "",
-          proximaCita: clinicalStats.nextAppointment || "",
-          notas: historial.observacionesAdicionales || "",
-          alergias: [
-            historial.alergiasMedicamentosas,
-            historial.alergiasAlimentarias,
-            historial.alergiasAmbientales,
-          ].filter(Boolean),
-          diagnosticos: historial.diagnostico ? [historial.diagnostico] : [],
-          medicacion: historial.medicacion ? [historial.medicacion] : [],
-        }}
-        historialCompleto={{
-          historialMedico: [
-            {
-              fecha: historial.fechaCreacion,
-              tipo: "Consulta",
-              descripcion: historial.motivoConsulta || "Consulta médica",
-              profesional: historial.profesional,
-            },
-          ],
-        }}
-        seguimientos={[]}
-        citas={[]}
-        documentos={[]}
-      />
+     {/* Modal de Informe Clínico */}
+     <ClinicalReportModal
+  isOpen={showClinicalReport}
+  onClose={() => {
+    setShowClinicalReport(false)
+    setReportData(null)
+    setReportError(null)
+  }}
+  reportData={reportData}
+  isLoading={isLoadingReport}
+  error={reportError}
+/>
       
     </div>
   )
