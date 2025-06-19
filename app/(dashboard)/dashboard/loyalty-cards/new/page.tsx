@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -19,15 +19,21 @@ import type { CardFormData } from "@/types/loyalty-cards"
 
 export default function NewLoyaltyCardPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
   const [organizations, setOrganizations] = useState<any[]>([])
   const [clients, setClients] = useState<any[]>([])
   const [professionals, setProfessionals] = useState<any[]>([])
+  const [selectedClientFromUrl, setSelectedClientFromUrl] = useState<any>(null)
+  
+  // Obtener client_id de los parámetros de URL
+  const clientIdFromUrl = searchParams.get('client_id')
+  
   const [formData, setFormData] = useState<CardFormData>({
     organization_id: 0,
     professional_id: null,
-    client_id: null,
+    client_id: clientIdFromUrl ? parseInt(clientIdFromUrl) : null,
     template_id: null,
     business_name: "",
     total_sessions: 10,
@@ -76,6 +82,27 @@ export default function NewLoyaltyCardPage() {
           console.log("Profesionales cargados:", profsData.length)
           setProfessionals(profsData)
         }
+
+        // Si hay un client_id en la URL, cargar los datos del cliente
+        if (clientIdFromUrl) {
+          const { data: clientData, error: clientError } = await supabase
+            .from("clients")
+            .select("id, name, tax_id, organization_id")
+            .eq("id", clientIdFromUrl)
+            .single()
+
+          if (clientError) {
+            console.error("Error al cargar cliente desde URL:", clientError)
+          } else if (clientData) {
+            setSelectedClientFromUrl(clientData)
+            // Actualizar la organización y cliente en el formulario
+            setFormData((prev) => ({
+              ...prev,
+              organization_id: clientData.organization_id,
+              client_id: clientData.id
+            }))
+          }
+        }
       } catch (error) {
         console.error("Error loading initial data:", error)
         toast({
@@ -87,7 +114,7 @@ export default function NewLoyaltyCardPage() {
     }
 
     loadInitialData()
-  }, [toast])
+  }, [toast, clientIdFromUrl])
 
   // Cargar clientes cuando cambia la organización
   useEffect(() => {
@@ -218,8 +245,14 @@ export default function NewLoyaltyCardPage() {
         description: "La tarjeta de fidelización ha sido creada correctamente",
       })
 
-      // Redirigir a la página de la tarjeta
-      router.push(`/dashboard/loyalty-cards/${cardId}`)
+      // Redirigir según el contexto
+      if (clientIdFromUrl) {
+        // Si venimos de la página de un cliente, volver a esa página
+        router.push(`/dashboard/clients/${clientIdFromUrl}`)
+      } else {
+        // Si no, ir a la página de la tarjeta creada
+        router.push(`/dashboard/loyalty-cards/${cardId}`)
+      }
     } catch (error) {
       console.error("Error creating loyalty card:", error)
       toast({
@@ -259,12 +292,12 @@ export default function NewLoyaltyCardPage() {
   }
 
   // Cliente seleccionado para la vista previa
-  const selectedClient = clients.find((c) => c.id === formData.client_id)
+  const selectedClient = selectedClientFromUrl || clients.find((c) => c.id === formData.client_id)
 
   const breadcrumbItems = [
-    { label: "Dashboard", href: "/dashboard/facturacion" },
-    { label: "Tarjetas de Fidelización", href: "/dashboard/facturacion/loyalty-cards" },
-    { label: "Nueva Tarjeta", href: "/dashboard/facturacion/loyalty-cards/new" },
+    { label: "Dashboard", href: "/dashboard" },
+    { label: "Tarjetas de Fidelización", href: "/dashboard/loyalty-cards" },
+    { label: "Nueva Tarjeta", href: "/dashboard/loyalty-cards/new" },
   ]
 
   return (
@@ -274,7 +307,22 @@ export default function NewLoyaltyCardPage() {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Nueva Tarjeta de Fidelización</h1>
-          <p className="text-muted-foreground">Crea una nueva tarjeta de fidelización para tus clientes</p>
+          <p className="text-muted-foreground">
+            {selectedClientFromUrl 
+              ? `Crear tarjeta para ${selectedClientFromUrl.name}`
+              : "Crea una nueva tarjeta de fidelización para tus clientes"
+            }
+          </p>
+        </div>
+        <div className="flex gap-2 mt-4 md:mt-0">
+          {clientIdFromUrl && (
+            <Button 
+              variant="outline" 
+              onClick={() => router.push(`/dashboard/clients/${clientIdFromUrl}`)}
+            >
+              Volver al Cliente
+            </Button>
+          )}
         </div>
       </div>
 
@@ -292,6 +340,7 @@ export default function NewLoyaltyCardPage() {
                   <Select
                     value={getSelectValue(formData.organization_id)}
                     onValueChange={(value) => handleChange("organization_id", value ? Number.parseInt(value, 10) : 0)}
+                    disabled={!!selectedClientFromUrl} // Deshabilitar si viene de un cliente específico
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Selecciona una organización" />
@@ -311,6 +360,7 @@ export default function NewLoyaltyCardPage() {
                   <Select
                     value={getSelectValue(formData.client_id)}
                     onValueChange={(value) => handleChange("client_id", value ? Number.parseInt(value, 10) : 0)}
+                    disabled={!!selectedClientFromUrl} // Deshabilitar si viene de un cliente específico
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Selecciona un cliente" />
@@ -323,6 +373,11 @@ export default function NewLoyaltyCardPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {selectedClientFromUrl && (
+                    <p className="text-sm text-muted-foreground">
+                      Tarjeta para: {selectedClientFromUrl.name} ({selectedClientFromUrl.tax_id})
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -392,7 +447,17 @@ export default function NewLoyaltyCardPage() {
                 </div>
               </CardContent>
               <CardFooter className="flex justify-between">
-                <Button type="button" variant="outline" onClick={() => router.push("/dashboard/loyalty-cards")}>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => {
+                    if (clientIdFromUrl) {
+                      router.push(`/dashboard/clients/${clientIdFromUrl}`)
+                    } else {
+                      router.push("/dashboard/loyalty-cards")
+                    }
+                  }}
+                >
                   Cancelar
                 </Button>
                 <Button type="submit" disabled={loading}>

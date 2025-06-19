@@ -230,8 +230,8 @@ export default function LoyaltyCardDetailPage({ params }: { params: { id: string
       <div className="space-y-6">
         <Breadcrumbs
           items={[
-            { label: "Dashboard", href: "/dashboard/facturacion" },
-            { label: "Tarjetas de Fidelización", href: "/dashboard/facturacion/loyalty-cards" },
+            { label: "Dashboard", href: "/dashboard/" },
+            { label: "Tarjetas de Fidelización", href: "/dashboard/loyalty-cards" },
             { label: "Error", href: "#" },
           ]}
         />
@@ -260,9 +260,9 @@ export default function LoyaltyCardDetailPage({ params }: { params: { id: string
   }
 
   const breadcrumbItems = [
-    { label: "Dashboard", href: "/dashboard/facturacion" },
-    { label: "Tarjetas de Fidelización", href: "/dashboard/facturacion/loyalty-cards" },
-    { label: `Tarjeta #${card.id}`, href: `/dashboard/facturacion/loyalty-cards/${card.id}` },
+    { label: "Dashboard", href: "/dashboard" },
+    { label: "Tarjetas de Fidelización", href: "/dashboard/loyalty-cards" },
+    { label: `Tarjeta #${card.id}`, href: `/dashboard/loyalty-cards/${card.id}` },
   ]
 
   const isCardActive = card.status === "active"
@@ -280,8 +280,16 @@ export default function LoyaltyCardDetailPage({ params }: { params: { id: string
         </div>
         <div className="flex gap-2 mt-4 md:mt-0">
           <Button variant="outline" onClick={() => router.push("/dashboard/loyalty-cards")}>
-            Volver
+            Volver a Tarjetas
           </Button>
+          {card.client_id && (
+            <Button 
+              variant="outline" 
+              onClick={() => router.push(`/dashboard/clients/${card.client_id}`)}
+            >
+              Ver Cliente
+            </Button>
+          )}
           {isCardUsable ? null : (
             <AlertDialog>
               <AlertDialogTrigger asChild>

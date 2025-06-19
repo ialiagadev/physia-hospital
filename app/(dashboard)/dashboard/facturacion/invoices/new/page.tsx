@@ -15,7 +15,13 @@ import { generatePdf } from "@/lib/pdf-generator"
 import { Switch } from "@/components/ui/switch"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 // En la parte superior del archivo, importar las funciones necesarias
+// Reemplazar esta línea:
+// import { generateUniqueInvoiceNumber } from "@/lib/invoice-utils"
+
+// Por estas líneas:
 import { generateUniqueInvoiceNumber } from "@/lib/invoice-utils"
+import { InvoiceNumberConfigModal } from "@/components/invoices/invoice-number-config-modal"
+import type { InvoiceType } from "@/lib/invoice-types"
 import { saveBase64ImageToStorage, savePdfToStorage } from "@/lib/storage-utils" // Añadido savePdfToStorage
 import {
   Dialog,
@@ -29,12 +35,6 @@ import { Plus, Trash2, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { SignaturePad } from "@/components/signature-pad"
 import { useToast } from "@/hooks/use-toast"
-// Reemplaza esta línea:
-// import type { InvoiceWithClientData } from "@/types/supabase-joins"
-
-// Por esta línea más simple:
-// No necesitamos importar el tipo específico, usaremos any para esta consulta
-import { Loader2 } from "lucide-react"
 
 // Interfaces
 interface Organization {
@@ -126,7 +126,11 @@ export default function NewInvoicePage() {
   const [signature, setSignature] = useState<string | null>(null)
 
   // Estado para el tipo de factura - IMPORTANTE: Solo valores válidos de BD
-  const [invoiceType, setInvoiceType] = useState<"normal" | "rectificativa" | "simplificada">("normal")
+  // Reemplazar:
+  // const [invoiceType, setInvoiceType] = useState<"normal" | "rectificativa" | "simplificada">("normal")
+
+  // Por:
+  const [invoiceType, setInvoiceType] = useState<InvoiceType>("normal")
 
   // Campos específicos para facturas rectificativas
   const [rectificativeData, setRectificativeData] = useState({
@@ -135,13 +139,13 @@ export default function NewInvoicePage() {
     rectification_type: "cancellation" as "cancellation" | "amount_correction",
   })
 
-  // Estado para la configuración de numeración de facturas
-  const [invoiceConfig, setInvoiceConfig] = useState({
-    prefix: "",
-    format: "simple",
-    paddingLength: 4,
-    lastInvoiceNumber: 0,
-  })
+  // ELIMINAR estas líneas:
+  // const [invoiceConfig, setInvoiceConfig] = useState({
+  //   prefix: "",
+  //   format: "simple",
+  //   paddingLength: 4,
+  //   lastInvoiceNumber: 0,
+  // })
 
   // Modificar el estado inicial de las líneas de factura para incluir el profesional
   const [invoiceLines, setInvoiceLines] = useState<InvoiceLine[]>([
@@ -236,12 +240,13 @@ export default function NewInvoicePage() {
         setSelectedOrganization(firstOrg)
 
         // Después de setSelectedOrganization(firstOrg), añade:
-        setInvoiceConfig({
-          prefix: firstOrg.invoice_prefix || "FACT",
-          format: "simple",
-          paddingLength: firstOrg.invoice_padding_length || 4,
-          lastInvoiceNumber: firstOrg.last_invoice_number || 0,
-        })
+        // ELIMINAR estas líneas del useEffect:
+        // setInvoiceConfig({
+        //   prefix: firstOrg.invoice_prefix || "FACT",
+        //   format: "simple",
+        //   paddingLength: firstOrg.invoice_padding_length || 4,
+        //   lastInvoiceNumber: firstOrg.last_invoice_number || 0,
+        // })
 
         // Cargar datos para esta organización
         await fetchClients(firstOrg.id)
@@ -330,7 +335,6 @@ export default function NewInvoicePage() {
 
   const fetchExistingInvoices = async (organizationId: number) => {
     try {
-      console.log(`Cargando facturas existentes para organización ${organizationId}...`)
       const { data: invoicesData, error: invoicesError } = await supabase
         .from("invoices")
         .select(`
@@ -372,7 +376,6 @@ export default function NewInvoicePage() {
         }
       })
 
-      console.log(`Se encontraron ${formattedInvoices.length} facturas`)
       setExistingInvoices(formattedInvoices)
     } catch (err) {
       console.error("Error completo al cargar facturas:", err)
@@ -556,6 +559,19 @@ export default function NewInvoicePage() {
     setSignature(signatureDataUrl)
   }
 
+  // Añadir esta función después de handleSignatureChange:
+  const handleConfigSaved = async () => {
+    if (!selectedOrganization) return
+
+    try {
+      const { invoiceNumberFormatted } = await generateUniqueInvoiceNumber(selectedOrganization.id, invoiceType)
+      setSuggestedInvoiceNumber(invoiceNumberFormatted)
+    } catch (error) {
+      console.error("Error al regenerar número:", error)
+      setSuggestedInvoiceNumber(`ERROR-${Date.now()}`)
+    }
+  }
+
   // En la función handleSubmit, asegurémonos de que se incluyen todos los datos de la organización
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -642,12 +658,12 @@ export default function NewInvoicePage() {
           const timestamp = Date.now()
           const organizationId = formData.organization_id
           // Asegurarse de que la ruta comienza con 'signatures/'
-          const path = `signatures/${organizationId}/${invoiceNumberFormatted}_${timestamp}.png`
+          const path = `signatures/${invoiceNumberFormatted}_${timestamp}.png`
+          signatureUrl = await saveBase64ImageToStorage(signature, path, Number.parseInt(formData.organization_id))
 
           console.log("Intentando guardar firma en Storage:", path)
 
           // Intentar guardar la firma, pero no fallar si no se puede
-          signatureUrl = await saveBase64ImageToStorage(signature, path)
 
           if (!signatureUrl) {
             console.warn("No se pudo guardar la firma en Storage, se usará la firma en base64 para el PDF")
@@ -731,7 +747,11 @@ export default function NewInvoicePage() {
           console.log("PDF Blob generado correctamente, tamaño:", pdfBlob.size, "bytes")
 
           // Guardar el PDF en Supabase Storage
-          pdfUrl = await savePdfToStorage(pdfBlob, `factura-${invoiceNumberFormatted}.pdf`)
+          pdfUrl = await savePdfToStorage(
+            pdfBlob,
+            `factura-${invoiceNumberFormatted}.pdf`,
+            Number.parseInt(formData.organization_id),
+          )
 
           // Descargar el PDF manualmente para el usuario
           const url = URL.createObjectURL(pdfBlob)
@@ -779,10 +799,29 @@ export default function NewInvoicePage() {
       }
 
       // Ahora actualizamos la base de datos en segundo plano
-      // Actualizar el último número de factura en la organización
+      // En handleSubmit, reemplazar esta sección:
+      // const { error: updateOrgError } = await supabase
+      //   .from("organizations")
+      //   .update({ last_invoice_number: newInvoiceNumber })
+      //   .eq("id", selectedOrganization.id)
+
+      // Por esta lógica más completa:
+      const getFieldNameForUpdate = (type: InvoiceType): string => {
+        switch (type) {
+          case "rectificativa":
+            return "last_rectificative_invoice_number"
+          case "simplificada":
+            return "last_simplified_invoice_number"
+          case "normal":
+          default:
+            return "last_invoice_number"
+        }
+      }
+
+      const fieldName = getFieldNameForUpdate(invoiceType)
       const { error: updateOrgError } = await supabase
         .from("organizations")
-        .update({ last_invoice_number: newInvoiceNumber })
+        .update({ [fieldName]: newInvoiceNumber })
         .eq("id", selectedOrganization.id)
 
       if (updateOrgError) {
@@ -921,74 +960,8 @@ export default function NewInvoicePage() {
     }
   }
 
-  const saveInvoiceNumberConfig = async () => {
-    if (!selectedOrganization) return
-    setIsSavingConfig(true)
-
-    try {
-      const { error } = await supabase
-        .from("organizations")
-        .update({
-          invoice_prefix: invoiceConfig.prefix,
-          invoice_padding_length: invoiceConfig.paddingLength,
-          last_invoice_number: invoiceConfig.lastInvoiceNumber,
-        })
-        .eq("id", selectedOrganization.id)
-
-      if (error) throw error
-
-      // Actualizar el estado local
-      setSelectedOrganization((prev) =>
-        prev
-          ? {
-              ...prev,
-              invoice_prefix: invoiceConfig.prefix,
-              invoice_padding_length: invoiceConfig.paddingLength,
-              last_invoice_number: invoiceConfig.lastInvoiceNumber,
-            }
-          : null,
-      )
-
-      // Regenerar el número sugerido
-      try {
-        const { invoiceNumberFormatted } = await generateUniqueInvoiceNumber(selectedOrganization.id, invoiceType)
-        setSuggestedInvoiceNumber(invoiceNumberFormatted)
-      } catch (error) {
-        console.error("Error al regenerar número:", error)
-      }
-
-      toast({
-        title: "Configuración guardada",
-        description: "La configuración de numeración se ha actualizado correctamente.",
-      })
-      setInvoiceNumberConfigOpen(false)
-    } catch (error) {
-      console.error("Error al guardar la configuración:", error)
-      toast({
-        title: "Error",
-        description: "No se pudo guardar la configuración. Por favor, intenta de nuevo.",
-        variant: "destructive",
-      })
-    } finally {
-      setIsSavingConfig(false)
-    }
-  }
-
-  const getInvoiceNumberExample = () => {
-    const exampleNumber = invoiceConfig.lastInvoiceNumber + 1
-    const paddedNumber = exampleNumber.toString().padStart(invoiceConfig.paddingLength, "0")
-
-    switch (invoiceType) {
-      case "rectificativa":
-        const currentYear = new Date().getFullYear()
-        return `REC${currentYear}${paddedNumber}`
-      case "simplificada":
-        return `SIMP${paddedNumber}`
-      case "normal":
-      default:
-        return `${invoiceConfig.prefix}${paddedNumber}`
-    }
-  }
+  // ELIMINAR también la función saveInvoiceNumberConfig completa
+  // ELIMINAR también la función getInvoiceNumberExample completa
 
   if (isLoadingInitialData) {
     return (
@@ -1123,8 +1096,7 @@ export default function NewInvoicePage() {
                             <div className="flex flex-col">
                               <span className="font-medium">{invoice.invoice_number}</span>
                               <span className="text-sm text-muted-foreground">
-                                {invoice.client_name} - {new Date(invoice.issue_date).toLocaleDateString()} -{" "}
-                                {invoice.total_amount.toFixed(2)}€
+                                {new Date(invoice.issue_date).toLocaleDateString()} - {invoice.total_amount.toFixed(2)}€
                               </span>
                             </div>
                           </SelectItem>
@@ -1200,7 +1172,6 @@ export default function NewInvoicePage() {
               </div>
             </CardContent>
           </Card>
-
           <Card>
             <CardHeader>
               <CardTitle>Datos del Cliente</CardTitle>
@@ -1402,7 +1373,6 @@ export default function NewInvoicePage() {
               )}
             </CardContent>
           </Card>
-
           <Card>
             <CardHeader>
               <CardTitle>Líneas de Factura</CardTitle>
@@ -1564,7 +1534,6 @@ export default function NewInvoicePage() {
               </div>
             </CardContent>
           </Card>
-
           <Card>
             <CardHeader>
               <CardTitle>Resumen de Totales</CardTitle>
@@ -1600,7 +1569,6 @@ export default function NewInvoicePage() {
               </div>
             </CardContent>
           </Card>
-
           <Card>
             <CardHeader>
               <CardTitle>Firma Digital</CardTitle>
@@ -1610,7 +1578,6 @@ export default function NewInvoicePage() {
               <SignaturePad onSignatureChange={handleSignatureChange} width={400} height={200} />
             </CardContent>
           </Card>
-
           {/* Diálogo de selección de servicio */}
           <Dialog open={serviceDialogOpen} onOpenChange={setServiceDialogOpen}>
             <DialogContent className="sm:max-w-md">
@@ -1651,86 +1618,14 @@ export default function NewInvoicePage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-
           {/* Diálogo de configuración de numeración */}
-          <Dialog open={invoiceNumberConfigOpen} onOpenChange={setInvoiceNumberConfigOpen}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>Configuración de Numeración</DialogTitle>
-                <DialogDescription>Ajusta el prefijo y número inicial para esta organización</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="config_prefix">Prefijo de Facturas</Label>
-                  <Input
-                    id="config_prefix"
-                    value={invoiceConfig.prefix}
-                    onChange={(e) => setInvoiceConfig((prev) => ({ ...prev, prefix: e.target.value }))}
-                    placeholder="Ej: FACT, FAC, INV"
-                    maxLength={10}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Prefijo que aparecerá al inicio de cada número de factura normal
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="config_last_number">Último Número Usado</Label>
-                  <Input
-                    id="config_last_number"
-                    type="number"
-                    min="0"
-                    value={invoiceConfig.lastInvoiceNumber}
-                    onChange={(e) =>
-                      setInvoiceConfig((prev) => ({ ...prev, lastInvoiceNumber: Number.parseInt(e.target.value) || 0 }))
-                    }
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    La próxima factura será este número + 1. Útil para migrar desde otro sistema.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="config_padding">Longitud de Dígitos</Label>
-                  <Input
-                    id="config_padding"
-                    type="number"
-                    min="1"
-                    max="10"
-                    value={invoiceConfig.paddingLength}
-                    onChange={(e) =>
-                      setInvoiceConfig((prev) => ({ ...prev, paddingLength: Number.parseInt(e.target.value) || 4 }))
-                    }
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Número de dígitos para la parte numérica (se rellenará con ceros)
-                  </p>
-                </div>
-
-                <div className="p-3 bg-muted rounded-md">
-                  <p className="text-sm font-medium mb-1">Vista previa:</p>
-                  <p className="text-sm text-muted-foreground">
-                    Próxima factura: <span className="font-mono font-medium">{getInvoiceNumberExample()}</span>
-                  </p>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setInvoiceNumberConfigOpen(false)}>
-                  Cancelar
-                </Button>
-                <Button onClick={saveInvoiceNumberConfig} disabled={isSavingConfig}>
-                  {isSavingConfig ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Guardando...
-                    </>
-                  ) : (
-                    "Guardar"
-                  )}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <InvoiceNumberConfigModal
+            open={invoiceNumberConfigOpen}
+            onOpenChange={setInvoiceNumberConfigOpen}
+            organizationId={selectedOrganization?.id || 0}
+            invoiceType={invoiceType}
+            onConfigSaved={handleConfigSaved}
+          />
         </div>
 
         <div className="mt-6 flex justify-end">

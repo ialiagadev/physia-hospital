@@ -113,7 +113,7 @@ export default function ProfessionalsPage() {
           <p className="text-muted-foreground">Gestiona los profesionales para asignarlos a servicios</p>
         </div>
         <Button asChild>
-          <Link href="/dashboard/facturacion/professionals/new">
+          <Link href="/dashboard/professionals/new">
             <Plus className="mr-2 h-4 w-4" />
             Nuevo Profesional
           </Link>

@@ -27,6 +27,25 @@ export const LoyaltyCardService = {
     return data || []
   },
 
+  // Obtener tarjetas por cliente
+  async getCardsByClient(clientId: number): Promise<LoyaltyCard[]> {
+    const { data, error } = await supabase
+      .from("loyalty_cards")
+      .select(`
+        *,
+        clients (name, tax_id),
+        professionals (name)
+      `)
+      .eq("client_id", clientId)
+      .order("created_at", { ascending: false })
+
+    if (error) {
+      throw new Error(`Error al cargar tarjetas del cliente: ${error.message}`)
+    }
+
+    return data || []
+  },
+
   // Obtener una tarjeta específica
   async getCard(cardId: number | string): Promise<LoyaltyCard> {
     // Asegurarse de que cardId sea un número válido

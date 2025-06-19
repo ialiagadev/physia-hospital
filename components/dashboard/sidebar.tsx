@@ -152,29 +152,9 @@ export function Sidebar({ className }: SidebarProps) {
       activeColor: "#4285F4",
     },
     
-    {
-      id: "organizations",
-      label: "Organizaciones",
-      href: "/dashboard/facturacion/organizations", // ✅ CORREGIDO
-      icon: <Building2 />,
-      matchPattern: "/dashboard/facturacion/organizations",
-      iconColor: "#9370DB",
-      bgColor: "bg-purple-50",
-      hoverColor: "bg-purple-50/50",
-      activeColor: "#9370DB",
-    },
+    
    
-    {
-      id: "professionals",
-      label: "Profesionales",
-      href: "/dashboard/facturacion/professionals", // ✅ CORREGIDO
-      icon: <UserRound />,
-      matchPattern: "/dashboard/facturacion/professionals",
-      iconColor: "#0EA5E9",
-      bgColor: "bg-sky-50",
-      hoverColor: "bg-sky-50/50",
-      activeColor: "#0EA5E9",
-    },
+   
     {
       id: "invoices",
       label: "Facturas",
@@ -186,28 +166,8 @@ export function Sidebar({ className }: SidebarProps) {
       hoverColor: "bg-emerald-50/50",
       activeColor: "#10B981",
     },
-    {
-      id: "loyalty-cards",
-      label: "Tarjetas de Fidelización",
-      href: "/dashboard/facturacion/loyalty-cards", // ✅ CORREGIDO
-      icon: <Gift />,
-      matchPattern: "/dashboard/facturacion/loyalty-cards",
-      iconColor: "#9333EA",
-      bgColor: "bg-purple-50",
-      hoverColor: "bg-purple-50/50",
-      activeColor: "#9333EA",
-    },
-    {
-      id: "clinical-records",
-      label: "Historias Clínicas",
-      href: "/dashboard/facturacion/clinical-records", // ✅ CORREGIDO
-      icon: <ClipboardList />,
-      matchPattern: "/dashboard/facturacion/clinical-records",
-      iconColor: "#14B8A6",
-      bgColor: "bg-teal-50",
-      hoverColor: "bg-teal-50/50",
-      activeColor: "#14B8A6",
-    },
+   
+  
     {
       id: "statistics",
       label: "Estadísticas",
@@ -218,40 +178,9 @@ export function Sidebar({ className }: SidebarProps) {
       bgColor: "bg-rose-50",
       hoverColor: "bg-rose-50/50",
       activeColor: "#F43F5E",
-    },
-    {
-      id: "user-management",
-      label: "Gestión de Usuarios",
-      href: "/dashboard/facturacion/users", // ✅ CORREGIDO
-      icon: <UserPlus />,
-      matchPattern: "/dashboard/facturacion/users",
-      iconColor: "#8B5CF6",
-      bgColor: "bg-violet-50",
-      hoverColor: "bg-violet-50/50",
-      activeColor: "#8B5CF6",
-    },
-    {
-      id: "settings",
-      label: "Configuración",
-      href: "/dashboard/facturacion/settings", // ✅ CORREGIDO
-      icon: <Settings />,
-      matchPattern: "/dashboard/facturacion/settings",
-      iconColor: "#64748B",
-      bgColor: "bg-slate-50",
-      hoverColor: "bg-slate-50/50",
-      activeColor: "#64748B",
-    },
-    {
-      id: "logout",
-      label: "Cerrar Sesión",
-      href: "/logout", // ✅ Esta se mantiene igual
-      icon: <LogOut />,
-      matchPattern: "/logout",
-      iconColor: "#EF4444",
-      bgColor: "bg-red-50",
-      hoverColor: "bg-red-50/50",
-      activeColor: "#EF4444",
-    },
+    }
+   
+     
   ]
 
   // Estado para los elementos de navegación

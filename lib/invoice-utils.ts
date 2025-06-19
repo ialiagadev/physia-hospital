@@ -5,22 +5,25 @@ export async function generateUniqueInvoiceNumber(
   organizationId: number,
   invoiceType: InvoiceType = "normal",
 ): Promise<{ invoiceNumberFormatted: string; newInvoiceNumber: number }> {
-  console.log(`🔢 Generando número único para organización ${organizationId}, tipo: ${invoiceType}`)
-
   try {
     if (!organizationId) {
       throw new Error("ID de organización no válido")
     }
 
-    // Verificar que supabase está disponible
     if (!supabase) {
       throw new Error("Cliente de Supabase no está disponible")
     }
 
-    // Obtener configuración de la organización (solo para prefijo y padding)
+    // Obtener configuración completa de la organización
     const { data: orgData, error: orgError } = await supabase
       .from("organizations")
-      .select("invoice_prefix, invoice_padding_length")
+      .select(`
+        invoice_prefix, 
+        invoice_padding_length,
+        last_invoice_number,
+        last_simplified_invoice_number,
+        last_rectificative_invoice_number
+      `)
       .eq("id", organizationId)
       .single()
 
@@ -43,7 +46,7 @@ export async function generateUniqueInvoiceNumber(
 
     switch (invoiceType) {
       case "rectificativa": {
-        // Para rectificativas: buscar la última del año actual
+        // Obtener el último número de la BD
         const currentYear = new Date().getFullYear()
         const { data: lastRectificativa, error: rectError } = await supabase
           .from("invoices")
@@ -59,14 +62,18 @@ export async function generateUniqueInvoiceNumber(
           throw new Error(`Error al consultar facturas rectificativas: ${rectError.message}`)
         }
 
+        let lastNumberFromDB = 0
         if (lastRectificativa && lastRectificativa.length > 0) {
-          // Extraer el número de la última rectificativa (ej: REC20250005 -> 5)
           const lastNumber = lastRectificativa[0].invoice_number
           const match = lastNumber.match(/REC\d{4}(\d+)$/)
           if (match) {
-            newInvoiceNumber = parseInt(match[1]) + 1
+            lastNumberFromDB = Number.parseInt(match[1])
           }
         }
+
+        // Usar el mayor entre el último de BD y el configurado por el usuario
+        const configuredNumber = orgData.last_rectificative_invoice_number || 0
+        newInvoiceNumber = Math.max(lastNumberFromDB, configuredNumber) + 1
 
         const paddedNumber = newInvoiceNumber.toString().padStart(invoice_padding_length, "0")
         invoiceNumberFormatted = `REC${currentYear}${paddedNumber}`
@@ -74,7 +81,7 @@ export async function generateUniqueInvoiceNumber(
       }
 
       case "simplificada": {
-        // Para simplificadas: buscar la última
+        // Obtener el último número de la BD
         const { data: lastSimplificada, error: simpError } = await supabase
           .from("invoices")
           .select("invoice_number")
@@ -89,14 +96,18 @@ export async function generateUniqueInvoiceNumber(
           throw new Error(`Error al consultar facturas simplificadas: ${simpError.message}`)
         }
 
+        let lastNumberFromDB = 0
         if (lastSimplificada && lastSimplificada.length > 0) {
-          // Extraer el número de la última simplificada (ej: SIMP0005 -> 5)
           const lastNumber = lastSimplificada[0].invoice_number
           const match = lastNumber.match(/SIMP(\d+)$/)
           if (match) {
-            newInvoiceNumber = parseInt(match[1]) + 1
+            lastNumberFromDB = Number.parseInt(match[1])
           }
         }
+
+        // Usar el mayor entre el último de BD y el configurado por el usuario
+        const configuredNumber = orgData.last_simplified_invoice_number || 0
+        newInvoiceNumber = Math.max(lastNumberFromDB, configuredNumber) + 1
 
         const paddedNumber = newInvoiceNumber.toString().padStart(invoice_padding_length, "0")
         invoiceNumberFormatted = `SIMP${paddedNumber}`
@@ -105,7 +116,7 @@ export async function generateUniqueInvoiceNumber(
 
       case "normal":
       default: {
-        // Para normales: buscar la última con el prefijo de la organización
+        // Obtener el último número de la BD
         const { data: lastNormal, error: normalError } = await supabase
           .from("invoices")
           .select("invoice_number")
@@ -120,14 +131,18 @@ export async function generateUniqueInvoiceNumber(
           throw new Error(`Error al consultar facturas normales: ${normalError.message}`)
         }
 
+        let lastNumberFromDB = 0
         if (lastNormal && lastNormal.length > 0) {
-          // Extraer el número de la última normal (ej: FACT0010 -> 10)
           const lastNumber = lastNormal[0].invoice_number
           const match = lastNumber.match(new RegExp(`${invoice_prefix}(\\d+)$`))
           if (match) {
-            newInvoiceNumber = parseInt(match[1]) + 1
+            lastNumberFromDB = Number.parseInt(match[1])
           }
         }
+
+        // Usar el mayor entre el último de BD y el configurado por el usuario
+        const configuredNumber = orgData.last_invoice_number || 0
+        newInvoiceNumber = Math.max(lastNumberFromDB, configuredNumber) + 1
 
         const paddedNumber = newInvoiceNumber.toString().padStart(invoice_padding_length, "0")
         invoiceNumberFormatted = `${invoice_prefix}${paddedNumber}`
@@ -135,14 +150,134 @@ export async function generateUniqueInvoiceNumber(
       }
     }
 
-    console.log(`✅ Número generado: ${invoiceNumberFormatted} (siguiente: ${newInvoiceNumber})`)
-
     return {
       invoiceNumberFormatted,
       newInvoiceNumber,
     }
   } catch (error) {
     console.error("Error en generateUniqueInvoiceNumber:", error)
+    throw error
+  }
+}
+
+// Nueva función para obtener la configuración actual de numeración
+export async function getCurrentInvoiceNumbering(
+  organizationId: number,
+  invoiceType: InvoiceType = "normal",
+): Promise<{
+  currentNumber: number
+  nextNumber: number
+  prefix: string
+  paddingLength: number
+}> {
+  try {
+    // Obtener configuración de la organización
+    const { data: orgData, error: orgError } = await supabase
+      .from("organizations")
+      .select(`
+        invoice_prefix, 
+        invoice_padding_length,
+        last_invoice_number,
+        last_simplified_invoice_number,
+        last_rectificative_invoice_number
+      `)
+      .eq("id", organizationId)
+      .single()
+
+    if (orgError || !orgData) {
+      throw new Error("No se pudo obtener la configuración de la organización")
+    }
+
+    const prefix = orgData.invoice_prefix || "FACT"
+    const paddingLength = orgData.invoice_padding_length || 4
+
+    let currentNumber = 0
+    let nextNumber = 1
+
+    switch (invoiceType) {
+      case "rectificativa": {
+        const currentYear = new Date().getFullYear()
+        const { data: lastRectificativa } = await supabase
+          .from("invoices")
+          .select("invoice_number")
+          .eq("organization_id", organizationId)
+          .eq("invoice_type", "rectificativa")
+          .like("invoice_number", `REC${currentYear}%`)
+          .order("created_at", { ascending: false })
+          .limit(1)
+
+        let lastNumberFromDB = 0
+        if (lastRectificativa && lastRectificativa.length > 0) {
+          const match = lastRectificativa[0].invoice_number.match(/REC\d{4}(\d+)$/)
+          if (match) {
+            lastNumberFromDB = Number.parseInt(match[1])
+          }
+        }
+
+        const configuredNumber = orgData.last_rectificative_invoice_number || 0
+        currentNumber = Math.max(lastNumberFromDB, configuredNumber)
+        nextNumber = currentNumber + 1
+        break
+      }
+
+      case "simplificada": {
+        const { data: lastSimplificada } = await supabase
+          .from("invoices")
+          .select("invoice_number")
+          .eq("organization_id", organizationId)
+          .eq("invoice_type", "simplificada")
+          .like("invoice_number", "SIMP%")
+          .order("created_at", { ascending: false })
+          .limit(1)
+
+        let lastNumberFromDB = 0
+        if (lastSimplificada && lastSimplificada.length > 0) {
+          const match = lastSimplificada[0].invoice_number.match(/SIMP(\d+)$/)
+          if (match) {
+            lastNumberFromDB = Number.parseInt(match[1])
+          }
+        }
+
+        const configuredNumber = orgData.last_simplified_invoice_number || 0
+        currentNumber = Math.max(lastNumberFromDB, configuredNumber)
+        nextNumber = currentNumber + 1
+        break
+      }
+
+      case "normal":
+      default: {
+        const { data: lastNormal } = await supabase
+          .from("invoices")
+          .select("invoice_number")
+          .eq("organization_id", organizationId)
+          .eq("invoice_type", "normal")
+          .like("invoice_number", `${prefix}%`)
+          .order("created_at", { ascending: false })
+          .limit(1)
+
+        let lastNumberFromDB = 0
+        if (lastNormal && lastNormal.length > 0) {
+          const match = lastNormal[0].invoice_number.match(new RegExp(`${prefix}(\\d+)$`))
+          if (match) {
+            lastNumberFromDB = Number.parseInt(match[1])
+          }
+        }
+
+        const configuredNumber = orgData.last_invoice_number || 0
+        currentNumber = Math.max(lastNumberFromDB, configuredNumber)
+        nextNumber = currentNumber + 1
+        break
+      }
+    }
+
+    return {
+      currentNumber,
+      nextNumber,
+      prefix,
+      paddingLength,
+    }
+  } catch (error) {
+    console.error("Error en getCurrentInvoiceNumbering:", error)
     throw error
   }
 }

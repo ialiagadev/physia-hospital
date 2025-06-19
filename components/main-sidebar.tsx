@@ -18,6 +18,12 @@ import {
   Clock,
   Users,
   Package,
+  UserCog,
+  Brain,
+  LogOut,
+  HelpCircle,
+  FileIcon as FileTemplate,
+  CreditCard,
 } from "lucide-react"
 
 export function MainSidebar() {
@@ -47,30 +53,17 @@ export function MainSidebar() {
     return pathname.startsWith(`/dashboard/${section}`)
   }
 
-  const menuItems = [
+  // Sección Principal
+  const principalItems = [
     {
       id: "dashboard",
-      label: "Dashboard",
+      label: "Panel",
       href: "/dashboard",
       icon: LayoutDashboard,
       isActive: pathname === "/dashboard",
     },
     {
-      id: "facturacion",
-      label: "Facturación",
-      href: "/dashboard/facturacion",
-      icon: FileText,
-      isActive: isInSection("facturacion"),
-    },
-    {
-      id: "canales",
-      label: "Canales",
-      href: "/dashboard/canales",
-      icon: Radio,
-      isActive: isInSection("canales"),
-    },
-    {
-      id: "Chat",
+      id: "chat",
       label: "Chat",
       href: "/dashboard/chat",
       icon: MessageSquare,
@@ -78,17 +71,17 @@ export function MainSidebar() {
     },
     {
       id: "clientes",
-      label: "Clientes",
-      href: "/dashboard//clients",
+      label: "Pacientes",
+      href: "/dashboard/clients",
       icon: Users,
       isActive: isInSection("clients"),
     },
     {
-      id: "servicios",
-      label: "Servicios",
-      href: "/dashboard/services",
-      icon: Package,
-      isActive: isInSection("services"),
+      id: "facturacion",
+      label: "Facturación",
+      href: "/dashboard/facturacion",
+      icon: FileText,
+      isActive: isInSection("facturacion"),
     },
     {
       id: "tareas",
@@ -105,27 +98,115 @@ export function MainSidebar() {
       isActive: isInSection("agents"),
     },
     {
+      id: "physia-ai",
+      label: "PHYSIA AI",
+      href: "/dashboard/physia-ai",
+      icon: Brain,
+      isActive: isInSection("physia-ai"),
+    },
+    {
       id: "fichaje",
       label: "Fichaje",
       href: "/dashboard/fichaje",
       icon: Clock,
       isActive: isInSection("fichaje"),
     },
+  ]
+
+  // Sección Configuración
+  const configItems = [
     {
-      id: "reports",
-      label: "Reportes",
-      href: "/dashboard/reports",
-      icon: BarChart2,
-      isActive: isInSection("reports"),
+      id: "equipo",
+      label: "Equipo",
+      href: "/dashboard/professionals",
+      icon: UserCog,
+      isActive: isInSection("professionals"),
     },
     {
-      id: "login",
-      label: "login",
-      href: "/login",
+      id: "servicios",
+      label: "Servicios",
+      href: "/dashboard/services",
+      icon: Package,
+      isActive: isInSection("services"),
+    },
+    {
+      id: "templates",
+      label: "Plantillas",
+      href: "/dashboard/templates",
+      icon: FileTemplate,
+      isActive: isInSection("templates"),
+    },
+    {
+      id: "loyalty-cards",
+      label: "Tarjetas de Fidelización",
+      href: "/dashboard/loyalty-cards",
+      icon: CreditCard,
+      isActive: isInSection("loyalty-cards"),
+    },
+    {
+      id: "canales",
+      label: "Canales",
+      href: "/dashboard/canales",
+      icon: Radio,
+      isActive: isInSection("canales"),
+    },
+  ]
+
+  // Sección General
+  const generalItems = [
+    {
+      id: "organizations",
+      label: "Mi Negocio",
+      href: "/dashboard/organizations",
+      icon: BarChart2,
+      isActive: isInSection("organizations"),
+    },
+    {
+      id: "settings",
+      label: "Configuración",
+      href: "/dashboard/settings",
       icon: Settings,
       isActive: isInSection("settings"),
     },
+    {
+      id: "help",
+      label: "Ayuda",
+      href: "/dashboard/help",
+      icon: HelpCircle,
+      isActive: isInSection("help"),
+    },
+    {
+      id: "logout",
+      label: "Cerrar Sesión",
+      href: "/login",
+      icon: LogOut,
+      isActive: false,
+    },
   ]
+
+  const renderMenuSection = (title: string, items: any[]) => (
+    <div className="mb-6">
+      <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4 px-3">{title}</h2>
+      <nav className="space-y-1">
+        {items.map((item) => {
+          const Icon = item.icon
+          return (
+            <Link
+              key={item.id}
+              href={item.href}
+              className={cn(
+                "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                item.isActive ? "text-purple-600 bg-purple-50" : "text-gray-600 hover:text-gray-900 hover:bg-gray-50",
+              )}
+            >
+              <Icon className={cn("h-5 w-5", item.isActive ? "text-purple-600" : "text-gray-400")} />
+              <span>{item.label}</span>
+            </Link>
+          )
+        })}
+      </nav>
+    </div>
+  )
 
   if (isCollapsed) {
     return (
@@ -135,6 +216,26 @@ export function MainSidebar() {
         </Button>
         <div className="w-10 h-10 bg-purple-500 rounded-xl flex items-center justify-center mb-6">
           <span className="text-white font-bold text-lg">P</span>
+        </div>
+
+        {/* Iconos colapsados */}
+        <div className="flex flex-col space-y-2">
+          {[...principalItems, ...configItems, ...generalItems].map((item) => {
+            const Icon = item.icon
+            return (
+              <Link
+                key={item.id}
+                href={item.href}
+                className={cn(
+                  "p-2 rounded-lg transition-colors",
+                  item.isActive ? "text-purple-600 bg-purple-50" : "text-gray-400 hover:text-gray-600 hover:bg-gray-50",
+                )}
+                title={item.label}
+              >
+                <Icon className="h-5 w-5" />
+              </Link>
+            )
+          })}
         </div>
       </div>
     )
@@ -166,30 +267,10 @@ export function MainSidebar() {
       </div>
 
       {/* Navigation */}
-      <div className="flex-1 px-6 py-6">
-        <div className="mb-6">
-          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">PRINCIPAL</h2>
-          <nav className="space-y-1">
-            {menuItems.map((item) => {
-              const Icon = item.icon
-              return (
-                <Link
-                  key={item.id}
-                  href={item.href}
-                  className={cn(
-                    "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                    item.isActive
-                      ? "text-purple-600 bg-purple-50"
-                      : "text-gray-600 hover:text-gray-900 hover:bg-gray-50",
-                  )}
-                >
-                  <Icon className={cn("h-5 w-5", item.isActive ? "text-purple-600" : "text-gray-400")} />
-                  <span>{item.label}</span>
-                </Link>
-              )
-            })}
-          </nav>
-        </div>
+      <div className="flex-1 px-6 py-6 overflow-y-auto">
+        {renderMenuSection("PRINCIPAL", principalItems)}
+        {renderMenuSection("CONFIGURACIÓN", configItems)}
+        {renderMenuSection("GENERAL", generalItems)}
       </div>
     </div>
   )
