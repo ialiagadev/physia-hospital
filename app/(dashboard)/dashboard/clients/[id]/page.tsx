@@ -49,6 +49,7 @@ import { useToast } from "@/hooks/use-toast"
 import { PatientFollowUpSection } from "@/components/patient-follow-up-section"
 import { LoyaltyCardService } from "@/lib/loyalty-card-service"
 import type { LoyaltyCard, CardSession, CardFormData } from "@/types/loyalty-cards"
+import { ClinicalReportModal } from "@/components/clinical-report-modal"
 
 interface CampoPersonalizado {
   id: string
@@ -200,6 +201,8 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
   const [activeTab, setActiveTab] = useState("resumen")
 
   // Estados para historial médico
+  const [showClinicalReport, setShowClinicalReport] = useState(false)
+
   const [isEditingMedical, setIsEditingMedical] = useState(false)
   const [medicalTab, setMedicalTab] = useState("motivo")
   const [showAddField, setShowAddField] = useState<string | null>(null)
@@ -1037,49 +1040,59 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
       <Breadcrumbs items={breadcrumbItems} />
 
       <div className="flex justify-between items-center mb-6 mt-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">{formData.name}</h1>
-          <p className="text-gray-500 mt-1">ID: {formData.tax_id}</p>
-        </div>
-        {!isEditing && activeTab === "resumen" && (
-          <Button onClick={() => setIsEditing(true)}>
-            <Edit className="mr-2 h-4 w-4" />
-            Editar Cliente
-          </Button>
-        )}
-      </div>
+  <div>
+    <h1 className="text-3xl font-bold tracking-tight">{formData.name}</h1>
+    <p className="text-gray-500 mt-1">ID: {formData.tax_id}</p>
+  </div>
+  <div className="flex items-center gap-2">
+    {!isEditing && activeTab === "resumen" && (
+      <Button onClick={() => setIsEditing(true)}>
+        <Edit className="mr-2 h-4 w-4" />
+        Editar Cliente
+      </Button>
+    )}
+    <Button
+      onClick={() => setShowClinicalReport(true)}
+      variant="outline"
+      className="bg-green-50 hover:bg-green-100 border-green-200"
+    >
+      <FileText className="w-4 h-4 mr-2" />
+      Generar Informe Clínico
+    </Button>
+  </div>
+</div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-      <TabsList className="grid w-full grid-cols-7">
-       <TabsTrigger value="resumen" className="flex items-center gap-2">
-            <User className="h-4 w-4" />
-            Resumen
-          </TabsTrigger>
-          <TabsTrigger value="informacion-personal" className="flex items-center gap-2">
-            <User className="h-4 w-4" />
-            Información Personal
-          </TabsTrigger>
-          <TabsTrigger value="historial" className="flex items-center gap-2">
-            <FileText className="h-4 w-4" />
-            Historial Médico
-          </TabsTrigger>
-          <TabsTrigger value="seguimiento" className="flex items-center gap-2">
-            <TrendingUp className="h-4 w-4" />
-            Seguimiento
-          </TabsTrigger>
-          <TabsTrigger value="loyalty-cards" className="flex items-center gap-2">
-           <CreditCard className="h-4 w-4" />
-             Tarjetas
-          </TabsTrigger>
-          <TabsTrigger value="citas" className="flex items-center gap-2">
-            <CalendarDays className="h-4 w-4" />
-            Citas
-          </TabsTrigger>
-          <TabsTrigger value="documentos" className="flex items-center gap-2">
-            <FolderOpen className="h-4 w-4" />
-            Documentos
-          </TabsTrigger>
-        </TabsList>
+      <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-1">
+  <TabsTrigger value="resumen" className="flex items-center gap-2">
+    <User className="h-4 w-4" />
+    Resumen
+  </TabsTrigger>
+  <TabsTrigger value="informacion-personal" className="flex items-center gap-2">
+    <User className="h-4 w-4" />
+    Información Personal
+  </TabsTrigger>
+  <TabsTrigger value="historial" className="flex items-center gap-2">
+    <FileText className="h-4 w-4" />
+    Historial Médico
+  </TabsTrigger>
+  <TabsTrigger value="seguimiento" className="flex items-center gap-2">
+    <TrendingUp className="h-4 w-4" />
+    Seguimiento
+  </TabsTrigger>
+  <TabsTrigger value="loyalty-cards" className="flex items-center gap-2">
+    <CreditCard className="h-4 w-4" />
+    Tarjetas
+  </TabsTrigger>
+  <TabsTrigger value="citas" className="flex items-center gap-2">
+    <CalendarDays className="h-4 w-4" />
+    Citas
+  </TabsTrigger>
+  <TabsTrigger value="documentos" className="flex items-center gap-2">
+    <FolderOpen className="h-4 w-4" />
+    Documentos
+  </TabsTrigger>
+</TabsList>
 
         {/* Pestaña Resumen */}
         <TabsContent value="resumen" className="space-y-6">
@@ -1597,70 +1610,73 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
               <Edit className="mr-2 h-4 w-4" />
               Editar Cliente
             </Button>
+            
           </div>
         )}
       </TabsContent>
         {/* Pestaña Historial Médico */}
-        <TabsContent value="historial" className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-gray-900">Historial Médico Completo</h2>
-            <div className="flex gap-2">
-              {!isEditingMedical && (
-                <Button onClick={() => setIsEditingMedical(true)} className="bg-blue-600 hover:bg-blue-700">
-                  <Edit className="w-4 h-4 mr-2" />
-                  Editar Historial
-                </Button>
-              )}
-              {isEditingMedical && (
-                <>
-                  <Button onClick={handleSaveMedical} className="bg-green-600 hover:bg-green-700">
-                    <Save className="w-4 h-4 mr-2" />
-                    Guardar
-                  </Button>
-                  <Button onClick={handleCancelMedical} variant="outline">
-                    <X className="w-4 h-4 mr-2" />
-                    Cancelar
-                  </Button>
-                </>
-              )}
-            </div>
-          </div>
+<TabsContent value="historial" className="space-y-6">
+  <div className="flex items-center justify-between">
+    <h2 className="text-2xl font-bold text-gray-900">Historial Médico Completo</h2>
+    <div className="flex gap-2">
+      {!isEditingMedical && (
+        <Button onClick={() => setIsEditingMedical(true)} className="bg-blue-600 hover:bg-blue-700">
+          <Edit className="w-4 h-4 mr-2" />
+          Editar Historial
+        </Button>
+      )}
+     
+      {isEditingMedical && (
+        <>
+          <Button onClick={handleSaveMedical} className="bg-green-600 hover:bg-green-700">
+            <Save className="w-4 h-4 mr-2" />
+            Guardar
+          </Button>
+          <Button onClick={handleCancelMedical} variant="outline">
+            <X className="w-4 h-4 mr-2" />
+            Cancelar
+          </Button>
+        </>
+      )}
+    </div>
 
-          <Tabs value={medicalTab} onValueChange={setMedicalTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-8 mb-6 h-auto">
-              <TabsTrigger value="motivo" className="flex flex-col items-center gap-1 p-3">
-                <User className="w-4 h-4" />
-                <span className="text-xs">Motivo</span>
-              </TabsTrigger>
-              <TabsTrigger value="enfermedad" className="flex flex-col items-center gap-1 p-3">
-                <Activity className="w-4 h-4" />
-                <span className="text-xs">Enfermedad</span>
-              </TabsTrigger>
-              <TabsTrigger value="antecedentes" className="flex flex-col items-center gap-1 p-3">
-                <Users className="w-4 h-4" />
-                <span className="text-xs">Antecedentes</span>
-              </TabsTrigger>
-              <TabsTrigger value="habitos" className="flex flex-col items-center gap-1 p-3">
-                <Coffee className="w-4 h-4" />
-                <span className="text-xs">Hábitos</span>
-              </TabsTrigger>
-              <TabsTrigger value="sistemas" className="flex flex-col items-center gap-1 p-3">
-                <Shield className="w-4 h-4" />
-                <span className="text-xs">Sistemas</span>
-              </TabsTrigger>
-              <TabsTrigger value="neuropsico" className="flex flex-col items-center gap-1 p-3">
-                <Brain className="w-4 h-4" />
-                <span className="text-xs">Neuro/Psico</span>
-              </TabsTrigger>
-              <TabsTrigger value="exploracion" className="flex flex-col items-center gap-1 p-3">
-                <Stethoscope className="w-4 h-4" />
-                <span className="text-xs">Exploración</span>
-              </TabsTrigger>
-              <TabsTrigger value="diagnostico" className="flex flex-col items-center gap-1 p-3">
-                <FileText className="w-4 h-4" />
-                <span className="text-xs">Diagnóstico</span>
-              </TabsTrigger>
-            </TabsList>
+  </div>
+
+  <Tabs value={medicalTab} onValueChange={setMedicalTab} className="w-full">
+  <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 mb-6 h-auto gap-1">
+          <TabsTrigger value="motivo" className="flex flex-col items-center gap-1 p-3">
+        <User className="w-4 h-4" />
+        <span className="text-xs">Motivo</span>
+      </TabsTrigger>
+      <TabsTrigger value="enfermedad" className="flex flex-col items-center gap-1 p-3">
+        <Activity className="w-4 h-4" />
+        <span className="text-xs">Enfermedad</span>
+      </TabsTrigger>
+      <TabsTrigger value="antecedentes" className="flex flex-col items-center gap-1 p-3">
+        <Users className="w-4 h-4" />
+        <span className="text-xs">Antecedentes</span>
+      </TabsTrigger>
+      <TabsTrigger value="habitos" className="flex flex-col items-center gap-1 p-3">
+        <Coffee className="w-4 h-4" />
+        <span className="text-xs">Hábitos</span>
+      </TabsTrigger>
+      <TabsTrigger value="sistemas" className="flex flex-col items-center gap-1 p-3">
+        <Shield className="w-4 h-4" />
+        <span className="text-xs">Sistemas</span>
+      </TabsTrigger>
+      <TabsTrigger value="neuropsico" className="flex flex-col items-center gap-1 p-3">
+        <Brain className="w-4 h-4" />
+        <span className="text-xs">Neuro/Psico</span>
+      </TabsTrigger>
+      <TabsTrigger value="exploracion" className="flex flex-col items-center gap-1 p-3">
+        <Stethoscope className="w-4 h-4" />
+        <span className="text-xs">Exploración</span>
+      </TabsTrigger>
+      <TabsTrigger value="diagnostico" className="flex flex-col items-center gap-1 p-3">
+        <FileText className="w-4 h-4" />
+        <span className="text-xs">Diagnóstico</span>
+      </TabsTrigger>
+    </TabsList>
 
             {/* Pestaña Motivo de Consulta */}
             <TabsContent value="motivo">
@@ -3317,8 +3333,8 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
           </Card>
         </TabsContent>
 
-        {/* Pestaña Documentos */}
-        <TabsContent value="documentos" className="space-y-6">
+              {/* Pestaña Documentos */}
+              <TabsContent value="documentos" className="space-y-6">
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12">
               <FolderOpen className="h-12 w-12 text-gray-300 mb-4" />
@@ -3328,6 +3344,43 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Modal de Informe Clínico */}
+      <ClinicalReportModal
+        isOpen={showClinicalReport}
+        onClose={() => setShowClinicalReport(false)}
+        paciente={{
+          id: clientId,
+          nombre: formData.name,
+          telefono: formData.phone || "",
+          email: formData.email || "",
+          fechaNacimiento: formData.birth_date || "",
+          ultimaVisita: clinicalStats.lastVisit || "",
+          proximaCita: clinicalStats.nextAppointment || "",
+          notas: historial.observacionesAdicionales || "",
+          alergias: [
+            historial.alergiasMedicamentosas,
+            historial.alergiasAlimentarias,
+            historial.alergiasAmbientales,
+          ].filter(Boolean),
+          diagnosticos: historial.diagnostico ? [historial.diagnostico] : [],
+          medicacion: historial.medicacion ? [historial.medicacion] : [],
+        }}
+        historialCompleto={{
+          historialMedico: [
+            {
+              fecha: historial.fechaCreacion,
+              tipo: "Consulta",
+              descripcion: historial.motivoConsulta || "Consulta médica",
+              profesional: historial.profesional,
+            },
+          ],
+        }}
+        seguimientos={[]}
+        citas={[]}
+        documentos={[]}
+      />
+      
     </div>
   )
 }
