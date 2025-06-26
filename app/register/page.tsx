@@ -25,6 +25,8 @@ export default function RegisterPage() {
     setError("")
 
     try {
+      console.log("🔄 Iniciando proceso de registro...")
+
       // 1. Crear usuario en Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
@@ -38,58 +40,66 @@ export default function RegisterPage() {
       })
 
       if (authError) {
+        console.error("❌ Error en signUp:", authError)
         setError(authError.message)
         setIsLoading(false)
         return
       }
 
+      console.log("✅ Usuario creado:", authData.user?.id)
+
       if (authData.user) {
-        // 2. Crear organización
-        const { data: orgData, error: orgError } = await supabase
-          .from("organizations")
-          .insert({
-            name: organizationName,
-            email: email,
-            tax_id: "12345678A", // Temporal
-            address: "Dirección temporal",
-            postal_code: "28001",
-            city: "Madrid",
-            province: "Madrid",
-            country: "España",
-            created_by: authData.user.id,
-          })
-          .select()
-          .single()
+        // Esperar a que el trigger cree el usuario en public.users
+        await new Promise((resolve) => setTimeout(resolve, 2000))
 
-        if (orgError) {
-          console.error("Error creating organization:", orgError)
-          setError("Error al crear la organización")
-          setIsLoading(false)
-          return
-        }
+        // 2. Crear organización usando la función personalizada
+        console.log("🏢 Creando organización con función personalizada...")
 
-        // 3. Crear perfil de usuario
-        const { error: userError } = await supabase.from("users").insert({
-          id: authData.user.id,
-          email: email,
-          name: name,
-          organization_id: orgData.id,
-          role: "admin",
-          is_physia_admin: false,
+        const { data: orgResult, error: orgError } = await supabase.rpc("create_organization_during_registration", {
+          p_name: organizationName,
+          p_email: email,
+          p_tax_id: "12345678A",
+          p_address: "Dirección temporal",
+          p_postal_code: "28001",
+          p_city: "Madrid",
+          p_province: "Madrid",
+          p_country: "España",
         })
 
-        if (userError) {
-          console.error("Error creating user profile:", userError)
-          setError("Error al crear el perfil de usuario")
+        if (orgError) {
+          console.error("❌ Error creating organization:", orgError)
+          setError(`Error al crear la organización: ${orgError.message}`)
           setIsLoading(false)
           return
         }
 
-        // Redirigir al login para que se autentique
+        console.log("✅ Organización creada:", orgResult)
+
+        // 3. Actualizar perfil de usuario
+        console.log("👤 Actualizando perfil de usuario...")
+        const { error: userError } = await supabase
+          .from("users")
+          .update({
+            name: name,
+            organization_id: orgResult[0]?.id,
+            role: "admin",
+          })
+          .eq("id", authData.user.id)
+
+        if (userError) {
+          console.error("❌ Error updating user profile:", userError)
+          setError("Error al actualizar el perfil de usuario")
+          setIsLoading(false)
+          return
+        }
+
+        console.log("✅ Perfil de usuario actualizado")
+
+        // Redirigir al login
         router.push("/login?message=Cuenta creada exitosamente")
       }
     } catch (err) {
-      console.error("Registration error:", err)
+      console.error("💥 Registration error:", err)
       setError("Error inesperado durante el registro")
     } finally {
       setIsLoading(false)
