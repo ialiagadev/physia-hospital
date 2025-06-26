@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { Textarea } from "@/components/ui/textarea"
-import { useState, useEffect, useRef } from "react"
+import { useState, useRef } from "react"
 import {
   DndContext,
   type DragEndEvent,
@@ -41,41 +41,12 @@ import {
   Edit,
   Archive,
   GripVertical,
+  Loader2,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
-
-// Tipos para las tareas
-type PrioridadTarea = "alta" | "media" | "baja"
-type EstadoTarea = "pendiente" | "en_progreso" | "completada" | "archivada"
-
-type Tarea = {
-  id: number
-  titulo: string
-  descripcion: string
-  estado: EstadoTarea
-  prioridad: PrioridadTarea
-  asignadoA?: number
-  fechaVencimiento?: Date
-  fechaCreacion: Date
-  fechaCompletada?: Date
-  fechaArchivada?: Date
-  fechaEliminada?: Date
-  creadoPor: string
-  etiquetas: string[]
-  comentarios: any[]
-  adjuntos: any[]
-  actividad: any[]
-  orden: number
-  centro_id?: number
-}
-
-// Datos de ejemplo para profesionales
-const profesionales = [
-  { id: 1, nombre: "Dra. Ana García", especialidad: "Medicina General" },
-  { id: 2, nombre: "Dr. Carlos Rodríguez", especialidad: "Cardiología" },
-  { id: 3, nombre: "Dra. Laura Martínez", especialidad: "Pediatría" },
-  { id: 4, nombre: "Dr. Miguel Fernández", especialidad: "Dermatología" },
-]
+import { useTasks } from "@/hooks/tasks/use-tasks"
+import { useProfessionals } from "@/hooks/tasks/use-professionals"
+import type { PrioridadTarea, EstadoTarea, Tarea } from "@/types/tasks"
 
 // Configuración de estados (sin incluir archivada en el tablero principal)
 const ESTADOS_CONFIG = {
@@ -115,11 +86,13 @@ function DraggableTaskCard({
   onEdit,
   onDelete,
   onArchive,
+  profesionales,
 }: {
   tarea: Tarea
   onEdit: (tarea: Tarea) => void
   onDelete: (id: number) => void
   onArchive: (id: number) => void
+  profesionales: any[]
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: tarea.id.toString(),
@@ -135,7 +108,7 @@ function DraggableTaskCard({
     opacity: isDragging ? 0.5 : 1,
   }
 
-  const getNombreProfesional = (id?: number) => {
+  const getNombreProfesional = (id?: string) => {
     if (!id) return "Sin asignar"
     const profesional = profesionales.find((p) => p.id === id)
     return profesional ? profesional.nombre : "Desconocido"
@@ -307,17 +280,47 @@ function TaskColumn({
 }
 
 export default function TareasPage() {
-  const [tareas, setTareas] = useState<Tarea[]>([])
+  const router = useRouter()
+
+  // Hooks principales
+  const {
+    tareas,
+    loading: tareasLoading,
+    error,
+    crearTarea,
+    actualizarEstadoTarea,
+    eliminarTarea,
+    actualizarTarea,
+    reordenarTareas,
+    restaurarTarea,
+  } = useTasks()
+
+  const { profesionales, loading: profesionalesLoading } = useProfessionals()
+
+  // Estados locales
   const [mostrarFormulario, setMostrarFormulario] = useState(false)
-  const [filtroAsignado, setFiltroAsignado] = useState<number | "todos">("todos")
+  const [filtroAsignado, setFiltroAsignado] = useState<string | "todos">("todos")
   const [filtroPrioridad, setFiltroPrioridad] = useState<PrioridadTarea | "todas">("todas")
   const [busqueda, setBusqueda] = useState("")
   const [mostrarFiltros, setMostrarFiltros] = useState(false)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [activeColumn, setActiveColumn] = useState<keyof typeof ESTADOS_CONFIG | null>(null)
-  const router = useRouter()
+  const [filtroEstado, setFiltroEstado] = useState<"creadas" | "archivadas" | "eliminadas">("creadas")
 
-  // Referencia para almacenar el estado de la columna sobre la que se está arrastrando
+  // Estados para formularios
+  const [nuevaTarea, setNuevaTarea] = useState({
+    titulo: "",
+    descripcion: "",
+    prioridad: "media" as PrioridadTarea,
+    asignadoA: undefined as string | undefined,
+    fechaVencimiento: "",
+    etiquetas: [] as string[],
+  })
+
+  const [tareaEnEdicion, setTareaEnEdicion] = useState<Tarea | null>(null)
+  const [mostrarModalEdicion, setMostrarModalEdicion] = useState(false)
+
+  // Referencia para drag and drop
   const overColumnRef = useRef<keyof typeof ESTADOS_CONFIG | null>(null)
 
   const sensors = useSensors(
@@ -328,141 +331,10 @@ export default function TareasPage() {
     }),
   )
 
-  // Formulario para nueva tarea
-  const [nuevaTarea, setNuevaTarea] = useState({
-    titulo: "",
-    descripcion: "",
-    prioridad: "media" as PrioridadTarea,
-    asignadoA: undefined as number | undefined,
-    fechaVencimiento: "",
-    etiquetas: [] as string[],
-  })
-
-  // Estado para la tarea en edición
-  const [tareaEnEdicion, setTareaEnEdicion] = useState<Tarea | null>(null)
-  const [mostrarModalEdicion, setMostrarModalEdicion] = useState(false)
-  const [filtroEstado, setFiltroEstado] = useState<"creadas" | "archivadas" | "eliminadas">("creadas")
-
-  // Cargar tareas desde localStorage
-  useEffect(() => {
-    try {
-      const savedTareas = localStorage.getItem("tareas_centro")
-      if (savedTareas) {
-        const parsedTareas = JSON.parse(savedTareas)
-        const tareasConFechas = parsedTareas.map((tarea: any) => {
-          return {
-            ...tarea,
-            fechaCreacion: new Date(tarea.fechaCreacion),
-            fechaVencimiento: tarea.fechaVencimiento ? new Date(tarea.fechaVencimiento) : undefined,
-            fechaCompletada: tarea.fechaCompletada ? new Date(tarea.fechaCompletada) : undefined,
-            fechaArchivada: tarea.fechaArchivada ? new Date(tarea.fechaArchivada) : undefined,
-            fechaEliminada: tarea.fechaEliminada ? new Date(tarea.fechaEliminada) : undefined,
-            comentarios: tarea.comentarios || [],
-            adjuntos: tarea.adjuntos || [],
-            actividad: tarea.actividad || [],
-            etiquetas: tarea.etiquetas || [],
-            orden: tarea.orden || 0,
-          }
-        })
-        setTareas(tareasConFechas)
-      } else {
-        // Crear tareas de ejemplo si no hay ninguna
-        const tareasEjemplo: Tarea[] = [
-          {
-            id: 1,
-            titulo: "Revisar inventario médico",
-            descripcion: "Verificar stock de medicamentos y material médico",
-            estado: "pendiente",
-            prioridad: "alta",
-            asignadoA: 1,
-            fechaVencimiento: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
-            fechaCreacion: new Date(),
-            creadoPor: "Administrador",
-            etiquetas: ["inventario", "urgente"],
-            comentarios: [],
-            adjuntos: [],
-            actividad: [
-              {
-                id: 1,
-                tipo: "creacion",
-                descripcion: "creó la tarea",
-                usuario: "Administrador",
-                fecha: new Date(),
-              },
-            ],
-            orden: 0,
-          },
-          {
-            id: 2,
-            titulo: "Actualizar protocolos COVID",
-            descripcion: "Revisar y actualizar los protocolos de seguridad",
-            estado: "en_progreso",
-            prioridad: "media",
-            asignadoA: 2,
-            fechaCreacion: new Date(Date.now() - 24 * 60 * 60 * 1000),
-            creadoPor: "Dr. García",
-            etiquetas: ["protocolos", "covid"],
-            comentarios: [],
-            adjuntos: [],
-            actividad: [
-              {
-                id: 1,
-                tipo: "creacion",
-                descripcion: "creó la tarea",
-                usuario: "Dr. García",
-                fecha: new Date(Date.now() - 24 * 60 * 60 * 1000),
-              },
-            ],
-            orden: 0,
-          },
-          {
-            id: 3,
-            titulo: "Mantenimiento equipos",
-            descripcion: "Programar mantenimiento preventivo de equipos médicos",
-            estado: "completada",
-            prioridad: "baja",
-            fechaCreacion: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
-            fechaCompletada: new Date(Date.now() - 24 * 60 * 60 * 1000),
-            creadoPor: "Técnico",
-            etiquetas: ["mantenimiento"],
-            comentarios: [],
-            adjuntos: [],
-            actividad: [
-              {
-                id: 1,
-                tipo: "creacion",
-                descripcion: "creó la tarea",
-                usuario: "Técnico",
-                fecha: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
-              },
-              {
-                id: 2,
-                tipo: "cambio_estado",
-                descripcion: "marcó la tarea como completada",
-                usuario: "Técnico",
-                fecha: new Date(Date.now() - 24 * 60 * 60 * 1000),
-              },
-            ],
-            orden: 0,
-          },
-        ]
-        setTareas(tareasEjemplo)
-      }
-    } catch (error) {
-      console.error("Error al cargar tareas:", error)
-    }
-  }, [])
-
-  // Guardar tareas en localStorage
-  useEffect(() => {
-    localStorage.setItem("tareas_centro", JSON.stringify(tareas))
-  }, [tareas])
-
   // Función para encontrar la columna que contiene un elemento
   const findColumnForElement = (element: HTMLElement | null): keyof typeof ESTADOS_CONFIG | null => {
     if (!element) return null
 
-    // Buscar el elemento de columna más cercano
     const column = element.closest("[data-column-id]")
     if (column) {
       const columnId = column.getAttribute("data-column-id")
@@ -479,7 +351,6 @@ export default function TareasPage() {
     const { active } = event
     setActiveId(active.id as string)
 
-    // Encontrar la tarea que se está arrastrando
     const tarea = tareas.find((t) => t.id.toString() === active.id)
     if (tarea && tarea.estado in ESTADOS_CONFIG) {
       setActiveColumn(tarea.estado as keyof typeof ESTADOS_CONFIG)
@@ -491,15 +362,11 @@ export default function TareasPage() {
     const { over } = event
     if (!over) return
 
-    // Intentar determinar la columna sobre la que se está arrastrando
     let columnId: keyof typeof ESTADOS_CONFIG | null = null
 
-    // Si el over.id es una columna directamente
     if (typeof over.id === "string" && over.id in ESTADOS_CONFIG) {
       columnId = over.id as keyof typeof ESTADOS_CONFIG
-    }
-    // Si el over.id es una tarea, buscar su columna
-    else {
+    } else {
       const overElement = document.getElementById(over.id.toString())
       columnId = findColumnForElement(overElement)
     }
@@ -520,122 +387,76 @@ export default function TareasPage() {
     const activeId = active.id as string
     const overId = over?.id as string
 
-    // Encontrar la tarea que se está moviendo
     const activeIndex = tareas.findIndex((t) => t.id.toString() === activeId)
     if (activeIndex === -1) return
 
     const activeTarea = tareas[activeIndex]
 
-    // Determinar el estado de destino
     let estadoDestino: keyof typeof ESTADOS_CONFIG | null = null
 
-    // Si el over.id es una columna directamente
     if (overId && overId in ESTADOS_CONFIG) {
       estadoDestino = overId as keyof typeof ESTADOS_CONFIG
-    }
-    // Si el over.id es una tarea, usar su estado
-    else if (overId) {
+    } else if (overId) {
       const overIndex = tareas.findIndex((t) => t.id.toString() === overId)
       if (overIndex !== -1) {
         const overTarea = tareas[overIndex]
         if (overTarea.estado in ESTADOS_CONFIG) {
           estadoDestino = overTarea.estado as keyof typeof ESTADOS_CONFIG
         }
-      }
-      // Si no se encontró la tarea, usar la columna detectada durante el dragOver
-      else if (overColumnRef.current) {
+      } else if (overColumnRef.current) {
         estadoDestino = overColumnRef.current
       }
     }
 
-    // Si no se pudo determinar el estado de destino, intentar usar la referencia
     if (!estadoDestino && overColumnRef.current) {
       estadoDestino = overColumnRef.current
     }
 
-    // Si aún no se pudo determinar el estado de destino, salir
     if (!estadoDestino) {
       console.error("No se pudo determinar el estado de destino")
       return
     }
 
-    // Limpiar la referencia
     overColumnRef.current = null
 
-    // Si se está moviendo a una columna diferente
     if (activeTarea.estado !== estadoDestino) {
       actualizarEstadoTarea(Number.parseInt(activeId), estadoDestino)
       return
     }
 
-    // Si se está reordenando dentro de la misma columna
     if (overId && activeId !== overId && !(overId in ESTADOS_CONFIG)) {
       const overIndex = tareas.findIndex((t) => t.id.toString() === overId)
       if (overIndex !== -1) {
         const reordenadas = arrayMove(tareas, activeIndex, overIndex)
+        const tareasEnColumna = reordenadas.filter((t) => t.estado === estadoDestino)
+        const indexEnColumna = tareasEnColumna.findIndex((t) => t.id === activeTarea.id)
 
-        // Actualizar el orden solo para las tareas de esa columna
-        const tareasActualizadas = reordenadas.map((tarea) => {
-          if (tarea.estado === estadoDestino) {
-            const tareasEnColumna = reordenadas.filter((t) => t.estado === estadoDestino)
-            const indexEnColumna = tareasEnColumna.findIndex((t) => t.id === tarea.id)
-            return { ...tarea, orden: indexEnColumna }
-          }
-          return tarea
-        })
-
-        setTareas(tareasActualizadas)
-        toast.success("Tarea reordenada")
+        reordenarTareas(activeTarea.id, indexEnColumna)
       }
     }
   }
 
   // Crear nueva tarea
-  const crearTarea = () => {
+  const handleCrearTarea = async () => {
     if (!nuevaTarea.titulo.trim()) {
       toast.error("El título es obligatorio")
       return
     }
 
-    // Encontrar el orden máximo para el estado "pendiente"
-    const maxOrden = Math.max(0, ...tareas.filter((t) => t.estado === "pendiente").map((t) => t.orden))
-
-    const tarea: Tarea = {
-      id: Math.max(0, ...tareas.map((t) => t.id)) + 1,
-      titulo: nuevaTarea.titulo,
-      descripcion: nuevaTarea.descripcion,
-      estado: "pendiente",
-      prioridad: nuevaTarea.prioridad,
-      asignadoA: nuevaTarea.asignadoA,
-      fechaVencimiento: nuevaTarea.fechaVencimiento ? new Date(nuevaTarea.fechaVencimiento) : undefined,
-      fechaCreacion: new Date(),
-      creadoPor: "Usuario Actual",
-      etiquetas: nuevaTarea.etiquetas,
-      comentarios: [],
-      adjuntos: [],
-      actividad: [
-        {
-          id: 1,
-          tipo: "creacion",
-          descripcion: "creó la tarea",
-          usuario: "Usuario Actual",
-          fecha: new Date(),
-        },
-      ],
-      orden: maxOrden + 1,
+    try {
+      await crearTarea(nuevaTarea)
+      setNuevaTarea({
+        titulo: "",
+        descripcion: "",
+        prioridad: "media",
+        asignadoA: undefined,
+        fechaVencimiento: "",
+        etiquetas: [],
+      })
+      setMostrarFormulario(false)
+    } catch (error) {
+      // Error ya manejado en el hook
     }
-
-    setTareas((prev) => [...prev, tarea])
-    setNuevaTarea({
-      titulo: "",
-      descripcion: "",
-      prioridad: "media",
-      asignadoA: undefined,
-      fechaVencimiento: "",
-      etiquetas: [],
-    })
-    setMostrarFormulario(false)
-    toast.success("Tarea creada correctamente")
   }
 
   const editarTarea = (tarea: Tarea) => {
@@ -643,103 +464,22 @@ export default function TareasPage() {
     setMostrarModalEdicion(true)
   }
 
-  const guardarTareaEditada = (tareaEditada: Tarea) => {
-    setTareas(tareas.map((t) => (t.id === tareaEditada.id ? tareaEditada : t)))
-    setMostrarModalEdicion(false)
-    setTareaEnEdicion(null)
-    toast.success("Tarea actualizada correctamente")
+  const guardarTareaEditada = async (tareaEditada: Tarea) => {
+    try {
+      await actualizarTarea(tareaEditada)
+      setMostrarModalEdicion(false)
+      setTareaEnEdicion(null)
+    } catch (error) {
+      // Error ya manejado en el hook
+    }
   }
 
-  // Actualizar estado de tarea
-  const actualizarEstadoTarea = (id: number, nuevoEstado: EstadoTarea) => {
-    setTareas((prevTareas) => {
-      // Encontrar el orden máximo para el nuevo estado
-      const tareasEnNuevoEstado = prevTareas.filter((t) => t.estado === nuevoEstado && t.id !== id)
-      const maxOrden = tareasEnNuevoEstado.length > 0 ? Math.max(...tareasEnNuevoEstado.map((t) => t.orden)) : -1
-
-      return prevTareas.map((tarea) => {
-        if (tarea.id === id) {
-          const tareaActualizada = {
-            ...tarea,
-            estado: nuevoEstado,
-            orden: maxOrden + 1,
-          }
-
-          if (nuevoEstado === "completada") {
-            tareaActualizada.fechaCompletada = new Date()
-          } else if (tarea.estado === "completada") {
-            tareaActualizada.fechaCompletada = undefined
-          }
-
-          if (nuevoEstado === "archivada") {
-            tareaActualizada.fechaArchivada = new Date()
-          }
-
-          // Añadir nueva actividad
-          const actividadActual = Array.isArray(tarea.actividad) ? tarea.actividad : []
-          const maxActividadId = actividadActual.length > 0 ? Math.max(...actividadActual.map((a) => a.id)) : 0
-
-          const nuevaActividad = {
-            id: maxActividadId + 1,
-            tipo: "cambio_estado",
-            descripcion:
-              nuevoEstado === "completada"
-                ? "marcó la tarea como completada"
-                : nuevoEstado === "archivada"
-                  ? "archivó la tarea"
-                  : `cambió el estado a ${ESTADOS_CONFIG[nuevoEstado]?.titulo || nuevoEstado}`,
-            usuario: "Usuario Actual",
-            fecha: new Date(),
-          }
-
-          tareaActualizada.actividad = [...actividadActual, nuevaActividad]
-
-          return tareaActualizada
-        }
-        return tarea
-      })
-    })
-
-    const mensaje = nuevoEstado === "archivada" ? "Tarea archivada" : "Estado actualizado"
-    toast.success(mensaje)
-  }
-
-  // Archivar tarea
   const archivarTarea = (id: number) => {
     actualizarEstadoTarea(id, "archivada")
   }
 
-  // Eliminar tarea (marcar como eliminada)
-  const eliminarTarea = (id: number) => {
-    setTareas((prevTareas) =>
-      prevTareas.map((tarea) => {
-        if (tarea.id === id) {
-          const actividadActual = Array.isArray(tarea.actividad) ? tarea.actividad : []
-          const maxActividadId = actividadActual.length > 0 ? Math.max(...actividadActual.map((a) => a.id)) : 0
-
-          const nuevaActividad = {
-            id: maxActividadId + 1,
-            tipo: "eliminacion",
-            descripcion: "eliminó la tarea",
-            usuario: "Usuario Actual",
-            fecha: new Date(),
-          }
-
-          return {
-            ...tarea,
-            fechaEliminada: new Date(),
-            actividad: [...actividadActual, nuevaActividad],
-          }
-        }
-        return tarea
-      }),
-    )
-    toast.success("Tarea eliminada")
-  }
-
   // Filtrar tareas según el estado seleccionado
   const tareasFiltradas = tareas.filter((tarea) => {
-    // Filtro por estado de la tarea (creadas, archivadas, eliminadas)
     let cumpleFiltroEstado = false
     switch (filtroEstado) {
       case "creadas":
@@ -772,42 +512,39 @@ export default function TareasPage() {
   }
 
   // Obtener nombre del profesional
-  const getNombreProfesional = (id?: number) => {
+  const getNombreProfesional = (id?: string) => {
     if (!id) return "Sin asignar"
     const profesional = profesionales.find((p) => p.id === id)
     return profesional ? profesional.nombre : "Desconocido"
   }
 
   // Restaurar tarea archivada
-  const restaurarTarea = (id: number) => {
-    setTareas((prevTareas) =>
-      prevTareas.map((tarea) => {
-        if (tarea.id === id) {
-          const actividadActual = Array.isArray(tarea.actividad) ? tarea.actividad : []
-          const maxActividadId = actividadActual.length > 0 ? Math.max(...actividadActual.map((a) => a.id)) : 0
-
-          const nuevaActividad = {
-            id: maxActividadId + 1,
-            tipo: "restauracion",
-            descripcion: "restauró la tarea desde archivo",
-            usuario: "Usuario Actual",
-            fecha: new Date(),
-          }
-
-          return {
-            ...tarea,
-            fechaArchivada: undefined,
-            actividad: [...actividadActual, nuevaActividad],
-          }
-        }
-        return tarea
-      }),
-    )
-    toast.success("Tarea restaurada")
-  }
-
   // Obtener tarea activa para el overlay
   const tareaActiva = activeId ? tareas.find((t) => t.id.toString() === activeId) : null
+
+  // Loading state
+  if (tareasLoading || profesionalesLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-6 w-6 animate-spin" />
+          <span>Cargando tareas...</span>
+        </div>
+      </div>
+    )
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-600 mb-4">Error al cargar las tareas: {error}</p>
+          <Button onClick={() => window.location.reload()}>Reintentar</Button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <DndContext
@@ -900,7 +637,7 @@ export default function TareasPage() {
                   <Label>Asignado a</Label>
                   <Select
                     value={filtroAsignado.toString()}
-                    onValueChange={(value) => setFiltroAsignado(value === "todos" ? "todos" : Number(value))}
+                    onValueChange={(value) => setFiltroAsignado(value === "todos" ? "todos" : value)}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -971,6 +708,7 @@ export default function TareasPage() {
                           onEdit={editarTarea}
                           onDelete={eliminarTarea}
                           onArchive={archivarTarea}
+                          profesionales={profesionales}
                         />
                       ))}
                     </SortableContext>
@@ -1140,28 +878,6 @@ export default function TareasPage() {
                 </Card>
               </>
             )}
-
-            {filtroEstado === "archivadas" && (
-              <Card>
-                <CardContent className="p-3 sm:p-4 text-center">
-                  <div className="text-lg sm:text-2xl font-bold text-orange-600">
-                    {tareas.filter((t) => t.fechaArchivada && !t.fechaEliminada).length}
-                  </div>
-                  <div className="text-xs sm:text-sm text-gray-600">Total archivadas</div>
-                </CardContent>
-              </Card>
-            )}
-
-            {filtroEstado === "eliminadas" && (
-              <Card>
-                <CardContent className="p-3 sm:p-4 text-center">
-                  <div className="text-lg sm:text-2xl font-bold text-red-600">
-                    {tareas.filter((t) => t.fechaEliminada).length}
-                  </div>
-                  <div className="text-xs sm:text-sm text-gray-600">Total eliminadas</div>
-                </CardContent>
-              </Card>
-            )}
           </div>
         </div>
 
@@ -1214,16 +930,16 @@ export default function TareasPage() {
                 <div className="space-y-2">
                   <Label>Asignar a</Label>
                   <Select
-                    value={nuevaTarea.asignadoA?.toString() || "0"}
+                    value={nuevaTarea.asignadoA || "none"}
                     onValueChange={(value) =>
-                      setNuevaTarea({ ...nuevaTarea, asignadoA: value ? Number(value) : undefined })
+                      setNuevaTarea({ ...nuevaTarea, asignadoA: value === "none" ? undefined : value })
                     }
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Sin asignar" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="0">Sin asignar</SelectItem>
+                      <SelectItem value="none">Sin asignar</SelectItem>
                       {profesionales.map((prof) => (
                         <SelectItem key={prof.id} value={prof.id.toString()}>
                           {prof.nombre}
@@ -1248,7 +964,7 @@ export default function TareasPage() {
                 <Button variant="outline" onClick={() => setMostrarFormulario(false)} className="w-full sm:w-auto">
                   Cancelar
                 </Button>
-                <Button onClick={crearTarea} className="w-full sm:w-auto">
+                <Button onClick={handleCrearTarea} className="w-full sm:w-auto">
                   Crear Tarea
                 </Button>
               </div>
@@ -1320,16 +1036,16 @@ export default function TareasPage() {
                   <div className="space-y-2">
                     <Label>Asignado a</Label>
                     <Select
-                      value={tareaEnEdicion.asignadoA?.toString() || "0"}
+                      value={tareaEnEdicion.asignadoA || "none"}
                       onValueChange={(value) =>
-                        setTareaEnEdicion({ ...tareaEnEdicion, asignadoA: value === "0" ? undefined : Number(value) })
+                        setTareaEnEdicion({ ...tareaEnEdicion, asignadoA: value === "none" ? undefined : value })
                       }
                     >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="0">Sin asignar</SelectItem>
+                        <SelectItem value="none">Sin asignar</SelectItem>
                         {profesionales.map((prof) => (
                           <SelectItem key={prof.id} value={prof.id.toString()}>
                             {prof.nombre}

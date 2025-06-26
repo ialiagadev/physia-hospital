@@ -25,8 +25,9 @@ export interface ActividadTarea {
 export interface Comentario {
   id: number
   texto: string
-  usuario: string
+  autor: string
   fecha: Date
+  editado?: boolean
 }
 
 export interface Adjunto {
@@ -35,7 +36,8 @@ export interface Adjunto {
   url: string
   tipo: string
   tamaño: number
-  fecha: Date
+  fechaSubida: Date
+  subidoPor: string
 }
 
 export interface Tarea {
@@ -44,7 +46,7 @@ export interface Tarea {
   descripcion: string
   estado: EstadoTarea
   prioridad: PrioridadTarea
-  asignadoA?: number
+  asignadoA?: string // Cambiado a string para UUID
   fechaVencimiento?: Date
   fechaCreacion: Date
   fechaCompletada?: Date
@@ -56,6 +58,7 @@ export interface Tarea {
   adjuntos: Adjunto[]
   actividad: ActividadTarea[]
   orden: number
+  centro_id?: number
 }
 
 export interface PlantillaTarea {
@@ -63,14 +66,14 @@ export interface PlantillaTarea {
   nombre: string
   descripcion: string
   prioridad: PrioridadTarea
-  asignadoA?: number
+  asignadoA?: string
   fechaVencimiento?: Date
   etiquetas: string[]
   categoria: string
 }
 
 export interface Profesional {
-  id: number
+  id: string // Cambiado a string para UUID
   nombre: string
   especialidad: string
 }
