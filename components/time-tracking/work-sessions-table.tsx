@@ -1,14 +1,14 @@
 "use client"
 
-import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Calendar, ChevronLeft, ChevronRight, Download } from "lucide-react"
-import { format } from "date-fns"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Download, Calendar, Clock, User, MessageSquare } from "lucide-react"
+import { format, parseISO } from "date-fns"
 import { es } from "date-fns/locale"
+import { EditWorkSessionDialog } from "@/components/edit-work-session-dialog"
+import { useTimeTracking } from "@/hooks/use-time-tracking"
 
 interface WorkSession {
   id: string
@@ -19,6 +19,8 @@ interface WorkSession {
   status: string | null
   user_name: string | null
   user_email: string | null
+  user_id: string
+  notes?: string | null // ✅ AGREGADO
 }
 
 interface WorkSessionsTableProps {
@@ -29,7 +31,7 @@ interface WorkSessionsTableProps {
   totalPages: number
   pageSize: number
   onPageChange: (page: number, pageSize: number) => void
-  onExport?: () => void
+  onExport: () => void
 }
 
 export function WorkSessionsTable({
@@ -42,180 +44,174 @@ export function WorkSessionsTable({
   onPageChange,
   onExport,
 }: WorkSessionsTableProps) {
-  const [currentPageSize, setCurrentPageSize] = useState(pageSize)
+  const { isAdmin, updateWorkSession, deleteWorkSession } = useTimeTracking()
 
-  const formatTime = (timeString: string | null) => {
-    if (!timeString) return "--:--:--"
-    return format(new Date(timeString), "HH:mm:ss")
-  }
-
-  const formatDate = (dateString: string) => {
-    return format(new Date(dateString), "dd/MM/yyyy")
-  }
-
-  const formatDateLong = (dateString: string) => {
-    return format(new Date(dateString), "EEE dd/MM", { locale: es })
-  }
-
-  const getStatusBadge = (status: string | null) => {
-    if (!status)
-      return (
-        <Badge variant="outline" className="text-xs">
-          --
-        </Badge>
-      )
-
-    const variants = {
-      complete: "default",
-      incomplete: "secondary",
-      missing_clock_out: "destructive",
-    } as const
-
-    const labels = {
-      complete: "Completa",
-      incomplete: "Incompleta",
-      missing_clock_out: "Sin salida",
+  const getStatusBadge = (status: string | null, clockIn: string | null, clockOut: string | null) => {
+    if (!clockIn) {
+      return <Badge variant="secondary">Sin entrada</Badge>
     }
-
-    return (
-      <Badge variant={variants[status as keyof typeof variants] || "outline"} className="text-xs">
-        {labels[status as keyof typeof labels] || status}
-      </Badge>
-    )
-  }
-
-  const handlePageSizeChange = (newSize: string) => {
-    const size = Number(newSize)
-    setCurrentPageSize(size)
-    onPageChange(1, size)
-  }
-
-  const goToPage = (page: number) => {
-    if (page >= 1 && page <= totalPages) {
-      onPageChange(page, currentPageSize)
+    if (!clockOut) {
+      return <Badge variant="default">En curso</Badge>
     }
+    return <Badge variant="outline">Completado</Badge>
+  }
+
+  const handleRefresh = () => {
+    // Trigger a refresh of the data
+    onPageChange(currentPage, pageSize)
   }
 
   if (loading) {
     return (
-      <Card className="border-0 shadow-sm">
+      <Card>
         <CardContent className="flex justify-center items-center h-64">
-          <p className="text-muted-foreground">Cargando registros...</p>
+          <p>Cargando registros...</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (sessions.length === 0) {
+    return (
+      <Card>
+        <CardContent className="flex justify-center items-center h-64">
+          <div className="text-center text-muted-foreground">
+            <Calendar className="h-12 w-12 mx-auto mb-2 opacity-50" />
+            <p>No hay registros disponibles</p>
+          </div>
         </CardContent>
       </Card>
     )
   }
 
   return (
-    <Card className="border-0 shadow-sm">
-      <CardHeader className="pb-4">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <CardTitle className="text-lg font-medium">Registros de Fichaje</CardTitle>
-            <Badge variant="outline" className="text-xs">
-              {totalRecords}
-            </Badge>
-          </div>
-          {onExport && (
-            <Button onClick={onExport} variant="outline" size="sm">
-              <Download className="h-4 w-4 mr-2" />
-              Exportar
-            </Button>
-          )}
-        </div>
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle className="text-lg font-medium flex items-center gap-2">
+          <Calendar className="h-5 w-5" />
+          Registros de Trabajo
+        </CardTitle>
+        <Button onClick={onExport} variant="outline" size="sm">
+          <Download className="h-4 w-4 mr-2" />
+          Exportar CSV
+        </Button>
       </CardHeader>
-      <CardContent className="pt-0">
-        {totalRecords === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">
-            <Calendar className="h-12 w-12 mx-auto mb-3 opacity-30" />
-            <p>No hay registros disponibles</p>
+      <CardContent>
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Fecha</TableHead>
+                {isAdmin && <TableHead>Usuario</TableHead>}
+                <TableHead>Entrada</TableHead>
+                <TableHead>Salida</TableHead>
+                <TableHead>Horas</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead>Notas</TableHead> {/* ✅ NUEVA COLUMNA */}
+                {isAdmin && <TableHead className="w-[100px]">Acciones</TableHead>}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {sessions.map((session) => (
+                <TableRow key={session.id}>
+                  <TableCell className="font-medium">
+                    {format(parseISO(session.work_date), "dd MMM yyyy", { locale: es })}
+                  </TableCell>
+                  {isAdmin && (
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <User className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <div className="font-medium text-sm">{session.user_name || "Sin nombre"}</div>
+                          <div className="text-xs text-muted-foreground">{session.user_email}</div>
+                        </div>
+                      </div>
+                    </TableCell>
+                  )}
+                  <TableCell>
+                    {session.local_clock_in ? (
+                      <div className="flex items-center gap-1">
+                        <Clock className="h-4 w-4 text-green-600" />
+                        {format(parseISO(session.local_clock_in), "HH:mm")}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {session.local_clock_out ? (
+                      <div className="flex items-center gap-1">
+                        <Clock className="h-4 w-4 text-red-600" />
+                        {format(parseISO(session.local_clock_out), "HH:mm")}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {session.total_hours ? (
+                      <span className="font-mono">{session.total_hours.toFixed(2)}h</span>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {getStatusBadge(session.status, session.local_clock_in, session.local_clock_out)}
+                  </TableCell>
+                  {/* ✅ NUEVA CELDA PARA NOTAS */}
+                  <TableCell className="max-w-[200px]">
+                    {session.notes ? (
+                      <div className="flex items-start gap-1">
+                        <MessageSquare className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                        <span className="text-sm text-muted-foreground truncate" title={session.notes}>
+                          {session.notes}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground text-sm">-</span>
+                    )}
+                  </TableCell>
+                  {isAdmin && (
+                    <TableCell>
+                      <EditWorkSessionDialog
+                        session={session}
+                        onUpdate={updateWorkSession}
+                        onDelete={deleteWorkSession}
+                        onRefresh={handleRefresh}
+                      />
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+
+        {/* Paginación */}
+        <div className="flex items-center justify-between mt-4">
+          <p className="text-sm text-muted-foreground">
+            Mostrando {(currentPage - 1) * pageSize + 1} a {Math.min(currentPage * pageSize, totalRecords)} de{" "}
+            {totalRecords} registros
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onPageChange(currentPage - 1, pageSize)}
+              disabled={currentPage <= 1}
+            >
+              Anterior
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onPageChange(currentPage + 1, pageSize)}
+              disabled={currentPage >= totalPages}
+            >
+              Siguiente
+            </Button>
           </div>
-        ) : (
-          <div className="space-y-4">
-            {/* Controles */}
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-muted-foreground">Mostrar</span>
-                <Select value={currentPageSize.toString()} onValueChange={handlePageSizeChange}>
-                  <SelectTrigger className="w-16 h-8">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="10">10</SelectItem>
-                    <SelectItem value="20">20</SelectItem>
-                    <SelectItem value="50">50</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => goToPage(currentPage - 1)}
-                  disabled={currentPage === 1}
-                  className="h-8 w-8 p-0"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <span className="text-sm text-muted-foreground px-2">
-                  {currentPage} de {totalPages}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => goToPage(currentPage + 1)}
-                  disabled={currentPage === totalPages}
-                  className="h-8 w-8 p-0"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-
-            {/* Tabla */}
-            <div className="border rounded-lg">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-b">
-                    <TableHead className="font-medium">Fecha</TableHead>
-                    <TableHead className="font-medium">Entrada</TableHead>
-                    <TableHead className="font-medium">Salida</TableHead>
-                    <TableHead className="font-medium">Horas</TableHead>
-                    <TableHead className="font-medium">Estado</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sessions.map((session, index) => (
-                    <TableRow key={session.id} className={index % 2 === 0 ? "bg-muted/20" : ""}>
-                      <TableCell className="font-medium tabular-nums">{formatDateLong(session.work_date)}</TableCell>
-                      <TableCell>
-                        <code className="text-sm font-mono bg-muted px-2 py-1 rounded">
-                          {formatTime(session.local_clock_in)}
-                        </code>
-                      </TableCell>
-                      <TableCell>
-                        <code className="text-sm font-mono bg-muted px-2 py-1 rounded">
-                          {formatTime(session.local_clock_out)}
-                        </code>
-                      </TableCell>
-                      <TableCell className="font-mono text-sm">
-                        {session.total_hours ? `${session.total_hours.toFixed(2)}h` : "--"}
-                      </TableCell>
-                      <TableCell>{getStatusBadge(session.status)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-
-            {/* Info de paginación */}
-            <div className="text-center text-xs text-muted-foreground">
-              {(currentPage - 1) * currentPageSize + 1} - {Math.min(currentPage * currentPageSize, totalRecords)} de{" "}
-              {totalRecords}
-            </div>
-          </div>
-        )}
+        </div>
       </CardContent>
     </Card>
   )

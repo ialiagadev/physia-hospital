@@ -163,6 +163,38 @@ async function loadImageAsBase64(url: string): Promise<string | null> {
 }
 
 /**
+ * Valida y sanitiza los datos de la factura
+ */
+function validateInvoiceData(invoice: InvoiceData): InvoiceData {
+  return {
+    ...invoice,
+    base_amount: Number(invoice.base_amount) || 0,
+    vat_amount: Number(invoice.vat_amount) || 0,
+    irpf_amount: Number(invoice.irpf_amount) || 0,
+    retention_amount: Number(invoice.retention_amount) || 0,
+    total_amount: Number(invoice.total_amount) || 0,
+    invoice_number: invoice.invoice_number || "Sin número",
+    issue_date: invoice.issue_date || new Date().toISOString(),
+  }
+}
+
+/**
+ * Valida y sanitiza las líneas de factura
+ */
+function validateInvoiceLines(lines: InvoiceLine[]): InvoiceLine[] {
+  return lines.map((line) => ({
+    ...line,
+    description: line.description || "Sin descripción",
+    quantity: Number(line.quantity) || 0,
+    unit_price: Number(line.unit_price) || 0,
+    vat_rate: Number(line.vat_rate) || 0,
+    irpf_rate: Number(line.irpf_rate) || 0,
+    retention_rate: Number(line.retention_rate) || 0,
+    line_amount: Number(line.line_amount) || 0,
+  }))
+}
+
+/**
  * Genera el PDF de la factura con diseño mejorado
  */
 export async function generatePdf(
@@ -172,12 +204,23 @@ export async function generatePdf(
   autoDownload = true,
 ): Promise<Blob | null> {
   try {
+    // Validar datos antes de procesar
+    const validatedInvoice = validateInvoiceData(invoice)
+    const validatedLines = validateInvoiceLines(invoiceLines)
+
+    // Debug: Mostrar datos validados
+    console.log("📄 Generando PDF con datos:", {
+      invoice: validatedInvoice,
+      lines: validatedLines,
+      fileName,
+    })
+
     const doc = new jsPDF()
     let yPosition = 20
 
     // Configurar fuentes y colores según el tipo de factura
-    const isRectificative = invoice.invoice_type === "rectificativa"
-    const isSimplified = invoice.invoice_type === "simplificada"
+    const isRectificative = validatedInvoice.invoice_type === "rectificativa"
+    const isSimplified = validatedInvoice.invoice_type === "simplificada"
 
     const headerColor = isRectificative ? [220, 53, 69] : isSimplified ? [13, 110, 253] : [40, 167, 69]
     const headerTextColor = [255, 255, 255]
@@ -196,7 +239,7 @@ export async function generatePdf(
 
     doc.text(headerTitle, 105, 20, { align: "center" })
 
-    // Reset color
+    // Reset color - IMPORTANTE: Asegurar color negro
     doc.setTextColor(0, 0, 0)
     yPosition = 40
 
@@ -205,9 +248,9 @@ export async function generatePdf(
     let logoLoaded = false
 
     // Intentar cargar el logo primero con mejor manejo de proporciones
-    if (invoice.organization?.logo_url || invoice.organization?.logo_path) {
+    if (validatedInvoice.organization?.logo_url || validatedInvoice.organization?.logo_path) {
       try {
-        const logoUrl = invoice.organization.logo_url || invoice.organization.logo_path
+        const logoUrl = validatedInvoice.organization.logo_url || validatedInvoice.organization.logo_path
         if (logoUrl) {
           const logoBase64 = await loadImageAsBase64(logoUrl)
           if (logoBase64) {
@@ -255,30 +298,29 @@ export async function generatePdf(
     }
 
     // Información de la organización con espacio reservado para el logo
-    const orgTextWidth = logoLoaded ? 130 : 170
-
-    if (invoice.organization) {
+    if (validatedInvoice.organization) {
+      doc.setTextColor(0, 0, 0) // Asegurar color negro
       doc.setFontSize(16)
       doc.setFont("helvetica", "bold")
-      doc.text(invoice.organization.name, 20, yPosition + 5)
+      doc.text(validatedInvoice.organization.name, 20, yPosition + 5)
 
       doc.setFontSize(10)
       doc.setFont("helvetica", "normal")
-      doc.text(`CIF: ${invoice.organization.tax_id}`, 20, yPosition + 15)
-      doc.text(invoice.organization.address, 20, yPosition + 22)
+      doc.text(`CIF: ${validatedInvoice.organization.tax_id}`, 20, yPosition + 15)
+      doc.text(validatedInvoice.organization.address, 20, yPosition + 22)
       doc.text(
-        `${invoice.organization.postal_code} ${invoice.organization.city}, ${invoice.organization.province}`,
+        `${validatedInvoice.organization.postal_code} ${validatedInvoice.organization.city}, ${validatedInvoice.organization.province}`,
         20,
         yPosition + 29,
       )
 
       let contactY = yPosition + 36
-      if (invoice.organization.email) {
-        doc.text(`Email: ${invoice.organization.email}`, 20, contactY)
+      if (validatedInvoice.organization.email) {
+        doc.text(`Email: ${validatedInvoice.organization.email}`, 20, contactY)
         contactY += 7
       }
-      if (invoice.organization.phone) {
-        doc.text(`Teléfono: ${invoice.organization.phone}`, 20, contactY)
+      if (validatedInvoice.organization.phone) {
+        doc.text(`Teléfono: ${validatedInvoice.organization.phone}`, 20, contactY)
       }
     }
 
@@ -288,23 +330,22 @@ export async function generatePdf(
     const infoBoxX = 120
     const infoBoxY = yPosition - 10
     const infoBoxWidth = 70
-    const infoBoxHeight = 25 // Reducido al eliminar el estado
+    const infoBoxHeight = 25
 
     // Caja con borde
     doc.setFillColor(248, 249, 250)
     doc.setDrawColor(200, 200, 200)
     doc.rect(infoBoxX, infoBoxY, infoBoxWidth, infoBoxHeight, "FD")
 
+    doc.setTextColor(0, 0, 0) // Asegurar color negro
     doc.setFontSize(12)
     doc.setFont("helvetica", "bold")
     doc.text("DATOS FACTURA", infoBoxX + 5, infoBoxY + 8)
 
     doc.setFontSize(10)
     doc.setFont("helvetica", "normal")
-    doc.text(`Nº: ${invoice.invoice_number}`, infoBoxX + 5, infoBoxY + 16)
-    doc.text(`Fecha: ${new Date(invoice.issue_date).toLocaleDateString("es-ES")}`, infoBoxX + 5, infoBoxY + 23)
-
-    // Eliminado el estado de la factura como solicitado
+    doc.text(`Nº: ${validatedInvoice.invoice_number}`, infoBoxX + 5, infoBoxY + 16)
+    doc.text(`Fecha: ${new Date(validatedInvoice.issue_date).toLocaleDateString("es-ES")}`, infoBoxX + 5, infoBoxY + 23)
 
     yPosition += 20
 
@@ -314,14 +355,10 @@ export async function generatePdf(
 
       // Caja destacada para rectificativas con mejor diseño
       const rectBoxHeight = 45
-      doc.setFillColor(255, 248, 220) // Fondo amarillo más suave
+      doc.setFillColor(255, 248, 220)
       doc.setDrawColor(220, 53, 69)
       doc.setLineWidth(1.5)
       doc.rect(15, yPosition, 180, rectBoxHeight, "FD")
-
-      // Icono de advertencia (triángulo)
-      doc.setFillColor(220, 53, 69)
-      doc.triangle(25, yPosition + 8, 30, yPosition + 15, 20, yPosition + 15)
 
       doc.setFontSize(12)
       doc.setFont("helvetica", "bold")
@@ -332,27 +369,30 @@ export async function generatePdf(
       doc.setFont("helvetica", "normal")
       doc.setTextColor(0, 0, 0)
 
-      const originalNumber = invoice.original_invoice_number || "No especificada"
+      const originalNumber = validatedInvoice.original_invoice_number || "No especificada"
       doc.text(`Factura original: ${originalNumber}`, 20, yPosition + 22)
 
       const rectificationType =
-        invoice.rectification_type === "cancellation"
+        validatedInvoice.rectification_type === "cancellation"
           ? "Por sustitución (anula la original)"
           : "Por diferencias (ajusta importes)"
       doc.text(`Tipo: ${rectificationType}`, 20, yPosition + 29)
 
-      const reason = invoice.rectification_reason || "No especificado"
+      const reason = validatedInvoice.rectification_reason || "No especificado"
       const reasonLines = doc.splitTextToSize(`Motivo: ${reason}`, 170)
       doc.text(reasonLines, 20, yPosition + 36)
 
       yPosition += rectBoxHeight + 15
 
       // Tabla de comparación mejorada para rectificativas por diferencias
-      if (invoice.original_invoice_number && invoice.rectification_type === "amount_correction") {
-        const orgId = invoice.organization?.id || invoice.organization_id || (invoice as any).id
-        const originalInvoice = orgId ? await getOriginalInvoiceData(invoice.original_invoice_number, orgId) : null
+      if (validatedInvoice.original_invoice_number && validatedInvoice.rectification_type === "amount_correction") {
+        const orgId = validatedInvoice.organization?.id || validatedInvoice.organization_id || validatedInvoice.id
+        const originalInvoice = orgId
+          ? await getOriginalInvoiceData(validatedInvoice.original_invoice_number, orgId)
+          : null
 
         if (originalInvoice) {
+          doc.setTextColor(0, 0, 0)
           doc.setFont("helvetica", "bold")
           doc.setFontSize(11)
           doc.text("COMPARACIÓN DE IMPORTES", 20, yPosition)
@@ -363,26 +403,26 @@ export async function generatePdf(
             [
               "Base Imponible",
               `${originalInvoice.base_amount.toFixed(2)} €`,
-              `${invoice.base_amount.toFixed(2)} €`,
-              `${(invoice.base_amount - originalInvoice.base_amount).toFixed(2)} €`,
+              `${validatedInvoice.base_amount.toFixed(2)} €`,
+              `${(validatedInvoice.base_amount - originalInvoice.base_amount).toFixed(2)} €`,
             ],
             [
               "IVA",
               `${originalInvoice.vat_amount.toFixed(2)} €`,
-              `${invoice.vat_amount.toFixed(2)} €`,
-              `${(invoice.vat_amount - originalInvoice.vat_amount).toFixed(2)} €`,
+              `${validatedInvoice.vat_amount.toFixed(2)} €`,
+              `${(validatedInvoice.vat_amount - originalInvoice.vat_amount).toFixed(2)} €`,
             ],
             [
               "IRPF",
               `${originalInvoice.irpf_amount.toFixed(2)} €`,
-              `${invoice.irpf_amount.toFixed(2)} €`,
-              `${(invoice.irpf_amount - originalInvoice.irpf_amount).toFixed(2)} €`,
+              `${validatedInvoice.irpf_amount.toFixed(2)} €`,
+              `${(validatedInvoice.irpf_amount - originalInvoice.irpf_amount).toFixed(2)} €`,
             ],
             [
               "Total",
               `${originalInvoice.total_amount.toFixed(2)} €`,
-              `${invoice.total_amount.toFixed(2)} €`,
-              `${(invoice.total_amount - originalInvoice.total_amount).toFixed(2)} €`,
+              `${validatedInvoice.total_amount.toFixed(2)} €`,
+              `${(validatedInvoice.total_amount - originalInvoice.total_amount).toFixed(2)} €`,
             ],
           ]
 
@@ -392,72 +432,35 @@ export async function generatePdf(
       }
     }
 
-    // === INFORMACIÓN DEL CLIENTE MEJORADA ===
-    // Caja para el cliente
-    // const clientBoxY = yPosition
-    // const clientBoxHeight = 40
-
-    // doc.setFillColor(248, 249, 250)
-    // doc.setDrawColor(200, 200, 200)
-    // doc.rect(15, clientBoxY, 180, clientBoxHeight, "FD")
-
-    // doc.setFontSize(12)
-    // doc.setFont("helvetica", "bold")
-    // doc.setTextColor(40, 167, 69)
-    // doc.text("FACTURAR A:", 20, clientBoxY + 10)
-    // doc.setTextColor(0, 0, 0)
-
-    // if (invoice.client_data) {
-    //   doc.setFontSize(10)
-    //   doc.setFont("helvetica", "bold")
-    //   doc.text(invoice.client_data.name, 20, clientBoxY + 18)
-
-    //   doc.setFont("helvetica", "normal")
-    //   doc.text(`CIF/NIF: ${invoice.client_data.tax_id}`, 20, clientBoxY + 25)
-    //   doc.text(invoice.client_data.address, 20, clientBoxY + 32)
-
-    //   const locationText = `${invoice.client_data.postal_code} ${invoice.client_data.city}, ${invoice.client_data.province}`
-    //   doc.text(locationText, 100, clientBoxY + 18)
-
-    //   if (invoice.client_data.email) {
-    //     doc.text(`Email: ${invoice.client_data.email}`, 100, clientBoxY + 25)
-    //   }
-    //   if (invoice.client_data.phone) {
-    //     doc.text(`Tel: ${invoice.client_data.phone}`, 100, clientBoxY + 32)
-    //   }
-    // }
-
-    // yPosition = clientBoxY + clientBoxHeight + 15
-
     // === INFORMACIÓN DEL CLIENTE OPTIMIZADA ===
+    doc.setTextColor(40, 167, 69)
     doc.setFontSize(11)
     doc.setFont("helvetica", "bold")
-    doc.setTextColor(40, 167, 69)
     doc.text("FACTURAR A:", 20, yPosition)
     doc.setTextColor(0, 0, 0)
     yPosition += 6
 
-    if (invoice.client_data) {
+    if (validatedInvoice.client_data) {
       // Línea 1: Nombre y CIF en la misma línea
       doc.setFontSize(10)
       doc.setFont("helvetica", "bold")
-      doc.text(invoice.client_data.name, 20, yPosition)
+      doc.text(validatedInvoice.client_data.name, 20, yPosition)
       doc.setFont("helvetica", "normal")
-      doc.text(`CIF/NIF: ${invoice.client_data.tax_id}`, 120, yPosition)
+      doc.text(`CIF/NIF: ${validatedInvoice.client_data.tax_id}`, 120, yPosition)
       yPosition += 6
 
       // Línea 2: Dirección completa en una línea
-      const fullAddress = `${invoice.client_data.address}, ${invoice.client_data.postal_code} ${invoice.client_data.city}, ${invoice.client_data.province}`
+      const fullAddress = `${validatedInvoice.client_data.address}, ${validatedInvoice.client_data.postal_code} ${validatedInvoice.client_data.city}, ${validatedInvoice.client_data.province}`
       doc.text(fullAddress, 20, yPosition)
       yPosition += 6
 
       // Línea 3: Email y teléfono en la misma línea (solo si existen)
-      if (invoice.client_data.email || invoice.client_data.phone) {
+      if (validatedInvoice.client_data.email || validatedInvoice.client_data.phone) {
         let contactLine = ""
-        if (invoice.client_data.email) contactLine += `Email: ${invoice.client_data.email}`
-        if (invoice.client_data.phone) {
+        if (validatedInvoice.client_data.email) contactLine += `Email: ${validatedInvoice.client_data.email}`
+        if (validatedInvoice.client_data.phone) {
           if (contactLine) contactLine += " | "
-          contactLine += `Tel: ${invoice.client_data.phone}`
+          contactLine += `Tel: ${validatedInvoice.client_data.phone}`
         }
         doc.text(contactLine, 20, yPosition)
         yPosition += 6
@@ -471,6 +474,7 @@ export async function generatePdf(
     yPosition += 8
 
     // === LÍNEAS DE FACTURA CON TABLA MEJORADA ===
+    doc.setTextColor(0, 0, 0) // Asegurar color negro
     doc.setFontSize(12)
     doc.setFont("helvetica", "bold")
     doc.text("DETALLE DE SERVICIOS", 20, yPosition)
@@ -479,7 +483,10 @@ export async function generatePdf(
     // Preparar datos de la tabla con mejor formato
     const tableData = [["Descripción", "Cant.", "Precio", "IVA%", "IRPF%", "Ret%", "Importe"]]
 
-    invoiceLines.forEach((line) => {
+    console.log("📋 Procesando líneas de factura:", validatedLines)
+
+    validatedLines.forEach((line, index) => {
+      console.log(`Línea ${index + 1}:`, line)
       tableData.push([
         line.description,
         line.quantity.toString(),
@@ -491,13 +498,16 @@ export async function generatePdf(
       ])
     })
 
+    console.log("📊 Datos de tabla preparados:", tableData)
+
     // Verificar si la tabla necesita una nueva página
-    const estimatedTableHeight = tableData.length * 10 + 10 // altura estimada
+    const estimatedTableHeight = tableData.length * 10 + 10
     if (yPosition + estimatedTableHeight > 270) {
       doc.addPage()
       yPosition = 20
 
       // Repetir el encabezado en la nueva página
+      doc.setTextColor(0, 0, 0)
       doc.setFontSize(12)
       doc.setFont("helvetica", "bold")
       doc.text("DETALLE DE SERVICIOS (continuación)", 20, yPosition)
@@ -518,7 +528,8 @@ export async function generatePdf(
 
     const totalsBoxX = 120
     const totalsBoxWidth = 75
-    const totalsBoxHeight = 35 + (invoice.irpf_amount > 0 ? 7 : 0) + (invoice.retention_amount > 0 ? 7 : 0)
+    const totalsBoxHeight =
+      35 + (validatedInvoice.irpf_amount > 0 ? 7 : 0) + (validatedInvoice.retention_amount > 0 ? 7 : 0)
 
     // Caja para totales
     doc.setFillColor(248, 249, 250)
@@ -526,25 +537,35 @@ export async function generatePdf(
     doc.rect(totalsBoxX, yPosition, totalsBoxWidth, totalsBoxHeight, "FD")
 
     let totalsY = yPosition + 8
+    doc.setTextColor(0, 0, 0) // IMPORTANTE: Asegurar color negro para totales
     doc.setFontSize(10)
     doc.setFont("helvetica", "normal")
+
+    console.log("💰 Mostrando totales:", {
+      base_amount: validatedInvoice.base_amount,
+      vat_amount: validatedInvoice.vat_amount,
+      irpf_amount: validatedInvoice.irpf_amount,
+      retention_amount: validatedInvoice.retention_amount,
+      total_amount: validatedInvoice.total_amount,
+    })
+
     doc.text(`Base Imponible:`, totalsBoxX + 5, totalsY)
-    doc.text(`${invoice.base_amount.toFixed(2)} €`, totalsBoxX + 45, totalsY)
+    doc.text(`${validatedInvoice.base_amount.toFixed(2)} €`, totalsBoxX + 45, totalsY)
     totalsY += 7
 
     doc.text(`IVA:`, totalsBoxX + 5, totalsY)
-    doc.text(`${invoice.vat_amount.toFixed(2)} €`, totalsBoxX + 45, totalsY)
+    doc.text(`${validatedInvoice.vat_amount.toFixed(2)} €`, totalsBoxX + 45, totalsY)
     totalsY += 7
 
-    if (invoice.irpf_amount > 0) {
+    if (validatedInvoice.irpf_amount > 0) {
       doc.text(`IRPF:`, totalsBoxX + 5, totalsY)
-      doc.text(`-${invoice.irpf_amount.toFixed(2)} €`, totalsBoxX + 45, totalsY)
+      doc.text(`-${validatedInvoice.irpf_amount.toFixed(2)} €`, totalsBoxX + 45, totalsY)
       totalsY += 7
     }
 
-    if (invoice.retention_amount > 0) {
+    if (validatedInvoice.retention_amount > 0) {
       doc.text(`Retención:`, totalsBoxX + 5, totalsY)
-      doc.text(`-${invoice.retention_amount.toFixed(2)} €`, totalsBoxX + 45, totalsY)
+      doc.text(`-${validatedInvoice.retention_amount.toFixed(2)} €`, totalsBoxX + 45, totalsY)
       totalsY += 7
     }
 
@@ -558,18 +579,19 @@ export async function generatePdf(
     doc.setFont("helvetica", "bold")
     doc.setFontSize(12)
     doc.text(`TOTAL:`, totalsBoxX + 5, totalsY)
-    doc.text(`${invoice.total_amount.toFixed(2)} €`, totalsBoxX + 45, totalsY)
+    doc.text(`${validatedInvoice.total_amount.toFixed(2)} €`, totalsBoxX + 45, totalsY)
 
     yPosition += totalsBoxHeight + 20
 
     // === FIRMA MEJORADA ===
-    if (invoice.signature) {
+    if (validatedInvoice.signature) {
       // Verificar si necesitamos nueva página
       if (yPosition > 220) {
         doc.addPage()
         yPosition = 20
       }
 
+      doc.setTextColor(0, 0, 0)
       doc.setFontSize(11)
       doc.setFont("helvetica", "bold")
       doc.text("FIRMA DIGITAL:", 20, yPosition)
@@ -580,7 +602,7 @@ export async function generatePdf(
       doc.rect(20, yPosition, 80, 40, "S")
 
       try {
-        doc.addImage(invoice.signature, "PNG", 25, yPosition + 5, 70, 30)
+        doc.addImage(validatedInvoice.signature, "PNG", 25, yPosition + 5, 70, 30)
       } catch (error) {
         console.error("Error al añadir firma:", error)
         doc.setFont("helvetica", "normal")
@@ -592,12 +614,13 @@ export async function generatePdf(
     }
 
     // === NOTAS ADICIONALES ===
-    if (invoice.notes && invoice.notes.trim()) {
+    if (validatedInvoice.notes && validatedInvoice.notes.trim()) {
       if (yPosition > 240) {
         doc.addPage()
         yPosition = 20
       }
 
+      doc.setTextColor(0, 0, 0)
       doc.setFontSize(11)
       doc.setFont("helvetica", "bold")
       doc.text("NOTAS:", 20, yPosition)
@@ -605,7 +628,7 @@ export async function generatePdf(
 
       doc.setFontSize(9)
       doc.setFont("helvetica", "normal")
-      const notesLines = doc.splitTextToSize(invoice.notes, 170)
+      const notesLines = doc.splitTextToSize(validatedInvoice.notes, 170)
       doc.text(notesLines, 20, yPosition)
       yPosition += notesLines.length * 4 + 10
     }
@@ -623,7 +646,7 @@ export async function generatePdf(
     let legalText = ""
     if (isRectificative) {
       legalText = "Esta factura rectificativa modifica la factura original indicada. "
-      if (invoice.rectification_type === "cancellation") {
+      if (validatedInvoice.rectification_type === "cancellation") {
         legalText += "La factura original queda anulada y sustituida por esta rectificativa."
       } else {
         legalText += "Esta rectificativa ajusta únicamente las diferencias indicadas."
@@ -641,13 +664,15 @@ export async function generatePdf(
     // Generar el blob
     const pdfBlob = doc.output("blob")
 
+    console.log("✅ PDF generado exitosamente")
+
     if (autoDownload) {
       doc.save(fileName)
     }
 
     return pdfBlob
   } catch (error) {
-    console.error("Error al generar PDF:", error)
+    console.error("❌ Error al generar PDF:", error)
     return null
   }
 }
@@ -656,9 +681,11 @@ export async function generatePdf(
  * Función mejorada para dibujar tablas con mejor diseño y manejo de espacio
  */
 function drawImprovedTable(doc: jsPDF, data: string[][], x: number, y: number, width: number): number {
-  const rowHeight = 10 // Aumentado para dar más espacio
+  const rowHeight = 10
   const colWidths = calculateColumnWidths(data, width)
   let currentY = y
+
+  console.log("🔧 Dibujando tabla con datos:", data)
 
   // Verificar si la tabla necesita continuar en una nueva página
   const checkAndAddPage = (requiredHeight: number) => {
@@ -709,15 +736,14 @@ function drawImprovedTable(doc: jsPDF, data: string[][], x: number, y: number, w
       }
       doc.setFont("helvetica", "normal")
       doc.setFontSize(8)
-      doc.setTextColor(0, 0, 0)
+      doc.setTextColor(0, 0, 0) // IMPORTANTE: Asegurar color negro para el contenido
     }
 
     row.forEach((cell, colIndex) => {
       // Manejar texto largo con saltos de línea
       const cellText = doc.splitTextToSize(cell, colWidths[colIndex] - 4)
 
-      // Ajustar altura de fila si el texto es muy largo
-      const cellHeight = Math.max(rowHeight, cellText.length * 4)
+      console.log(`Celda [${rowIndex}][${colIndex}]: "${cell}" en posición (${currentX + 2}, ${currentY + 3})`)
 
       doc.text(cellText, currentX + 2, currentY + 3)
 

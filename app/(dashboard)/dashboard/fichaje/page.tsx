@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { TimeClockContainer } from "@/components/time-tracking/time-clock-container"
 import { WorkSessionsTable } from "@/components/time-tracking/work-sessions-table"
+import { WorkSessionsFilters } from "@/components/work-sessions-filters"
 import { UserSelector } from "@/components/time-tracking/user-selector"
 import { useTimeTracking } from "@/hooks/use-time-tracking"
 import { useToast } from "@/hooks/use-toast"
@@ -24,6 +25,10 @@ export default function FichajePage() {
   const [totalPages, setTotalPages] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [loading, setLoading] = useState(false)
+
+  // ✅ NUEVO: Estados para filtros de fecha
+  const [startDate, setStartDate] = useState<string | undefined>()
+  const [endDate, setEndDate] = useState<string | undefined>()
 
   // Cargar usuarios de la organización si es admin
   useEffect(() => {
@@ -46,7 +51,7 @@ export default function FichajePage() {
     }
   }, [userProfile, isAdmin])
 
-  // Cargar jornadas del usuario actual
+  // ✅ MODIFICADO: Cargar jornadas con filtros de fecha
   useEffect(() => {
     const loadWorkSessions = async () => {
       if (!userProfile?.organization_id) return
@@ -54,10 +59,12 @@ export default function FichajePage() {
       setLoading(true)
       try {
         const result = await getWorkDays({
-          userId: userProfile.id,
+          userId: isAdmin ? selectedUser?.id : userProfile.id,
           organizationId: userProfile.organization_id,
           page: currentPage,
           pageSize: pageSize,
+          startDate, // ✅ AGREGADO
+          endDate, // ✅ AGREGADO
         })
 
         if (result.sessions) {
@@ -73,11 +80,25 @@ export default function FichajePage() {
     }
 
     loadWorkSessions()
-  }, [userProfile, currentPage, pageSize])
+  }, [userProfile, currentPage, pageSize, isAdmin, selectedUser, startDate, endDate]) // ✅ AGREGADO startDate, endDate
 
   const handlePageChange = (page: number, newPageSize: number) => {
     setCurrentPage(page)
     setPageSize(newPageSize)
+  }
+
+  // ✅ NUEVA FUNCIÓN: Manejar cambios de filtros
+  const handleFiltersChange = (filters: { startDate?: string; endDate?: string }) => {
+    setStartDate(filters.startDate)
+    setEndDate(filters.endDate)
+    setCurrentPage(1) // Resetear a la primera página cuando se aplican filtros
+  }
+
+  // ✅ NUEVA FUNCIÓN: Limpiar filtros
+  const handleClearFilters = () => {
+    setStartDate(undefined)
+    setEndDate(undefined)
+    setCurrentPage(1)
   }
 
   const handleExportData = async () => {
@@ -85,7 +106,9 @@ export default function FichajePage() {
 
     try {
       const result = await exportWorkSessionsCSV({
-        userId: userProfile.id,
+        userId: isAdmin ? selectedUser?.id : userProfile.id,
+        startDate, // ✅ AGREGADO
+        endDate, // ✅ AGREGADO
       })
 
       if (result.error) {
@@ -198,6 +221,25 @@ export default function FichajePage() {
         </TabsContent>
 
         <TabsContent value="registros">
+          {/* Mostrar información sobre qué registros se están viendo */}
+          {isAdmin && (
+            <div className="mb-4">
+              <Badge variant="outline" className="text-sm">
+                {selectedUser
+                  ? `Viendo registros de: ${selectedUser.name || selectedUser.email}`
+                  : "Viendo todos los registros de la organización"}
+              </Badge>
+            </div>
+          )}
+
+          {/* ✅ NUEVO: Componente de filtros */}
+          <WorkSessionsFilters
+            startDate={startDate}
+            endDate={endDate}
+            onFiltersChange={handleFiltersChange}
+            onClearFilters={handleClearFilters}
+          />
+
           <WorkSessionsTable
             sessions={workSessions}
             loading={loading}

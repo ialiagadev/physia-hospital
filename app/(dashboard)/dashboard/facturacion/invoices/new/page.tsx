@@ -14,15 +14,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { generatePdf } from "@/lib/pdf-generator"
 import { Switch } from "@/components/ui/switch"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-// En la parte superior del archivo, importar las funciones necesarias
-// Reemplazar esta línea:
-// import { generateUniqueInvoiceNumber } from "@/lib/invoice-utils"
-
-// Por estas líneas:
 import { generateUniqueInvoiceNumber } from "@/lib/invoice-utils"
 import { InvoiceNumberConfigModal } from "@/components/invoices/invoice-number-config-modal"
 import type { InvoiceType } from "@/lib/invoice-types"
-import { saveBase64ImageToStorage, savePdfToStorage } from "@/lib/storage-utils" // Añadido savePdfToStorage
+import { saveBase64ImageToStorage, savePdfToStorage } from "@/lib/storage-utils"
 import {
   Dialog,
   DialogContent,
@@ -36,7 +31,6 @@ import { Button } from "@/components/ui/button"
 import { SignaturePad } from "@/components/signature-pad"
 import { useToast } from "@/hooks/use-toast"
 
-// Interfaces
 interface Organization {
   id: number
   name: string
@@ -50,7 +44,6 @@ interface Organization {
   logo_path?: string | null
 }
 
-// Actualizar la interfaz InvoiceLine para incluir el campo de profesional
 interface InvoiceLine {
   id: string
   description: string
@@ -63,7 +56,6 @@ interface InvoiceLine {
   professional_id: string | null
 }
 
-// Añadir interfaces para los clientes
 interface Client {
   id: number
   name: string
@@ -79,7 +71,6 @@ interface Client {
   dir3_codes: any | null
 }
 
-// Interfaz para los servicios
 interface Service {
   id: number
   name: string
@@ -91,21 +82,18 @@ interface Service {
   category: string | null
 }
 
-// Interfaz para los profesionales
 interface Professional {
   id: number
   name: string
   active: boolean
 }
 
-// Modificar el componente para incluir la selección de clientes
 export default function NewInvoicePage() {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { toast } = useToast()
 
-  // Estados principales
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [services, setServices] = useState<Service[]>([])
@@ -125,29 +113,14 @@ export default function NewInvoicePage() {
   const [isSavingConfig, setIsSavingConfig] = useState(false)
   const [signature, setSignature] = useState<string | null>(null)
 
-  // Estado para el tipo de factura - IMPORTANTE: Solo valores válidos de BD
-  // Reemplazar:
-  // const [invoiceType, setInvoiceType] = useState<"normal" | "rectificativa" | "simplificada">("normal")
-
-  // Por:
   const [invoiceType, setInvoiceType] = useState<InvoiceType>("normal")
 
-  // Campos específicos para facturas rectificativas
   const [rectificativeData, setRectificativeData] = useState({
     original_invoice_number: "",
     rectification_reason: "",
     rectification_type: "cancellation" as "cancellation" | "amount_correction",
   })
 
-  // ELIMINAR estas líneas:
-  // const [invoiceConfig, setInvoiceConfig] = useState({
-  //   prefix: "",
-  //   format: "simple",
-  //   paddingLength: 4,
-  //   lastInvoiceNumber: 0,
-  // })
-
-  // Modificar el estado inicial de las líneas de factura para incluir el profesional
   const [invoiceLines, setInvoiceLines] = useState<InvoiceLine[]>([
     {
       id: crypto.randomUUID(),
@@ -167,7 +140,6 @@ export default function NewInvoicePage() {
     organization_id: "",
     issue_date: new Date().toISOString().split("T")[0],
     notes: "",
-    // Datos del cliente
     client_name: "",
     client_tax_id: "",
     client_address: "",
@@ -185,7 +157,6 @@ export default function NewInvoicePage() {
     },
   })
 
-  // Calcular totales
   const baseAmount = invoiceLines.reduce((sum, line) => {
     const lineAmount = line.line_amount || 0
     return sum + lineAmount
@@ -197,31 +168,26 @@ export default function NewInvoicePage() {
     return sum + (lineAmount * vatRate) / 100
   }, 0)
 
-  // Actualizar el cálculo de totales para incluir la retención
   const irpfAmount = invoiceLines.reduce((sum, line) => {
     const lineAmount = line.line_amount || 0
     const irpfRate = line.irpf_rate || 0
     return sum + (lineAmount * irpfRate) / 100
   }, 0)
 
-  // Añadir cálculo para la retención
   const retentionAmount = invoiceLines.reduce((sum, line) => {
     const lineAmount = line.line_amount || 0
     const retentionRate = line.retention_rate || 0
     return sum + (lineAmount * retentionRate) / 100
   }, 0)
 
-  // Actualizar el cálculo del total para incluir la retención
   const totalAmount = baseAmount + vatAmount - irpfAmount - retentionAmount
 
-  // Reemplazar todo el useEffect inicial con:
   useEffect(() => {
     const fetchData = async () => {
       try {
         setIsLoadingInitialData(true)
         setError(null)
 
-        // Obtener organizaciones
         const { data: orgsData, error: orgsError } = await supabase.from("organizations").select("*").order("name")
 
         if (orgsError) {
@@ -234,37 +200,23 @@ export default function NewInvoicePage() {
 
         setOrganizations(orgsData)
 
-        // Seleccionar la primera organización por defecto
         const firstOrg = orgsData[0]
         setFormData((prev) => ({ ...prev, organization_id: firstOrg.id.toString() }))
         setSelectedOrganization(firstOrg)
 
-        // Después de setSelectedOrganization(firstOrg), añade:
-        // ELIMINAR estas líneas del useEffect:
-        // setInvoiceConfig({
-        //   prefix: firstOrg.invoice_prefix || "FACT",
-        //   format: "simple",
-        //   paddingLength: firstOrg.invoice_padding_length || 4,
-        //   lastInvoiceNumber: firstOrg.last_invoice_number || 0,
-        // })
-
-        // Cargar datos para esta organización
         await fetchClients(firstOrg.id)
         await fetchServices(firstOrg.id)
         await fetchProfessionals(firstOrg.id)
         await fetchExistingInvoices(firstOrg.id)
 
-        // Generar número sugerido
         try {
           const { invoiceNumberFormatted } = await generateUniqueInvoiceNumber(firstOrg.id, invoiceType)
           setSuggestedInvoiceNumber(invoiceNumberFormatted)
         } catch (error) {
-          console.error("Error al generar número de factura sugerido:", error)
           setSuggestedInvoiceNumber(`ERROR-${Date.now()}`)
           setError(`Error al generar número de factura: ${error instanceof Error ? error.message : String(error)}`)
         }
       } catch (err) {
-        console.error("Error al cargar datos iniciales:", err)
         setError(err instanceof Error ? err.message : "Error al cargar los datos")
       } finally {
         setIsLoadingInitialData(false)
@@ -274,7 +226,6 @@ export default function NewInvoicePage() {
     fetchData()
   }, [])
 
-  // Función para cargar los clientes de una organización
   const fetchClients = async (organizationId: number) => {
     try {
       const { data: clientsData, error: clientsError } = await supabase
@@ -289,11 +240,10 @@ export default function NewInvoicePage() {
 
       setClients(clientsData || [])
     } catch (err) {
-      console.error("Error al cargar clientes:", err)
+      // Error handled silently
     }
   }
 
-  // Función para cargar los servicios de una organización
   const fetchServices = async (organizationId: number) => {
     try {
       const { data: servicesData, error: servicesError } = await supabase
@@ -309,11 +259,10 @@ export default function NewInvoicePage() {
 
       setServices(servicesData || [])
     } catch (err) {
-      console.error("Error al cargar servicios:", err)
+      // Error handled silently
     }
   }
 
-  // Función para cargar los profesionales de una organización
   const fetchProfessionals = async (organizationId: number) => {
     try {
       const { data: professionalsData, error: professionalsError } = await supabase
@@ -329,7 +278,7 @@ export default function NewInvoicePage() {
 
       setProfessionals(professionalsData || [])
     } catch (err) {
-      console.error("Error al cargar profesionales:", err)
+      // Error handled silently
     }
   }
 
@@ -349,7 +298,6 @@ export default function NewInvoicePage() {
         .order("issue_date", { ascending: false })
 
       if (invoicesError) {
-        console.error("Error al obtener facturas:", invoicesError)
         throw new Error(`Error al obtener las facturas: ${invoicesError.message}`)
       }
 
@@ -358,11 +306,9 @@ export default function NewInvoicePage() {
 
         if (invoice.clients) {
           if (Array.isArray(invoice.clients)) {
-            // Si clients es un array, tomar el primer elemento
             clientName =
               invoice.clients.length > 0 ? invoice.clients[0]?.name || "Cliente no encontrado" : "Cliente no encontrado"
           } else if (typeof invoice.clients === "object" && invoice.clients.name) {
-            // Si clients es un objeto, acceder directamente a name
             clientName = invoice.clients.name
           }
         }
@@ -378,7 +324,6 @@ export default function NewInvoicePage() {
 
       setExistingInvoices(formattedInvoices)
     } catch (err) {
-      console.error("Error completo al cargar facturas:", err)
       toast({
         title: "Error al cargar facturas",
         description: err instanceof Error ? err.message : "Error al cargar las facturas",
@@ -387,7 +332,6 @@ export default function NewInvoicePage() {
     }
   }
 
-  // Efectos para actualizar datos cuando cambia la organización o tipo de factura
   useEffect(() => {
     if (formData.organization_id) {
       const org = organizations.find((o) => o.id.toString() === formData.organization_id) || null
@@ -402,7 +346,6 @@ export default function NewInvoicePage() {
     }
   }, [formData.organization_id, organizations])
 
-  // Actualizar el número de factura cuando cambia el tipo o la organización
   useEffect(() => {
     const updateSuggestedNumber = async () => {
       if (!selectedOrganization) return
@@ -412,7 +355,6 @@ export default function NewInvoicePage() {
         const { invoiceNumberFormatted } = await generateUniqueInvoiceNumber(selectedOrganization.id, invoiceType)
         setSuggestedInvoiceNumber(invoiceNumberFormatted)
       } catch (error) {
-        console.error("Error al generar número de factura sugerido:", error)
         setSuggestedInvoiceNumber(`ERROR-${Date.now()}`)
         setError(`Error al generar número de factura: ${error instanceof Error ? error.message : String(error)}`)
       }
@@ -421,14 +363,12 @@ export default function NewInvoicePage() {
     updateSuggestedNumber()
   }, [invoiceType, selectedOrganization])
 
-  // Manejar la selección de un cliente existente
   const handleClientSelect = (clientId: string) => {
     setSelectedClientId(clientId)
 
     if (clientId) {
       const selectedClient = clients.find((c) => c.id.toString() === clientId)
       if (selectedClient) {
-        // Autocompletar los datos del cliente
         setFormData((prev) => ({
           ...prev,
           client_name: selectedClient.name,
@@ -474,7 +414,6 @@ export default function NewInvoicePage() {
         if (line.id === id) {
           const updatedLine = { ...line, [field]: value }
 
-          // Recalcular el importe de la línea si cambia cantidad o precio
           if (field === "quantity" || field === "unit_price") {
             const quantity = Number.parseFloat(updatedLine.quantity.toString()) || 0
             const unitPrice = Number.parseFloat(updatedLine.unit_price.toString()) || 0
@@ -488,7 +427,6 @@ export default function NewInvoicePage() {
     )
   }
 
-  // Modificar la función addLine para incluir el campo de profesional
   const addLine = () => {
     setInvoiceLines((prev) => [
       ...prev,
@@ -512,13 +450,11 @@ export default function NewInvoicePage() {
     }
   }
 
-  // Función para abrir el diálogo de selección de servicio
   const openServiceDialog = (lineId: string) => {
     setSelectedLineId(lineId)
     setServiceDialogOpen(true)
   }
 
-  // Función para aplicar el servicio seleccionado a la línea
   const applyServiceToLine = (service: Service) => {
     if (selectedLineId) {
       setInvoiceLines((prev) =>
@@ -554,12 +490,10 @@ export default function NewInvoicePage() {
     )
   }
 
-  // Función para manejar el cambio de firma
   const handleSignatureChange = (signatureDataUrl: string | null) => {
     setSignature(signatureDataUrl)
   }
 
-  // Añadir esta función después de handleSignatureChange:
   const handleConfigSaved = async () => {
     if (!selectedOrganization) return
 
@@ -567,12 +501,10 @@ export default function NewInvoicePage() {
       const { invoiceNumberFormatted } = await generateUniqueInvoiceNumber(selectedOrganization.id, invoiceType)
       setSuggestedInvoiceNumber(invoiceNumberFormatted)
     } catch (error) {
-      console.error("Error al regenerar número:", error)
       setSuggestedInvoiceNumber(`ERROR-${Date.now()}`)
     }
   }
 
-  // En la función handleSubmit, asegurémonos de que se incluyen todos los datos de la organización
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
@@ -588,7 +520,6 @@ export default function NewInvoicePage() {
         throw new Error("Debes introducir al menos el nombre y CIF/NIF del cliente")
       }
 
-      // Obtener datos completos de la organización
       const { data: orgData, error: orgError } = await supabase
         .from("organizations")
         .select("*")
@@ -596,20 +527,16 @@ export default function NewInvoicePage() {
         .single()
 
       if (orgError || !orgData) {
-        console.error("Error al obtener datos de la organización:", orgError)
         throw new Error("No se pudieron obtener los datos completos de la organización")
       }
 
-      // Generar un número de factura único
       const { invoiceNumberFormatted, newInvoiceNumber } = await generateUniqueInvoiceNumber(
         Number.parseInt(formData.organization_id),
         invoiceType,
       )
 
-      // Variable para almacenar el ID del cliente
       let clientId: number | null = null
 
-      // Si es un cliente nuevo, guardarlo primero
       if (isNewClient) {
         const { data: newClient, error: clientError } = await supabase
           .from("clients")
@@ -631,62 +558,39 @@ export default function NewInvoicePage() {
           .single()
 
         if (clientError) {
-          console.error("Error al crear el cliente:", clientError)
+          // Error handled silently
         } else if (newClient) {
           clientId = newClient.id
         }
       } else {
-        // Si es un cliente existente, usar su ID
         clientId = selectedClientId ? Number.parseInt(selectedClientId) : null
       }
 
-      // Preparar los datos del cliente como texto para las notas
       const clientInfoText = `Cliente: ${formData.client_name}, CIF/NIF: ${formData.client_tax_id}, Dirección: ${formData.client_address}, ${formData.client_postal_code} ${formData.client_city}, ${formData.client_province}`
 
-      // Notas adicionales si las hay
       const additionalNotes = formData.notes ? `\n\nNotas adicionales: ${formData.notes}` : ""
 
-      // Notas completas
       const fullNotes = clientInfoText + additionalNotes
 
-      // Variable para almacenar la URL de la firma
       let signatureUrl: string | null = null
 
-      // Si hay firma, intentar guardarla en Storage (sin requerir autenticación)
       if (signature) {
         try {
           const timestamp = Date.now()
           const organizationId = formData.organization_id
-          // Asegurarse de que la ruta comienza con 'signatures/'
           const path = `signatures/${invoiceNumberFormatted}_${timestamp}.png`
           signatureUrl = await saveBase64ImageToStorage(signature, path, Number.parseInt(formData.organization_id))
 
-          console.log("Intentando guardar firma en Storage:", path)
-
-          // Intentar guardar la firma, pero no fallar si no se puede
-
           if (!signatureUrl) {
-            console.warn("No se pudo guardar la firma en Storage, se usará la firma en base64 para el PDF")
-          } else {
-            console.log("Firma guardada correctamente en Storage:", signatureUrl)
+            // Signature save failed silently
           }
         } catch (error) {
-          console.error("Error al guardar la firma:", error)
-          // Continuar con la firma en base64 para el PDF
+          // Error handled silently
         }
       }
 
-      // Debug del logo antes de crear la factura
-      console.log("Datos de organización para PDF:", {
-        logo_url: orgData.logo_url,
-        logo_path: orgData.logo_path,
-        name: orgData.name,
-      })
-
-      // Crear la factura en local primero (sin esperar a Supabase)
-      // Actualizar el objeto de factura para incluir la retención y la firma
       const newInvoice = {
-        id: Date.now(), // ID temporal
+        id: Date.now(),
         organization_id: Number.parseInt(formData.organization_id),
         invoice_number: invoiceNumberFormatted,
         client_id: clientId,
@@ -699,8 +603,7 @@ export default function NewInvoicePage() {
         retention_amount: retentionAmount,
         total_amount: totalAmount,
         notes: fullNotes,
-        signature: signature, // Usar la firma base64 para el PDF
-        // Añadir campos específicos para facturas rectificativas en el objeto del PDF
+        signature: signature,
         ...(invoiceType === "rectificativa" && {
           original_invoice_number: rectificativeData.original_invoice_number,
           rectification_reason: rectificativeData.rectification_reason,
@@ -734,44 +637,32 @@ export default function NewInvoicePage() {
         },
       }
 
-      // En handleSubmit, reemplazar la sección de generación de PDF con:
-      // Generar el PDF de forma asíncrona
       const pdfBlob = await generatePdf(newInvoice, invoiceLines, `factura-${invoiceNumberFormatted}.pdf`, false)
 
-      // Variable para almacenar la URL del PDF
       let pdfUrl: string | null = null
 
-      // Verificar que el Blob se generó correctamente
       if (pdfBlob && pdfBlob instanceof Blob) {
         try {
-          console.log("PDF Blob generado correctamente, tamaño:", pdfBlob.size, "bytes")
-
-          // Guardar el PDF en Supabase Storage
           pdfUrl = await savePdfToStorage(
             pdfBlob,
             `factura-${invoiceNumberFormatted}.pdf`,
             Number.parseInt(formData.organization_id),
           )
 
-          // Descargar el PDF manualmente para el usuario
           const url = URL.createObjectURL(pdfBlob)
           const a = document.createElement("a")
           a.href = url
           a.download = `factura-${invoiceNumberFormatted}.pdf`
           a.click()
 
-          // Limpiar el objeto URL creado
           setTimeout(() => URL.revokeObjectURL(url), 100)
 
           if (pdfUrl) {
-            console.log("PDF guardado correctamente en Storage:", pdfUrl)
+            // PDF saved successfully
           } else {
-            console.warn("No se pudo guardar el PDF en Storage, pero se ha descargado localmente")
+            // PDF save failed but downloaded locally
           }
         } catch (pdfError) {
-          console.error("Error al guardar el PDF en Storage:", pdfError)
-
-          // Asegurar que el usuario pueda descargar el PDF aunque falle el guardado
           const url = URL.createObjectURL(pdfBlob)
           const a = document.createElement("a")
           a.href = url
@@ -786,9 +677,6 @@ export default function NewInvoicePage() {
           })
         }
       } else {
-        console.error("No se pudo generar el PDF como Blob")
-
-        // Intentar generar y descargar el PDF directamente como fallback
         generatePdf(newInvoice, invoiceLines, `factura-${invoiceNumberFormatted}.pdf`, true)
 
         toast({
@@ -798,14 +686,6 @@ export default function NewInvoicePage() {
         })
       }
 
-      // Ahora actualizamos la base de datos en segundo plano
-      // En handleSubmit, reemplazar esta sección:
-      // const { error: updateOrgError } = await supabase
-      //   .from("organizations")
-      //   .update({ last_invoice_number: newInvoiceNumber })
-      //   .eq("id", selectedOrganization.id)
-
-      // Por esta lógica más completa:
       const getFieldNameForUpdate = (type: InvoiceType): string => {
         switch (type) {
           case "rectificativa":
@@ -825,19 +705,12 @@ export default function NewInvoicePage() {
         .eq("id", selectedOrganization.id)
 
       if (updateOrgError) {
-        console.error("Error al actualizar el número de factura:", updateOrgError)
-        // No fallar por esto, pero loggearlo
+        // Error handled silently
       }
 
-      // Variable para almacenar el ID de la factura original (para rectificativas)
       let originalInvoiceId: number | null = null
 
-      // Si es una factura rectificativa, obtener el ID de la factura original
       if (invoiceType === "rectificativa" && rectificativeData.original_invoice_number) {
-        console.log(
-          `🔍 Buscando factura original: ${rectificativeData.original_invoice_number} en organización ${formData.organization_id}`,
-        )
-
         const { data: originalInvoice, error: originalError } = await supabase
           .from("invoices")
           .select("id, invoice_number")
@@ -845,27 +718,19 @@ export default function NewInvoicePage() {
           .eq("organization_id", Number.parseInt(formData.organization_id))
           .single()
 
-        console.log("Resultado de búsqueda:", { originalInvoice, originalError })
-
         if (originalError) {
-          console.error("Error al buscar factura original:", originalError)
           throw new Error(`Error al buscar la factura original: ${originalError.message}`)
         }
 
         if (!originalInvoice) {
-          console.error("Factura original no encontrada")
           throw new Error(`No se pudo encontrar la factura original: ${rectificativeData.original_invoice_number}`)
         }
 
         originalInvoiceId = originalInvoice.id
-        console.log(
-          `✅ Factura original encontrada: ${rectificativeData.original_invoice_number} -> ID: ${originalInvoiceId}`,
-        )
       } else if (invoiceType === "rectificativa") {
         throw new Error("Debes seleccionar una factura original para rectificar")
       }
 
-      // Actualizar la inserción en Supabase para incluir la retención, la firma y la URL del PDF
       supabase
         .from("invoices")
         .insert({
@@ -881,10 +746,9 @@ export default function NewInvoicePage() {
           retention_amount: retentionAmount,
           total_amount: totalAmount,
           notes: fullNotes,
-          signature: signature, // Guardar también la firma base64 en la base de datos
-          signature_url: signatureUrl, // Guardar la URL de la firma si se pudo subir
-          pdf_url: pdfUrl, // Guardar la URL del PDF si se pudo subir
-          // Añadir campos específicos para facturas rectificativas
+          signature: signature,
+          signature_url: signatureUrl,
+          pdf_url: pdfUrl,
           ...(invoiceType === "rectificativa" && {
             original_invoice_id: originalInvoiceId,
             rectification_reason: rectificativeData.rectification_reason,
@@ -894,7 +758,6 @@ export default function NewInvoicePage() {
         .select()
         .then(({ data: invoiceData, error: invoiceError }) => {
           if (invoiceError) {
-            console.error("Error al crear la factura en la base de datos:", invoiceError)
             toast({
               title: "Error al guardar la factura",
               description: "Se ha generado el PDF pero no se pudo guardar la factura en la base de datos.",
@@ -904,7 +767,6 @@ export default function NewInvoicePage() {
           }
 
           if (!invoiceData || invoiceData.length === 0) {
-            console.error("No se recibieron datos de la factura creada")
             toast({
               title: "Error al guardar la factura",
               description: "Se ha generado el PDF pero no se pudo guardar la factura en la base de datos.",
@@ -915,7 +777,6 @@ export default function NewInvoicePage() {
 
           const dbInvoice = invoiceData[0]
 
-          // Crear las líneas de factura
           const invoiceLines_db = invoiceLines.map((line) => ({
             invoice_id: dbInvoice.id,
             description: line.description,
@@ -933,7 +794,6 @@ export default function NewInvoicePage() {
             .insert(invoiceLines_db)
             .then(({ error: linesError }) => {
               if (linesError) {
-                console.error("Error al crear las líneas de factura:", linesError)
                 toast({
                   title: "Error al guardar las líneas de factura",
                   description: "Se ha generado el PDF pero no se pudieron guardar todas las líneas de la factura.",
@@ -950,18 +810,13 @@ export default function NewInvoicePage() {
             })
         })
 
-      // Redirigir a la lista de facturas
-      router.push("/dashboard/invoices")
+      router.push("/dashboard/facturacion/invoices")
     } catch (err) {
-      console.error("Error completo:", err)
       setError(err instanceof Error ? err.message : "Error al crear la factura")
     } finally {
       setIsLoading(false)
     }
   }
-
-  // ELIMINAR también la función saveInvoiceNumberConfig completa
-  // ELIMINAR también la función getInvoiceNumberExample completa
 
   if (isLoadingInitialData) {
     return (
@@ -1071,7 +926,6 @@ export default function NewInvoicePage() {
                 </p>
               </div>
 
-              {/* Campos específicos para factura rectificativa */}
               {invoiceType === "rectificativa" && (
                 <div className="space-y-4 border p-4 rounded-md bg-yellow-50">
                   <h3 className="font-medium text-yellow-800">Datos de Rectificación</h3>
@@ -1147,7 +1001,6 @@ export default function NewInvoicePage() {
                 </div>
               )}
 
-              {/* Información para factura simplificada */}
               {invoiceType === "simplificada" && (
                 <div className="space-y-2">
                   <div className="p-4 border rounded-md bg-blue-50">
@@ -1578,7 +1431,6 @@ export default function NewInvoicePage() {
               <SignaturePad onSignatureChange={handleSignatureChange} width={400} height={200} />
             </CardContent>
           </Card>
-          {/* Diálogo de selección de servicio */}
           <Dialog open={serviceDialogOpen} onOpenChange={setServiceDialogOpen}>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
@@ -1618,7 +1470,6 @@ export default function NewInvoicePage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-          {/* Diálogo de configuración de numeración */}
           <InvoiceNumberConfigModal
             open={invoiceNumberConfigOpen}
             onOpenChange={setInvoiceNumberConfigOpen}

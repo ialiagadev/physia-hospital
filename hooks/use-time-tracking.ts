@@ -9,7 +9,7 @@ interface UserProfile {
   name: string | null
   email: string | null
   organization_id: number | null
-  role: string | null // 'admin' | 'user' | 'viewer'
+  role: string | null
 }
 
 interface TimeEntry {
@@ -23,12 +23,14 @@ interface TimeEntry {
 interface WorkSession {
   id: string
   work_date: string
-  local_clock_in: string | null
-  local_clock_out: string | null
+  local_clock_in: string | null // Mantener como string para compatibilidad
+  local_clock_out: string | null // Mantener como string para compatibilidad
   total_hours: number | null
   status: string | null
   user_name: string | null
   user_email: string | null
+  user_id: string
+  notes?: string | null
 }
 
 interface OrganizationUser {
@@ -36,6 +38,7 @@ interface OrganizationUser {
   name: string | null
   email: string | null
   role: string | null
+  organization_id: number | null
   created_at: string
 }
 
@@ -62,7 +65,6 @@ export function useTimeTracking() {
       setUser(user)
 
       if (user) {
-        // Obtener perfil del usuario
         const { data: profile, error: profileError } = await supabase
           .from("users")
           .select("*")
@@ -72,7 +74,6 @@ export function useTimeTracking() {
         if (profileError) throw profileError
         setUserProfile(profile)
 
-        // Obtener último fichaje
         await getLastEntry(user.id)
       }
     } catch (err) {
@@ -124,7 +125,6 @@ export function useTimeTracking() {
 
       if (insertError) throw insertError
 
-      // Actualizar último fichaje
       await getLastEntry(userId)
 
       return { success: true, data }
@@ -134,6 +134,88 @@ export function useTimeTracking() {
       return { success: false, error: errorMessage }
     } finally {
       setLoading(false)
+    }
+  }
+
+  // ✅ FUNCIÓN ACTUALIZADA: Ahora incluye notes
+  const updateWorkSession = async (
+    sessionId: string,
+    updates: {
+      clock_in_time?: string | null
+      clock_out_time?: string | null
+      notes?: string | null
+    },
+  ) => {
+    if (!userProfile || userProfile.role !== "admin") {
+      return { success: false, error: "Sin permisos de administrador" }
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("work_sessions")
+        .update(updates)
+        .eq("id", sessionId)
+        .eq("organization_id", userProfile.organization_id)
+        .select()
+        .single()
+
+      if (error) throw error
+
+      return { success: true, data }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Error al actualizar registro"
+      return { success: false, error: errorMessage }
+    }
+  }
+
+  const deleteWorkSession = async (sessionId: string) => {
+    if (!userProfile || userProfile.role !== "admin") {
+      return { success: false, error: "Sin permisos de administrador" }
+    }
+
+    try {
+      const { error } = await supabase
+        .from("work_sessions")
+        .delete()
+        .eq("id", sessionId)
+        .eq("organization_id", userProfile.organization_id)
+
+      if (error) throw error
+
+      return { success: true }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Error al eliminar registro"
+      return { success: false, error: errorMessage }
+    }
+  }
+
+  const createWorkSession = async (sessionData: {
+    user_id: string
+    work_date: string
+    clock_in_time?: string | null
+    clock_out_time?: string | null
+    notes?: string | null
+  }) => {
+    if (!userProfile || userProfile.role !== "admin") {
+      return { success: false, error: "Sin permisos de administrador" }
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("work_sessions")
+        .insert({
+          ...sessionData,
+          organization_id: userProfile.organization_id,
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      return { success: true, data }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Error al crear registro"
+      return { success: false, error: errorMessage }
     }
   }
 
@@ -197,7 +279,7 @@ export function useTimeTracking() {
     try {
       const { data: users, error } = await supabase
         .from("users")
-        .select("id, name, email, role, created_at")
+        .select("id, name, email, role, organization_id, created_at")
         .eq("organization_id", userProfile.organization_id)
         .order("name")
 
@@ -221,12 +303,16 @@ export function useTimeTracking() {
     error,
     refreshLastEntry,
     isAdmin: userProfile?.role === "admin",
-    canManageUsers: userProfile?.role === "admin", // Solo admins pueden gestionar usuarios
-    canViewReports: userProfile?.role === "admin" || userProfile?.role === "viewer", // Admins y viewers pueden ver reportes
-    // Funciones
+    canManageUsers: userProfile?.role === "admin",
+    canViewReports: userProfile?.role === "admin" || userProfile?.role === "viewer",
+    // Funciones existentes
     getLastEntry,
     clockInOut,
     getWorkDays,
     getOrganizationUsers,
+    // Funciones de edición
+    updateWorkSession,
+    deleteWorkSession,
+    createWorkSession,
   }
 }

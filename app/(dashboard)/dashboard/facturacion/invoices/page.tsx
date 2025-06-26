@@ -27,7 +27,6 @@ interface DateFilters {
   month?: string
 }
 
-// Actualizar los estados según la restricción de la base de datos
 const statusOptions = [
   { value: "draft", label: "Borrador", color: "bg-yellow-100 text-yellow-800" },
   { value: "sent", label: "Enviada", color: "bg-blue-100 text-blue-800" },
@@ -47,7 +46,6 @@ export default function InvoicesPage() {
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
   const { toast } = useToast()
 
-  // Función para cargar facturas
   const loadInvoices = async () => {
     setLoading(true)
 
@@ -63,12 +61,10 @@ export default function InvoicesPage() {
         `)
         .order("created_at", { ascending: false })
 
-      // Filtrar por organización si se ha seleccionado una específica
       if (selectedOrgId !== "all") {
         query = query.eq("organization_id", selectedOrgId)
       }
 
-      // Aplicar filtros de fecha
       if (dateFilters.startDate) {
         query = query.gte("issue_date", format(dateFilters.startDate, "yyyy-MM-dd"))
       }
@@ -94,10 +90,8 @@ export default function InvoicesPage() {
       if (error) throw error
 
       setInvoices(data || [])
-      // Limpiar selecciones cuando se filtran los datos
       setSelectedInvoices(new Set())
     } catch (error) {
-      console.error("Error al cargar facturas:", error)
       toast({
         title: "Error",
         description: "No se pudieron cargar las facturas",
@@ -108,14 +102,11 @@ export default function InvoicesPage() {
     }
   }
 
-  // Cargar facturas al inicio y cuando cambian los filtros
   useEffect(() => {
     loadInvoices()
   }, [selectedOrgId, dateFilters]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Función para actualizar el estado de una factura específica en el estado local
   const handleStatusChange = (invoiceId: number, newStatus: string) => {
-    // Actualizar el estado local inmediatamente
     setInvoices((currentInvoices) =>
       currentInvoices.map((invoice) => {
         if (invoice.id === invoiceId) {
@@ -126,7 +117,6 @@ export default function InvoicesPage() {
     )
   }
 
-  // Función para cambiar el estado de múltiples facturas
   const handleBulkStatusChange = async (newStatus: string) => {
     if (selectedInvoices.size === 0) return
 
@@ -135,7 +125,6 @@ export default function InvoicesPage() {
     try {
       const invoiceIds = Array.from(selectedInvoices)
 
-      // Actualización optimista de la UI - Actualizar inmediatamente antes de la llamada a la API
       setInvoices((currentInvoices) => {
         return currentInvoices.map((invoice) => {
           if (selectedInvoices.has(invoice.id)) {
@@ -145,11 +134,9 @@ export default function InvoicesPage() {
         })
       })
 
-      // Actualizar en Supabase
       const { error } = await supabase.from("invoices").update({ status: newStatus }).in("id", invoiceIds)
 
       if (error) {
-        console.error("Error de Supabase:", error)
         throw new Error(`Error al actualizar el estado: ${error.message}`)
       }
 
@@ -160,12 +147,8 @@ export default function InvoicesPage() {
         description: `Se ha cambiado el estado de ${selectedInvoices.size} factura${selectedInvoices.size !== 1 ? "s" : ""} a "${statusLabel}".`,
       })
 
-      // Limpiar selección después de la actualización exitosa
       setSelectedInvoices(new Set())
     } catch (error) {
-      console.error("Error al actualizar el estado:", error)
-
-      // En caso de error, recargar los datos originales
       await loadInvoices()
 
       toast({
@@ -178,29 +161,25 @@ export default function InvoicesPage() {
     }
   }
 
-  // Función para actualizar facturas a "sent" cuando se descargan
   const handleInvoicesDownloaded = (invoiceIds: number[]) => {
-    // Actualizar el estado local inmediatamente
     setInvoices((currentInvoices) =>
       currentInvoices.map((invoice) =>
         invoiceIds.includes(invoice.id) && invoice.status === "draft" ? { ...invoice, status: "sent" } : invoice,
       ),
     )
 
-    // Actualizar cada factura individualmente usando Supabase directamente
     invoiceIds.forEach(async (id) => {
       const invoice = invoices.find((inv) => inv.id === id)
       if (invoice?.status === "draft") {
         try {
           await supabase.from("invoices").update({ status: "sent" }).eq("id", id)
         } catch (error) {
-          console.error("Error al actualizar estado después de descarga:", error)
+          // Error handled silently
         }
       }
     })
   }
 
-  // Funciones para manejar selección múltiple
   const handleSelectInvoice = (invoiceId: number, checked: boolean) => {
     const newSelected = new Set(selectedInvoices)
     if (checked) {
@@ -222,7 +201,6 @@ export default function InvoicesPage() {
   const isAllSelected = invoices.length > 0 && selectedInvoices.size === invoices.length
   const isIndeterminate = selectedInvoices.size > 0 && selectedInvoices.size < invoices.length
 
-  // Funciones para manejar filtros de fecha
   const handleDateFilterChange = (key: keyof DateFilters, value: any) => {
     setDateFilters((prev) => ({
       ...prev,
@@ -236,11 +214,9 @@ export default function InvoicesPage() {
 
   const hasActiveFilters = Object.values(dateFilters).some((value) => value !== undefined && value !== "")
 
-  // Generar años para el selector
   const currentYear = new Date().getFullYear()
   const years = Array.from({ length: 10 }, (_, i) => currentYear - i)
 
-  // Generar meses
   const months = [
     { value: "1", label: "Enero" },
     { value: "2", label: "Febrero" },
@@ -283,7 +259,7 @@ export default function InvoicesPage() {
             )}
           </Button>
           <Button asChild>
-            <Link href="/dashboard/invoices/new">
+            <Link href="/dashboard/facturacion/invoices/new">
               <Plus className="mr-2 h-4 w-4" />
               Nueva Factura
             </Link>
@@ -291,10 +267,8 @@ export default function InvoicesPage() {
         </div>
       </div>
 
-      {/* Selector de organización */}
       <OrganizationSelector selectedOrgId={selectedOrgId} onSelectOrganization={setSelectedOrgId} />
 
-      {/* Panel de filtros */}
       {showFilters && (
         <Card>
           <CardHeader className="pb-4">
@@ -310,7 +284,6 @@ export default function InvoicesPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Rango de fechas */}
               <div className="space-y-2">
                 <Label>Fecha desde</Label>
                 <Popover>
@@ -353,7 +326,6 @@ export default function InvoicesPage() {
                 </Popover>
               </div>
 
-              {/* Filtro por año */}
               <div className="space-y-2">
                 <Label>Año</Label>
                 <Select
@@ -374,7 +346,6 @@ export default function InvoicesPage() {
                 </Select>
               </div>
 
-              {/* Filtro por mes */}
               <div className="space-y-2">
                 <Label>Mes</Label>
                 <Select
@@ -400,7 +371,6 @@ export default function InvoicesPage() {
         </Card>
       )}
 
-      {/* Acciones para facturas seleccionadas */}
       {selectedInvoices.size > 0 && (
         <Card className="border-primary/20 bg-primary/5">
           <CardContent className="pt-6">
@@ -496,7 +466,7 @@ export default function InvoicesPage() {
                   <TableCell className="text-right">{invoice.total_amount.toFixed(2)} €</TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="sm" asChild className="transition-colors hover:bg-primary/10">
-                      <Link href={`/dashboard/invoices/${invoice.id}`}>Ver</Link>
+                      <Link href={`/dashboard/facturacion/invoices/${invoice.id}`}>Ver</Link>
                     </Button>
                   </TableCell>
                 </TableRow>

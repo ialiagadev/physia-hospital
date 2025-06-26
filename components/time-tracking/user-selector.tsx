@@ -13,6 +13,7 @@ interface OrganizationUser {
   name: string | null
   email: string | null
   role: string | null // 'admin' | 'user' | 'viewer'
+  organization_id: number | null // ✅ AGREGADO
   created_at: string
 }
 

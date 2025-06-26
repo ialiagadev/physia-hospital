@@ -6,7 +6,6 @@ import { useParams } from "next/navigation"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { GeneratePdfButton } from "@/components/invoices/generate-pdf-button"
 import { InvoiceStatusSelector } from "@/components/invoices/invoice-status-selector"
 import { useToast } from "@/hooks/use-toast"
 import { Loader2 } from "lucide-react"
@@ -61,13 +60,11 @@ export default function InvoiceDetailPage() {
 
   const invoiceId = params.id as string
 
-  // Función para cargar la factura
   const loadInvoice = async () => {
     setLoading(true)
     setError(null)
 
     try {
-      // Obtener factura con información del cliente y organización
       const { data: invoiceData, error: invoiceError } = await supabase
         .from("invoices")
         .select(`
@@ -93,7 +90,6 @@ export default function InvoiceDetailPage() {
 
       setInvoice(invoiceData)
 
-      // Obtener líneas de factura
       const { data: linesData, error: linesError } = await supabase
         .from("invoice_lines")
         .select("*")
@@ -101,13 +97,11 @@ export default function InvoiceDetailPage() {
         .order("id", { ascending: true })
 
       if (linesError) {
-        console.error("Error al cargar líneas:", linesError)
-        // No es un error crítico, continuamos sin las líneas
+        // Error handled silently for lines
       } else {
         setInvoiceLines(linesData || [])
       }
     } catch (error) {
-      console.error("Error al cargar factura:", error)
       setError("Error al cargar la factura")
       toast({
         title: "Error",
@@ -119,21 +113,18 @@ export default function InvoiceDetailPage() {
     }
   }
 
-  // Cargar factura al inicio
   useEffect(() => {
     if (invoiceId) {
       loadInvoice()
     }
   }, [invoiceId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Función para actualizar el estado de la factura
   const handleStatusChange = (newStatus: string) => {
     if (invoice) {
       setInvoice({ ...invoice, status: newStatus })
     }
   }
 
-  // Función para traducir el estado
   const getStatusText = (status: string) => {
     switch (status) {
       case "draft":
@@ -166,13 +157,12 @@ export default function InvoiceDetailPage() {
           {error || "La factura que estás buscando no existe o no tienes permisos para verla."}
         </p>
         <Button asChild>
-          <Link href="/dashboard/invoices">Volver a Facturas</Link>
+          <Link href="/dashboard/facturacion/invoices">Volver a Facturas</Link>
         </Button>
       </div>
     )
   }
 
-  // Obtener datos del cliente (desde la relación o desde las notas)
   let clientData = null
   if (invoice.clients) {
     clientData = {
@@ -189,7 +179,6 @@ export default function InvoiceDetailPage() {
       dir3_codes: invoice.clients.dir3_codes,
     }
   } else if (invoice.notes && invoice.notes.includes("Cliente:")) {
-    // Extraer información básica del cliente de las notas
     const notesText = invoice.notes || ""
     clientData = {
       name: notesText.match(/Cliente: ([^,]+)/)?.[1] || "No disponible",
@@ -214,9 +203,8 @@ export default function InvoiceDetailPage() {
           <p className="text-muted-foreground">{new Date(invoice.issue_date).toLocaleDateString("es-ES")}</p>
         </div>
         <div className="flex space-x-2">
-          <GeneratePdfButton invoiceId={invoice.id} />
           <Button asChild variant="outline">
-            <Link href="/dashboard/invoices">Volver</Link>
+            <Link href="/dashboard/facturacion/invoices">Volver</Link>
           </Button>
         </div>
       </div>
