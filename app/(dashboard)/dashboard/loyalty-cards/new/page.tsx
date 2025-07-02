@@ -1,7 +1,7 @@
 "use client"
 
+import { Suspense } from "react"
 import type React from "react"
-
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase/client"
@@ -17,7 +17,8 @@ import { Breadcrumbs } from "@/components/breadcrumbs"
 import { PhysiaCard } from "@/components/loyalty-card/physia-card"
 import type { CardFormData } from "@/types/loyalty-cards"
 
-export default function NewLoyaltyCardPage() {
+// Componente que usa useSearchParams
+function NewLoyaltyCardForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { toast } = useToast()
@@ -26,14 +27,14 @@ export default function NewLoyaltyCardPage() {
   const [clients, setClients] = useState<any[]>([])
   const [professionals, setProfessionals] = useState<any[]>([])
   const [selectedClientFromUrl, setSelectedClientFromUrl] = useState<any>(null)
-  
+
   // Obtener client_id de los parámetros de URL
-  const clientIdFromUrl = searchParams.get('client_id')
-  
+  const clientIdFromUrl = searchParams.get("client_id")
+
   const [formData, setFormData] = useState<CardFormData>({
     organization_id: 0,
     professional_id: null,
-    client_id: clientIdFromUrl ? parseInt(clientIdFromUrl) : null,
+    client_id: clientIdFromUrl ? Number.parseInt(clientIdFromUrl) : null,
     template_id: null,
     business_name: "",
     total_sessions: 10,
@@ -99,7 +100,7 @@ export default function NewLoyaltyCardPage() {
             setFormData((prev) => ({
               ...prev,
               organization_id: clientData.organization_id,
-              client_id: clientData.id
+              client_id: clientData.id,
             }))
           }
         }
@@ -189,15 +190,19 @@ export default function NewLoyaltyCardPage() {
       if (!formData.organization_id) {
         throw new Error("Debes seleccionar una organización")
       }
+
       if (!formData.client_id) {
         throw new Error("Debes seleccionar un cliente")
       }
+
       if (!formData.business_name) {
         throw new Error("Debes ingresar el nombre del negocio")
       }
+
       if (!formData.total_sessions || formData.total_sessions < 1) {
         throw new Error("El número de sesiones debe ser mayor a 0")
       }
+
       if (!formData.reward) {
         throw new Error("Debes ingresar una recompensa")
       }
@@ -303,23 +308,18 @@ export default function NewLoyaltyCardPage() {
   return (
     <div className="space-y-6">
       <Breadcrumbs items={breadcrumbItems} />
-
       <div className="flex flex-col md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Nueva Tarjeta de Fidelización</h1>
           <p className="text-muted-foreground">
-            {selectedClientFromUrl 
+            {selectedClientFromUrl
               ? `Crear tarjeta para ${selectedClientFromUrl.name}`
-              : "Crea una nueva tarjeta de fidelización para tus clientes"
-            }
+              : "Crea una nueva tarjeta de fidelización para tus clientes"}
           </p>
         </div>
         <div className="flex gap-2 mt-4 md:mt-0">
           {clientIdFromUrl && (
-            <Button 
-              variant="outline" 
-              onClick={() => router.push(`/dashboard/clients/${clientIdFromUrl}`)}
-            >
+            <Button variant="outline" onClick={() => router.push(`/dashboard/clients/${clientIdFromUrl}`)}>
               Volver al Cliente
             </Button>
           )}
@@ -446,10 +446,11 @@ export default function NewLoyaltyCardPage() {
                   />
                 </div>
               </CardContent>
+
               <CardFooter className="flex justify-between">
-                <Button 
-                  type="button" 
-                  variant="outline" 
+                <Button
+                  type="button"
+                  variant="outline"
                   onClick={() => {
                     if (clientIdFromUrl) {
                       router.push(`/dashboard/clients/${clientIdFromUrl}`)
@@ -486,5 +487,14 @@ export default function NewLoyaltyCardPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+// Componente principal con Suspense
+export default function NewLoyaltyCardPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Cargando...</div>}>
+      <NewLoyaltyCardForm />
+    </Suspense>
   )
 }
