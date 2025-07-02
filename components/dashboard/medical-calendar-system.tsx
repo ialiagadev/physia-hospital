@@ -543,9 +543,9 @@ export default function MedicalCalendarSystem() {
   const convertAppointmentsToLegacyFormat = (appointments: AppointmentWithDetails[]) => {
     return appointments.map((apt) => ({
       id: Number.parseInt(apt.id.slice(-8), 16), // Convertir UUID a número para compatibilidad
-      nombrePaciente: apt.client.name.split(" ")[0] || "",
-      apellidosPaciente: apt.client.name.split(" ").slice(1).join(" ") || "",
-      telefonoPaciente: apt.client.phone || "",
+      nombrePaciente: apt.client?.name?.split(" ")[0] || "Sin nombre",
+      apellidosPaciente: apt.client?.name?.split(" ").slice(1).join(" ") || "",
+      telefonoPaciente: apt.client?.phone || "",
       hora: apt.start_time,
       horaFin: apt.end_time,
       duracion: apt.duration,
