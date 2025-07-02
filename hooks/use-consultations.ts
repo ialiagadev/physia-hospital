@@ -15,12 +15,9 @@ export function useConsultations(organizationId?: number) {
       setError(null)
 
       if (!organizationId) {
-        console.log("No organizationId provided, skipping consultations fetch")
         setConsultations([])
         return
       }
-
-      console.log("Fetching consultations for organization:", organizationId)
 
       const { data, error: fetchError } = await supabase
         .from("consultations")
@@ -30,17 +27,13 @@ export function useConsultations(organizationId?: number) {
         .order("sort_order", { ascending: true })
 
       if (fetchError) {
-        console.error("Error fetching consultations:", fetchError)
         setError(fetchError.message)
         setConsultations([])
       } else {
-        console.log("Consultations fetched successfully:", data?.length || 0, "consultations")
-        console.log("Consultations data:", data)
         setConsultations(data || [])
         setError(null)
       }
     } catch (err) {
-      console.error("Unexpected error fetching consultations:", err)
       setError("Error inesperado al cargar consultas")
       setConsultations([])
     } finally {
@@ -56,22 +49,11 @@ export function useConsultations(organizationId?: number) {
   ) => {
     try {
       if (!organizationId) {
-        console.error("Organization ID is required for getAvailableConsultations")
         throw new Error("Organization ID is required")
       }
 
-      console.log("Getting available consultations for:", {
-        organizationId,
-        date,
-        startTime,
-        endTime,
-        excludeAppointmentId,
-        totalConsultations: consultations.length,
-      })
-
       // Si no hay consultas cargadas, devolver array vacío
       if (consultations.length === 0) {
-        console.log("No consultations loaded yet, returning empty array")
         return []
       }
 
@@ -94,42 +76,14 @@ export function useConsultations(organizationId?: number) {
       const { data: occupiedConsultations, error } = await query
 
       if (error) {
-        console.error("Error fetching occupied consultations:", error)
         throw error
       }
 
-      console.log("Occupied consultations query result:", occupiedConsultations)
-
       const occupiedIds = occupiedConsultations?.map((apt) => apt.consultation_id) || []
-
-      // Log detallado de las citas que causan conflicto
-      if (occupiedConsultations && occupiedConsultations.length > 0) {
-        console.log(
-          "Conflicting appointments:",
-          occupiedConsultations.map((apt) => ({
-            consultation_id: apt.consultation_id,
-            existing_start: apt.start_time,
-            existing_end: apt.end_time,
-            new_start: startTime,
-            new_end: endTime,
-          })),
-        )
-      }
-
       const available = consultations.filter((consultation) => !occupiedIds.includes(consultation.id))
-
-      console.log("Available consultations result:", {
-        total: consultations.length,
-        occupied: occupiedIds.length,
-        occupiedIds,
-        available: available.length,
-        availableIds: available.map((c) => c.id),
-        availableNames: available.map((c) => c.name),
-      })
 
       return available
     } catch (err) {
-      console.error("Error getting available consultations:", err)
       throw err
     }
   }
@@ -143,7 +97,6 @@ export function useConsultations(organizationId?: number) {
   ) => {
     try {
       if (!organizationId) {
-        console.error("Organization ID is required for isConsultationAvailable")
         return false
       }
 
@@ -164,28 +117,12 @@ export function useConsultations(organizationId?: number) {
       const { data, error } = await query
 
       if (error) {
-        console.error("Error checking consultation availability:", error)
         throw error
       }
 
       const isAvailable = !data || data.length === 0
-
-      if (!isAvailable && data) {
-        console.log(
-          `Consultation ${consultationId} not available due to conflicts:`,
-          data.map((apt) => ({
-            id: apt.id,
-            existing_start: apt.start_time,
-            existing_end: apt.end_time,
-            new_start: startTime,
-            new_end: endTime,
-          })),
-        )
-      }
-
       return isAvailable
     } catch (err) {
-      console.error("Error checking consultation availability:", err)
       return false
     }
   }

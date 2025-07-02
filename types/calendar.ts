@@ -332,7 +332,7 @@ export type TimeInterval = 15 | 30 | 60
 // Tipos en español para compatibilidad con el sistema existente
 export type IntervaloTiempo = 15 | 30 | 60
 export type VistaCalendario = "dia" | "semana" | "mes"
-export type SubVistaCalendario = "lista" | "horario" | "profesionales" | "consultas"
+export type SubVistaCalendario = "lista" | "horario" | "profesionales" | "consultas" | "servicios"
 export type TabPrincipal = "calendario" | "lista-espera" | "actividades-grupales"
 
 // Tipos de estado en español para la UI

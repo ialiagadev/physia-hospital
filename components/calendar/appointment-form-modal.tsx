@@ -1,8 +1,7 @@
 "use client"
 
 import type React from "react"
-
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2, Phone, User, CheckCircle, AlertTriangle, MapPin } from "lucide-react"
+import { Loader2, Phone, User, CheckCircle, AlertTriangle, MapPin, Info } from "lucide-react"
 import { useClients } from "@/hooks/use-clients"
 import { useUsers } from "@/hooks/use-users"
 import { useConsultations } from "@/hooks/use-consultations"
@@ -48,35 +47,33 @@ export function AppointmentFormModal({
 }: AppointmentFormModalProps) {
   const { userProfile } = useAuth()
   const organizationId = userProfile?.organization_id ? Number(userProfile.organization_id) : undefined
-
-  const { searchClients, clients } = useClients(organizationId)
+  const { clients } = useClients(organizationId)
   const { users } = useUsers(organizationId)
-  const {
-    consultations,
-    loading: consultationsLoading,
-    getAvailableConsultations,
-    organizationId: consultationsOrgId,
-  } = useConsultations(organizationId)
+  const { consultations, loading: consultationsLoading, getAvailableConsultations } = useConsultations(organizationId)
 
-  // Función para calcular hora fin - DEFINIDA PRIMERO
-  const calcularHoraFin = (horaInicio: string, duracion: number) => {
+  // Refs para evitar llamadas múltiples
+  const isCheckingRef = useRef(false)
+  const lastCheckParamsRef = useRef<string>("")
+
+  // Función para calcular hora fin - memoizada para evitar re-creaciones
+  const calcularHoraFin = useCallback((horaInicio: string, duracion: number) => {
     const [horas, minutos] = horaInicio.split(":").map(Number)
     const totalMinutos = horas * 60 + minutos + duracion
     const nuevasHoras = Math.floor(totalMinutos / 60)
     const nuevosMinutos = totalMinutos % 60
     return `${nuevasHoras.toString().padStart(2, "0")}:${nuevosMinutos.toString().padStart(2, "0")}`
-  }
+  }, [])
 
   const [formData, setFormData] = useState({
     telefonoPaciente: citaExistente?.telefonoPaciente || "",
     nombrePaciente: citaExistente?.nombrePaciente || "",
     apellidosPaciente: citaExistente?.apellidosPaciente || "",
     hora: citaExistente?.hora || hora,
-    duracion: citaExistente?.duracion || 30,
+    duracion: citaExistente?.duracion || 45,
     tipo: citaExistente?.tipo || "Consulta",
     notas: citaExistente?.notas || "",
     profesionalId: citaExistente?.profesionalId || profesionalId || 1,
-    estado: citaExistente?.estado || "confirmada",
+    estado: citaExistente?.estado || "pendiente",
     consultationId: citaExistente?.consultationId || "",
   })
 
@@ -88,165 +85,139 @@ export function AppointmentFormModal({
   const [availableConsultations, setAvailableConsultations] = useState(consultations)
   const [checkingConsultations, setCheckingConsultations] = useState(false)
 
-  // Debug logs
+  // Inicializar consultas disponibles - solo una vez cuando cambian las consultas
   useEffect(() => {
-    console.log("AppointmentFormModal - organizationId:", organizationId)
-    console.log("AppointmentFormModal - consultationsOrgId:", consultationsOrgId)
-    console.log("AppointmentFormModal - consultations:", consultations.length)
-    console.log("AppointmentFormModal - consultationsLoading:", consultationsLoading)
-    console.log("AppointmentFormModal - availableConsultations:", availableConsultations.length)
-  }, [organizationId, consultationsOrgId, consultations.length, consultationsLoading, availableConsultations.length])
-
-  // Inicializar consultas disponibles cuando se cargan las consultas
-  useEffect(() => {
-    console.log("Consultations changed, updating available consultations:", consultations.length)
     setAvailableConsultations(consultations)
   }, [consultations])
 
-  // Verificar consultas disponibles cuando cambie la hora o duración
-  const checkAvailableConsultations = async () => {
-    if (!formData.hora || !formData.duracion) {
-      console.log("Skipping consultation check - missing hora or duracion")
-      return
-    }
-
-    if (!organizationId) {
-      console.log("Skipping consultation check - missing organizationId")
-      return
-    }
-
-    if (consultations.length === 0) {
-      console.log("Skipping consultation check - no consultations loaded yet")
-      return
-    }
-
-    setCheckingConsultations(true)
-    try {
-      const endTime = calcularHoraFin(formData.hora, formData.duracion)
-      const dateString = fecha.toISOString().split("T")[0]
-
-      console.log("Checking consultations for:", {
-        organizationId,
-        date: dateString,
-        startTime: formData.hora,
-        endTime: endTime,
-        excludeId: citaExistente?.id?.toString(),
-        totalConsultationsAvailable: consultations.length,
-      })
-
-      const available = await getAvailableConsultations(
-        dateString,
-        formData.hora,
-        endTime,
-        citaExistente?.id?.toString(),
-      )
-
-      console.log(
-        "Available consultations received:",
-        available.length,
-        available.map((c) => c.name),
-      )
-      setAvailableConsultations(available)
-
-      // Si la consulta seleccionada ya no está disponible, limpiar la selección
-      if (formData.consultationId && !available.find((c) => c.id === formData.consultationId)) {
-        console.log("Selected consultation no longer available, clearing selection")
-        setFormData((prev) => ({ ...prev, consultationId: "" }))
-        toast.warning("La consulta seleccionada ya no está disponible en este horario")
+  // Función optimizada para verificar consultas disponibles
+  const checkAvailableConsultations = useCallback(
+    async (hora: string, duracion: number) => {
+      if (!hora || !duracion || !organizationId || consultations.length === 0) {
+        return
       }
-    } catch (error) {
-      console.error("Error checking available consultations:", error)
-      toast.error("Error al verificar disponibilidad de consultas")
-      // En caso de error, mostrar todas las consultas
-      setAvailableConsultations(consultations)
-    } finally {
-      setCheckingConsultations(false)
-    }
-  }
 
-  // Ejecutar verificación cuando cambien hora, duración o consultations
+      // Crear una clave única para estos parámetros
+      const checkParams = `${hora}-${duracion}-${fecha.toISOString().split("T")[0]}`
+
+      // Si ya estamos verificando con los mismos parámetros, no hacer nada
+      if (isCheckingRef.current || lastCheckParamsRef.current === checkParams) {
+        return
+      }
+
+      isCheckingRef.current = true
+      lastCheckParamsRef.current = checkParams
+      setCheckingConsultations(true)
+
+      try {
+        const endTime = calcularHoraFin(hora, duracion)
+        const dateString = fecha.toISOString().split("T")[0]
+
+        const available = await getAvailableConsultations(dateString, hora, endTime, citaExistente?.id?.toString())
+
+        setAvailableConsultations(available)
+
+        // Si la consulta seleccionada ya no está disponible, limpiar la selección
+        if (formData.consultationId && !available.find((c) => c.id === formData.consultationId)) {
+          setFormData((prev) => ({ ...prev, consultationId: "" }))
+          toast.warning("La consulta seleccionada ya no está disponible en este horario")
+        }
+      } catch (error) {
+        toast.error("Error al verificar disponibilidad de consultas")
+        setAvailableConsultations(consultations)
+      } finally {
+        setCheckingConsultations(false)
+        isCheckingRef.current = false
+      }
+    },
+    [
+      organizationId,
+      consultations,
+      calcularHoraFin,
+      getAvailableConsultations,
+      fecha,
+      citaExistente?.id,
+      formData.consultationId,
+    ],
+  )
+
+  // Verificar consultas solo cuando cambie hora o duración - con debounce
   useEffect(() => {
-    if (organizationId && consultations.length > 0) {
-      console.log("Form data or consultations changed, checking consultations:", {
-        hora: formData.hora,
-        duracion: formData.duracion,
-        consultationsCount: consultations.length,
-      })
-      checkAvailableConsultations()
-    }
-  }, [formData.hora, formData.duracion, organizationId, consultations.length])
-
-  // Buscar cliente por teléfono con normalización
-  const buscarClientePorTelefono = async (telefono: string) => {
-    if (!telefono || !isValidPhoneNumber(telefono)) {
-      setClienteEncontrado(null)
-      setTelefonoValidado(false)
+    if (!organizationId || consultations.length === 0) {
       return
     }
 
-    setBuscandoCliente(true)
-    try {
-      // Buscar en todos los clientes usando normalización
-      const telefonoNormalizado = normalizePhoneNumber(telefono)
+    const timeoutId = setTimeout(() => {
+      checkAvailableConsultations(formData.hora, formData.duracion)
+    }, 800) // Aumenté el debounce a 800ms
 
-      const clienteExacto = clients.find((cliente) => {
-        if (!cliente.phone) return false
-        return arePhoneNumbersEqual(cliente.phone, telefono)
-      })
+    return () => clearTimeout(timeoutId)
+  }, [formData.hora, formData.duracion]) // Solo estas dos dependencias
 
-      if (clienteExacto) {
-        setClienteEncontrado(clienteExacto)
-        setTelefonoValidado(true)
-
-        // Autocompletar campos
-        const nombreCompleto = clienteExacto.name.split(" ")
-        const nombre = nombreCompleto[0] || ""
-        const apellidos = nombreCompleto.slice(1).join(" ") || ""
-
-        setFormData((prev) => ({
-          ...prev,
-          nombrePaciente: nombre,
-          apellidosPaciente: apellidos,
-        }))
-
-        // Formatear teléfono para mostrar
-        setTelefonoFormateado(formatPhoneNumber(telefono))
-
-        toast.success(`Cliente encontrado: ${clienteExacto.name}`, {
-          description: `Teléfono: ${clienteExacto.phone}`,
-        })
-      } else {
+  // Función memoizada para buscar cliente
+  const buscarClientePorTelefono = useCallback(
+    async (telefono: string) => {
+      if (!telefono || !isValidPhoneNumber(telefono)) {
         setClienteEncontrado(null)
-        setTelefonoValidado(true)
+        setTelefonoValidado(false)
+        return
+      }
 
-        // Formatear teléfono para mostrar
-        setTelefonoFormateado(formatPhoneNumber(telefono))
+      setBuscandoCliente(true)
+      try {
+        const clienteExacto = clients.find((cliente) => {
+          if (!cliente.phone) return false
+          return arePhoneNumbersEqual(cliente.phone, telefono)
+        })
 
-        // Limpiar campos de nombre si no se encuentra
-        if (!citaExistente) {
+        if (clienteExacto) {
+          setClienteEncontrado(clienteExacto)
+          setTelefonoValidado(true)
+
+          const nombreCompleto = clienteExacto.name.split(" ")
+          const nombre = nombreCompleto[0] || ""
+          const apellidos = nombreCompleto.slice(1).join(" ") || ""
+
           setFormData((prev) => ({
             ...prev,
-            nombrePaciente: "",
-            apellidosPaciente: "",
+            nombrePaciente: nombre,
+            apellidosPaciente: apellidos,
           }))
+
+          setTelefonoFormateado(formatPhoneNumber(telefono))
+          toast.success(`Cliente encontrado: ${clienteExacto.name}`, {
+            description: `Teléfono: ${clienteExacto.phone}`,
+          })
+        } else {
+          setClienteEncontrado(null)
+          setTelefonoValidado(true)
+          setTelefonoFormateado(formatPhoneNumber(telefono))
+
+          if (!citaExistente) {
+            setFormData((prev) => ({
+              ...prev,
+              nombrePaciente: "",
+              apellidosPaciente: "",
+            }))
+          }
+
+          toast.info("Cliente nuevo - completa los datos", {
+            description: `Teléfono: ${formatPhoneNumber(telefono)}`,
+          })
         }
-
-        toast.info("Cliente nuevo - completa los datos", {
-          description: `Teléfono: ${formatPhoneNumber(telefono)}`,
-        })
+      } catch (error) {
+        toast.error("Error al buscar cliente")
+        setClienteEncontrado(null)
+        setTelefonoValidado(false)
+      } finally {
+        setBuscandoCliente(false)
       }
-    } catch (error) {
-      console.error("Error buscando cliente:", error)
-      toast.error("Error al buscar cliente")
-      setClienteEncontrado(null)
-      setTelefonoValidado(false)
-    } finally {
-      setBuscandoCliente(false)
-    }
-  }
+    },
+    [clients, citaExistente],
+  )
 
-  // Validar teléfono
-  const validarTelefono = (telefono: string) => {
+  // Validar teléfono - memoizada
+  const validarTelefono = useCallback((telefono: string) => {
     if (!telefono.trim()) {
       setErrors((prev) => ({ ...prev, telefono: "El teléfono es obligatorio" }))
       return false
@@ -262,73 +233,92 @@ export function AppointmentFormModal({
 
     setErrors((prev) => ({ ...prev, telefono: "" }))
     return true
-  }
+  }, [])
 
   // Manejar cambio de teléfono
-  const handleTelefonoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const telefono = e.target.value
-    setFormData((prev) => ({ ...prev, telefonoPaciente: telefono }))
+  const handleTelefonoChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const telefono = e.target.value
+      setFormData((prev) => ({ ...prev, telefonoPaciente: telefono }))
 
-    // Resetear estado de búsqueda
-    setClienteEncontrado(null)
-    setTelefonoValidado(false)
-    setTelefonoFormateado("")
+      // Resetear estado de búsqueda
+      setClienteEncontrado(null)
+      setTelefonoValidado(false)
+      setTelefonoFormateado("")
 
-    // Validar formato
-    validarTelefono(telefono)
-  }
+      // Validar formato
+      validarTelefono(telefono)
+    },
+    [validarTelefono],
+  )
 
   // Manejar cuando se sale del campo teléfono
-  const handleTelefonoBlur = () => {
+  const handleTelefonoBlur = useCallback(() => {
     const telefono = formData.telefonoPaciente.trim()
     if (validarTelefono(telefono)) {
       buscarClientePorTelefono(telefono)
     }
-  }
+  }, [formData.telefonoPaciente, validarTelefono, buscarClientePorTelefono])
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
+  // Manejar cambios de hora y duración
+  const handleHoraChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const nuevaHora = e.target.value
+    setFormData((prev) => ({ ...prev, hora: nuevaHora }))
+    // Reset de la verificación para permitir nueva verificación
+    lastCheckParamsRef.current = ""
+  }, [])
 
-    // Validaciones
-    const newErrors: { [key: string]: string } = {}
+  const handleDuracionChange = useCallback((value: string) => {
+    const nuevaDuracion = Number.parseInt(value)
+    setFormData((prev) => ({ ...prev, duracion: nuevaDuracion }))
+    // Reset de la verificación para permitir nueva verificación
+    lastCheckParamsRef.current = ""
+  }, [])
 
-    if (!formData.telefonoPaciente.trim()) {
-      newErrors.telefono = "El teléfono es obligatorio"
-    } else if (!isValidPhoneNumber(formData.telefonoPaciente)) {
-      newErrors.telefono = "Formato de teléfono inválido"
-    }
+  const handleSubmit = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault()
 
-    if (!formData.nombrePaciente.trim()) {
-      newErrors.nombre = "El nombre es obligatorio"
-    }
+      // Validaciones
+      const newErrors: { [key: string]: string } = {}
 
-    if (!formData.consultationId) {
-      newErrors.consultation = "Debes seleccionar una consulta"
-    }
+      if (!formData.telefonoPaciente.trim()) {
+        newErrors.telefono = "El teléfono es obligatorio"
+      } else if (!isValidPhoneNumber(formData.telefonoPaciente)) {
+        newErrors.telefono = "Formato de teléfono inválido"
+      }
 
-    if (!telefonoValidado) {
-      newErrors.telefono = "Debes validar el teléfono primero (sal del campo para validar)"
-    }
+      if (!formData.nombrePaciente.trim()) {
+        newErrors.nombre = "El nombre es obligatorio"
+      }
 
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors)
-      toast.error("Por favor corrige los errores en el formulario")
-      return
-    }
+      if (!formData.consultationId) {
+        newErrors.consultation = "Debes seleccionar una consulta"
+      }
 
-    const nuevaCita: Partial<Cita> = {
-      ...formData,
-      // Guardar teléfono normalizado para consistencia
-      telefonoPaciente: normalizePhoneNumber(formData.telefonoPaciente),
-      fecha,
-      horaFin: calcularHoraFin(formData.hora, formData.duracion),
-      id: citaExistente?.id || Date.now(),
-    }
+      if (!telefonoValidado) {
+        newErrors.telefono = "Debes validar el teléfono primero (sal del campo para validar)"
+      }
 
-    console.log("Submitting appointment:", nuevaCita)
-    onSubmit(nuevaCita)
-    onClose()
-  }
+      if (Object.keys(newErrors).length > 0) {
+        setErrors(newErrors)
+        toast.error("Por favor corrige los errores en el formulario")
+        return
+      }
+
+      const nuevaCita: Partial<Cita> = {
+        ...formData,
+        telefonoPaciente: normalizePhoneNumber(formData.telefonoPaciente),
+        fecha,
+        horaFin: calcularHoraFin(formData.hora, formData.duracion),
+        id: citaExistente?.id || Date.now(),
+      }
+
+      onSubmit(nuevaCita)
+      onClose()
+    },
+    [formData, telefonoValidado, calcularHoraFin, fecha, citaExistente?.id, onSubmit, onClose],
+  )
 
   // Mostrar mensaje si no hay organizationId
   if (!organizationId) {
@@ -442,20 +432,11 @@ export function AppointmentFormModal({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="hora">Hora</Label>
-              <Input
-                id="hora"
-                type="time"
-                value={formData.hora}
-                onChange={(e) => setFormData({ ...formData, hora: e.target.value })}
-                required
-              />
+              <Input id="hora" type="time" value={formData.hora} onChange={handleHoraChange} required />
             </div>
             <div>
               <Label htmlFor="duracion">Duración (min)</Label>
-              <Select
-                value={formData.duracion.toString()}
-                onValueChange={(value) => setFormData({ ...formData, duracion: Number.parseInt(value) })}
-              >
+              <Select value={formData.duracion.toString()} onValueChange={handleDuracionChange}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -474,8 +455,7 @@ export function AppointmentFormModal({
           <div>
             <Label htmlFor="consultation" className="flex items-center gap-2">
               <MapPin className="h-4 w-4" />
-              Consulta *
-              {(checkingConsultations || consultationsLoading) && <Loader2 className="h-3 w-3 animate-spin" />}
+              Consulta *{checkingConsultations && <Loader2 className="h-3 w-3 animate-spin" />}
             </Label>
             <Select
               value={formData.consultationId}
@@ -503,14 +483,6 @@ export function AppointmentFormModal({
             {!consultationsLoading && consultations.length === 0 && (
               <p className="text-sm text-red-600 mt-1">No hay consultas configuradas</p>
             )}
-
-            {/* Debug info - remover en producción */}
-            <div className="text-xs text-gray-400 mt-1">
-              Debug: {availableConsultations.length} de {consultations.length} consultas disponibles
-              {checkingConsultations && " (verificando...)"}
-              {consultationsLoading && " (cargando...)"}
-              {organizationId && ` | Org: ${organizationId}`}
-            </div>
           </div>
 
           {/* Profesional */}
@@ -586,8 +558,9 @@ export function AppointmentFormModal({
 
           {/* Información adicional */}
           <div className="text-xs text-gray-500 space-y-1 bg-gray-50 p-3 rounded">
-            <p>
-              <strong>💡 Consejos:</strong>
+            <p className="flex items-center gap-1">
+              <Info className="h-3 w-3" />
+              <strong>Consejos:</strong>
             </p>
             <p>• El teléfono es obligatorio para enviar recordatorios</p>
             <p>• Debes seleccionar una consulta disponible</p>

@@ -1,27 +1,51 @@
 "use client"
 
 import { useState, useEffect } from "react"
+
 import { ChevronLeft, ChevronRight, Plus, LogOut } from "lucide-react"
+
 import { Button } from "@/components/ui/button"
+
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+
 import { CalendarSearch } from "@/components/calendar/calendar-search"
+
 import { CalendarConfig } from "@/components/calendar/calendar-config"
+
 import { ProfesionalesLegend } from "@/components/calendar/profesionales-legend"
+
 import { AppointmentFormModal } from "@/components/calendar/appointment-form-modal"
+
 import { AppointmentDetailsModal } from "@/components/calendar/appointment-details-modal"
-import { CalendarSidebar } from "@/components/calendar/calendar-sidebar"
+
 import { ListView } from "@/components/calendar/list-view"
+
 import { ProfesionalesView } from "@/components/calendar/profesionales-view"
+
 import { ConsultationsView } from "@/components/calendar/consultations-view"
+
+import { ServicesView } from "@/components/services/services-view"
+
 import { useUsers } from "@/hooks/use-users"
+
 import { useAppointments } from "@/hooks/use-appointments"
+
 import { useClients } from "@/hooks/use-clients"
+
 import { useConsultations } from "@/hooks/use-consultations"
+
+import { useServices } from "@/hooks/use-services"
+
 import { useAuth } from "@/app/contexts/auth-context"
+
 import { supabase } from "@/lib/supabase"
+
 import { useRouter } from "next/navigation"
+
 import { toast, Toaster } from "sonner"
+
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from "date-fns"
+
 import type {
   IntervaloTiempo,
   VistaCalendario,
@@ -31,11 +55,15 @@ import type {
   AppointmentInsert,
   EstadoCita,
 } from "@/types/calendar"
+
 import { WeekView } from "@/components/calendar/week-view"
+
 import { MonthView } from "@/components/calendar/month-view"
+
 import { HorarioViewDynamic } from "@/components/calendar/horario-view-dynamic"
 
 // Mapeo de estados del español al inglés para la base de datos
+
 const mapEstadoToStatus = (estado: string): "confirmed" | "pending" | "cancelled" | "completed" | "no_show" => {
   const mapping = {
     confirmada: "confirmed",
@@ -49,6 +77,7 @@ const mapEstadoToStatus = (estado: string): "confirmed" | "pending" | "cancelled
 }
 
 // Mapeo inverso para mostrar en la UI
+
 const mapStatusToEstado = (status: string): EstadoCita => {
   const mapping = {
     confirmed: "confirmada",
@@ -63,28 +92,41 @@ const mapStatusToEstado = (status: string): EstadoCita => {
 
 export default function MedicalCalendarSystem() {
   const router = useRouter()
+
   const { userProfile } = useAuth()
 
   // Obtener organizationId del perfil del usuario
+
   const organizationId = userProfile?.organization_id ? Number(userProfile.organization_id) : undefined
 
   // Estados principales
+
   const [currentDate, setCurrentDate] = useState(new Date())
+
   const [tabPrincipal, setTabPrincipal] = useState<TabPrincipal>("calendario")
+
   const [vistaCalendario, setVistaCalendario] = useState<VistaCalendario>("dia")
+
   const [subVistaCalendario, setSubVistaCalendario] = useState<SubVistaCalendario>("horario")
-  const [intervaloTiempo, setIntervaloTiempo] = useState<IntervaloTiempo>(30)
+
+  const [intervaloTiempo, setIntervaloTiempo] = useState<IntervaloTiempo>(60)
 
   // Estados de UI
+
   const [selectedAppointment, setSelectedAppointment] = useState<AppointmentWithDetails | null>(null)
+
   const [showNewAppointmentModal, setShowNewAppointmentModal] = useState(false)
+
   const [showDetailsModal, setShowDetailsModal] = useState(false)
+
   const [usuariosSeleccionados, setUsuariosSeleccionados] = useState<string[]>([])
-  const [showSidebar, setShowSidebar] = useState(true)
 
   // Hooks de datos - ahora con organizationId
+
   const { users, currentUser, loading: usersLoading, refetch: refetchUsers } = useUsers(organizationId)
-  const { clients, loading: clientsLoading, error: clientsError } = useClients(organizationId)
+
+  const { clients, loading: clientsLoading, error: clientsError, createClient } = useClients(organizationId)
+
   const {
     consultations,
     loading: consultationsLoading,
@@ -92,14 +134,30 @@ export default function MedicalCalendarSystem() {
     refetch: refetchConsultations,
   } = useConsultations(organizationId)
 
+  const {
+    services,
+    loading: servicesLoading,
+    error: servicesError,
+    refetch: refetchServices,
+  } = useServices(organizationId)
+
   // Debug logs
+
   useEffect(() => {
     console.log("MedicalCalendarSystem - organizationId:", organizationId)
     console.log("MedicalCalendarSystem - userProfile:", userProfile)
-    console.log("MedicalCalendarSystem - clients:", clients.length, "consultations:", consultations.length)
-  }, [organizationId, userProfile, clients.length, consultations.length])
+    console.log(
+      "MedicalCalendarSystem - clients:",
+      clients.length,
+      "consultations:",
+      consultations.length,
+      "services:",
+      services.length,
+    )
+  }, [organizationId, userProfile, clients.length, consultations.length, services.length])
 
   // Calcular rango de fechas para las citas
+
   const getDateRange = () => {
     let startDate: string, endDate: string
 
@@ -108,18 +166,21 @@ export default function MedicalCalendarSystem() {
         startDate = format(currentDate, "yyyy-MM-dd")
         endDate = startDate
         break
+
       case "semana":
         const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 })
         const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 })
         startDate = format(weekStart, "yyyy-MM-dd")
         endDate = format(weekEnd, "yyyy-MM-dd")
         break
+
       case "mes":
         const monthStart = startOfMonth(currentDate)
         const monthEnd = endOfMonth(currentDate)
         startDate = format(monthStart, "yyyy-MM-dd")
         endDate = format(monthEnd, "yyyy-MM-dd")
         break
+
       default:
         startDate = format(currentDate, "yyyy-MM-dd")
         endDate = startDate
@@ -129,6 +190,7 @@ export default function MedicalCalendarSystem() {
   }
 
   const { startDate, endDate } = getDateRange()
+
   const {
     appointments,
     loading: appointmentsLoading,
@@ -143,6 +205,7 @@ export default function MedicalCalendarSystem() {
   )
 
   // Inicializar con todos los usuarios seleccionados
+
   useEffect(() => {
     if (users.length > 0) {
       setUsuariosSeleccionados(users.map((u) => u.id))
@@ -150,12 +213,14 @@ export default function MedicalCalendarSystem() {
   }, [users])
 
   // Logout
+
   const handleLogout = async () => {
     await supabase.auth.signOut()
     router.push("/login")
   }
 
   // Navegación de fechas
+
   const navigateDate = (direction: "prev" | "next") => {
     const newDate = new Date(currentDate)
 
@@ -163,9 +228,11 @@ export default function MedicalCalendarSystem() {
       case "dia":
         newDate.setDate(newDate.getDate() + (direction === "next" ? 1 : -1))
         break
+
       case "semana":
         newDate.setDate(newDate.getDate() + (direction === "next" ? 7 : -7))
         break
+
       case "mes":
         newDate.setMonth(newDate.getMonth() + (direction === "next" ? 1 : -1))
         break
@@ -179,9 +246,11 @@ export default function MedicalCalendarSystem() {
   }
 
   // Función para obtener o crear tipo de cita por defecto
+
   const getDefaultAppointmentType = async (userId: string) => {
     try {
       // Buscar tipo de cita existente
+
       const { data: existingType } = await supabase
         .from("appointment_types")
         .select("id")
@@ -194,6 +263,7 @@ export default function MedicalCalendarSystem() {
       }
 
       // Crear tipo de cita por defecto si no existe
+
       const { data: newType, error } = await supabase
         .from("appointment_types")
         .insert({
@@ -209,6 +279,7 @@ export default function MedicalCalendarSystem() {
         .single()
 
       if (error) throw error
+
       return newType.id
     } catch (error) {
       console.error("Error getting/creating appointment type:", error)
@@ -217,6 +288,7 @@ export default function MedicalCalendarSystem() {
   }
 
   // Función para obtener la primera consulta disponible
+
   const getFirstAvailableConsultation = async (date: string, startTime: string, endTime: string) => {
     try {
       if (consultations.length === 0) {
@@ -224,6 +296,7 @@ export default function MedicalCalendarSystem() {
       }
 
       // Verificar qué consultas están ocupadas en ese horario
+
       const { data: occupiedConsultations, error } = await supabase
         .from("appointments")
         .select("consultation_id")
@@ -234,6 +307,7 @@ export default function MedicalCalendarSystem() {
       if (error) throw error
 
       const occupiedIds = occupiedConsultations?.map((apt) => apt.consultation_id) || []
+
       const availableConsultation = consultations.find((consultation) => !occupiedIds.includes(consultation.id))
 
       return availableConsultation?.id || consultations[0].id // Fallback a la primera consulta
@@ -244,6 +318,7 @@ export default function MedicalCalendarSystem() {
   }
 
   // Handlers de citas
+
   const handleAddAppointment = async (appointmentData: any) => {
     try {
       if (!currentUser) {
@@ -252,7 +327,9 @@ export default function MedicalCalendarSystem() {
       }
 
       // Buscar o crear cliente
+
       let clientId: number
+
       const existingClient = clients.find(
         (c) =>
           c.name.toLowerCase() ===
@@ -262,38 +339,42 @@ export default function MedicalCalendarSystem() {
       if (existingClient) {
         clientId = existingClient.id
       } else {
-        // Crear nuevo cliente
-        const newClient = await fetch("/api/clients", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: `${appointmentData.nombrePaciente} ${appointmentData.apellidosPaciente || ""}`.trim(),
-            phone: appointmentData.telefonoPaciente,
-            organization_id: currentUser.organization_id,
-          }),
-        }).then((res) => res.json())
+        // Crear nuevo cliente usando el hook
+
+        const newClient = await createClient({
+          name: `${appointmentData.nombrePaciente} ${appointmentData.apellidosPaciente || ""}`.trim(),
+          phone: appointmentData.telefonoPaciente,
+          organization_id: currentUser.organization_id,
+        })
 
         clientId = newClient.id
       }
 
       // Determinar el profesional
+
       let professionalUuid = currentUser.id // Por defecto, el usuario actual
 
       if (appointmentData.profesionalId) {
         // Buscar el profesional por el ID numérico convertido
+
         const prof = users.find((u) => Number.parseInt(u.id.slice(-8), 16) === appointmentData.profesionalId)
+
         if (prof) {
           professionalUuid = prof.id
         }
       }
 
       // Obtener o crear tipo de cita por defecto para el profesional
+
       const appointmentTypeId = await getDefaultAppointmentType(professionalUuid)
 
       // Determinar la consulta
+
       let consultationId = appointmentData.consultationId
+
       if (!consultationId) {
         const endTime = appointmentData.horaFin || calculateEndTime(appointmentData.hora, appointmentData.duracion)
+
         consultationId = await getFirstAvailableConsultation(
           format(appointmentData.fecha, "yyyy-MM-dd"),
           appointmentData.hora,
@@ -366,10 +447,13 @@ export default function MedicalCalendarSystem() {
   }
 
   // Handler para citas en formato legacy
+
   const handleSelectLegacyAppointment = (cita: any) => {
     // Buscar la cita original en el array de appointments
+
     const originalAppointment = appointments.find((apt) => {
       // Convertir el ID numérico de vuelta a UUID parcial para comparar
+
       const numericId = Number.parseInt(apt.id.slice(-8), 16)
       return numericId === cita.id
     })
@@ -382,12 +466,15 @@ export default function MedicalCalendarSystem() {
   }
 
   // Handler para actualizar citas en formato legacy
+
   const handleUpdateLegacyAppointment = async (cita: any) => {
     // Buscar la cita original
+
     const originalAppointment = appointments.find((apt) => Number.parseInt(apt.id.slice(-8), 16) === cita.id)
 
     if (originalAppointment) {
       // Crear el objeto actualizado
+
       const updatedAppointment = {
         ...originalAppointment,
         date: format(cita.fecha, "yyyy-MM-dd"),
@@ -406,6 +493,7 @@ export default function MedicalCalendarSystem() {
   }
 
   // Handlers de usuarios
+
   const handleToggleUsuario = (userId: string) => {
     setUsuariosSeleccionados((prev) => (prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]))
   }
@@ -415,20 +503,8 @@ export default function MedicalCalendarSystem() {
     setUsuariosSeleccionados(todosSeleccionados ? [] : users.map((u) => u.id))
   }
 
-  // Handlers del sidebar
-  const handleSidebarProfesionalesChange = (profesionalIds: number[]) => {
-    // Convertir IDs numéricos de vuelta a UUIDs
-    const userIds = profesionalIds
-      .map((id) => {
-        const user = users.find((u) => Number.parseInt(u.id.slice(-8), 16) === id)
-        return user?.id
-      })
-      .filter(Boolean) as string[]
-
-    setUsuariosSeleccionados(userIds)
-  }
-
   // Utility functions
+
   const calculateEndTime = (startTime: string, duration: number): string => {
     const [hours, minutes] = startTime.split(":").map(Number)
     const totalMinutes = hours * 60 + minutes + duration
@@ -438,6 +514,7 @@ export default function MedicalCalendarSystem() {
   }
 
   // Formatear título de fecha
+
   const getDateTitle = () => {
     const options: Intl.DateTimeFormatOptions = {
       weekday: "long",
@@ -449,16 +526,20 @@ export default function MedicalCalendarSystem() {
     switch (vistaCalendario) {
       case "dia":
         return currentDate.toLocaleDateString("es-ES", options)
+
       case "semana":
         return `Semana del ${currentDate.toLocaleDateString("es-ES", { day: "numeric", month: "short" })}`
+
       case "mes":
         return currentDate.toLocaleDateString("es-ES", { month: "long", year: "numeric" })
+
       default:
         return ""
     }
   }
 
   // Convertir appointments de Supabase al formato esperado por los componentes
+
   const convertAppointmentsToLegacyFormat = (appointments: AppointmentWithDetails[]) => {
     return appointments.map((apt) => ({
       id: Number.parseInt(apt.id.slice(-8), 16), // Convertir UUID a número para compatibilidad
@@ -491,7 +572,15 @@ export default function MedicalCalendarSystem() {
   }
 
   // Mostrar loading si no tenemos organizationId o si los datos están cargando
-  if (!organizationId || usersLoading || appointmentsLoading || consultationsLoading || clientsLoading) {
+
+  if (
+    !organizationId ||
+    usersLoading ||
+    appointmentsLoading ||
+    consultationsLoading ||
+    clientsLoading ||
+    servicesLoading
+  ) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -505,13 +594,15 @@ export default function MedicalCalendarSystem() {
   }
 
   // Mostrar errores si los hay
-  if (clientsError || consultationsError) {
+
+  if (clientsError || consultationsError || servicesError) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <h2 className="text-xl font-semibold mb-2 text-red-600">Error al cargar datos</h2>
           {clientsError && <p className="text-red-500">Clientes: {clientsError}</p>}
           {consultationsError && <p className="text-red-500">Consultas: {consultationsError}</p>}
+          {servicesError && <p className="text-red-500">Servicios: {servicesError}</p>}
         </div>
       </div>
     )
@@ -521,18 +612,20 @@ export default function MedicalCalendarSystem() {
   const legacyUsers = convertUsersToLegacyFormat(users)
 
   return (
-    <div className="min-h-screen flex flex-col bg-background relative">
+    <div className="min-h-screen flex flex-col bg-background">
       <Toaster position="top-right" />
 
       {/* Header con info del usuario */}
       <div className="border-b px-4 py-2 flex items-center justify-between bg-white">
         <div className="flex items-center gap-4">
           <h1 className="text-lg font-semibold">Calendario Médico</h1>
+
           {currentUser && (
             <div className="text-sm text-gray-600">
               Bienvenido, <span className="font-medium">{currentUser.name}</span>
             </div>
           )}
+
           <div className="text-xs text-gray-500 flex gap-4">
             <span>
               {clients.length} cliente{clients.length !== 1 ? "s" : ""}
@@ -541,12 +634,13 @@ export default function MedicalCalendarSystem() {
               {consultations.length} consulta{consultations.length !== 1 ? "s" : ""} disponible
               {consultations.length !== 1 ? "s" : ""}
             </span>
+            <span>
+              {services.length} servicio{services.length !== 1 ? "s" : ""}
+            </span>
           </div>
         </div>
+
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setShowSidebar(!showSidebar)} className="gap-2">
-            {showSidebar ? "Ocultar Panel" : "Mostrar Panel"}
-          </Button>
           <Button variant="outline" size="sm" onClick={handleLogout} className="gap-2 bg-transparent">
             <LogOut className="h-4 w-4" />
             Cerrar Sesión
@@ -578,218 +672,198 @@ export default function MedicalCalendarSystem() {
         </Tabs>
       </div>
 
-      {/* Contenido principal con sidebar */}
-      <div className="flex-1 overflow-hidden flex">
-        {/* Contenido principal del calendario */}
-        <div className="flex-1 overflow-hidden">
-          {tabPrincipal === "calendario" && (
-            <div className="h-full flex flex-col">
-              {/* Sub-navegación del calendario */}
-              <div className="border-b">
-                <div className="flex items-center justify-between px-4 py-2">
-                  {/* Tabs de vista temporal */}
-                  <Tabs value={vistaCalendario} onValueChange={(value) => setVistaCalendario(value as VistaCalendario)}>
-                    <TabsList>
-                      <TabsTrigger value="dia">Día</TabsTrigger>
-                      <TabsTrigger value="semana">Semana</TabsTrigger>
-                      <TabsTrigger value="mes">Mes</TabsTrigger>
-                    </TabsList>
-                  </Tabs>
+      {/* Contenido principal */}
+      <div className="flex-1 overflow-hidden">
+        {tabPrincipal === "calendario" && (
+          <div className="h-full flex flex-col">
+            {/* Sub-navegación del calendario */}
+            <div className="border-b">
+              <div className="flex items-center justify-between px-4 py-2">
+                {/* Tabs de vista temporal */}
+                <Tabs value={vistaCalendario} onValueChange={(value) => setVistaCalendario(value as VistaCalendario)}>
+                  <TabsList>
+                    <TabsTrigger value="dia">Día</TabsTrigger>
+                    <TabsTrigger value="semana">Semana</TabsTrigger>
+                    <TabsTrigger value="mes">Mes</TabsTrigger>
+                  </TabsList>
+                </Tabs>
 
-                  {/* Tabs de sub-vista */}
-                  <Tabs
-                    value={subVistaCalendario}
-                    onValueChange={(value) => setSubVistaCalendario(value as SubVistaCalendario)}
-                  >
-                    <TabsList>
-                      <TabsTrigger value="lista">Lista</TabsTrigger>
-                      <TabsTrigger value="horario">Horario</TabsTrigger>
-                      <TabsTrigger value="profesionales">Usuarios</TabsTrigger>
-                      <TabsTrigger value="consultas">Consultas</TabsTrigger>
-                    </TabsList>
-                  </Tabs>
+                {/* Tabs de sub-vista */}
+                <Tabs
+                  value={subVistaCalendario}
+                  onValueChange={(value) => setSubVistaCalendario(value as SubVistaCalendario)}
+                >
+                  <TabsList>
+                    <TabsTrigger value="lista">Lista</TabsTrigger>
+                    <TabsTrigger value="horario">Horario</TabsTrigger>
+                    <TabsTrigger value="profesionales">Usuarios</TabsTrigger>
+                    <TabsTrigger value="consultas">Consultas</TabsTrigger>
+                    <TabsTrigger value="servicios">Servicios</TabsTrigger>
+                  </TabsList>
+                </Tabs>
 
-                  {/* Barra de búsqueda */}
-                  <div className="w-64">
-                    <CalendarSearch
-                      citas={legacyAppointments}
-                      onSelectCita={handleSelectLegacyAppointment}
-                      placeholder="Buscar citas..."
-                    />
-                  </div>
-
-                  {/* Controles de navegación */}
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => navigateDate("prev")}>
-                      <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => navigateDate("next")}>
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={goToToday}>
-                      Hoy
-                    </Button>
-
-                    {/* Configuración */}
-                    <div className="relative">
-                      <CalendarConfig intervaloTiempo={intervaloTiempo} onIntervaloChange={setIntervaloTiempo} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Barra de configuración adicional */}
-              <div className="border-b px-4 py-2 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <span className="text-sm text-gray-600">
-                    Mostrar horas cada: <strong>{intervaloTiempo} minutos</strong>
-                  </span>
+                {/* Barra de búsqueda */}
+                <div className="w-64">
+                  <CalendarSearch
+                    citas={legacyAppointments}
+                    onSelectCita={handleSelectLegacyAppointment}
+                    placeholder="Buscar citas..."
+                  />
                 </div>
 
+                {/* Controles de navegación */}
                 <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={() => navigateDate("prev")}>
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => navigateDate("next")}>
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={goToToday}>
+                    Hoy
+                  </Button>
+
+                  {/* Configuración */}
                   <div className="relative">
-                    <ProfesionalesLegend
-                      profesionales={legacyUsers}
-                      profesionalesSeleccionados={usuariosSeleccionados.map((id) => Number.parseInt(id.slice(-8), 16))}
-                      onToggleProfesional={(profesionalId) => {
-                        const userId = users.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)?.id
-                        if (userId) handleToggleUsuario(userId)
-                      }}
-                      onToggleAll={handleToggleAllUsuarios}
-                    />
+                    <CalendarConfig intervaloTiempo={intervaloTiempo} onIntervaloChange={setIntervaloTiempo} />
                   </div>
                 </div>
               </div>
+            </div>
 
-              {/* Título de fecha */}
-              <div className="px-4 py-3 border-b">
-                <h1 className="text-xl font-medium capitalize">{getDateTitle()}</h1>
+            {/* Barra de configuración adicional */}
+            <div className="border-b px-4 py-2 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <span className="text-sm text-gray-600">
+                  Mostrar horas cada: <strong>{intervaloTiempo} minutos</strong>
+                </span>
               </div>
 
-              {/* Vista del calendario */}
-              <div className="flex-1 overflow-auto">
-                {subVistaCalendario === "horario" && (
-                  <>
-                    {vistaCalendario === "dia" && (
-                      <HorarioViewDynamic
-                        date={currentDate}
-                        citas={legacyAppointments.filter((cita) => {
-                          const citaDate = new Date(cita.fecha)
-                          return citaDate.toDateString() === currentDate.toDateString()
-                        })}
-                        profesionales={legacyUsers.filter((user) =>
-                          usuariosSeleccionados.some(
-                            (selectedId) => Number.parseInt(selectedId.slice(-8), 16) === user.id,
-                          ),
-                        )}
-                        users={users.filter((user) => usuariosSeleccionados.includes(user.id))}
-                        onSelectCita={handleSelectLegacyAppointment}
-                        profesionalSeleccionado="todos"
-                        profesionalesSeleccionados={usuariosSeleccionados.map((id) =>
-                          Number.parseInt(id.slice(-8), 16),
-                        )}
-                        intervaloTiempo={intervaloTiempo}
-                        onUpdateCita={handleUpdateLegacyAppointment}
-                        onAddCita={handleAddAppointment}
-                      />
-                    )}
-                    {vistaCalendario === "semana" && (
-                      <WeekView
-                        date={currentDate}
-                        citas={legacyAppointments}
-                        profesionales={legacyUsers}
-                        onSelectCita={handleSelectLegacyAppointment}
-                        profesionalesSeleccionados={usuariosSeleccionados.map((id) =>
-                          Number.parseInt(id.slice(-8), 16),
-                        )}
-                        intervaloTiempo={intervaloTiempo}
-                        onUpdateCita={handleUpdateLegacyAppointment}
-                        onAddCita={handleAddAppointment}
-                      />
-                    )}
-                    {vistaCalendario === "mes" && (
-                      <MonthView
-                        date={currentDate}
-                        citas={legacyAppointments}
-                        profesionales={legacyUsers}
-                        onSelectCita={handleSelectLegacyAppointment}
-                        profesionalesSeleccionados={usuariosSeleccionados.map((id) =>
-                          Number.parseInt(id.slice(-8), 16),
-                        )}
-                        onUpdateCita={handleUpdateLegacyAppointment}
-                        onAddCita={handleAddAppointment}
-                      />
-                    )}
-                  </>
-                )}
-                {subVistaCalendario === "lista" && (
-                  <ListView
-                    citas={legacyAppointments}
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <ProfesionalesLegend
                     profesionales={legacyUsers}
-                    onSelectCita={handleSelectLegacyAppointment}
                     profesionalesSeleccionados={usuariosSeleccionados.map((id) => Number.parseInt(id.slice(-8), 16))}
+                    onToggleProfesional={(profesionalId) => {
+                      const userId = users.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)?.id
+                      if (userId) handleToggleUsuario(userId)
+                    }}
+                    onToggleAll={handleToggleAllUsuarios}
                   />
-                )}
-                {subVistaCalendario === "profesionales" && (
-                  <ProfesionalesView
-                    profesionales={legacyUsers}
-                    citas={legacyAppointments}
-                    users={users}
-                    onSelectCita={handleSelectLegacyAppointment}
-                    onRefreshUsers={refetchUsers}
-                  />
-                )}
-                {subVistaCalendario === "consultas" && (
-                  <ConsultationsView consultations={consultations} onRefreshConsultations={refetchConsultations} />
-                )}
+                </div>
               </div>
             </div>
-          )}
-          {tabPrincipal === "lista-espera" && (
-            <div className="h-full flex flex-col">
-              {/* Lista de espera */}
-              <ListView
-                citas={legacyAppointments.filter((apt) => apt.estado === "pendiente")}
-                profesionales={legacyUsers}
-                onSelectCita={handleSelectLegacyAppointment}
-              />
-            </div>
-          )}
-          {tabPrincipal === "actividades-grupales" && (
-            <div className="h-full flex flex-col">
-              {/* Actividades grupales */}
-              <div className="px-4 py-3 border-b">
-                <h1 className="text-xl font-medium capitalize">Actividades grupales</h1>
-              </div>
-              <div className="flex-1 overflow-auto">
-                {/* Placeholder for group activities */}
-                <p className="px-4 py-4">Aquí se mostrarán las actividades grupales.</p>
-              </div>
-            </div>
-          )}
-        </div>
 
-        {/* Sidebar */}
-        {showSidebar && (
-          <CalendarSidebar
-            selectedDate={currentDate}
-            selectedCita={selectedAppointment}
-            showDetails={showDetailsModal}
-            profesionales={legacyUsers}
-            profesionalesSeleccionados={usuariosSeleccionados.map((id) => Number.parseInt(id.slice(-8), 16))}
-            citaParaSeguimiento={null}
-            onAddCita={handleAddAppointment}
-            onUpdateCita={handleUpdateAppointment}
-            onCloseDetails={() => {
-              setShowDetailsModal(false)
-              setSelectedAppointment(null)
-            }}
-            onRegistrarSeguimiento={(cita) => {
-              console.log("Registrar seguimiento:", cita)
-            }}
-            onProfesionalesChange={handleSidebarProfesionalesChange}
-            onToggleAllProfesionales={handleToggleAllUsuarios}
-          />
+            {/* Título de fecha */}
+            <div className="px-4 py-3 border-b">
+              <h1 className="text-xl font-medium capitalize">{getDateTitle()}</h1>
+            </div>
+
+            {/* Vista del calendario */}
+            <div className="flex-1 overflow-auto">
+              {subVistaCalendario === "horario" && (
+                <>
+                  {vistaCalendario === "dia" && (
+                    <HorarioViewDynamic
+                      date={currentDate}
+                      citas={legacyAppointments.filter((cita) => {
+                        const citaDate = new Date(cita.fecha)
+                        return citaDate.toDateString() === currentDate.toDateString()
+                      })}
+                      profesionales={legacyUsers.filter((user) =>
+                        usuariosSeleccionados.some(
+                          (selectedId) => Number.parseInt(selectedId.slice(-8), 16) === user.id,
+                        ),
+                      )}
+                      users={users.filter((user) => usuariosSeleccionados.includes(user.id))}
+                      onSelectCita={handleSelectLegacyAppointment}
+                      profesionalSeleccionado="todos"
+                      profesionalesSeleccionados={usuariosSeleccionados.map((id) => Number.parseInt(id.slice(-8), 16))}
+                      intervaloTiempo={intervaloTiempo}
+                      onUpdateCita={handleUpdateLegacyAppointment}
+                      onAddCita={handleAddAppointment}
+                    />
+                  )}
+
+                  {vistaCalendario === "semana" && (
+                    <WeekView
+                      date={currentDate}
+                      citas={legacyAppointments}
+                      profesionales={legacyUsers}
+                      onSelectCita={handleSelectLegacyAppointment}
+                      profesionalesSeleccionados={usuariosSeleccionados.map((id) => Number.parseInt(id.slice(-8), 16))}
+                      intervaloTiempo={intervaloTiempo}
+                      onUpdateCita={handleUpdateLegacyAppointment}
+                      onAddCita={handleAddAppointment}
+                    />
+                  )}
+
+                  {vistaCalendario === "mes" && (
+                    <MonthView
+                      date={currentDate}
+                      citas={legacyAppointments}
+                      profesionales={legacyUsers}
+                      onSelectCita={handleSelectLegacyAppointment}
+                      profesionalesSeleccionados={usuariosSeleccionados.map((id) => Number.parseInt(id.slice(-8), 16))}
+                      onUpdateCita={handleUpdateLegacyAppointment}
+                      onAddCita={handleAddAppointment}
+                    />
+                  )}
+                </>
+              )}
+
+              {subVistaCalendario === "lista" && (
+                <ListView
+                  citas={legacyAppointments}
+                  profesionales={legacyUsers}
+                  onSelectCita={handleSelectLegacyAppointment}
+                  profesionalesSeleccionados={usuariosSeleccionados.map((id) => Number.parseInt(id.slice(-8), 16))}
+                />
+              )}
+
+              {subVistaCalendario === "profesionales" && (
+                <ProfesionalesView
+                  profesionales={legacyUsers}
+                  citas={legacyAppointments}
+                  users={users}
+                  onSelectCita={handleSelectLegacyAppointment}
+                  onRefreshUsers={refetchUsers}
+                />
+              )}
+
+              {subVistaCalendario === "consultas" && (
+                <ConsultationsView consultations={consultations} onRefreshConsultations={refetchConsultations} />
+              )}
+
+              {subVistaCalendario === "servicios" && (
+                <ServicesView organizationId={organizationId} onRefreshServices={refetchServices} />
+              )}
+            </div>
+          </div>
+        )}
+
+        {tabPrincipal === "lista-espera" && (
+          <div className="h-full flex flex-col">
+            {/* Lista de espera */}
+            <ListView
+              citas={legacyAppointments.filter((apt) => apt.estado === "pendiente")}
+              profesionales={legacyUsers}
+              onSelectCita={handleSelectLegacyAppointment}
+            />
+          </div>
+        )}
+
+        {tabPrincipal === "actividades-grupales" && (
+          <div className="h-full flex flex-col">
+            {/* Actividades grupales */}
+            <div className="px-4 py-3 border-b">
+              <h1 className="text-xl font-medium capitalize">Actividades grupales</h1>
+            </div>
+            <div className="flex-1 overflow-auto">
+              {/* Placeholder for group activities */}
+              <p className="px-4 py-4">Aquí se mostrarán las actividades grupales.</p>
+            </div>
+          </div>
         )}
       </div>
 
