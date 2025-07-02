@@ -15,7 +15,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 export default function NewClientPage() {
-  const { clients, loading: clientsLoading, error: clientsError, createClient } = useclients(organizationId)
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
