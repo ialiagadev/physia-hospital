@@ -5,6 +5,9 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { useVacationRequests } from "@/hooks/use-vacation-requests"
+import { useAuth } from "@/app/contexts/auth-context"
 import {
   LayoutDashboard,
   FileText,
@@ -26,9 +29,27 @@ import {
   CreditCard,
 } from "lucide-react"
 
+interface MenuItem {
+  id: string
+  label: string
+  href: string
+  icon: any
+  isActive: boolean
+  badge?: number | null
+}
+
 export function MainSidebar() {
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false)
   const pathname = usePathname()
+  const { userProfile } = useAuth()
+
+  // Hook para obtener solicitudes de vacaciones
+  const { requests, loading } = useVacationRequests(
+    userProfile?.organization_id ? Number(userProfile.organization_id) : undefined,
+  )
+
+  // Calcular solicitudes pendientes
+  const pendingRequestsCount = requests.filter((request) => request.status === "pending").length
 
   // Cargar el estado de colapso guardado al iniciar
   useEffect(() => {
@@ -54,7 +75,7 @@ export function MainSidebar() {
   }
 
   // Sección Principal
-  const principalItems = [
+  const principalItems: MenuItem[] = [
     {
       id: "dashboard",
       label: "Panel",
@@ -110,11 +131,13 @@ export function MainSidebar() {
       href: "/dashboard/fichaje",
       icon: Clock,
       isActive: isInSection("fichaje"),
+      // Agregar badge para solicitudes pendientes
+      badge: pendingRequestsCount > 0 ? pendingRequestsCount : null,
     },
   ]
 
   // Sección Configuración
-  const configItems = [
+  const configItems: MenuItem[] = [
     {
       id: "equipo",
       label: "Equipo",
@@ -153,7 +176,7 @@ export function MainSidebar() {
   ]
 
   // Sección General
-  const generalItems = [
+  const generalItems: MenuItem[] = [
     {
       id: "organizations",
       label: "Mi Negocio",
@@ -184,7 +207,7 @@ export function MainSidebar() {
     },
   ]
 
-  const renderMenuSection = (title: string, items: any[]) => (
+  const renderMenuSection = (title: string, items: MenuItem[]) => (
     <div className="mb-6">
       <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4 px-3">{title}</h2>
       <nav className="space-y-1">
@@ -195,12 +218,19 @@ export function MainSidebar() {
               key={item.id}
               href={item.href}
               className={cn(
-                "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                "flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors group",
                 item.isActive ? "text-purple-600 bg-purple-50" : "text-gray-600 hover:text-gray-900 hover:bg-gray-50",
               )}
             >
-              <Icon className={cn("h-5 w-5", item.isActive ? "text-purple-600" : "text-gray-400")} />
-              <span>{item.label}</span>
+              <div className="flex items-center space-x-3">
+                <Icon className={cn("h-5 w-5", item.isActive ? "text-purple-600" : "text-gray-400")} />
+                <span>{item.label}</span>
+              </div>
+              {item.badge && (
+                <Badge variant="destructive" className="h-5 min-w-[20px] text-xs bg-red-500 hover:bg-red-600 px-1.5">
+                  {item.badge > 99 ? "99+" : item.badge}
+                </Badge>
+              )}
             </Link>
           )
         })}
@@ -214,6 +244,7 @@ export function MainSidebar() {
         <Button variant="ghost" size="icon" onClick={toggleCollapse} className="h-8 w-8 mb-4">
           <PanelLeft className="h-4 w-4" />
         </Button>
+
         <div className="w-10 h-10 bg-purple-500 rounded-xl flex items-center justify-center mb-6">
           <span className="text-white font-bold text-lg">P</span>
         </div>
@@ -223,17 +254,28 @@ export function MainSidebar() {
           {[...principalItems, ...configItems, ...generalItems].map((item) => {
             const Icon = item.icon
             return (
-              <Link
-                key={item.id}
-                href={item.href}
-                className={cn(
-                  "p-2 rounded-lg transition-colors",
-                  item.isActive ? "text-purple-600 bg-purple-50" : "text-gray-400 hover:text-gray-600 hover:bg-gray-50",
+              <div key={item.id} className="relative">
+                <Link
+                  href={item.href}
+                  className={cn(
+                    "p-2 rounded-lg transition-colors block",
+                    item.isActive
+                      ? "text-purple-600 bg-purple-50"
+                      : "text-gray-400 hover:text-gray-600 hover:bg-gray-50",
+                  )}
+                  title={item.label}
+                >
+                  <Icon className="h-5 w-5" />
+                </Link>
+                {item.badge && (
+                  <Badge
+                    variant="destructive"
+                    className="absolute -top-1 -right-1 h-4 w-4 p-0 text-xs bg-red-500 hover:bg-red-600 flex items-center justify-center"
+                  >
+                    {item.badge > 9 ? "9+" : item.badge}
+                  </Badge>
                 )}
-                title={item.label}
-              >
-                <Icon className="h-5 w-5" />
-              </Link>
+              </div>
             )
           })}
         </div>

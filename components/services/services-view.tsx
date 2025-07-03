@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Edit, Trash2, DollarSign, Clock, Tag } from "lucide-react"
+import { Plus, Edit, Trash2, Euro, Clock, Tag } from "lucide-react"
 import { useServices } from "@/hooks/use-services"
 import { ServiceFormModal } from "./services-form-modal"
 import type { Service } from "@/types/services"
@@ -31,10 +31,12 @@ export function ServicesView({ organizationId, onRefreshServices }: ServicesView
   }
 
   const formatPrice = (price: number) => {
-    return new Intl.NumberFormat("es-ES", {
-      style: "currency",
-      currency: "EUR",
-    }).format(price)
+    return (
+      new Intl.NumberFormat("es-ES", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(price) + " €"
+    )
   }
 
   const formatDuration = (duration: number) => {
@@ -96,12 +98,12 @@ export function ServicesView({ organizationId, onRefreshServices }: ServicesView
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {services.map((service) => (
-            <Card key={service.id} className="hover:shadow-lg transition-shadow">
-              <CardHeader className="pb-3">
+            <Card key={service.id} className="hover:shadow-lg transition-shadow h-full flex flex-col">
+              <CardHeader className="pb-3 flex-shrink-0">
                 <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: service.color }} />
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <CardTitle className="text-lg truncate">{service.name}</CardTitle>
                       {service.category && (
                         <Badge variant="secondary" className="mt-1">
@@ -110,7 +112,7 @@ export function ServicesView({ organizationId, onRefreshServices }: ServicesView
                       )}
                     </div>
                   </div>
-                  <div className="flex gap-1 flex-shrink-0">
+                  <div className="flex gap-1 flex-shrink-0 ml-2">
                     <Button variant="ghost" size="sm" onClick={() => setEditingService(service)}>
                       <Edit className="h-4 w-4" />
                     </Button>
@@ -125,30 +127,39 @@ export function ServicesView({ organizationId, onRefreshServices }: ServicesView
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-3">
-                {service.description && (
-                  <CardDescription className="line-clamp-2">{service.description}</CardDescription>
-                )}
 
-                <div className="flex items-center justify-between text-sm">
+              <CardContent className="flex flex-col flex-1">
+                {/* Descripción con altura fija */}
+                <div className="h-12 mb-4 flex-shrink-0">
+                  {service.description && (
+                    <CardDescription className="line-clamp-2 text-sm">{service.description}</CardDescription>
+                  )}
+                </div>
+
+                {/* Precio y duración con anchos fijos para alineación perfecta */}
+                <div className="grid grid-cols-2 gap-4 text-sm mb-4">
                   <div className="flex items-center gap-1 text-green-600">
-                    <DollarSign className="h-4 w-4" />
+                    <Euro className="h-4 w-4 flex-shrink-0" />
                     <span className="font-semibold">{formatPrice(service.price)}</span>
                   </div>
-                  <div className="flex items-center gap-1 text-blue-600">
-                    <Clock className="h-4 w-4" />
-                    <span>{formatDuration(service.duration)}</span>
+                  <div className="flex items-center gap-1 text-blue-600 justify-end">
+                    <Clock className="h-4 w-4 flex-shrink-0" />
+                    <span className="w-16 text-right">{formatDuration(service.duration)}</span>
                   </div>
                 </div>
 
-                {(service.vat_rate > 0 || service.irpf_rate > 0) && (
-                  <div className="flex gap-2 text-xs">
-                    {service.vat_rate > 0 && <Badge variant="outline">IVA {service.vat_rate}%</Badge>}
-                    {service.irpf_rate > 0 && <Badge variant="outline">IRPF {service.irpf_rate}%</Badge>}
-                  </div>
-                )}
+                {/* Badges de impuestos con altura mínima */}
+                <div className="mb-4 flex-shrink-0 min-h-[24px] flex items-start">
+                  {(service.vat_rate > 0 || service.irpf_rate > 0) && (
+                    <div className="flex gap-2 text-xs">
+                      {service.vat_rate > 0 && <Badge variant="outline">IVA {service.vat_rate}%</Badge>}
+                      {service.irpf_rate > 0 && <Badge variant="outline">IRPF {service.irpf_rate}%</Badge>}
+                    </div>
+                  )}
+                </div>
 
-                {service.icon && <div className="text-center text-2xl">{service.icon}</div>}
+                {/* Icono centrado al final */}
+                {service.icon && <div className="text-center text-2xl mt-auto">{service.icon}</div>}
               </CardContent>
             </Card>
           ))}

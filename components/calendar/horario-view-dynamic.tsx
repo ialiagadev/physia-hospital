@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { AppointmentFormModal } from "./appointment-form-modal"
@@ -15,9 +14,10 @@ import {
   generateTimeSlots,
   isUserWorkingAt,
 } from "@/utils/schedule-utils"
-import type { Cita, Profesional, IntervaloTiempo } from "@/types/calendar-types"
+import type { Cita, Profesional, IntervaloTiempo } from "@/types/calendar"
 import type { User } from "@/types/calendar"
 import { toast } from "sonner"
+import { format } from "date-fns"
 
 interface HorarioViewDynamicProps {
   date: Date
@@ -30,12 +30,15 @@ interface HorarioViewDynamicProps {
   intervaloTiempo: IntervaloTiempo
   onUpdateCita: (cita: Cita) => void
   onAddCita: (cita: Partial<Cita>) => void
+  // Props de vacaciones
+  vacationRequests?: any[]
+  isUserOnVacationDate?: (userId: string, date: Date | string) => boolean
+  getUserVacationOnDate?: (userId: string, date: Date | string) => any
 }
 
 const getColorProfesional = (profesional: Profesional) => {
   // Usar el color de la base de datos directamente
   const color = profesional.color || "#3B82F6"
-
   // Convertir color hex a clases de Tailwind dinámicamente
   return {
     backgroundColor: `${color}20`, // 20% opacity
@@ -66,19 +69,18 @@ const extraerTituloProfesional = (nombre: string | null | undefined) => {
   if (match) {
     return { titulo: match[1], nombre: match[2] }
   }
+
   return { titulo: "", nombre: nombre }
 }
 
 // Función para normalizar el formato de tiempo (eliminar segundos si existen)
 const normalizeTimeFormat = (time: string): string => {
   if (!time) return "00:00"
-
   // Si el tiempo tiene segundos (HH:MM:SS), eliminarlos
   if (time.includes(":") && time.split(":").length === 3) {
     const [hours, minutes] = time.split(":")
     return `${hours}:${minutes}`
   }
-
   // Si ya está en formato HH:MM, devolverlo tal como está
   return time
 }
@@ -94,6 +96,9 @@ export function HorarioViewDynamic({
   intervaloTiempo,
   onUpdateCita,
   onAddCita,
+  vacationRequests = [],
+  isUserOnVacationDate = () => false,
+  getUserVacationOnDate = () => null,
 }: HorarioViewDynamicProps) {
   const [draggedCita, setDraggedCita] = useState<Cita | null>(null)
   const [dragOverProfesional, setDragOverProfesional] = useState<number | null>(null)
@@ -128,6 +133,61 @@ export function HorarioViewDynamic({
   const { start: startMinutes, end: endMinutes } = getCalendarTimeRange(usuariosActivos, dayOfWeek)
   const duracionDia = endMinutes - startMinutes
 
+  // Funciones de vacaciones
+  const isProfessionalOnVacation = (profesionalId: number | string) => {
+    if (!isUserOnVacationDate) return false
+
+    // Encontrar el UUID del usuario correspondiente al profesional
+    const user = users.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
+    if (!user) return false
+
+    return isUserOnVacationDate(user.id, date)
+  }
+
+  const getProfessionalVacationInfo = (profesionalId: number | string) => {
+    if (!getUserVacationOnDate) return null
+
+    // Encontrar el UUID del usuario correspondiente al profesional
+    const user = users.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
+    if (!user) return null
+
+    return getUserVacationOnDate(user.id, date)
+  }
+
+  const getVacationIcon = (type: string) => {
+    switch (type) {
+      case "vacation":
+        return "🏖️"
+      case "sick_leave":
+        return "🏥"
+      case "personal":
+        return "👤"
+      case "maternity":
+        return "👶"
+      case "training":
+        return "📚"
+      default:
+        return "😴"
+    }
+  }
+
+  const getVacationLabel = (type: string) => {
+    switch (type) {
+      case "vacation":
+        return "Vacaciones"
+      case "sick_leave":
+        return "Baja médica"
+      case "personal":
+        return "Asunto personal"
+      case "maternity":
+        return "Baja maternal"
+      case "training":
+        return "Formación"
+      default:
+        return "Día libre"
+    }
+  }
+
   // Calcular posiciones
   const calcularPosicionCita = (hora: string) => {
     const normalizedTime = normalizeTimeFormat(hora)
@@ -149,11 +209,17 @@ export function HorarioViewDynamic({
 
   // Validar si se puede crear cita en una hora específica
   const puedeCrearCitaEnHora = (profesionalId: number, hora: string): boolean => {
+    // Verificar vacaciones primero
+    if (isProfessionalOnVacation(profesionalId)) {
+      return false
+    }
+
     const user = users.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
     if (!user) return false
 
     const normalizedTime = normalizeTimeFormat(hora)
     const timeInMinutes = timeToMinutes(normalizedTime)
+
     return isUserWorkingAt(user, dayOfWeek, timeInMinutes)
   }
 
@@ -175,6 +241,7 @@ export function HorarioViewDynamic({
     const y = e.clientY - rect.top
 
     const nuevaHora = calcularHoraDesdePosicion(y, rect.height)
+
     setPreviewHora(nuevaHora)
     setPreviewPosition({ x: 0, y: e.clientY })
 
@@ -183,6 +250,7 @@ export function HorarioViewDynamic({
     indicadores.forEach((ind) => ind.remove())
 
     const puedeCrear = puedeCrearCitaEnHora(profesionalId, nuevaHora)
+
     const indicador = document.createElement("div")
     indicador.className = `drop-indicator absolute w-full h-1 rounded-full z-50 pointer-events-none ${
       puedeCrear ? "bg-blue-400" : "bg-red-400"
@@ -207,7 +275,12 @@ export function HorarioViewDynamic({
 
     // Validar si puede crear cita en esa hora
     if (!puedeCrearCitaEnHora(profesionalId, nuevaHora)) {
-      toast.error("No se puede mover la cita fuera del horario de trabajo")
+      const isOnVacation = isProfessionalOnVacation(profesionalId)
+      const message = isOnVacation
+        ? "No se puede mover la cita: el profesional está de vacaciones"
+        : "No se puede mover la cita fuera del horario de trabajo"
+
+      toast.error(message)
       setDraggedCita(null)
       setDragOverProfesional(null)
       setIsDragging(false)
@@ -224,7 +297,6 @@ export function HorarioViewDynamic({
 
       // Llamar a la función de actualización y esperar a que termine
       await onUpdateCita(citaActualizada)
-
       setDraggedCita(null)
       setDragOverProfesional(null)
       setIsDragging(false)
@@ -256,7 +328,14 @@ export function HorarioViewDynamic({
 
     // Validar si puede crear cita en esa hora
     if (!puedeCrearCitaEnHora(profesionalId, hora)) {
-      toast.error("No se puede crear cita fuera del horario de trabajo")
+      const isOnVacation = isProfessionalOnVacation(profesionalId)
+      const vacationInfo = getProfessionalVacationInfo(profesionalId)
+
+      const message = isOnVacation
+        ? `No disponible: ${getVacationLabel(vacationInfo?.type) || "Ausencia"}`
+        : "No se puede crear cita fuera del horario de trabajo"
+
+      toast.error(message)
       return
     }
 
@@ -268,8 +347,13 @@ export function HorarioViewDynamic({
     setShowNewAppointmentModal(true)
   }
 
-  // Renderizar huecos libres para un profesional (solo en horario de trabajo)
+  // Renderizar huecos libres para un profesional (solo en horario de trabajo y sin vacaciones)
   const renderHuecosLibres = (profesionalId: number) => {
+    // No mostrar huecos si está de vacaciones
+    if (isProfessionalOnVacation(profesionalId)) {
+      return []
+    }
+
     const citasProfesional = citas.filter((cita) => cita.profesionalId === profesionalId)
     const user = users.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
 
@@ -345,6 +429,10 @@ export function HorarioViewDynamic({
           const workingHours = user ? getWorkingHoursForDay(user, dayOfWeek) : []
           const isWorkingToday = workingHours.length > 0
 
+          // Verificar vacaciones
+          const isOnVacation = isProfessionalOnVacation(profesional.id)
+          const vacationInfo = getProfessionalVacationInfo(profesional.id)
+
           // Obtener estilos de color dinámicos
           const colorStyles = getColorProfesional(profesional)
 
@@ -353,20 +441,25 @@ export function HorarioViewDynamic({
               {/* Cabecera del profesional */}
               <div
                 className={`sticky top-0 z-10 rounded-t-md border-b-2 text-center ${
-                  !isWorkingToday ? "opacity-50" : ""
+                  !isWorkingToday || isOnVacation ? "opacity-50" : ""
                 }`}
                 style={{
-                  backgroundColor: colorStyles.backgroundColor,
-                  borderColor: colorStyles.borderColor,
-                  color: colorStyles.color,
+                  backgroundColor: isOnVacation ? "#fef3c7" : colorStyles.backgroundColor,
+                  borderColor: isOnVacation ? "#f59e0b" : colorStyles.borderColor,
+                  color: isOnVacation ? "#92400e" : colorStyles.color,
                 }}
               >
                 <div className="flex flex-col items-center justify-center py-2 px-2" style={{ height: 56 }}>
                   <span className="font-medium text-sm leading-tight">
                     {titulo} {nombre}
                   </span>
-                  {!isWorkingToday && <span className="text-xs text-gray-500">No trabaja hoy</span>}
-                  {isWorkingToday && workingHours.length > 0 && (
+                  {isOnVacation && (
+                    <span className="text-xs text-orange-600 flex items-center gap-1">
+                      {getVacationIcon(vacationInfo?.type)} {getVacationLabel(vacationInfo?.type)}
+                    </span>
+                  )}
+                  {!isOnVacation && !isWorkingToday && <span className="text-xs text-gray-500">No trabaja hoy</span>}
+                  {!isOnVacation && isWorkingToday && workingHours.length > 0 && (
                     <span className="text-xs opacity-75">
                       {workingHours.map((h) => `${minutesToTime(h.start)}-${minutesToTime(h.end)}`).join(", ")}
                     </span>
@@ -379,20 +472,32 @@ export function HorarioViewDynamic({
                 className={`relative border rounded-b-md transition-all duration-200 ${
                   dragOverProfesional === profesional.id
                     ? "bg-blue-50 border-blue-300 shadow-lg"
-                    : !isWorkingToday
+                    : !isWorkingToday || isOnVacation
                       ? "bg-gray-100"
                       : "bg-gray-50"
                 }`}
                 style={{ height: "600px" }}
                 onDragOver={(e) => handleDragOver(e, profesional.id)}
                 onDrop={(e) => handleDrop(e, profesional.id)}
-                onClick={isWorkingToday ? (e) => handleContainerClick(e, profesional.id) : undefined}
+                onClick={isWorkingToday && !isOnVacation ? (e) => handleContainerClick(e, profesional.id) : undefined}
               >
-                {!isWorkingToday ? (
+                {!isWorkingToday && !isOnVacation ? (
                   <div className="flex items-center justify-center h-full text-gray-500">
                     <div className="text-center">
                       <div className="text-4xl mb-2">😴</div>
                       <div className="text-sm">Día libre</div>
+                    </div>
+                  </div>
+                ) : isOnVacation ? (
+                  <div className="flex items-center justify-center h-full text-orange-600">
+                    <div className="text-center p-4">
+                      <div className="text-4xl mb-3">{getVacationIcon(vacationInfo?.type)}</div>
+                      <div className="text-lg font-semibold mb-2">{getVacationLabel(vacationInfo?.type)}</div>
+                      {vacationInfo?.reason && <div className="text-sm mb-2">{vacationInfo.reason}</div>}
+                      <div className="text-xs">
+                        {format(new Date(vacationInfo?.start_date), "dd/MM")} -{" "}
+                        {format(new Date(vacationInfo?.end_date), "dd/MM")}
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -406,7 +511,7 @@ export function HorarioViewDynamic({
                       />
                     ))}
 
-                    {/* Huecos libres - solo en horario de trabajo */}
+                    {/* Huecos libres - solo en horario de trabajo y sin vacaciones */}
                     {huecosLibres.map((hueco, index) => (
                       <div
                         key={`hueco-${index}`}
@@ -432,7 +537,11 @@ export function HorarioViewDynamic({
                             })
                             setShowNewAppointmentModal(true)
                           } else {
-                            toast.error("No se puede crear cita fuera del horario de trabajo")
+                            const isOnVacation = isProfessionalOnVacation(profesional.id)
+                            const message = isOnVacation
+                              ? "No se puede crear cita: el profesional está de vacaciones"
+                              : "No se puede crear cita fuera del horario de trabajo"
+                            toast.error(message)
                           }
                         }}
                       >
@@ -465,8 +574,8 @@ export function HorarioViewDynamic({
                           <Tooltip key={cita.id}>
                             <TooltipTrigger asChild>
                               <div
-                                draggable
-                                onDragStart={(e) => handleDragStart(e, cita)}
+                                draggable={!isOnVacation}
+                                onDragStart={(e) => !isOnVacation && handleDragStart(e, cita)}
                                 onDragEnd={handleDragEnd}
                                 className={`absolute rounded-md cursor-move shadow-sm border transition-all duration-200 hover:shadow-lg ${
                                   draggedCita?.id === cita.id ? "opacity-50 scale-95 z-50" : "hover:brightness-95"
@@ -559,7 +668,10 @@ export function HorarioViewDynamic({
               ? {
                   hora: draggedCita.hora,
                   fecha: typeof draggedCita.fecha === "string" ? new Date(draggedCita.fecha) : draggedCita.fecha,
-                  profesionalId: draggedCita.profesionalId,
+                  profesionalId:
+                    typeof draggedCita.profesionalId === "string"
+                      ? Number.parseInt(draggedCita.profesionalId)
+                      : draggedCita.profesionalId,
                 }
               : undefined
           }

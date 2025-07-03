@@ -146,11 +146,14 @@ export default function ServicesPage() {
   }
 
   const formatPrice = (price: number) => {
-    return new Intl.NumberFormat("es-ES", {
-      style: "currency",
-      currency: "EUR",
-    }).format(price)
+    return (
+      new Intl.NumberFormat("es-ES", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(price) + " €"
+    )
   }
+
 
   const formatDuration = (duration: number) => {
     if (duration >= 60) {

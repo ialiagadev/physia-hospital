@@ -1,62 +1,40 @@
 "use client"
+
 import {
-  format,
-  startOfMonth,
-  endOfMonth,
+  add,
   eachDayOfInterval,
-  isSameMonth,
+  endOfMonth,
+  format,
   isSameDay,
+  isSameMonth,
   isToday,
+  parse,
+  startOfToday,
+  startOfMonth,
   startOfWeek,
   endOfWeek,
 } from "date-fns"
-import type { Cita, Profesional } from "@/types/calendar-types"
+import { es } from "date-fns/locale"
+import { useState } from "react"
+import { ChevronLeft, ChevronRight } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+
+function classNames(...classes: any[]) {
+  return classes.filter(Boolean).join(" ")
+}
 
 interface MonthViewProps {
   date: Date
-  citas: Cita[]
-  profesionales: Profesional[]
-  onSelectCita: (cita: Cita) => void
+  citas: any[]
+  profesionales: any[]
+  onSelectCita: (cita: any) => void
   profesionalesSeleccionados: number[]
-  onUpdateCita: (cita: Cita) => void
-  onAddCita: (cita: Partial<Cita>) => void
-  onDateSelect?: (date: Date) => void
-}
-
-const getColorProfesional = (profesional: Profesional) => {
-  // Usar el color de la base de datos directamente
-  const color = profesional.color || "#3B82F6"
-
-  return {
-    backgroundColor: `${color}20`, // 20% opacity
-    borderLeftColor: color,
-    color: color,
-  }
-}
-
-const getColorEstado = (estado: string) => {
-  switch (estado) {
-    case "confirmada":
-      return "bg-green-500"
-    case "pendiente":
-      return "bg-amber-400"
-    case "cancelada":
-      return "bg-red-500"
-    default:
-      return "bg-gray-300"
-  }
-}
-
-// Función para asegurar que tenemos un objeto Date válido
-const ensureDate = (fecha: Date | string): Date => {
-  if (fecha instanceof Date) {
-    return fecha
-  }
-  const parsedDate = new Date(fecha)
-  if (isNaN(parsedDate.getTime())) {
-    return new Date() // Fallback a fecha actual
-  }
-  return parsedDate
+  onUpdateCita: (cita: any) => void
+  onAddCita: (cita: any) => void
+  vacationRequests?: any[]
+  isUserOnVacationDate?: (userId: string, date: Date | string) => boolean
+  getUserVacationOnDate?: (userId: string, date: Date | string) => any
 }
 
 export function MonthView({
@@ -67,76 +45,137 @@ export function MonthView({
   profesionalesSeleccionados,
   onUpdateCita,
   onAddCita,
-  onDateSelect,
+  vacationRequests = [],
+  isUserOnVacationDate = () => false,
+  getUserVacationOnDate = () => null,
 }: MonthViewProps) {
-  // Generar días del calendario (6 semanas)
-  const monthStart = startOfMonth(date)
-  const monthEnd = endOfMonth(date)
+  const today = startOfToday()
+  const [currentMonth, setCurrentMonth] = useState(format(date, "MMMM yyyy", { locale: es }))
+  const firstDayCurrentMonth = parse(currentMonth, "MMMM yyyy", new Date(), { locale: es })
+
+  const monthStart = startOfMonth(firstDayCurrentMonth)
+  const monthEnd = endOfMonth(firstDayCurrentMonth)
   const calendarStart = startOfWeek(monthStart, { weekStartsOn: 1 })
   const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 1 })
 
-  const calendarDays = eachDayOfInterval({
+  const days = eachDayOfInterval({
     start: calendarStart,
     end: calendarEnd,
   })
 
-  // Obtener citas de un día específico
-  const getCitasDelDia = (day: Date) => {
-    return citas.filter((cita) => {
-      const citaFecha = ensureDate(cita.fecha)
-      return isSameDay(citaFecha, day) && profesionalesSeleccionados.includes(cita.profesionalId)
-    })
+  function previousMonth() {
+    const firstDayPrevMonth = add(firstDayCurrentMonth, { months: -1 })
+    setCurrentMonth(format(firstDayPrevMonth, "MMMM yyyy", { locale: es }))
   }
 
-  const handleDayClick = (day: Date) => {
-    if (onDateSelect) {
-      onDateSelect(day)
+  function nextMonth() {
+    const firstDayNextMonth = add(firstDayCurrentMonth, { months: 1 })
+    setCurrentMonth(format(firstDayNextMonth, "MMMM yyyy", { locale: es }))
+  }
+
+  const getVacationIcon = (type: string) => {
+    switch (type) {
+      case "vacation":
+        return "🏖️"
+      case "sick_leave":
+        return "🏥"
+      case "personal":
+        return "👤"
+      default:
+        return "😴"
     }
   }
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Header con días de la semana */}
-      <div className="grid grid-cols-7 border-b bg-gray-50">
-        {["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"].map((day) => (
-          <div key={day} className="p-3 text-center text-sm font-medium text-gray-700 border-r last:border-r-0">
+    <div className="flex flex-col h-full">
+      {/* Header del mes */}
+      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200">
+        <h2 className="text-lg font-semibold text-gray-900 capitalize">
+          {format(firstDayCurrentMonth, "MMMM yyyy", { locale: es })}
+        </h2>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={previousMonth}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="sm" onClick={nextMonth}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Días de la semana */}
+      <div className="grid grid-cols-7 border-b border-gray-200 bg-gray-50">
+        {["L", "M", "X", "J", "V", "S", "D"].map((day, index) => (
+          <div
+            key={index}
+            className="py-2 text-center text-xs font-semibold text-gray-500 border-r border-gray-200 last:border-r-0"
+          >
             {day}
           </div>
         ))}
       </div>
 
-      {/* Grid del calendario */}
-      <div className="flex-1 grid grid-cols-7 gap-0">
-        {calendarDays.map((day) => {
-          const citasDelDia = getCitasDelDia(day)
-          const isCurrentMonth = isSameMonth(day, date)
-          const isDayToday = isToday(day)
+      {/* Calendario */}
+      <div className="flex-1 grid grid-cols-7 divide-x divide-gray-200">
+        {days.map((day, dayIdx) => {
+          const dayDate = format(day, "yyyy-MM-dd")
+          const citasDelDia = citas.filter((cita) => isSameDay(new Date(cita.fecha), day))
+
+          // Verificar vacaciones para profesionales seleccionados
+          const profesionalesDeVacaciones = profesionales
+            .filter((prof) => profesionalesSeleccionados.includes(prof.id))
+            .filter((prof) => {
+              const userId = prof.userId || prof.id.toString()
+              return isUserOnVacationDate(userId, day)
+            })
 
           return (
             <div
-              key={day.toISOString()}
-              className={`border-r border-b last:border-r-0 min-h-[120px] p-2 cursor-pointer hover:bg-gray-50 transition-colors ${
-                !isCurrentMonth ? "bg-gray-100 text-gray-400" : "bg-white"
-              }`}
-              onClick={() => handleDayClick(day)}
+              key={day.toString()}
+              className={classNames(
+                "min-h-[120px] p-2 border-b border-gray-200",
+                !isSameMonth(day, firstDayCurrentMonth) && "bg-gray-50 text-gray-400",
+                isToday(day) && "bg-blue-50",
+              )}
             >
               {/* Número del día */}
-              <div className="flex justify-between items-start mb-2">
-                <span
-                  className={`text-sm font-medium ${
-                    isDayToday
-                      ? "bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center"
-                      : isCurrentMonth
-                        ? "text-gray-900"
-                        : "text-gray-400"
-                  }`}
+              <div className="flex items-center justify-between mb-1">
+                <button
+                  type="button"
+                  className={classNames(
+                    "flex h-6 w-6 items-center justify-center rounded-full text-sm",
+                    isToday(day) && "bg-blue-600 font-semibold text-white",
+                    !isToday(day) && isSameMonth(day, firstDayCurrentMonth) && "text-gray-900 hover:bg-gray-100",
+                    !isToday(day) && !isSameMonth(day, firstDayCurrentMonth) && "text-gray-400",
+                  )}
+                  onClick={() => {
+                    onAddCita({
+                      fecha: day,
+                      hora: "09:00",
+                    })
+                  }}
                 >
-                  {format(day, "d")}
-                </span>
-                {citasDelDia.length > 3 && (
-                  <span className="text-xs text-gray-500 bg-gray-200 rounded-full px-2 py-1">
-                    +{citasDelDia.length - 3}
-                  </span>
+                  <time dateTime={format(day, "yyyy-MM-dd")}>{format(day, "d")}</time>
+                </button>
+
+                {/* Indicador de vacaciones */}
+                {profesionalesDeVacaciones.length > 0 && (
+                  <div className="flex gap-1">
+                    {profesionalesDeVacaciones.slice(0, 3).map((prof) => {
+                      const userId = prof.userId || prof.id.toString()
+                      const vacationInfo = getUserVacationOnDate(userId, day)
+                      return (
+                        <Badge key={prof.id} variant="secondary" className="text-xs bg-orange-100 text-orange-700 px-1">
+                          {getVacationIcon(vacationInfo?.type)}
+                        </Badge>
+                      )
+                    })}
+                    {profesionalesDeVacaciones.length > 3 && (
+                      <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-700 px-1">
+                        +{profesionalesDeVacaciones.length - 3}
+                      </Badge>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -144,36 +183,38 @@ export function MonthView({
               <div className="space-y-1">
                 {citasDelDia.slice(0, 3).map((cita) => {
                   const profesional = profesionales.find((p) => p.id === cita.profesionalId)
-                  if (!profesional) return null
-
-                  // Obtener estilos de color dinámicos
-                  const colorStyles = getColorProfesional(profesional)
-
                   return (
                     <div
                       key={cita.id}
-                      className="text-xs p-1 rounded border-l-2 cursor-pointer hover:shadow-sm transition-shadow"
+                      className="text-xs p-1 rounded cursor-pointer hover:bg-opacity-80"
                       style={{
-                        backgroundColor: colorStyles.backgroundColor,
-                        borderLeftColor: colorStyles.borderLeftColor,
-                        color: colorStyles.color,
+                        backgroundColor: profesional?.color + "40" || "#e5e7eb",
+                        borderLeft: `3px solid ${profesional?.color || "#6b7280"}`,
                       }}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onSelectCita(cita)
-                      }}
+                      onClick={() => onSelectCita(cita)}
                     >
-                      <div className="flex items-center gap-1 mb-1">
-                        <div className={`w-2 h-2 rounded-full ${getColorEstado(cita.estado)}`} />
-                        <span className="font-medium truncate">
-                          {cita.hora} {cita.nombrePaciente}
-                        </span>
+                      <div className="font-medium truncate">{cita.nombrePaciente}</div>
+                      <div className="text-gray-600 truncate">
+                        {cita.hora} - {profesional?.nombre}
                       </div>
-                      <div className="opacity-75 truncate">{cita.tipo}</div>
                     </div>
                   )
                 })}
+
+                {citasDelDia.length > 3 && (
+                  <div className="text-xs text-gray-500 font-medium">+{citasDelDia.length - 3} más</div>
+                )}
               </div>
+
+              {/* Mensaje de día libre si hay vacaciones y no hay citas */}
+              {citasDelDia.length === 0 && profesionalesDeVacaciones.length > 0 && (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center text-orange-600">
+                    <div className="text-lg mb-1">😴</div>
+                    <div className="text-xs">Día libre</div>
+                  </div>
+                </div>
+              )}
             </div>
           )
         })}

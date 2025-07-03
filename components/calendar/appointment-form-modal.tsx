@@ -9,14 +9,15 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2, Phone, User, CheckCircle, AlertTriangle, MapPin, Info } from "lucide-react"
+import { Loader2, Phone, User, CheckCircle, AlertTriangle, MapPin, Info, Briefcase } from "lucide-react"
 import { useClients } from "@/hooks/use-clients"
 import { useUsers } from "@/hooks/use-users"
 import { useConsultations } from "@/hooks/use-consultations"
 import { useAuth } from "@/app/contexts/auth-context"
 import { normalizePhoneNumber, arePhoneNumbersEqual, formatPhoneNumber, isValidPhoneNumber } from "@/utils/phone-utils"
-import type { Cita } from "@/types/calendar-types"
 import { toast } from "sonner"
+import { supabase } from "@/lib/supabase/client"
+import type { Cita, EstadoCita } from "@/types/calendar"
 
 interface AppointmentFormModalProps {
   fecha: Date
@@ -28,12 +29,38 @@ interface AppointmentFormModalProps {
   onSubmit: (cita: Partial<Cita>) => void
 }
 
+interface Service {
+  id: number
+  name: string
+  description?: string
+  price: number
+  duration: number
+  color: string
+  category?: string
+  active: boolean
+  organization_id: number
+}
+
+interface SupabaseUser {
+  id: string
+  name: string | null
+  email: string
+  role: string
+  organization_id: number
+  type: number
+  is_active?: boolean
+  created_at?: string
+  updated_at?: string
+}
+
 const tiposCita = ["Consulta", "Revisión", "Urgencia", "Seguimiento", "Cirugía menor", "Vacunación"]
 
 const estadosCita = [
   { value: "confirmada", label: "Confirmada" },
   { value: "pendiente", label: "Pendiente" },
   { value: "cancelada", label: "Cancelada" },
+  { value: "completada", label: "Completada" },
+  { value: "no_show", label: "No se presentó" },
 ]
 
 export function AppointmentFormModal({
@@ -47,9 +74,16 @@ export function AppointmentFormModal({
 }: AppointmentFormModalProps) {
   const { userProfile } = useAuth()
   const organizationId = userProfile?.organization_id ? Number(userProfile.organization_id) : undefined
+
   const { clients } = useClients(organizationId)
   const { users } = useUsers(organizationId)
   const { consultations, loading: consultationsLoading, getAvailableConsultations } = useConsultations(organizationId)
+
+  // Estados para servicios
+  const [services, setServices] = useState<Service[]>([])
+  const [loadingServices, setLoadingServices] = useState(false)
+  const [filteredUsers, setFilteredUsers] = useState<SupabaseUser[]>([])
+  const [loadingFilteredUsers, setLoadingFilteredUsers] = useState(false)
 
   // Refs para evitar llamadas múltiples
   const isCheckingRef = useRef(false)
@@ -73,8 +107,9 @@ export function AppointmentFormModal({
     tipo: citaExistente?.tipo || "Consulta",
     notas: citaExistente?.notas || "",
     profesionalId: citaExistente?.profesionalId || profesionalId || 1,
-    estado: citaExistente?.estado || "pendiente",
+    estado: citaExistente?.estado || ("pendiente" as EstadoCita),
     consultationId: citaExistente?.consultationId || "",
+    service_id: citaExistente?.service_id || "",
   })
 
   const [clienteEncontrado, setClienteEncontrado] = useState<any>(null)
@@ -84,6 +119,144 @@ export function AppointmentFormModal({
   const [telefonoFormateado, setTelefonoFormateado] = useState("")
   const [availableConsultations, setAvailableConsultations] = useState(consultations)
   const [checkingConsultations, setCheckingConsultations] = useState(false)
+
+  // Inicializar filteredUsers con users al cargar
+  useEffect(() => {
+    // Convertir users a SupabaseUser format
+    const convertedUsers: SupabaseUser[] = users.map((user) => ({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      organization_id: user.organization_id,
+      type: 1, // Asumiendo que todos son tipo 1 (profesionales)
+      is_active: user.is_active,
+      created_at: user.created_at,
+      updated_at: user.updated_at,
+    }))
+    setFilteredUsers(convertedUsers)
+  }, [users])
+
+  // Cargar servicios al montar el componente
+  useEffect(() => {
+    const fetchServices = async () => {
+      if (!organizationId) return
+
+      setLoadingServices(true)
+      try {
+        const { data, error } = await supabase
+          .from("services")
+          .select("*")
+          .eq("organization_id", organizationId)
+          .eq("active", true)
+          .order("name")
+
+        if (error) throw error
+        setServices(data || [])
+      } catch (error) {
+        console.error("Error al cargar servicios:", error)
+        toast.error("Error al cargar servicios")
+      } finally {
+        setLoadingServices(false)
+      }
+    }
+
+    fetchServices()
+  }, [organizationId])
+
+  // Filtrar usuarios según el servicio seleccionado
+  useEffect(() => {
+    const filterUsersByService = async () => {
+      if (!formData.service_id || !organizationId) {
+        // Convertir users a SupabaseUser format
+        const convertedUsers: SupabaseUser[] = users.map((user) => ({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          organization_id: user.organization_id,
+          type: 1,
+          is_active: user.is_active,
+          created_at: user.created_at,
+          updated_at: user.updated_at,
+        }))
+        setFilteredUsers(convertedUsers)
+        return
+      }
+
+      setLoadingFilteredUsers(true)
+      try {
+        const { data, error } = await supabase
+          .from("user_services")
+          .select(`
+            user_id,
+            users!inner (
+              id,
+              name,
+              email,
+              role,
+              organization_id,
+              type
+            )
+          `)
+          .eq("service_id", formData.service_id)
+
+        if (error) throw error
+
+        // Procesar los datos correctamente
+        const serviceUsers: SupabaseUser[] = []
+
+        if (data) {
+          for (const item of data) {
+            if (item.users && typeof item.users === "object" && !Array.isArray(item.users)) {
+              const user = item.users as any
+              if (user.organization_id === organizationId && user.type === 1) {
+                serviceUsers.push({
+                  id: user.id,
+                  name: user.name,
+                  email: user.email,
+                  role: user.role,
+                  organization_id: user.organization_id,
+                  type: user.type,
+                })
+              }
+            }
+          }
+        }
+
+        setFilteredUsers(serviceUsers)
+
+        // Si el profesional seleccionado no está en la lista filtrada, limpiar la selección
+        if (
+          formData.profesionalId &&
+          !serviceUsers.find((user) => Number.parseInt(user.id.slice(-8), 16) === formData.profesionalId)
+        ) {
+          setFormData((prev) => ({ ...prev, profesionalId: 0 }))
+          toast.info("El profesional seleccionado no está asignado a este servicio")
+        }
+      } catch (error) {
+        console.error("Error al filtrar usuarios por servicio:", error)
+        // En caso de error, usar todos los usuarios
+        const convertedUsers: SupabaseUser[] = users.map((user) => ({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          organization_id: user.organization_id,
+          type: 1,
+          is_active: user.is_active,
+          created_at: user.created_at,
+          updated_at: user.updated_at,
+        }))
+        setFilteredUsers(convertedUsers)
+        toast.error("Error al filtrar profesionales por servicio")
+      } finally {
+        setLoadingFilteredUsers(false)
+      }
+    }
+
+    filterUsersByService()
+  }, [formData.service_id, users, organizationId, formData.profesionalId])
 
   // Inicializar consultas disponibles - solo una vez cuando cambian las consultas
   useEffect(() => {
@@ -112,9 +285,7 @@ export function AppointmentFormModal({
       try {
         const endTime = calcularHoraFin(hora, duracion)
         const dateString = fecha.toISOString().split("T")[0]
-
         const available = await getAvailableConsultations(dateString, hora, endTime, citaExistente?.id?.toString())
-
         setAvailableConsultations(available)
 
         // Si la consulta seleccionada ya no está disponible, limpiar la selección
@@ -149,10 +320,10 @@ export function AppointmentFormModal({
 
     const timeoutId = setTimeout(() => {
       checkAvailableConsultations(formData.hora, formData.duracion)
-    }, 800) // Aumenté el debounce a 800ms
+    }, 800)
 
     return () => clearTimeout(timeoutId)
-  }, [formData.hora, formData.duracion]) // Solo estas dos dependencias
+  }, [formData.hora, formData.duracion])
 
   // Función memoizada para buscar cliente
   const buscarClientePorTelefono = useCallback(
@@ -173,7 +344,6 @@ export function AppointmentFormModal({
         if (clienteExacto) {
           setClienteEncontrado(clienteExacto)
           setTelefonoValidado(true)
-
           const nombreCompleto = clienteExacto.name.split(" ")
           const nombre = nombreCompleto[0] || ""
           const apellidos = nombreCompleto.slice(1).join(" ") || ""
@@ -183,7 +353,6 @@ export function AppointmentFormModal({
             nombrePaciente: nombre,
             apellidosPaciente: apellidos,
           }))
-
           setTelefonoFormateado(formatPhoneNumber(telefono))
           toast.success(`Cliente encontrado: ${clienteExacto.name}`, {
             description: `Teléfono: ${clienteExacto.phone}`,
@@ -192,7 +361,6 @@ export function AppointmentFormModal({
           setClienteEncontrado(null)
           setTelefonoValidado(true)
           setTelefonoFormateado(formatPhoneNumber(telefono))
-
           if (!citaExistente) {
             setFormData((prev) => ({
               ...prev,
@@ -200,7 +368,6 @@ export function AppointmentFormModal({
               apellidosPaciente: "",
             }))
           }
-
           toast.info("Cliente nuevo - completa los datos", {
             description: `Teléfono: ${formatPhoneNumber(telefono)}`,
           })
@@ -275,6 +442,33 @@ export function AppointmentFormModal({
     lastCheckParamsRef.current = ""
   }, [])
 
+  // Manejar cambio de servicio
+  const handleServiceChange = useCallback(
+    (value: string) => {
+      if (value === "none") {
+        setFormData((prev) => ({
+          ...prev,
+          service_id: "",
+        }))
+        return
+      }
+
+      const selectedService = services.find((s) => s.id.toString() === value)
+      setFormData((prev) => ({
+        ...prev,
+        service_id: value,
+        duracion: selectedService ? selectedService.duration : prev.duracion,
+      }))
+
+      if (selectedService) {
+        toast.info(`Servicio seleccionado: ${selectedService.name}`, {
+          description: `Duración ajustada a ${selectedService.duration} minutos`,
+        })
+      }
+    },
+    [services],
+  )
+
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault()
@@ -311,7 +505,9 @@ export function AppointmentFormModal({
         telefonoPaciente: normalizePhoneNumber(formData.telefonoPaciente),
         fecha,
         horaFin: calcularHoraFin(formData.hora, formData.duracion),
+        horaInicio: formData.hora,
         id: citaExistente?.id || Date.now(),
+        estado: formData.estado,
       }
 
       onSubmit(nuevaCita)
@@ -428,6 +624,39 @@ export function AppointmentFormModal({
             </div>
           </div>
 
+          {/* Servicio */}
+          <div>
+            <Label htmlFor="service" className="flex items-center gap-2">
+              <Briefcase className="h-4 w-4" />
+              Servicio (opcional) {loadingServices && <Loader2 className="h-3 w-3 animate-spin" />}
+            </Label>
+            <Select value={formData.service_id} onValueChange={handleServiceChange} disabled={loadingServices}>
+              <SelectTrigger>
+                <SelectValue placeholder={loadingServices ? "Cargando servicios..." : "Selecciona un servicio"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Sin servicio específico</SelectItem>
+                {services.map((service) => (
+                  <SelectItem key={service.id} value={service.id.toString()}>
+                    <div className="flex items-center gap-2 w-full">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: service.color }} />
+                      <div className="flex-1">
+                        <div className="font-medium">{service.name}</div>
+                        <div className="text-xs text-gray-500">
+                          {service.duration}min • €{service.price}
+                          {service.category && ` • ${service.category}`}
+                        </div>
+                      </div>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {formData.service_id && (
+              <p className="text-sm text-blue-600 mt-1">Solo se mostrarán profesionales asignados a este servicio</p>
+            )}
+          </div>
+
           {/* Horario */}
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -487,22 +716,41 @@ export function AppointmentFormModal({
 
           {/* Profesional */}
           <div>
-            <Label htmlFor="profesional">Profesional</Label>
+            <Label htmlFor="profesional" className="flex items-center gap-2">
+              Profesional {loadingFilteredUsers && <Loader2 className="h-3 w-3 animate-spin" />}
+            </Label>
             <Select
               value={formData.profesionalId.toString()}
               onValueChange={(value) => setFormData({ ...formData, profesionalId: Number.parseInt(value) })}
+              disabled={loadingFilteredUsers}
             >
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue
+                  placeholder={loadingFilteredUsers ? "Filtrando profesionales..." : "Selecciona un profesional"}
+                />
               </SelectTrigger>
               <SelectContent>
-                {users.map((user) => (
+                {filteredUsers.map((user) => (
                   <SelectItem key={user.id} value={Number.parseInt(user.id.slice(-8), 16).toString()}>
-                    {user.name}
+                    <div className="flex items-center gap-2">
+                      <span>{user.name || user.email}</span>
+                      <span className="text-xs text-gray-500">({user.role})</span>
+                    </div>
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {formData.service_id && filteredUsers.length === 0 && !loadingFilteredUsers && (
+              <p className="text-sm text-amber-600 mt-1">No hay profesionales asignados a este servicio</p>
+            )}
+            {formData.service_id && filteredUsers.length > 0 && (
+              <p className="text-sm text-blue-600 mt-1">
+                Mostrando {filteredUsers.length} profesional(es) asignado(s) al servicio
+              </p>
+            )}
+            {!formData.service_id && (
+              <p className="text-sm text-gray-500 mt-1">Mostrando todos los profesionales disponibles</p>
+            )}
           </div>
 
           {/* Tipo de cita */}
@@ -527,9 +775,7 @@ export function AppointmentFormModal({
             <Label htmlFor="estado">Estado</Label>
             <Select
               value={formData.estado}
-              onValueChange={(value: "confirmada" | "pendiente" | "cancelada") =>
-                setFormData({ ...formData, estado: value })
-              }
+              onValueChange={(value: EstadoCita) => setFormData({ ...formData, estado: value })}
             >
               <SelectTrigger>
                 <SelectValue />
@@ -563,7 +809,7 @@ export function AppointmentFormModal({
               <strong>Consejos:</strong>
             </p>
             <p>• El teléfono es obligatorio para enviar recordatorios</p>
-            <p>• Debes seleccionar una consulta disponible</p>
+            <p>• Selecciona un servicio para filtrar profesionales específicos</p>
             <p>• Las consultas se verifican automáticamente según el horario</p>
             <p>• Sal del campo teléfono para validar y buscar cliente</p>
           </div>

@@ -19,6 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Checkbox } from "@/components/ui/checkbox"
 import { getClinicalReportData, type ClinicalReportData } from "@/lib/actions/clinical-report-data"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { PatientAppointmentsSection } from "@/components/patient-appointments-section"
 import {
   Dialog,
   DialogContent,
@@ -3400,16 +3401,10 @@ const handleSubmit = async (e: React.FormEvent) => {
         </TabsContent>
 
         {/* Pestaña Citas */}
-        <TabsContent value="citas" className="space-y-6">
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <CalendarDays className="h-12 w-12 text-gray-300 mb-4" />
-              <h3 className="text-lg font-medium">Citas</h3>
-              <p className="text-gray-500 mt-2">Funcionalidad en desarrollo</p>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
+        {/* Pestaña Citas */}
+<TabsContent value="citas" className="space-y-6">
+  <PatientAppointmentsSection clientId={clientId} clientName={formData.name} />
+</TabsContent>
               {/* Pestaña Documentos */}
               <TabsContent value="documentos" className="space-y-6">
           <Card>

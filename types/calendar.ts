@@ -1,4 +1,5 @@
 import type React from "react"
+
 export interface AppointmentUpdate {
   date?: string
   start_time?: string
@@ -10,6 +11,7 @@ export interface AppointmentUpdate {
   client_id?: number
   appointment_type_id?: number
   consultation_id?: string
+  service_id?: string | null
 }
 
 export interface Database {
@@ -71,6 +73,7 @@ export interface Database {
           created_at: string
           updated_at: string
           created_by: string
+          service_id: string | null
         }
         Insert: {
           id?: string
@@ -89,6 +92,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
           created_by: string
+          service_id?: string | null
         }
         Update: {
           id?: string
@@ -107,6 +111,48 @@ export interface Database {
           created_at?: string
           updated_at?: string
           created_by?: string
+          service_id?: string | null
+        }
+      }
+      services: {
+        Row: {
+          id: number
+          name: string
+          description: string | null
+          price: number
+          duration: number
+          color: string
+          category: string | null
+          active: boolean
+          organization_id: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          name: string
+          description?: string | null
+          price: number
+          duration: number
+          color?: string
+          category?: string | null
+          active?: boolean
+          organization_id: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          name?: string
+          description?: string | null
+          price?: number
+          duration?: number
+          color?: string
+          category?: string | null
+          active?: boolean
+          organization_id?: number
+          created_at?: string
+          updated_at?: string
         }
       }
     }
@@ -143,19 +189,29 @@ export interface Appointment {
   notes?: string
 }
 
-// Tipo para citas (usado en algunos componentes)
+// Tipo para citas (usado en algunos componentes) - ACTUALIZADO CON service_id
 export interface Cita {
-  id: string
+  id: string | number
   fecha: Date | string
   horaInicio: string
-  horaFin: string
+  horaFin?: string
+  hora: string // Alias para horaInicio para compatibilidad
+  telefono?: string // Para compatibilidad con week-view
+  telefonoPaciente?: string
+  nombrePaciente: string
+  apellidosPaciente?: string
   profesionalId: string | number
   clienteId: number
   consultationId?: string
   duracion: number
-  estado: "confirmed" | "pending" | "cancelled" | "completed" | "no_show"
+  estado: EstadoCita // Usar el tipo EstadoCita en español
   notas?: string
-  tipoId: string
+  tipo: string
+  tipoId?: string
+  emoticonos?: string[] // Cambiado de number[] a string[] para almacenar emojis
+  citaRecurrenteId?: string
+  service_id?: string | null
+  consultation?: Consultation // Incluir datos completos de consulta
 }
 
 // Tipos para horarios de trabajo
@@ -299,12 +355,14 @@ export interface AppointmentWithDetails {
   created_at: string
   updated_at: string
   created_by: string
+  service_id: string | null
   // Relaciones
   client: Client
   professional: User
   appointment_type: AppointmentType
   consultation: Consultation
   created_by_user: User
+  service?: Service
 }
 
 export interface AppointmentInsert {
@@ -321,21 +379,58 @@ export interface AppointmentInsert {
   status?: "confirmed" | "pending" | "cancelled" | "completed" | "no_show"
   notes?: string | null
   created_by: string
+  service_id?: string | null
 }
 
-// Tipos para las vistas del calendario
+// Tipo para servicios
+export interface Service {
+  id: number
+  name: string
+  description?: string | null
+  price: number
+  duration: number
+  color: string
+  category?: string | null
+  active: boolean
+  organization_id: number
+  created_at: string
+  updated_at: string
+}
+
+export interface ServiceInsert {
+  name: string
+  description?: string | null
+  price: number
+  duration: number
+  color?: string
+  category?: string | null
+  active?: boolean
+  organization_id: number
+}
+
+export interface ServiceUpdate {
+  name?: string
+  description?: string | null
+  price?: number
+  duration?: number
+  color?: string
+  category?: string | null
+  active?: boolean
+}
+
+// Tipos para las vistas del calendario - EXACTAMENTE como se usan en el código
 export type CalendarView = "day" | "week" | "month" | "agenda"
 export type CalendarSubView = "list" | "schedule" | "professionals" | "consultations"
 export type MainTab = "calendar" | "waiting-list" | "group-activities"
 export type TimeInterval = 15 | 30 | 60
 
-// Tipos en español para compatibilidad con el sistema existente
+// Tipos en español para compatibilidad con el sistema existente - EXACTAMENTE como se usan
 export type IntervaloTiempo = 15 | 30 | 60
 export type VistaCalendario = "dia" | "semana" | "mes"
 export type SubVistaCalendario = "lista" | "horario" | "profesionales" | "consultas" | "servicios"
 export type TabPrincipal = "calendario" | "lista-espera" | "actividades-grupales"
 
-// Tipos de estado en español para la UI
+// Tipos de estado en ESPAÑOL para la UI - EXACTAMENTE como se usan
 export type EstadoCita = "confirmada" | "pendiente" | "cancelada" | "completada" | "no_show"
 
 // Tipos para filtros
@@ -344,6 +439,7 @@ export interface CalendarFilters {
   consultations: string[]
   appointmentTypes: string[]
   statuses: string[]
+  services: string[]
 }
 
 // Tipos para configuración
@@ -359,4 +455,140 @@ export interface CalendarConfig {
 export interface HoraPreviewTooltipProps {
   citaOriginal: any
   children: React.ReactNode
+}
+
+// Interfaz principal actualizada para citas
+export interface Profesional {
+  id: number
+  nombre: string
+  name?: string // Para compatibilidad
+  especialidad: string
+  color?: string
+  settings?: {
+    specialty?: string
+    calendar_color?: string
+  }
+}
+
+export interface EmoticonoPersonalizado {
+  id: number
+  emoji: string
+  descripcion: string
+}
+
+export interface DiaEspecial {
+  id: number
+  fecha: string
+  tipo: "cerrado" | "horario_especial"
+  motivo: string
+  horarioEspecial?: {
+    apertura: string
+    cierre: string
+  }
+}
+
+export interface HorarioApertura {
+  id: number
+  profesionalId: number
+  diaSemana: number
+  apertura: string
+  cierre: string
+  activo: boolean
+}
+
+// Props para componentes
+export interface AppointmentFormModalProps {
+  fecha: Date
+  hora: string
+  profesionalId?: number
+  position?: { x: number; y: number }
+  citaExistente?: Cita
+  onClose: () => void
+  onSubmit: (cita: Partial<Cita>) => void
+}
+
+export interface CalendarHeaderProps {
+  currentDate: Date
+  onDateChange: (date: Date) => void
+  view: "day" | "week" | "month"
+  onViewChange: (view: "day" | "week" | "month") => void
+}
+
+export interface DayViewProps {
+  date: Date
+  citas: Cita[]
+  profesionales: Profesional[]
+  onCitaClick: (cita: Cita) => void
+  onSlotClick: (fecha: Date, hora: string, profesionalId?: number) => void
+}
+
+export interface WeekViewProps {
+  startDate: Date
+  citas: Cita[]
+  profesionales: Profesional[]
+  onCitaClick: (cita: Cita) => void
+  onSlotClick: (fecha: Date, hora: string, profesionalId?: number) => void
+}
+
+export interface MonthViewProps {
+  date: Date
+  citas: Cita[]
+  onDateClick: (date: Date) => void
+  onCitaClick: (cita: Cita) => void
+}
+
+export interface AppointmentModalProps {
+  cita: Cita | null
+  isOpen: boolean
+  onClose: () => void
+  onSave: (cita: Cita) => void
+  onDelete?: (citaId: number | string) => void
+}
+
+// Tipos para filtros y configuración
+export interface FiltrosCalendario {
+  profesionales: number[]
+  tipos: string[]
+  estados: string[]
+  servicios: string[]
+}
+
+export interface EstadisticasCalendario {
+  totalCitas: number
+  citasConfirmadas: number
+  citasPendientes: number
+  citasCanceladas: number
+  ocupacionPorcentaje: number
+}
+
+// Tipos para horarios disponibles
+export interface SlotDisponible {
+  fecha: Date
+  hora: string
+  profesionalId: number
+  disponible: boolean
+}
+
+export interface RangoHorario {
+  inicio: string
+  fin: string
+  disponible: boolean
+}
+
+// Configuración del calendario
+export interface ConfiguracionCalendario {
+  intervaloTiempo: IntervaloTiempo
+  horaInicio: number
+  horaFin: number
+  mostrarFinesSemana: boolean
+}
+
+// Horarios de trabajo
+export interface HorarioTrabajo {
+  id: string
+  profesionalId: number
+  diaSemana: number
+  horaInicio: string
+  horaFin: string
+  activo: boolean
 }

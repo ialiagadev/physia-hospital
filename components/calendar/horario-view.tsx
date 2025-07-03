@@ -1,14 +1,15 @@
 "use client"
 
-import type React from "react"
-
-import { useState } from "react"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import React from "react"
+import { useState, useEffect } from "react"
+import { TooltipProvider } from "@/components/ui/tooltip"
 import { AppointmentFormModal } from "./appointment-form-modal"
 import { HoraPreviewTooltip } from "./hora-preview-tooltip"
-import { horaAMinutos, calcularHoraFin, formatearFecha } from "@/utils/calendar-utils"
-import type { Cita, Profesional, IntervaloTiempo } from "@/types/calendar-types"
+import { horaAMinutos, calcularHoraFin } from "@/utils/calendar-utils"
+import type { Cita, Profesional, IntervaloTiempo } from "@/types/calendar"
 import { toast } from "sonner"
+import { useVacationRequests } from "@/hooks/use-vacation-requests"
+import { Plane, AlertTriangle, Clock, User } from "lucide-react"
 
 interface HorarioViewProps {
   date: Date
@@ -22,6 +23,16 @@ interface HorarioViewProps {
   onAddCita: (cita: Partial<Cita>) => void
 }
 
+interface VacationRequest {
+  id: string
+  user_id: string
+  type: string
+  start_date: string
+  end_date: string
+  reason: string
+  status: string
+}
+
 // Colores para los profesionales
 const COLORES_PROFESIONALES = {
   teal: "bg-teal-100 border-teal-500 text-teal-800",
@@ -30,6 +41,34 @@ const COLORES_PROFESIONALES = {
   amber: "bg-amber-100 border-amber-500 text-amber-800",
   rose: "bg-rose-100 border-rose-500 text-rose-800",
   emerald: "bg-emerald-100 border-emerald-500 text-emerald-800",
+}
+
+// Colores para tipos de vacaciones
+const VACATION_COLORS = {
+  vacation: "bg-blue-100 border-blue-400 text-blue-800",
+  sick_leave: "bg-red-100 border-red-400 text-red-800",
+  personal: "bg-purple-100 border-purple-400 text-purple-800",
+  maternity: "bg-pink-100 border-pink-400 text-pink-800",
+  training: "bg-green-100 border-green-400 text-green-800",
+  other: "bg-gray-100 border-gray-400 text-gray-800",
+}
+
+const VACATION_ICONS = {
+  vacation: Plane,
+  sick_leave: AlertTriangle,
+  personal: User,
+  maternity: User,
+  training: Clock,
+  other: Clock,
+}
+
+const VACATION_LABELS = {
+  vacation: "Vacaciones",
+  sick_leave: "Baja Médica",
+  personal: "Asunto Personal",
+  maternity: "Maternidad/Paternidad",
+  training: "Formación",
+  other: "Otros",
 }
 
 const getColorProfesional = (profesional: Profesional) => {
@@ -83,11 +122,40 @@ export function HorarioView({
   } | null>(null)
   const [previewHora, setPreviewHora] = useState<string | null>(null)
   const [previewPosition, setPreviewPosition] = useState({ x: 0, y: 0 })
+  const [professionalVacations, setProfessionalVacations] = useState<Record<string, VacationRequest>>({})
+
+  const { requests, loading: vacationsLoading } = useVacationRequests()
 
   // Configuración de horarios
   const horaInicio = 8 * 60 // 8:00 AM en minutos
   const horaFin = 20 * 60 // 8:00 PM en minutos
   const duracionDia = horaFin - horaInicio
+
+  // Cargar vacaciones de profesionales
+  useEffect(() => {
+    if (!requests || requests.length === 0) return
+
+    const dateStr = date.toISOString().split("T")[0]
+    const vacationsMap: Record<string, VacationRequest> = {}
+
+    requests.forEach((request) => {
+      if (request.status === "approved" && request.start_date <= dateStr && request.end_date >= dateStr) {
+        vacationsMap[request.user_id] = request
+      }
+    })
+
+    setProfessionalVacations(vacationsMap)
+  }, [requests, date])
+
+  // Verificar si un profesional está de vacaciones
+  const isProfessionalOnVacation = (profesionalId: number | string) => {
+    return professionalVacations[profesionalId.toString()] !== undefined
+  }
+
+  // Obtener información de vacaciones de un profesional
+  const getProfessionalVacationInfo = (profesionalId: number | string) => {
+    return professionalVacations[profesionalId.toString()]
+  }
 
   // Generar horas según intervalo
   const generarHoras = () => {
@@ -139,6 +207,11 @@ export function HorarioView({
     e.preventDefault()
     if (!draggedCita) return
 
+    // No permitir drop si el profesional está de vacaciones
+    if (isProfessionalOnVacation(profesionalId)) {
+      return
+    }
+
     setDragOverProfesional(profesionalId)
 
     const container = e.currentTarget as HTMLElement
@@ -163,47 +236,66 @@ export function HorarioView({
     e.preventDefault()
     if (!draggedCita) return
 
+    // No permitir drop si el profesional está de vacaciones
+    if (isProfessionalOnVacation(profesionalId)) {
+      toast.error("No se puede programar cita: el profesional está de vacaciones")
+      return
+    }
+
     const container = e.currentTarget as HTMLElement
     const rect = container.getBoundingClientRect()
     const y = e.clientY - rect.top
 
     const nuevaHora = calcularHoraDesdePosicion(y, rect.height)
 
-    // Limpiar indicadores
-    const indicadores = container.querySelectorAll(".drop-indicator")
-    indicadores.forEach((ind) => ind.remove())
-
+    //Actualizar la cita
     const citaActualizada = {
       ...draggedCita,
+      profesionalId,
       hora: nuevaHora,
-      profesionalId: profesionalId,
+      horaInicio: nuevaHora,
       horaFin: calcularHoraFin(nuevaHora, draggedCita.duracion),
     }
 
     onUpdateCita(citaActualizada)
-    toast.success(`Cita movida a las ${nuevaHora}`)
+    toast.success("Cita movida correctamente")
 
+    // Limpiar estado
     setDraggedCita(null)
-    setDragOverProfesional(null)
     setIsDragging(false)
+    setDragOverProfesional(null)
+    setPreviewHora(null)
+
+    // Limpiar indicadores
+    const indicadores = container.querySelectorAll(".drop-indicator")
+    indicadores.forEach((ind) => ind.remove())
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    const container = e.currentTarget as HTMLElement
+    const indicadores = container.querySelectorAll(".drop-indicator")
+    indicadores.forEach((ind) => ind.remove())
+    setDragOverProfesional(null)
+    setPreviewHora(null)
   }
 
   const handleDragEnd = () => {
     setDraggedCita(null)
-    setDragOverProfesional(null)
     setIsDragging(false)
+    setDragOverProfesional(null)
     setPreviewHora(null)
-    document.querySelectorAll(".drop-indicator").forEach((ind) => ind.remove())
   }
 
-  const handleContainerClick = (e: React.MouseEvent, profesionalId: number) => {
-    if (e.target !== e.currentTarget) return
-
-    const container = e.currentTarget as HTMLElement
-    const rect = container.getBoundingClientRect()
-    const y = e.clientY - rect.top
-
-    const hora = calcularHoraDesdePosicion(y, rect.height)
+  // Handler para crear nueva cita
+  const handleSlotClick = (profesionalId: number, hora: string) => {
+    // No permitir crear cita si el profesional está de vacaciones
+    if (isProfessionalOnVacation(profesionalId)) {
+      const vacationInfo = getProfessionalVacationInfo(profesionalId)
+      const vacationType = vacationInfo?.type || "vacation"
+      const vacationLabel = VACATION_LABELS[vacationType as keyof typeof VACATION_LABELS] || "Ausencia"
+      toast.error(`No se puede programar cita: el profesional está en ${vacationLabel.toLowerCase()}`)
+      return
+    }
 
     setNewAppointmentData({
       fecha: date,
@@ -213,237 +305,195 @@ export function HorarioView({
     setShowNewAppointmentModal(true)
   }
 
-  // Renderizar huecos libres
-  const renderHuecosLibres = (profesionalId: number) => {
-    const citasProfesional = citas.filter((cita) => cita.profesionalId === profesionalId)
-    const duracionSesion = 60
-    const huecos = []
-
-    for (let minutos = horaInicio; minutos < horaFin; minutos += duracionSesion) {
-      const horaInicio = `${Math.floor(minutos / 60)
-        .toString()
-        .padStart(2, "0")}:${(minutos % 60).toString().padStart(2, "0")}`
-      const horaFin = `${Math.floor((minutos + duracionSesion) / 60)
-        .toString()
-        .padStart(2, "0")}:${((minutos + duracionSesion) % 60).toString().padStart(2, "0")}`
-
-      const ocupado = citasProfesional.some((cita) => {
-        const horaInicioCita = horaAMinutos(cita.hora)
-        const horaFinCita = horaInicioCita + cita.duracion
-        return horaInicioCita < minutos + duracionSesion && horaFinCita > minutos
-      })
-
-      if (!ocupado) {
-        huecos.push({
-          inicio: horaInicio,
-          fin: horaFin,
-          posicionTop: calcularPosicionCita(horaInicio),
-          altura: calcularAlturaCita(duracionSesion),
-        })
-      }
-    }
-
-    return huecos
+  const handleNewAppointmentSubmit = (cita: Partial<Cita>) => {
+    onAddCita(cita)
+    setShowNewAppointmentModal(false)
+    setNewAppointmentData(null)
   }
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-medium">{formatearFecha(date)} - Vista de Horario</h2>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        {profesionalesFiltrados.map((profesional) => {
-          const citasProfesional = citas.filter((cita) => cita.profesionalId === profesional.id)
-          const { titulo, nombre } = extraerTituloProfesional(profesional?.name)
-          const huecosLibres = renderHuecosLibres(profesional.id)
-
-          return (
-            <div key={profesional.id} className="relative">
-              {/* Cabecera del profesional */}
-              <div
-                className={`sticky top-0 z-10 rounded-t-md ${getColorProfesional(profesional)} border-b-2 text-center`}
-              >
-                <div className="flex flex-col items-center justify-center py-2 px-2" style={{ height: 56 }}>
-                  <span className="font-medium text-sm leading-tight">
-                    {titulo} {nombre}
-                  </span>
-                </div>
+    <TooltipProvider>
+      <div className="flex h-full bg-white">
+        {/* Columna de horas */}
+        <div className="w-16 border-r bg-gray-50 flex-shrink-0">
+          <div className="h-12 border-b flex items-center justify-center text-xs font-medium text-gray-500">Hora</div>
+          <div className="relative">
+            {horas.map((hora, index) => (
+              <div key={hora} className="h-16 border-b border-gray-100 flex items-start justify-center pt-1">
+                <span className="text-xs text-gray-600 font-mono">{hora}</span>
               </div>
-
-              {/* Contenedor de citas */}
-              <div
-                className={`relative h-[600px] border rounded-b-md transition-all duration-200 ${
-                  dragOverProfesional === profesional.id ? "bg-blue-50 border-blue-300 shadow-lg" : "bg-gray-50"
-                }`}
-                onDragOver={(e) => handleDragOver(e, profesional.id)}
-                onDrop={(e) => handleDrop(e, profesional.id)}
-                onClick={(e) => handleContainerClick(e, profesional.id)}
-              >
-                {/* Líneas de hora */}
-                {horas.map((hora, index) => (
-                  <div
-                    key={hora}
-                    className="absolute w-full border-t border-gray-200"
-                    style={{ top: `${(index / (horas.length - 1)) * 100}%` }}
-                  />
-                ))}
-
-                {/* Huecos libres */}
-                {huecosLibres.map((hueco, index) => (
-                  <div
-                    key={`hueco-${index}`}
-                    className="absolute rounded-md cursor-pointer border bg-white hover:brightness-95 transition-all"
-                    style={{
-                      top: `${hueco.posicionTop}%`,
-                      left: 0,
-                      right: 0,
-                      width: "100%",
-                      height: `${hueco.altura}%`,
-                      backgroundImage: "radial-gradient(circle, #e5e7eb 1px, transparent 1px)",
-                      backgroundSize: "8px 8px",
-                      zIndex: 5,
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setNewAppointmentData({
-                        fecha: date,
-                        hora: hueco.inicio,
-                        profesionalId: profesional.id,
-                      })
-                      setShowNewAppointmentModal(true)
-                    }}
-                  >
-                    <div className="flex flex-col p-2">
-                      <div className="flex items-center">
-                        <div className="w-4 h-4 rounded-full border border-gray-400 bg-white flex items-center justify-center text-xs mr-1">
-                          <span>+</span>
-                        </div>
-                        <div className="text-xs font-medium text-gray-700">
-                          {hueco.inicio} - {hueco.fin}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-
-                {/* Citas */}
-                <TooltipProvider>
-                  {citasProfesional.map((cita, index) => {
-                    const posicionTop = calcularPosicionCita(cita.hora)
-                    const altura = calcularAlturaCita(cita.duracion)
-                    const horaFin = cita.horaFin || calcularHoraFin(cita.hora, cita.duracion)
-
-                    return (
-                      <Tooltip key={cita.id}>
-                        <TooltipTrigger asChild>
-                          <div
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, cita)}
-                            onDragEnd={handleDragEnd}
-                            className={`absolute rounded-md cursor-move shadow-sm border transition-all duration-200 hover:shadow-lg ${
-                              draggedCita?.id === cita.id ? "opacity-50 scale-95 z-50" : "hover:brightness-95"
-                            } ${getColorProfesional(profesional)}`}
-                            style={{
-                              top: `${posicionTop}%`,
-                              left: 0,
-                              right: 0,
-                              width: "100%",
-                              height: `${Math.max(altura, 2.5)}%`,
-                              padding: "4px",
-                              overflow: "hidden",
-                              zIndex: 10 + index,
-                            }}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              onSelectCita(cita)
-                            }}
-                          >
-                            <div className="space-y-0.5">
-                              <div className="flex items-center gap-1 text-xs whitespace-nowrap overflow-hidden text-ellipsis">
-                                <div className={`w-2 h-2 rounded-full ${getColorEstado(cita.estado)}`} />
-                                <span className="font-medium">
-                                  {cita.hora}-{horaFin}
-                                </span>
-                              </div>
-                              <div className="font-medium text-xs whitespace-nowrap overflow-hidden text-ellipsis">
-                                {cita.nombrePaciente} {cita.apellidosPaciente || ""}
-                              </div>
-                              {cita.telefonoPaciente && (
-                                <div className="text-xs whitespace-nowrap overflow-hidden text-ellipsis text-gray-600">
-                                  📞 {cita.telefonoPaciente}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent side="right" className="max-w-xs">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <div className={`w-3 h-3 rounded-full ${getColorEstado(cita.estado)}`} />
-                              <p className="font-medium">
-                                {cita.nombrePaciente} {cita.apellidosPaciente || ""}
-                              </p>
-                            </div>
-                            <p>
-                              {cita.hora}-{horaFin} ({cita.duracion} min)
-                            </p>
-                            {cita.telefonoPaciente && <p className="text-xs">Tel: {cita.telefonoPaciente}</p>}
-                            <p className="text-xs">{cita.tipo}</p>
-                          </div>
-                        </TooltipContent>
-                      </Tooltip>
-                    )
-                  })}
-                </TooltipProvider>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Modal para nueva cita */}
-      {showNewAppointmentModal && newAppointmentData && (
-        <AppointmentFormModal
-          fecha={newAppointmentData.fecha}
-          hora={newAppointmentData.hora}
-          profesionalId={newAppointmentData.profesionalId}
-          onClose={() => {
-            setShowNewAppointmentModal(false)
-            setNewAppointmentData(null)
-          }}
-          onSubmit={onAddCita}
-        />
-      )}
-
-      {/* Preview de hora durante drag */}
-      {isDragging && previewHora && (
-        <HoraPreviewTooltip
-          hora={previewHora}
-          position={previewPosition}
-          citaOriginal={
-            draggedCita
-              ? {
-                  hora: draggedCita.hora,
-                  fecha: typeof draggedCita.fecha === "string" ? new Date(draggedCita.fecha) : draggedCita.fecha,
-                  profesionalId: draggedCita.profesionalId,
-                }
-              : undefined
-          }
-          profesionales={profesionales}
-        />
-      )}
-
-      {/* Overlay de arrastre */}
-      {isDragging && (
-        <div className="fixed inset-0 bg-black bg-opacity-10 z-40 pointer-events-none">
-          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-white rounded-lg shadow-lg p-4 border-2 border-blue-400">
-            <div className="flex items-center gap-2 text-sm">
-              <div className="w-3 h-3 bg-blue-400 rounded-full animate-pulse" />
-              <span className="font-medium">Arrastrando cita</span>
-            </div>
-            <div className="text-xs text-gray-600 mt-1">💡 Suelta en otro profesional para cambiar asignación</div>
+            ))}
           </div>
         </div>
-      )}
-    </div>
+
+        {/* Columnas de profesionales */}
+        <div className="flex-1 flex overflow-x-auto">
+          {profesionalesFiltrados.map((profesional) => {
+            const { titulo, nombre } = extraerTituloProfesional(profesional.nombre || profesional.name)
+            const citasProfesional = citas.filter((cita) => cita.profesionalId === profesional.id)
+            const isOnVacation = isProfessionalOnVacation(profesional.id)
+            const vacationInfo = getProfessionalVacationInfo(profesional.id)
+
+            return (
+              <div key={profesional.id} className="flex-1 min-w-48 border-r">
+                {/* Header del profesional */}
+                <div
+                  className={`h-12 border-b flex items-center justify-center px-2 ${
+                    isOnVacation ? "bg-red-50" : "bg-gray-50"
+                  }`}
+                >
+                  <div className="text-center">
+                    <div className="text-sm font-medium text-gray-900 truncate">
+                      {titulo && <span className="text-blue-600">{titulo} </span>}
+                      {nombre}
+                    </div>
+                    <div className="text-xs text-gray-500 truncate">{profesional.especialidad}</div>
+                    {isOnVacation && vacationInfo && (
+                      <div className="flex items-center justify-center gap-1 mt-1">
+                        {React.createElement(
+                          VACATION_ICONS[vacationInfo.type as keyof typeof VACATION_ICONS] || Clock,
+                          { className: "h-3 w-3 text-red-500" },
+                        )}
+                        <span className="text-xs text-red-600">
+                          {VACATION_LABELS[vacationInfo.type as keyof typeof VACATION_LABELS] || "Ausencia"}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Área de citas */}
+                <div
+                  className={`relative h-full ${
+                    isOnVacation ? "bg-red-50 opacity-60" : "bg-white"
+                  } ${dragOverProfesional === profesional.id ? "bg-blue-50" : ""}`}
+                  onDragOver={(e) => handleDragOver(e, profesional.id)}
+                  onDrop={(e) => handleDrop(e, profesional.id)}
+                  onDragLeave={handleDragLeave}
+                >
+                  {/* Líneas de hora */}
+                  {horas.map((hora, index) => (
+                    <div
+                      key={hora}
+                      className={`h-16 border-b border-gray-100 cursor-pointer hover:bg-gray-50 ${
+                        isOnVacation ? "cursor-not-allowed" : ""
+                      }`}
+                      onClick={() => !isOnVacation && handleSlotClick(profesional.id, hora)}
+                    />
+                  ))}
+
+                  {/* Citas */}
+                  {citasProfesional.map((cita) => {
+                    const top = calcularPosicionCita(cita.hora)
+                    const height = calcularAlturaCita(cita.duracion)
+                    const colorProfesional = getColorProfesional(profesional)
+                    const colorEstado = getColorEstado(cita.estado)
+
+                    return (
+                      <div
+                        key={cita.id}
+                        className={`absolute left-1 right-1 rounded-lg border-l-4 p-2 cursor-move shadow-sm hover:shadow-md transition-shadow ${colorProfesional} ${
+                          isDragging && draggedCita?.id === cita.id ? "opacity-50" : ""
+                        }`}
+                        style={{
+                          top: `${top}%`,
+                          height: `${height}%`,
+                          minHeight: "40px",
+                        }}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, cita)}
+                        onDragEnd={handleDragEnd}
+                        onClick={() => onSelectCita(cita)}
+                      >
+                        <div className="flex items-start justify-between h-full">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1 mb-1">
+                              <span className="text-xs font-medium truncate">
+                                {cita.hora} - {cita.horaFin || calcularHoraFin(cita.hora, cita.duracion)}
+                              </span>
+                              <div className={`w-2 h-2 rounded-full ${colorEstado}`} />
+                            </div>
+                            <div className="text-sm font-medium truncate">
+                              {cita.nombrePaciente} {cita.apellidosPaciente}
+                            </div>
+                            <div className="text-xs text-gray-600 truncate">{cita.tipo}</div>
+                            {cita.telefonoPaciente && (
+                              <div className="text-xs text-gray-500 truncate">{cita.telefonoPaciente}</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+
+                  {/* Preview de nueva cita durante drag */}
+                  {dragOverProfesional === profesional.id && previewHora && draggedCita && (
+                    <HoraPreviewTooltip
+                      hora={previewHora}
+                      position={previewPosition}
+                      citaOriginal={{
+                        hora: draggedCita.hora,
+                        fecha: typeof draggedCita.fecha === "string" ? new Date(draggedCita.fecha) : draggedCita.fecha,
+                        profesionalId:
+                          typeof draggedCita.profesionalId === "string"
+                            ? Number.parseInt(draggedCita.profesionalId)
+                            : draggedCita.profesionalId,
+                      }}
+                      profesionales={profesionales}
+                    >
+                      <div
+                        className="absolute left-1 right-1 rounded-lg border-2 border-dashed border-blue-400 bg-blue-50 p-2 opacity-75"
+                        style={{
+                          top: `${calcularPosicionCita(previewHora)}%`,
+                          height: `${calcularAlturaCita(draggedCita.duracion)}%`,
+                          minHeight: "40px",
+                        }}
+                      >
+                        <div className="text-xs text-blue-600 font-medium">
+                          {previewHora} - {calcularHoraFin(previewHora, draggedCita.duracion)}
+                        </div>
+                        <div className="text-sm text-blue-800">
+                          {draggedCita.nombrePaciente} {draggedCita.apellidosPaciente}
+                        </div>
+                      </div>
+                    </HoraPreviewTooltip>
+                  )}
+
+                  {/* Overlay de vacaciones */}
+                  {isOnVacation && vacationInfo && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-red-100 bg-opacity-75 pointer-events-none">
+                      <div className="text-center">
+                        {React.createElement(
+                          VACATION_ICONS[vacationInfo.type as keyof typeof VACATION_ICONS] || Clock,
+                          { className: "h-8 w-8 text-red-500 mx-auto mb-2" },
+                        )}
+                        <div className="text-sm font-medium text-red-700">
+                          {VACATION_LABELS[vacationInfo.type as keyof typeof VACATION_LABELS] || "Ausencia"}
+                        </div>
+                        <div className="text-xs text-red-600">{vacationInfo.reason}</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Modal para nueva cita */}
+        {showNewAppointmentModal && newAppointmentData && (
+          <AppointmentFormModal
+            fecha={newAppointmentData.fecha}
+            hora={newAppointmentData.hora}
+            profesionalId={newAppointmentData.profesionalId}
+            onClose={() => {
+              setShowNewAppointmentModal(false)
+              setNewAppointmentData(null)
+            }}
+            onSubmit={handleNewAppointmentSubmit}
+          />
+        )}
+      </div>
+    </TooltipProvider>
   )
 }

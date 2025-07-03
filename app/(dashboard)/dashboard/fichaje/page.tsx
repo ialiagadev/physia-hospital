@@ -8,14 +8,25 @@ import { TimeClockContainer } from "@/components/time-tracking/time-clock-contai
 import { WorkSessionsTable } from "@/components/time-tracking/work-sessions-table"
 import { WorkSessionsFilters } from "@/components/work-sessions-filters"
 import { UserSelector } from "@/components/time-tracking/user-selector"
+import { GeneralRequestsSection } from "@/components/time-tracking/vacation-requests-section"
+import { VacationCalendarView } from "@/components/time-tracking/vacation-calendar-view"
 import { useTimeTracking } from "@/hooks/use-time-tracking"
+import { useVacationRequests } from "@/hooks/use-vacation-requests"
 import { useToast } from "@/hooks/use-toast"
-import { Clock, Users, Calendar, Shield } from "lucide-react"
+import { Clock, Users, Calendar, Shield, Plane, CalendarDays } from 'lucide-react'
 import { exportWorkSessionsCSV } from "@/lib/actions/time-tracking"
 
 export default function FichajePage() {
   const { userProfile, isAdmin, loading: userLoading, getWorkDays, getOrganizationUsers } = useTimeTracking()
   const { toast } = useToast()
+
+  // Hook para obtener solicitudes de vacaciones y calcular badge
+  const { requests } = useVacationRequests(
+    userProfile?.organization_id ? Number(userProfile.organization_id) : undefined,
+  )
+
+  // Calcular solicitudes pendientes para el badge
+  const pendingRequestsCount = requests.filter((request) => request.status === "pending").length
 
   const [selectedUser, setSelectedUser] = useState<any>(null)
   const [organizationUsers, setOrganizationUsers] = useState<any[]>([])
@@ -26,7 +37,7 @@ export default function FichajePage() {
   const [pageSize, setPageSize] = useState(20)
   const [loading, setLoading] = useState(false)
 
-  // ✅ NUEVO: Estados para filtros de fecha
+  // Estados para filtros de fecha
   const [startDate, setStartDate] = useState<string | undefined>()
   const [endDate, setEndDate] = useState<string | undefined>()
 
@@ -51,7 +62,7 @@ export default function FichajePage() {
     }
   }, [userProfile, isAdmin])
 
-  // ✅ MODIFICADO: Cargar jornadas con filtros de fecha
+  // Cargar jornadas con filtros de fecha
   useEffect(() => {
     const loadWorkSessions = async () => {
       if (!userProfile?.organization_id) return
@@ -63,8 +74,8 @@ export default function FichajePage() {
           organizationId: userProfile.organization_id,
           page: currentPage,
           pageSize: pageSize,
-          startDate, // ✅ AGREGADO
-          endDate, // ✅ AGREGADO
+          startDate,
+          endDate,
         })
 
         if (result.sessions) {
@@ -80,21 +91,21 @@ export default function FichajePage() {
     }
 
     loadWorkSessions()
-  }, [userProfile, currentPage, pageSize, isAdmin, selectedUser, startDate, endDate]) // ✅ AGREGADO startDate, endDate
+  }, [userProfile, currentPage, pageSize, isAdmin, selectedUser, startDate, endDate])
 
   const handlePageChange = (page: number, newPageSize: number) => {
     setCurrentPage(page)
     setPageSize(newPageSize)
   }
 
-  // ✅ NUEVA FUNCIÓN: Manejar cambios de filtros
+  // Manejar cambios de filtros
   const handleFiltersChange = (filters: { startDate?: string; endDate?: string }) => {
     setStartDate(filters.startDate)
     setEndDate(filters.endDate)
     setCurrentPage(1) // Resetear a la primera página cuando se aplican filtros
   }
 
-  // ✅ NUEVA FUNCIÓN: Limpiar filtros
+  // Limpiar filtros
   const handleClearFilters = () => {
     setStartDate(undefined)
     setEndDate(undefined)
@@ -107,8 +118,8 @@ export default function FichajePage() {
     try {
       const result = await exportWorkSessionsCSV({
         userId: isAdmin ? selectedUser?.id : userProfile.id,
-        startDate, // ✅ AGREGADO
-        endDate, // ✅ AGREGADO
+        startDate,
+        endDate,
       })
 
       if (result.error) {
@@ -162,13 +173,13 @@ export default function FichajePage() {
   }
 
   return (
-    <div className="container mx-auto p-6 max-w-5xl">
+    <div className="container mx-auto p-6 max-w-6xl">
       {/* Header */}
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-2xl font-semibold">Control Horario</h1>
           <div className="flex items-center gap-2 mt-1">
-            <p className="text-sm text-muted-foreground">Sistema de registro laboral</p>
+            <p className="text-sm text-muted-foreground">Sistema de registro laboral y gestión de solicitudes</p>
             {isAdmin && (
               <Badge variant="secondary" className="text-xs">
                 <Shield className="h-3 w-3 mr-1" />
@@ -180,7 +191,7 @@ export default function FichajePage() {
       </div>
 
       <Tabs defaultValue="fichaje" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2 h-10">
+        <TabsList className="grid w-full grid-cols-4 h-10">
           <TabsTrigger value="fichaje" className="flex items-center gap-2 text-sm">
             <Clock className="h-4 w-4" />
             Fichar
@@ -188,6 +199,19 @@ export default function FichajePage() {
           <TabsTrigger value="registros" className="flex items-center gap-2 text-sm">
             <Calendar className="h-4 w-4" />
             Registros
+          </TabsTrigger>
+          <TabsTrigger value="vacaciones" className="flex items-center gap-2 text-sm">
+            <Plane className="h-4 w-4" />
+            Solicitudes
+            {pendingRequestsCount > 0 && (
+              <Badge variant="destructive" className="h-5 min-w-[20px] text-xs bg-red-500 hover:bg-red-600 px-1.5 ml-1">
+                {pendingRequestsCount > 99 ? "99+" : pendingRequestsCount}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="calendario" className="flex items-center gap-2 text-sm">
+            <CalendarDays className="h-4 w-4" />
+            Calendario
           </TabsTrigger>
         </TabsList>
 
@@ -232,7 +256,7 @@ export default function FichajePage() {
             </div>
           )}
 
-          {/* ✅ NUEVO: Componente de filtros */}
+          {/* Componente de filtros */}
           <WorkSessionsFilters
             startDate={startDate}
             endDate={endDate}
@@ -249,6 +273,24 @@ export default function FichajePage() {
             pageSize={pageSize}
             onPageChange={handlePageChange}
             onExport={handleExportData}
+          />
+        </TabsContent>
+
+        <TabsContent value="vacaciones">
+          <GeneralRequestsSection
+            userProfile={userProfile}
+            isAdmin={isAdmin}
+            selectedUser={selectedUser}
+            organizationUsers={organizationUsers}
+          />
+        </TabsContent>
+
+        <TabsContent value="calendario">
+          <VacationCalendarView
+            userProfile={userProfile}
+            isAdmin={isAdmin}
+            selectedUser={selectedUser}
+            organizationUsers={organizationUsers}
           />
         </TabsContent>
       </Tabs>

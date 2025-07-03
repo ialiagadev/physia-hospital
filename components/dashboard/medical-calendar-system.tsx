@@ -36,6 +36,8 @@ import { useConsultations } from "@/hooks/use-consultations"
 
 import { useServices } from "@/hooks/use-services"
 
+import { useVacationRequests } from "@/hooks/use-vacation-requests"
+
 import { useAuth } from "@/app/contexts/auth-context"
 
 import { supabase } from "@/lib/supabase"
@@ -140,6 +142,9 @@ export default function MedicalCalendarSystem() {
     error: servicesError,
     refetch: refetchServices,
   } = useServices(organizationId)
+
+  // Hook de vacaciones
+  const { requests: vacationRequests, loading: vacationLoading, isUserOnVacation } = useVacationRequests(organizationId)
 
   // Debug logs
 
@@ -538,6 +543,45 @@ export default function MedicalCalendarSystem() {
     }
   }
 
+  // Funciones helper para vacaciones
+  const isUserOnVacationDate = (userId: string, date: Date | string): boolean => {
+    const dateStr = typeof date === "string" ? date : format(date, "yyyy-MM-dd")
+
+    return vacationRequests.some(
+      (vacation) =>
+        vacation.user_id === userId &&
+        vacation.status === "approved" &&
+        vacation.start_date <= dateStr &&
+        vacation.end_date >= dateStr,
+    )
+  }
+
+  const getUserVacationOnDate = (userId: string, date: Date | string) => {
+    const dateStr = typeof date === "string" ? date : format(date, "yyyy-MM-dd")
+
+    return (
+      vacationRequests.find(
+        (vacation) =>
+          vacation.user_id === userId &&
+          vacation.status === "approved" &&
+          vacation.start_date <= dateStr &&
+          vacation.end_date >= dateStr,
+      ) || null
+    )
+  }
+
+  const getBlockedUsersOnDate = (date: Date | string): string[] => {
+    const dateStr = typeof date === "string" ? date : format(date, "yyyy-MM-dd")
+
+    const blocked = vacationRequests
+      .filter(
+        (vacation) => vacation.status === "approved" && vacation.start_date <= dateStr && vacation.end_date >= dateStr,
+      )
+      .map((vacation) => vacation.user_id)
+
+    return [...new Set(blocked)]
+  }
+
   // Convertir appointments de Supabase al formato esperado por los componentes
 
   const convertAppointmentsToLegacyFormat = (appointments: AppointmentWithDetails[]) => {
@@ -547,6 +591,8 @@ export default function MedicalCalendarSystem() {
       apellidosPaciente: apt.client?.name?.split(" ").slice(1).join(" ") || "",
       telefonoPaciente: apt.client?.phone || "",
       hora: apt.start_time,
+      horaInicio: apt.start_time, // Agregar horaInicio
+
       horaFin: apt.end_time,
       duracion: apt.duration,
       tipo: apt.appointment_type?.name || "Consulta",
@@ -556,6 +602,8 @@ export default function MedicalCalendarSystem() {
       estado: mapStatusToEstado(apt.status),
       consultationId: apt.consultation_id, // Incluir ID de consulta
       consultation: apt.consultation, // Incluir datos completos de consulta
+      clienteId: apt.client_id, // Agregar clienteId
+
     }))
   }
 
@@ -579,7 +627,8 @@ export default function MedicalCalendarSystem() {
     appointmentsLoading ||
     consultationsLoading ||
     clientsLoading ||
-    servicesLoading
+    servicesLoading ||
+    vacationLoading
   ) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -637,6 +686,16 @@ export default function MedicalCalendarSystem() {
             <span>
               {services.length} servicio{services.length !== 1 ? "s" : ""}
             </span>
+            {(() => {
+              const blockedUsersToday = getBlockedUsersOnDate(currentDate)
+              return (
+                blockedUsersToday.length > 0 && (
+                  <span className="text-orange-600">
+                    {blockedUsersToday.length} profesional{blockedUsersToday.length !== 1 ? "es" : ""} de vacaciones
+                  </span>
+                )
+              )
+            })()}
           </div>
         </div>
 
@@ -782,6 +841,9 @@ export default function MedicalCalendarSystem() {
                       intervaloTiempo={intervaloTiempo}
                       onUpdateCita={handleUpdateLegacyAppointment}
                       onAddCita={handleAddAppointment}
+                      vacationRequests={vacationRequests}
+                      isUserOnVacationDate={isUserOnVacationDate}
+                      getUserVacationOnDate={getUserVacationOnDate}
                     />
                   )}
 
@@ -795,6 +857,9 @@ export default function MedicalCalendarSystem() {
                       intervaloTiempo={intervaloTiempo}
                       onUpdateCita={handleUpdateLegacyAppointment}
                       onAddCita={handleAddAppointment}
+                      vacationRequests={vacationRequests}
+                      isUserOnVacationDate={isUserOnVacationDate}
+                      getUserVacationOnDate={getUserVacationOnDate}
                     />
                   )}
 
@@ -807,6 +872,9 @@ export default function MedicalCalendarSystem() {
                       profesionalesSeleccionados={usuariosSeleccionados.map((id) => Number.parseInt(id.slice(-8), 16))}
                       onUpdateCita={handleUpdateLegacyAppointment}
                       onAddCita={handleAddAppointment}
+                      vacationRequests={vacationRequests}
+                      isUserOnVacationDate={isUserOnVacationDate}
+                      getUserVacationOnDate={getUserVacationOnDate}
                     />
                   )}
                 </>
@@ -828,6 +896,9 @@ export default function MedicalCalendarSystem() {
                   users={users}
                   onSelectCita={handleSelectLegacyAppointment}
                   onRefreshUsers={refetchUsers}
+                  vacationRequests={vacationRequests}
+                  isUserOnVacationDate={isUserOnVacationDate}
+                  getUserVacationOnDate={getUserVacationOnDate}
                 />
               )}
 

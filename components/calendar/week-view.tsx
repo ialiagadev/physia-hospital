@@ -7,7 +7,7 @@ import { format, startOfWeek, addDays, isSameDay, isToday } from "date-fns"
 import { es } from "date-fns/locale"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { calcularHoraFin } from "@/utils/calendar-utils"
-import type { Cita, Profesional, IntervaloTiempo } from "@/types/calendar-types"
+import type { Cita, Profesional, IntervaloTiempo } from "@/types/calendar"
 import { Phone } from "lucide-react"
 import { toast } from "sonner"
 
@@ -21,6 +21,10 @@ interface WeekViewProps {
   onUpdateCita: (cita: Cita) => void
   onAddCita: (cita: Partial<Cita>) => void
   onDateSelect?: (date: Date) => void
+  // Agregar props de vacaciones
+  vacationRequests?: any[]
+  isUserOnVacationDate?: (userId: string, date: Date | string) => boolean
+  getUserVacationOnDate?: (userId: string, date: Date | string) => any
 }
 
 const getColorProfesional = (profesional: Profesional) => {
@@ -66,6 +70,9 @@ export function WeekView({
   onUpdateCita,
   onAddCita,
   onDateSelect,
+  vacationRequests,
+  isUserOnVacationDate,
+  getUserVacationOnDate,
 }: WeekViewProps) {
   // Estados para drag and drop
   const [draggedCita, setDraggedCita] = useState<Cita | null>(null)
@@ -122,6 +129,10 @@ export function WeekView({
     const citaActualizada = {
       ...draggedCita,
       fecha: targetDate,
+      profesionalId:
+        typeof draggedCita.profesionalId === "string"
+          ? Number.parseInt(draggedCita.profesionalId)
+          : draggedCita.profesionalId,
     }
 
     // Actualizar la cita
@@ -143,7 +154,9 @@ export function WeekView({
           const citasDelDia = citas
             .filter((cita) => {
               const citaFecha = ensureDate(cita.fecha)
-              return isSameDay(citaFecha, day) && profesionalesSeleccionados.includes(cita.profesionalId)
+              const profesionalIdNum =
+                typeof cita.profesionalId === "string" ? Number.parseInt(cita.profesionalId) : cita.profesionalId
+              return isSameDay(citaFecha, day) && profesionalesSeleccionados.includes(profesionalIdNum)
             })
             .sort((a, b) => a.hora.localeCompare(b.hora))
 
@@ -190,7 +203,13 @@ export function WeekView({
                 ) : (
                   <>
                     {citasDelDia.map((cita) => {
-                      const profesional = profesionales.find((p) => p.id === cita.profesionalId)
+                      const profesional = profesionales.find((p) => {
+                        const citaProfesionalId =
+                          typeof cita.profesionalId === "string"
+                            ? Number.parseInt(cita.profesionalId)
+                            : cita.profesionalId
+                        return p.id === citaProfesionalId
+                      })
                       if (!profesional) return null
 
                       const colorStyles = getColorProfesional(profesional)
@@ -227,10 +246,10 @@ export function WeekView({
                                   {cita.hora} - {calcularHoraFin(cita.hora, cita.duracion)}
                                 </div>
 
-                                {cita.telefono && (
+                                {cita.telefonoPaciente && (
                                   <div className="flex items-center gap-1 text-xs text-gray-600">
                                     <Phone className="w-3 h-3" />
-                                    {cita.telefono}
+                                    {cita.telefonoPaciente}
                                   </div>
                                 )}
 
@@ -245,9 +264,9 @@ export function WeekView({
                                 <p className="text-sm">
                                   {cita.hora} - {calcularHoraFin(cita.hora, cita.duracion)} ({cita.duracion} min)
                                 </p>
-                                <p className="text-sm">{profesional?.nombre}</p>
+                                <p className="text-sm">{profesional?.name}</p>
                                 <p className="text-sm">{cita.tipo}</p>
-                                {cita.telefono && <p className="text-sm">📞 {cita.telefono}</p>}
+                                {cita.telefonoPaciente && <p className="text-sm">📞 {cita.telefonoPaciente}</p>}
                                 <p className="text-xs text-gray-500 mt-2">🖱️ Arrastra para mover a otro día</p>
                               </div>
                             </TooltipContent>

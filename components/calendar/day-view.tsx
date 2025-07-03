@@ -1,124 +1,158 @@
 "use client"
 
-import { format, isSameDay } from "date-fns"
-import { es } from "date-fns/locale"
-import type { Appointment, Doctor, Patient } from "@/types/calendar"
+import type React from "react"
+
+import { useState, useEffect } from "react"
+import { format } from "date-fns"
+import { supabase } from "@/lib/supabase/client"
+import { Badge } from "@/components/ui/badge"
+
+interface Doctor {
+  id: string
+  name: string
+  color: string
+}
+
+interface Appointment {
+  id: string
+  doctorId: string
+  startTime: Date
+  endTime: Date
+  title: string
+}
 
 interface DayViewProps {
   currentDate: Date
-  appointments: Appointment[]
   doctors: Doctor[]
-  patients: Patient[]
+  appointments: Appointment[]
   onAppointmentClick: (appointment: Appointment) => void
 }
 
-export function DayView({ currentDate, appointments, doctors, patients, onAppointmentClick }: DayViewProps) {
-  const hours = Array.from({ length: 24 }, (_, i) => i)
+const DayView: React.FC<DayViewProps> = ({ currentDate, doctors, appointments, onAppointmentClick }) => {
+  const [vacationEvents, setVacationEvents] = useState<any[]>([])
+  const [unavailableProfessionals, setUnavailableProfessionals] = useState<Set<string>>(new Set())
 
-  const dayAppointments = appointments
-    .filter((appointment) => isSameDay(appointment.startTime, currentDate))
-    .sort((a, b) => a.startTime.getTime() - b.startTime.getTime())
+  useEffect(() => {
+    const loadVacationData = async () => {
+      if (!doctors.length) return
 
-  const getAppointmentsForHour = (hour: number) => {
-    return dayAppointments.filter((appointment) => {
-      const appointmentHour = appointment.startTime.getHours()
-      return appointmentHour === hour
-    })
-  }
+      try {
+        const dateStr = format(currentDate, "yyyy-MM-dd")
 
-  const getDoctorColor = (doctorId: string) => {
-    const doctor = doctors.find((d) => d.id === doctorId)
-    return doctor?.color || "#6B7280"
-  }
+        // Assuming we can get organization_id from doctors or context
+        const organizationId = 1 // You'll need to get this from your context/props
 
-  const getPatientName = (patientId: string) => {
-    const patient = patients.find((p) => p.id === patientId)
-    return patient?.name || "Paciente desconocido"
-  }
+        const { data: vacationData, error } = await supabase
+          .from("vacation_calendar_events")
+          .select(`
+          *,
+          vacation_requests!inner(status, type, reason),
+          users!inner(name, email)
+        `)
+          .eq("organization_id", organizationId)
+          .lte("start_date", dateStr)
+          .gte("end_date", dateStr)
+          .eq("vacation_requests.status", "approved")
 
-  const getAppointmentDuration = (appointment: Appointment) => {
-    const duration = (appointment.endTime.getTime() - appointment.startTime.getTime()) / (1000 * 60) // minutes
-    return Math.max(30, duration) // minimum 30 minutes for display
-  }
+        if (error) {
+          console.error("Error loading vacation data:", error)
+          return
+        }
+
+        setVacationEvents(vacationData || [])
+        const unavailableIds = new Set((vacationData || []).map((event: any) => event.user_id))
+        setUnavailableProfessionals(unavailableIds)
+      } catch (error) {
+        console.error("Error loading vacation data:", error)
+      }
+    }
+
+    loadVacationData()
+  }, [currentDate, doctors])
 
   return (
-    <div className="flex-1 overflow-auto p-4">
-      <div className="max-w-4xl mx-auto">
-        {/* Day header */}
-        <div className="mb-6 text-center">
-          <h2 className="text-2xl font-bold">{format(currentDate, "EEEE, d MMMM yyyy", { locale: es })}</h2>
-          <p className="text-muted-foreground mt-1">
-            {dayAppointments.length} cita{dayAppointments.length !== 1 ? "s" : ""} programada
-            {dayAppointments.length !== 1 ? "s" : ""}
-          </p>
-        </div>
+    <div className="flex h-full">
+      {doctors.map((doctor) => {
+        const isOnVacation = unavailableProfessionals.has(doctor.id)
+        const vacationEvent = vacationEvents.find((v) => v.user_id === doctor.id)
 
-        {/* Time slots */}
-        <div className="space-y-0 border rounded-lg overflow-hidden">
-          {hours.map((hour) => {
-            const hourAppointments = getAppointmentsForHour(hour)
-
-            return (
-              <div key={hour} className="flex border-b last:border-b-0">
-                {/* Hour label */}
-                <div className="w-20 p-4 text-right text-sm text-muted-foreground border-r bg-muted/20">
-                  {hour === 0 ? "00:00" : `${hour.toString().padStart(2, "0")}:00`}
-                </div>
-
-                {/* Appointments */}
-                <div className="flex-1 min-h-[80px] p-2 relative">
-                  {hourAppointments.map((appointment) => {
-                    const duration = getAppointmentDuration(appointment)
-                    const heightMultiplier = duration / 60 // 1 hour = 80px base height
-
-                    return (
-                      <div
-                        key={appointment.id}
-                        className="rounded-lg p-3 cursor-pointer hover:opacity-80 transition-opacity mb-2 shadow-sm"
-                        style={{
-                          backgroundColor: getDoctorColor(appointment.doctorId) + "20",
-                          borderLeft: `4px solid ${getDoctorColor(appointment.doctorId)}`,
-                          minHeight: `${Math.max(60, 80 * heightMultiplier - 8)}px`,
-                        }}
-                        onClick={() => onAppointmentClick(appointment)}
-                      >
-                        <div className="flex justify-between items-start mb-2">
-                          <h3 className="font-semibold text-sm">{appointment.title}</h3>
-                          <span className="text-xs text-muted-foreground">
-                            {format(appointment.startTime, "HH:mm")} - {format(appointment.endTime, "HH:mm")}
-                          </span>
-                        </div>
-
-                        <div className="space-y-1 text-xs text-muted-foreground">
-                          <p>
-                            <strong>Paciente:</strong> {getPatientName(appointment.patientId)}
-                          </p>
-                          {appointment.room && (
-                            <p>
-                              <strong>Sala:</strong> {appointment.room}
-                            </p>
-                          )}
-                          {appointment.description && (
-                            <p className="truncate">
-                              <strong>Descripción:</strong> {appointment.description}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
-
-                  {hourAppointments.length === 0 && (
-                    <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                      Sin citas programadas
-                    </div>
-                  )}
-                </div>
+        return (
+          <div key={doctor.id} className="flex-1 min-w-0">
+            <div
+              className={`p-2 text-center font-medium text-sm border-b sticky top-0 z-10 ${
+                isOnVacation ? "bg-orange-50 border-orange-200" : "bg-gray-50"
+              }`}
+              style={{ backgroundColor: isOnVacation ? "#fef3c7" : doctor.color + "20" }}
+            >
+              <div className="flex items-center justify-center gap-2">
+                <span>{doctor.name}</span>
+                {isOnVacation && (
+                  <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-700">
+                    {vacationEvent?.vacation_requests?.type === "vacation"
+                      ? "🏖️"
+                      : vacationEvent?.vacation_requests?.type === "sick_leave"
+                        ? "🏥"
+                        : "📅"}
+                  </Badge>
+                )}
               </div>
-            )
-          })}
-        </div>
-      </div>
+            </div>
+
+            <div className="relative h-full">
+              {isOnVacation && (
+                <div className="absolute inset-0 bg-orange-50 opacity-80 z-10 flex items-center justify-center">
+                  <div className="text-center">
+                    <div className="text-2xl mb-2">
+                      {vacationEvent?.vacation_requests?.type === "vacation"
+                        ? "🏖️"
+                        : vacationEvent?.vacation_requests?.type === "sick_leave"
+                          ? "🏥"
+                          : vacationEvent?.vacation_requests?.type === "personal"
+                            ? "👤"
+                            : "📅"}
+                    </div>
+                    <div className="text-sm font-medium text-orange-700">
+                      {vacationEvent?.vacation_requests?.type === "vacation"
+                        ? "Vacaciones"
+                        : vacationEvent?.vacation_requests?.type === "sick_leave"
+                          ? "Baja médica"
+                          : vacationEvent?.vacation_requests?.type === "personal"
+                            ? "Asunto personal"
+                            : "No disponible"}
+                    </div>
+                    {vacationEvent?.vacation_requests?.reason && (
+                      <div className="text-xs text-orange-600 mt-1">{vacationEvent.vacation_requests.reason}</div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {appointments
+                .filter((apt) => apt.doctorId === doctor.id)
+                .map((appointment) => (
+                  <div
+                    key={appointment.id}
+                    className="absolute bg-blue-100 border border-blue-200 rounded p-1 cursor-pointer hover:bg-blue-200 z-20"
+                    style={{
+                      top: `${((appointment.startTime.getHours() - 8) * 60 + appointment.startTime.getMinutes()) * (100 / (12 * 60))}%`,
+                      height: `${((appointment.endTime.getTime() - appointment.startTime.getTime()) / (1000 * 60)) * (100 / (12 * 60))}%`,
+                      left: "2px",
+                      right: "2px",
+                    }}
+                    onClick={() => onAppointmentClick(appointment)}
+                  >
+                    <div className="text-xs font-medium truncate">{appointment.title}</div>
+                    <div className="text-xs text-gray-600">
+                      {format(appointment.startTime, "HH:mm")} - {format(appointment.endTime, "HH:mm")}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
+
+export default DayView

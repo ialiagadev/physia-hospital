@@ -156,3 +156,32 @@ export interface HorarioTrabajo {
   horaFin: string
   activo: boolean
 }
+
+// Tipos adicionales específicos para el calendario que no están en calendar.ts
+export interface CalendarEvent {
+  id: string
+  title: string
+  start: Date
+  end: Date
+  allDay?: boolean
+  resource?: any
+}
+
+export interface CalendarResource {
+  id: string
+  title: string
+  color?: string
+}
+
+export interface CalendarSlot {
+  start: Date
+  end: Date
+  resource?: CalendarResource
+}
+
+export interface CalendarViewProps {
+  events: CalendarEvent[]
+  resources?: CalendarResource[]
+  onSelectEvent?: (event: CalendarEvent) => void
+  onSelectSlot?: (slot: CalendarSlot) => void
+}
