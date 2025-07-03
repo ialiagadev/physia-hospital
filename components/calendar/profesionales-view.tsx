@@ -28,8 +28,11 @@ interface ProfesionalesViewProps {
   onAddProfesional?: (profesional: Omit<Profesional, "id">) => void
   users?: User[]
   onRefreshUsers?: () => void
+  // Añadir estas líneas:
+  vacationRequests?: any[]
+  isUserOnVacationDate?: (userId: string, date: Date | string) => boolean
+  getUserVacationOnDate?: (userId: string, date: Date | string) => any
 }
-
 const COLORES_DISPONIBLES = [
   { value: "#14B8A6", label: "Teal", class: "bg-teal-100 border-teal-500" },
   { value: "#3B82F6", label: "Azul", class: "bg-blue-100 border-blue-500" },
