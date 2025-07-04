@@ -108,7 +108,9 @@ export function AppointmentFormModal({
     notas: citaExistente?.notas || "",
     profesionalId: citaExistente?.profesionalId || profesionalId || 1,
     estado: citaExistente?.estado || ("pendiente" as EstadoCita),
-    consultationId: citaExistente?.consultationId || "none",
+    // Solo asignar si realmente existe una consulta en la cita existente
+    consultationId:
+      citaExistente?.consultationId && citaExistente.consultationId !== "" ? citaExistente.consultationId : "none",
     service_id: citaExistente?.service_id || "",
   })
 
@@ -527,8 +529,9 @@ export function AppointmentFormModal({
         horaInicio: formData.hora,
         id: citaExistente?.id || Date.now(),
         estado: formData.estado,
-        // Si consultationId es "none", enviarlo como string vacío
-        consultationId: formData.consultationId === "none" ? "" : formData.consultationId,
+        // Solo asignar consultationId si realmente hay una seleccionada
+        consultationId:
+          formData.consultationId === "none" || !formData.consultationId ? undefined : formData.consultationId,
       }
 
       onSubmit(nuevaCita)
@@ -701,39 +704,47 @@ export function AppointmentFormModal({
             </div>
           </div>
 
-          {/* Consulta - AHORA OPCIONAL */}
+          {/* Consulta - COMPLETAMENTE OPCIONAL */}
           <div>
             <Label htmlFor="consultation" className="flex items-center gap-2">
               <MapPin className="h-4 w-4" />
               Consulta (opcional) {checkingConsultations && <Loader2 className="h-3 w-3 animate-spin" />}
             </Label>
-            <Select
-              value={formData.consultationId}
-              onValueChange={(value) => setFormData({ ...formData, consultationId: value })}
-              disabled={consultationsLoading}
-            >
-              <SelectTrigger>
-                <SelectValue
-                  placeholder={consultationsLoading ? "Cargando consultas..." : "Selecciona una consulta (opcional)"}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Sin consulta específica</SelectItem>
-                {availableConsultations.map((consultation) => (
-                  <SelectItem key={consultation.id} value={consultation.id}>
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: consultation.color }} />
-                      {consultation.name}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {!consultationsLoading && availableConsultations.length === 0 && consultations.length > 0 && (
-              <p className="text-sm text-amber-600 mt-1">No hay consultas disponibles en este horario</p>
-            )}
-            {!consultationsLoading && consultations.length === 0 && (
-              <p className="text-sm text-gray-500 mt-1">No hay consultas configuradas</p>
+            {consultations.length > 0 ? (
+              <>
+                <Select
+                  value={formData.consultationId}
+                  onValueChange={(value) => setFormData({ ...formData, consultationId: value })}
+                  disabled={consultationsLoading}
+                >
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={consultationsLoading ? "Cargando consultas..." : "Sin consulta específica"}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sin consulta específica</SelectItem>
+                    {availableConsultations.map((consultation) => (
+                      <SelectItem key={consultation.id} value={consultation.id}>
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: consultation.color }} />
+                          {consultation.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {!consultationsLoading && availableConsultations.length === 0 && consultations.length > 0 && (
+                  <p className="text-sm text-amber-600 mt-1">No hay consultas disponibles en este horario</p>
+                )}
+              </>
+            ) : (
+              <div className="p-3 bg-gray-50 rounded-md border-2 border-dashed border-gray-200">
+                <p className="text-sm text-gray-600 text-center">No hay consultas configuradas en tu organización</p>
+                <p className="text-xs text-gray-500 text-center mt-1">
+                  Las citas se crearán sin asignar consulta específica
+                </p>
+              </div>
             )}
           </div>
 
@@ -845,11 +856,7 @@ export function AppointmentFormModal({
             <Button
               type="submit"
               disabled={!telefonoValidado || buscandoCliente || checkingConsultations || consultationsLoading}
-              className="gap-2"
             >
-              {(buscandoCliente || checkingConsultations || consultationsLoading) && (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              )}
               {citaExistente ? "Actualizar" : "Crear"} Cita
             </Button>
           </div>

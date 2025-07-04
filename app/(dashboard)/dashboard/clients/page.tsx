@@ -1,11 +1,11 @@
 "use client"
 
-import { useEffect, useState, useMemo } from "react"
+import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Plus, Upload, Search, X } from "lucide-react"
+import { Plus, Upload, Search, X, ChevronLeft, ChevronRight } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { OrganizationSelector } from "@/components/organization-selector"
 import { ImportClientsDialog } from "@/components/import-clients-dialog"
@@ -27,24 +27,49 @@ interface Client {
   created_at: string
 }
 
+interface PaginationInfo {
+  currentPage: number
+  totalPages: number
+  totalCount: number
+  pageSize: number
+}
+
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedOrgId, setSelectedOrgId] = useState("all")
   const [searchTerm, setSearchTerm] = useState("")
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("")
   const [importDialogOpen, setImportDialogOpen] = useState(false)
+  const [pagination, setPagination] = useState<PaginationInfo>({
+    currentPage: 1,
+    totalPages: 1,
+    totalCount: 0,
+    pageSize: 20,
+  })
   const { toast } = useToast()
   const { user, userProfile, isLoading: authLoading } = useAuth()
 
-  // Función segura para resaltar texto en búsquedas
+  // Debounce para la búsqueda
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm)
+    }, 500)
+
+    return () => clearTimeout(timer)
+  }, [searchTerm])
+
+  // Reset página cuando cambia la búsqueda
+  useEffect(() => {
+    setPagination((prev) => ({ ...prev, currentPage: 1 }))
+  }, [debouncedSearchTerm, selectedOrgId])
+
+  // Función para resaltar texto en búsquedas
   const highlightText = (text: string | null | undefined, search: string): string => {
-    // Si no hay texto o búsqueda, devolver texto original o vacío
     if (!text || !search.trim()) {
       return text || ""
     }
-
     try {
-      // Escapar caracteres especiales de regex
       const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
       const regex = new RegExp(`(${escapedSearch})`, "gi")
       return text.replace(regex, '<mark class="bg-yellow-200 px-1 rounded">$1</mark>')
@@ -54,98 +79,123 @@ export default function ClientsPage() {
     }
   }
 
-  // Memoizar los clientes filtrados para evitar recálculos innecesarios
-  const filteredClients = useMemo(() => {
-    if (!searchTerm.trim()) {
-      return clients
-    }
+  // Cargar clientes con paginación y búsqueda del servidor
+  const loadClients = useCallback(
+    async (page = 1) => {
+      if (authLoading) return
 
-    const searchLower = searchTerm.toLowerCase().trim()
-    return clients.filter((client) => {
-      const nameMatch = client.name?.toLowerCase().includes(searchLower) || false
-      const taxIdMatch = client.tax_id?.toLowerCase().includes(searchLower) || false
-      const emailMatch = client.email?.toLowerCase().includes(searchLower) || false
-      const cityMatch = client.city?.toLowerCase().includes(searchLower) || false
-      return nameMatch || taxIdMatch || emailMatch || cityMatch
-    })
-  }, [clients, searchTerm])
+      if (!user) {
+        console.warn("⚠️ No estás autenticado")
+        toast({
+          title: "No autenticado",
+          description: "Debes iniciar sesión para ver los clientes.",
+          variant: "destructive",
+        })
+        setLoading(false)
+        return
+      }
 
-  // Cargar clientes basados en la organización seleccionada
-  const loadClients = async () => {
-    // Esperar a que termine la autenticación
-    if (authLoading) return
-
-    // Verificar autenticación
-    if (!user) {
-      console.warn("⚠️ No estás autenticado")
-      toast({
-        title: "No autenticado",
-        description: "Debes iniciar sesión para ver los clientes.",
-        variant: "destructive",
-      })
-      setLoading(false)
-      return
-    }
-
-    setLoading(true)
-
-    try {
-      let query = supabase
-        .from("clients")
-        .select(`
+      setLoading(true)
+      try {
+        // Construir la consulta base
+        let query = supabase.from("clients").select(
+          `
           *,
           organizations (name)
-        `)
-        .order("created_at", { ascending: false })
+        `,
+          { count: "exact" },
+        )
 
-      // Si el usuario no es admin de Physia, filtrar por su organización
-      if (!userProfile?.is_physia_admin) {
-        if (userProfile?.organization_id) {
-          query = query.eq("organization_id", userProfile.organization_id)
+        // Aplicar filtros de organización
+        if (!userProfile?.is_physia_admin) {
+          if (userProfile?.organization_id) {
+            query = query.eq("organization_id", userProfile.organization_id)
+          }
+        } else if (selectedOrgId !== "all") {
+          const orgIdNumber = Number.parseInt(selectedOrgId)
+          if (!isNaN(orgIdNumber)) {
+            query = query.eq("organization_id", orgIdNumber)
+          }
         }
-      } else if (selectedOrgId !== "all") {
-        // Si es admin y seleccionó una organización específica
-        const orgIdNumber = Number.parseInt(selectedOrgId)
-        if (!isNaN(orgIdNumber)) {
-          query = query.eq("organization_id", orgIdNumber)
+
+        // Aplicar búsqueda del servidor
+        if (debouncedSearchTerm.trim()) {
+          const searchLower = debouncedSearchTerm.toLowerCase().trim()
+          query = query.or(
+            `name.ilike.%${searchLower}%,tax_id.ilike.%${searchLower}%,email.ilike.%${searchLower}%,city.ilike.%${searchLower}%`,
+          )
         }
-      }
 
-      // AQUÍ ES DONDE TIENES QUE AGREGAR EL LIMIT
-      query = query.limit(5000)
+        // Aplicar paginación
+        const from = (page - 1) * pagination.pageSize
+        const to = from + pagination.pageSize - 1
 
-      const { data, error } = await query
+        query = query.order("created_at", { ascending: false }).range(from, to)
 
-      if (error) {
+        const { data, error, count } = await query
+
+        if (error) {
+          console.error("Error al cargar clientes:", error)
+          throw error
+        }
+
+        const clientsData = data || []
+        const totalCount = count || 0
+        const totalPages = Math.ceil(totalCount / pagination.pageSize)
+
+        console.log(`✅ Clientes cargados: ${clientsData.length} de ${totalCount}`)
+
+        setClients(clientsData)
+        setPagination((prev) => ({
+          ...prev,
+          currentPage: page,
+          totalPages,
+          totalCount,
+        }))
+      } catch (error) {
         console.error("Error al cargar clientes:", error)
-        throw error
+        toast({
+          title: "Error",
+          description: "No se pudieron cargar los clientes",
+          variant: "destructive",
+        })
+        setClients([])
+        setPagination((prev) => ({ ...prev, totalCount: 0, totalPages: 1 }))
+      } finally {
+        setLoading(false)
       }
+    },
+    [selectedOrgId, debouncedSearchTerm, user, userProfile, authLoading, pagination.pageSize, toast],
+  )
 
-      const clientsData = data || []
-      console.log(`✅ Clientes cargados: ${clientsData.length}`)
-      setClients(clientsData)
-    } catch (error) {
-      console.error("Error al cargar clientes:", error)
-      toast({
-        title: "Error",
-        description: "No se pudieron cargar los clientes",
-        variant: "destructive",
-      })
-      setClients([])
-    } finally {
-      setLoading(false)
+  // Efecto para cargar clientes
+  useEffect(() => {
+    if (!authLoading && user) {
+      loadClients(pagination.currentPage)
+    }
+  }, [selectedOrgId, debouncedSearchTerm, user, userProfile, authLoading])
+
+  // Funciones de paginación
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= pagination.totalPages) {
+      loadClients(page)
     }
   }
 
-  // Efecto para cargar clientes cuando cambia la organización o la autenticación
-  useEffect(() => {
-    if (!authLoading && user) {
-      loadClients()
+  const goToPreviousPage = () => {
+    if (pagination.currentPage > 1) {
+      goToPage(pagination.currentPage - 1)
     }
-  }, [selectedOrgId, user, userProfile, authLoading])
+  }
+
+  const goToNextPage = () => {
+    if (pagination.currentPage < pagination.totalPages) {
+      goToPage(pagination.currentPage + 1)
+    }
+  }
 
   const handleImportComplete = () => {
-    loadClients() // Recargar la lista de clientes
+    loadClients(1) // Recargar desde la primera página
     setImportDialogOpen(false)
   }
 
@@ -180,13 +230,12 @@ export default function ClientsPage() {
     )
   }
 
-  // Obtener organization_id para la importación - mejorar la conversión
+  // Obtener organization_id para la importación
   const getOrganizationIdForImport = (): number => {
     if (userProfile?.is_physia_admin && selectedOrgId !== "all") {
       const orgId = Number.parseInt(selectedOrgId)
       return isNaN(orgId) ? 0 : orgId
     }
-
     if (userProfile?.organization_id) {
       const orgId =
         typeof userProfile.organization_id === "string"
@@ -194,7 +243,6 @@ export default function ClientsPage() {
           : userProfile.organization_id
       return isNaN(orgId) ? 0 : orgId
     }
-
     return 0
   }
 
@@ -229,8 +277,8 @@ export default function ClientsPage() {
         <OrganizationSelector selectedOrgId={selectedOrgId} onSelectOrganization={setSelectedOrgId} className="mb-6" />
       )}
 
-      {/* Barra de búsqueda mejorada */}
-      <div className="flex items-center space-x-2">
+      {/* Barra de búsqueda */}
+      <div className="flex items-center justify-between">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
           <Input
@@ -250,11 +298,13 @@ export default function ClientsPage() {
             </Button>
           )}
         </div>
-        {searchTerm && (
-          <div className="text-sm text-muted-foreground">
-            {filteredClients.length} de {clients.length} clientes
-          </div>
-        )}
+
+        {/* Información de resultados */}
+        <div className="text-sm text-muted-foreground">
+          {loading
+            ? "Buscando..."
+            : `${pagination.totalCount} cliente${pagination.totalCount !== 1 ? "s" : ""} encontrado${pagination.totalCount !== 1 ? "s" : ""}`}
+        </div>
       </div>
 
       <div className="rounded-md border">
@@ -280,14 +330,14 @@ export default function ClientsPage() {
                   </div>
                 </TableCell>
               </TableRow>
-            ) : filteredClients.length > 0 ? (
-              filteredClients.map((client) => (
+            ) : clients.length > 0 ? (
+              clients.map((client) => (
                 <TableRow key={client.id}>
                   <TableCell className="font-medium">
-                    {searchTerm ? (
+                    {debouncedSearchTerm ? (
                       <span
                         dangerouslySetInnerHTML={{
-                          __html: highlightText(client.name, searchTerm),
+                          __html: highlightText(client.name, debouncedSearchTerm),
                         }}
                       />
                     ) : (
@@ -295,10 +345,10 @@ export default function ClientsPage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    {searchTerm ? (
+                    {debouncedSearchTerm ? (
                       <span
                         dangerouslySetInnerHTML={{
-                          __html: highlightText(client.tax_id, searchTerm),
+                          __html: highlightText(client.tax_id, debouncedSearchTerm),
                         }}
                       />
                     ) : (
@@ -316,10 +366,10 @@ export default function ClientsPage() {
                     </span>
                   </TableCell>
                   <TableCell>
-                    {searchTerm ? (
+                    {debouncedSearchTerm ? (
                       <span
                         dangerouslySetInnerHTML={{
-                          __html: highlightText(client.city, searchTerm),
+                          __html: highlightText(client.city, debouncedSearchTerm),
                         }}
                       />
                     ) : (
@@ -327,10 +377,10 @@ export default function ClientsPage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    {searchTerm && client.email ? (
+                    {debouncedSearchTerm && client.email ? (
                       <span
                         dangerouslySetInnerHTML={{
-                          __html: highlightText(client.email, searchTerm),
+                          __html: highlightText(client.email, debouncedSearchTerm),
                         }}
                       />
                     ) : (
@@ -344,13 +394,13 @@ export default function ClientsPage() {
                   </TableCell>
                 </TableRow>
               ))
-            ) : searchTerm ? (
+            ) : debouncedSearchTerm ? (
               <TableRow>
                 <TableCell colSpan={userProfile?.is_physia_admin ? 7 : 6} className="h-24 text-center">
                   <div className="text-center">
                     <Search className="h-8 w-8 text-gray-300 mx-auto mb-2" />
                     <p className="text-muted-foreground mb-2">
-                      No se encontraron clientes que coincidan con "{searchTerm}"
+                      No se encontraron clientes que coincidan con "{debouncedSearchTerm}"
                     </p>
                     <Button variant="outline" onClick={clearSearch} size="sm">
                       Limpiar búsqueda
@@ -382,6 +432,63 @@ export default function ClientsPage() {
           </TableBody>
         </Table>
       </div>
+
+      {/* Componente de paginación */}
+      {pagination.totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-muted-foreground">
+            Mostrando {(pagination.currentPage - 1) * pagination.pageSize + 1} a{" "}
+            {Math.min(pagination.currentPage * pagination.pageSize, pagination.totalCount)} de {pagination.totalCount}{" "}
+            clientes
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <Button variant="outline" size="sm" onClick={goToPreviousPage} disabled={pagination.currentPage <= 1}>
+              <ChevronLeft className="h-4 w-4" />
+              Anterior
+            </Button>
+
+            <div className="flex items-center space-x-1">
+              {/* Mostrar páginas */}
+              {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                let pageNumber: number
+
+                if (pagination.totalPages <= 5) {
+                  pageNumber = i + 1
+                } else if (pagination.currentPage <= 3) {
+                  pageNumber = i + 1
+                } else if (pagination.currentPage >= pagination.totalPages - 2) {
+                  pageNumber = pagination.totalPages - 4 + i
+                } else {
+                  pageNumber = pagination.currentPage - 2 + i
+                }
+
+                return (
+                  <Button
+                    key={pageNumber}
+                    variant={pagination.currentPage === pageNumber ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => goToPage(pageNumber)}
+                    className="w-8 h-8 p-0"
+                  >
+                    {pageNumber}
+                  </Button>
+                )
+              })}
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={goToNextPage}
+              disabled={pagination.currentPage >= pagination.totalPages}
+            >
+              Siguiente
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       <ImportClientsDialog
         open={importDialogOpen}
