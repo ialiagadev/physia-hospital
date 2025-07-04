@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Search, MoreVertical, Users, MessageCircle, Plus, Phone } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -15,6 +15,7 @@ import { useConversations } from "@/hooks/use-conversations"
 import { useClients } from "@/hooks/use-clients"
 import { useAuth } from "@/app/contexts/auth-context"
 import type { ConversationWithLastMessage } from "@/types/chat"
+import type { Client } from "@/types/calendar"
 import { useTotalUnreadMessages } from "@/hooks/use-unread-messages"
 
 // Componente para mostrar el icono del canal con letra
@@ -104,8 +105,6 @@ const messageTemplates = [
   },
 ]
 
-// Reemplazar las dos funciones de modal (NewConversationModal y NewConversationDialog) con esta versión unificada:
-
 // Modal unificado para nueva conversación
 function UnifiedNewConversationModal({ onConversationCreated }: { onConversationCreated: () => void }) {
   const [open, setOpen] = useState(false)
@@ -120,16 +119,85 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
   // Estados para contacto existente
   const [selectedClientId, setSelectedClientId] = useState<string>("")
   const [initialMessage, setInitialMessage] = useState("")
+  const [contactSearch, setContactSearch] = useState("")
+  const [searchResults, setSearchResults] = useState<Client[]>([])
+  const [searchLoading, setSearchLoading] = useState(false)
 
   const [loading, setLoading] = useState(false)
   const { userProfile } = useAuth()
 
   const organizationId = userProfile?.organization_id
   const organizationIdNumber = organizationId ? Number(organizationId) : undefined
-  const { clients, loading: clientsLoading, error: clientsError } = useClients(organizationIdNumber)
+  const { searchClientsServer } = useClients(organizationIdNumber)
 
-  // Hook para conteo total de mensajes no leídos
-  const { totalUnread } = useTotalUnreadMessages(organizationIdNumber)
+  // Use useRef to store the timeout ID and prevent re-renders
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const isSearchingRef = useRef(false)
+
+  // Stable search function that doesn't change on every render
+  const performSearch = useCallback(
+    async (query: string) => {
+      if (!query.trim()) {
+        setSearchResults([])
+        setSearchLoading(false)
+        isSearchingRef.current = false
+        return
+      }
+
+      if (isSearchingRef.current) {
+        return // Prevent multiple simultaneous searches
+      }
+
+      isSearchingRef.current = true
+      setSearchLoading(true)
+
+      try {
+        const results = await searchClientsServer(query)
+        setSearchResults(results)
+      } catch (error) {
+        console.error("Error searching clients:", error)
+        setSearchResults([])
+      } finally {
+        setSearchLoading(false)
+        isSearchingRef.current = false
+      }
+    },
+    [searchClientsServer],
+  )
+
+  // Handle search input changes with debouncing
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      setContactSearch(value)
+
+      // Clear previous timeout
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current)
+      }
+
+      // If empty, clear results immediately
+      if (!value.trim()) {
+        setSearchResults([])
+        setSearchLoading(false)
+        return
+      }
+
+      // Set new timeout for search
+      searchTimeoutRef.current = setTimeout(() => {
+        performSearch(value)
+      }, 500) // Increased to 500ms to reduce API calls
+    },
+    [performSearch],
+  )
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current)
+      }
+    }
+  }, [])
 
   const handleSubmitNew = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -162,7 +230,7 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
     e.preventDefault()
     if (!selectedClientId || !organizationIdNumber) return
 
-    const selectedClient = clients.find((c) => c.id.toString() === selectedClientId)
+    const selectedClient = searchResults.find((c) => c.id.toString() === selectedClientId)
     if (!selectedClient) return
 
     setLoading(true)
@@ -171,10 +239,10 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
         organizationId: organizationIdNumber,
         clientData: {
           name: selectedClient.name,
-          phone: selectedClient.phone,
-          email: selectedClient.email,
+          phone: selectedClient.phone || undefined,
+          email: selectedClient.email || undefined,
           external_id: selectedClient.external_id || `client-${selectedClient.id}`,
-          avatar_url: selectedClient.avatar_url,
+          avatar_url: selectedClient.avatar_url || undefined,
         },
         initialMessage: initialMessage || "¡Hola! ¿En qué puedo ayudarte?",
         existingClientId: selectedClient.id,
@@ -196,6 +264,15 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
     setSelectedTemplate("")
     setSelectedClientId("")
     setInitialMessage("")
+    setContactSearch("")
+    setSearchResults([])
+    setSearchLoading(false)
+    isSearchingRef.current = false
+
+    // Clear any pending search
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current)
+    }
   }
 
   const selectedTemplateData = messageTemplates.find((t) => t.id === selectedTemplate)
@@ -354,40 +431,70 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
         {activeTab === "existing" && (
           <form onSubmit={handleSubmitExisting} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="client">Seleccionar contacto</Label>
-              {clientsLoading ? (
-                <div className="flex items-center justify-center p-4">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-500"></div>
-                  <span className="ml-2">Cargando contactos...</span>
-                </div>
-              ) : clientsError ? (
-                <div className="text-red-500 p-2">Error: {clientsError}</div>
-              ) : clients.length === 0 ? (
-                <div className="text-gray-500 p-2">No hay contactos disponibles</div>
-              ) : (
-                <Select value={selectedClientId} onValueChange={setSelectedClientId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Elige un contacto existente" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {clients.map((client) => (
-                      <SelectItem key={client.id} value={client.id.toString()}>
-                        <div className="flex items-center gap-2">
-                          <Avatar className="h-6 w-6">
-                            {client.avatar_url && (
-                              <AvatarImage src={client.avatar_url || "/placeholder.svg"} alt={client.name} />
-                            )}
-                            <AvatarFallback className="text-xs">{client.name.charAt(0)}</AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <div className="font-medium">{client.name}</div>
-                            {client.phone && <div className="text-xs text-gray-500">{client.phone}</div>}
+              <Label>Buscar contacto</Label>
+              <Input
+                placeholder="Buscar contacto por nombre, teléfono o email..."
+                value={contactSearch}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                className="w-full"
+              />
+
+              {/* Resultados de búsqueda */}
+              {contactSearch && (
+                <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-md bg-white">
+                  {searchLoading ? (
+                    <div className="flex items-center justify-center p-4">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-500"></div>
+                      <span className="ml-2">Buscando contactos...</span>
+                    </div>
+                  ) : searchResults.length === 0 ? (
+                    <div className="text-gray-500 p-3">No se encontraron contactos</div>
+                  ) : (
+                    searchResults.map((client) => (
+                      <div
+                        key={client.id}
+                        onClick={() => {
+                          setSelectedClientId(client.id.toString())
+                          setContactSearch(client.name)
+                        }}
+                        className={`flex items-center gap-3 p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 ${
+                          selectedClientId === client.id.toString() ? "bg-green-50" : ""
+                        }`}
+                      >
+                        <Avatar className="h-8 w-8">
+                          {client.avatar_url && (
+                            <AvatarImage src={client.avatar_url || "/placeholder.svg"} alt={client.name} />
+                          )}
+                          <AvatarFallback className="text-xs">{client.name.charAt(0)}</AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-sm truncate">{client.name}</div>
+                          <div className="text-xs text-gray-500 truncate">
+                            {client.phone && <span>{client.phone}</span>}
+                            {client.phone && client.email && <span> • </span>}
+                            {client.email && <span>{client.email}</span>}
                           </div>
                         </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {selectedClientId && !contactSearch && (
+                <div className="text-sm text-green-600 bg-green-50 p-2 rounded border">
+                  ✓ Contacto seleccionado: {searchResults.find((c) => c.id.toString() === selectedClientId)?.name}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedClientId("")
+                      setContactSearch("")
+                    }}
+                    className="ml-2 text-green-700 hover:text-green-800 underline"
+                  >
+                    Cambiar
+                  </button>
+                </div>
               )}
             </div>
 
@@ -405,11 +512,7 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
               <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={loading}>
                 Cancelar
               </Button>
-              <Button
-                type="submit"
-                disabled={loading || !selectedClientId || clientsLoading}
-                className="bg-green-600 hover:bg-green-700"
-              >
+              <Button type="submit" disabled={loading || !selectedClientId} className="bg-green-600 hover:bg-green-700">
                 {loading ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
@@ -435,7 +538,7 @@ interface ChatListProps {
   onChatSelect: (chatId: string) => void
 }
 
-// Reemplazar la interface ConversationTagsProps y el componente ConversationTags con esto:
+// Interface y componente para las etiquetas de conversación
 interface ConversationTagsProps {
   tags: Array<{ id: string; tag_name: string; created_at: string }> | undefined
 }
@@ -579,8 +682,6 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
             </span>
           )}
         </h1>
-        {/* En el componente principal ChatList, reemplazar las dos llamadas de modal por una sola:
-        // Cambiar esta línea en el header: */}
         <div className="flex items-center gap-2">
           <UnifiedNewConversationModal onConversationCreated={refetch} />
           <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
@@ -670,7 +771,7 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
                   <AvatarFallback>{conversation.client?.name?.charAt(0) || "U"}</AvatarFallback>
                 </Avatar>
 
-                {/* Icono del canal en la esquina inferior derecha - SIEMPRE mostrar para debug */}
+                {/* Icono del canal en la esquina inferior derecha */}
                 <div className="absolute -bottom-0.5 -right-0.5 bg-white rounded-full p-0.5 border border-gray-200 shadow-sm">
                   <ChannelIcon channelName={conversation.canales_organization?.canal?.nombre || "whatsapp"} />
                 </div>
@@ -695,7 +796,6 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
                     </div>
                   )}
                 </div>
-                {/* Agregar esta línea para mostrar las etiquetas */}
                 <ConversationTags tags={conversation.conversation_tags} />
               </div>
             </div>

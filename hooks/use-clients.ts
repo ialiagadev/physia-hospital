@@ -9,6 +9,7 @@ export interface UseClientsReturn {
   loading: boolean
   error: string | null
   searchClients: (query: string) => Client[]
+  searchClientsServer: (query: string) => Promise<Client[]>
   createClient: (clientData: ClientInsert) => Promise<Client>
   updateClient: (id: number, clientData: ClientUpdate) => Promise<Client>
   deleteClient: (id: number) => Promise<void>
@@ -36,7 +37,6 @@ export function useClients(organizationId?: number): UseClientsReturn {
       const { data, error: fetchError } = await supabase
         .from("clients")
         .select("*")
-        
         .eq("organization_id", organizationId)
         .order("name", { ascending: true })
 
@@ -77,6 +77,37 @@ export function useClients(organizationId?: number): UseClientsReturn {
         client.phone?.toLowerCase().includes(searchTerm) ||
         client.email?.toLowerCase().includes(searchTerm),
     )
+  }
+
+  const searchClientsServer = async (query: string): Promise<Client[]> => {
+    try {
+      if (!query.trim() || !organizationId) {
+        return []
+      }
+
+      console.log("Searching clients on server for:", query)
+
+      const searchTerm = `%${query.trim()}%`
+
+      const { data, error } = await supabase
+        .from("clients")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .or(`name.ilike.${searchTerm},phone.ilike.${searchTerm},email.ilike.${searchTerm}`)
+        .order("name", { ascending: true })
+        .limit(50) // Limitar resultados para mejor rendimiento
+
+      if (error) {
+        console.error("Error searching clients:", error)
+        throw error
+      }
+
+      console.log("Server search results:", data?.length || 0, "clients found")
+      return data || []
+    } catch (err) {
+      console.error("Error in searchClientsServer:", err)
+      throw err
+    }
   }
 
   const createClient = async (clientData: ClientInsert): Promise<Client> => {
@@ -140,6 +171,7 @@ export function useClients(organizationId?: number): UseClientsReturn {
     loading,
     error,
     searchClients,
+    searchClientsServer,
     createClient,
     updateClient,
     deleteClient,
