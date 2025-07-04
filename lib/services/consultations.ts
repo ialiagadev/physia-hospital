@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase/client"
 import type { Consultation } from "@/types/calendar"
 
 export class ConsultationService {
@@ -44,30 +44,30 @@ export class ConsultationService {
 
   static async createConsultation(
     consultationData: Omit<Consultation, "id" | "created_at" | "updated_at" | "organization_id">,
+    userProfile: { organization_id: string } | null,
   ): Promise<Consultation> {
     try {
-      const { data: user } = await supabase.auth.getUser()
-      if (!user.user) throw new Error("Usuario no autenticado")
+      if (!userProfile?.organization_id) {
+        throw new Error("Usuario sin organización asignada")
+      }
 
-      // Obtener el organization_id del usuario
-      const { data: userData, error: userError } = await supabase
-        .from("users")
-        .select("organization_id")
-        .eq("id", user.user.id)
-        .single()
-
-      if (userError) throw userError
+      console.log("✅ Creating consultation for organization:", userProfile.organization_id)
 
       const { data, error } = await supabase
         .from("consultations")
         .insert({
           ...consultationData,
-          organization_id: userData.organization_id,
+          organization_id: userProfile.organization_id,
         })
         .select()
         .single()
 
-      if (error) throw error
+      if (error) {
+        console.error("Error inserting consultation:", error)
+        throw error
+      }
+
+      console.log("✅ Consultation created:", data)
       return data
     } catch (error) {
       console.error("Error creating consultation:", error)

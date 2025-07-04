@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
@@ -26,7 +25,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Plus, Edit, Trash2 } from "lucide-react"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { Plus, Edit, Trash2, Save, AlertTriangle, CheckCircle } from "lucide-react"
 
 interface Organization {
   id: number
@@ -81,6 +90,11 @@ export default function EditOrganizationPage({ params }: { params: { id: string 
     active: true,
   })
   const [centersLoaded, setCentersLoaded] = useState(false)
+
+  // Estados para diálogos
+  const [successDialogOpen, setSuccessDialogOpen] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [centerToDelete, setCenterToDelete] = useState<number | null>(null)
 
   useEffect(() => {
     async function loadData() {
@@ -220,10 +234,8 @@ export default function EditOrganizationPage({ params }: { params: { id: string 
 
       if (error) throw error
 
-      toast({
-        title: "Organización actualizada",
-        description: "Los datos de la organización se han actualizado correctamente",
-      })
+      // Mostrar diálogo de éxito en lugar del toast
+      setSuccessDialogOpen(true)
 
       router.refresh()
     } catch (error: any) {
@@ -332,11 +344,16 @@ export default function EditOrganizationPage({ params }: { params: { id: string 
     }
   }
 
-  const handleDeleteCenter = async (centerId: number) => {
-    if (!confirm("¿Estás seguro de que quieres eliminar este centro?")) return
+  const handleDeleteCenter = (centerId: number) => {
+    setCenterToDelete(centerId)
+    setDeleteConfirmOpen(true)
+  }
+
+  const confirmDeleteCenter = async () => {
+    if (!centerToDelete) return
 
     try {
-      const { error } = await supabase.from("centers").delete().eq("id", centerId)
+      const { error } = await supabase.from("centers").delete().eq("id", centerToDelete)
 
       if (error) throw error
 
@@ -353,6 +370,9 @@ export default function EditOrganizationPage({ params }: { params: { id: string 
         description: `Error al eliminar el centro: ${error.message}`,
         variant: "destructive",
       })
+    } finally {
+      setDeleteConfirmOpen(false)
+      setCenterToDelete(null)
     }
   }
 
@@ -578,6 +598,7 @@ export default function EditOrganizationPage({ params }: { params: { id: string 
                 </Button>
                 <Button type="submit" disabled={saving}>
                   {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  <Save className="mr-2 h-4 w-4" />
                   Guardar cambios
                 </Button>
               </CardFooter>
@@ -659,6 +680,48 @@ export default function EditOrganizationPage({ params }: { params: { id: string 
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Dialog de éxito después de guardar */}
+      <AlertDialog open={successDialogOpen} onOpenChange={setSuccessDialogOpen}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <div className="flex items-center justify-center w-12 h-12 mx-auto mb-4 bg-green-100 rounded-full">
+              <CheckCircle className="h-6 w-6 text-green-600" />
+            </div>
+            <AlertDialogTitle className="text-center">¡Cambios guardados correctamente!</AlertDialogTitle>
+            <AlertDialogDescription className="text-center">
+              Los datos de la organización se han actualizado exitosamente. Todos los cambios han sido aplicados.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="justify-center">
+            <AlertDialogAction onClick={() => setSuccessDialogOpen(false)} className="bg-green-600 hover:bg-green-700">
+              Perfecto
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Dialog de confirmación para eliminar centro */}
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+              Eliminar centro
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Estás seguro de que quieres eliminar este centro? Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteCenter} className="bg-red-600 hover:bg-red-700">
+              <Trash2 className="mr-2 h-4 w-4" />
+              Sí, eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Dialog para crear/editar centro */}
       <Dialog open={centerDialogOpen} onOpenChange={setCenterDialogOpen}>

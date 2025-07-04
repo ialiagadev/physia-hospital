@@ -108,7 +108,7 @@ export function AppointmentFormModal({
     notas: citaExistente?.notas || "",
     profesionalId: citaExistente?.profesionalId || profesionalId || 1,
     estado: citaExistente?.estado || ("pendiente" as EstadoCita),
-    consultationId: citaExistente?.consultationId || "",
+    consultationId: citaExistente?.consultationId || "none",
     service_id: citaExistente?.service_id || "",
   })
 
@@ -263,7 +263,7 @@ export function AppointmentFormModal({
     setAvailableConsultations(consultations)
   }, [consultations])
 
-  // Función optimizada para verificar consultas disponibles
+  // Función optimizada para verificar consultas disponibles - solo se ejecuta cuando es necesario
   const checkAvailableConsultations = useCallback(
     async (hora: string, duracion: number) => {
       if (!hora || !duracion || !organizationId || consultations.length === 0) {
@@ -289,8 +289,12 @@ export function AppointmentFormModal({
         setAvailableConsultations(available)
 
         // Si la consulta seleccionada ya no está disponible, limpiar la selección
-        if (formData.consultationId && !available.find((c) => c.id === formData.consultationId)) {
-          setFormData((prev) => ({ ...prev, consultationId: "" }))
+        if (
+          formData.consultationId &&
+          formData.consultationId !== "none" &&
+          !available.find((c) => c.id === formData.consultationId)
+        ) {
+          setFormData((prev) => ({ ...prev, consultationId: "none" }))
           toast.warning("La consulta seleccionada ya no está disponible en este horario")
         }
       } catch (error) {
@@ -312,9 +316,20 @@ export function AppointmentFormModal({
     ],
   )
 
-  // Verificar consultas solo cuando cambie hora o duración - con debounce
+  // Verificar consultas solo cuando hay una consulta seleccionada - con debounce
   useEffect(() => {
     if (!organizationId || consultations.length === 0) {
+      return
+    }
+
+    // Solo verificar si hay una consulta seleccionada o si estamos editando una cita con consulta
+    const shouldCheck =
+      formData.consultationId !== "none" || (citaExistente?.consultationId && citaExistente.consultationId !== "")
+
+    if (!shouldCheck) {
+      // Si no hay consulta seleccionada, usar todas las consultas disponibles
+      setAvailableConsultations(consultations)
+      setCheckingConsultations(false)
       return
     }
 
@@ -323,7 +338,15 @@ export function AppointmentFormModal({
     }, 800)
 
     return () => clearTimeout(timeoutId)
-  }, [formData.hora, formData.duracion])
+  }, [
+    formData.hora,
+    formData.duracion,
+    formData.consultationId,
+    organizationId,
+    consultations,
+    checkAvailableConsultations,
+    citaExistente?.consultationId,
+  ])
 
   // Función memoizada para buscar cliente
   const buscarClientePorTelefono = useCallback(
@@ -486,10 +509,6 @@ export function AppointmentFormModal({
         newErrors.nombre = "El nombre es obligatorio"
       }
 
-      if (!formData.consultationId) {
-        newErrors.consultation = "Debes seleccionar una consulta"
-      }
-
       if (!telefonoValidado) {
         newErrors.telefono = "Debes validar el teléfono primero (sal del campo para validar)"
       }
@@ -508,6 +527,8 @@ export function AppointmentFormModal({
         horaInicio: formData.hora,
         id: citaExistente?.id || Date.now(),
         estado: formData.estado,
+        // Si consultationId es "none", enviarlo como string vacío
+        consultationId: formData.consultationId === "none" ? "" : formData.consultationId,
       }
 
       onSubmit(nuevaCita)
@@ -680,21 +701,24 @@ export function AppointmentFormModal({
             </div>
           </div>
 
-          {/* Consulta */}
+          {/* Consulta - AHORA OPCIONAL */}
           <div>
             <Label htmlFor="consultation" className="flex items-center gap-2">
               <MapPin className="h-4 w-4" />
-              Consulta *{checkingConsultations && <Loader2 className="h-3 w-3 animate-spin" />}
+              Consulta (opcional) {checkingConsultations && <Loader2 className="h-3 w-3 animate-spin" />}
             </Label>
             <Select
               value={formData.consultationId}
               onValueChange={(value) => setFormData({ ...formData, consultationId: value })}
               disabled={consultationsLoading}
             >
-              <SelectTrigger className={errors.consultation ? "border-red-500" : ""}>
-                <SelectValue placeholder={consultationsLoading ? "Cargando consultas..." : "Selecciona una consulta"} />
+              <SelectTrigger>
+                <SelectValue
+                  placeholder={consultationsLoading ? "Cargando consultas..." : "Selecciona una consulta (opcional)"}
+                />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="none">Sin consulta específica</SelectItem>
                 {availableConsultations.map((consultation) => (
                   <SelectItem key={consultation.id} value={consultation.id}>
                     <div className="flex items-center gap-2">
@@ -705,12 +729,11 @@ export function AppointmentFormModal({
                 ))}
               </SelectContent>
             </Select>
-            {errors.consultation && <p className="text-sm text-red-600 mt-1">{errors.consultation}</p>}
             {!consultationsLoading && availableConsultations.length === 0 && consultations.length > 0 && (
               <p className="text-sm text-amber-600 mt-1">No hay consultas disponibles en este horario</p>
             )}
             {!consultationsLoading && consultations.length === 0 && (
-              <p className="text-sm text-red-600 mt-1">No hay consultas configuradas</p>
+              <p className="text-sm text-gray-500 mt-1">No hay consultas configuradas</p>
             )}
           </div>
 
@@ -810,7 +833,7 @@ export function AppointmentFormModal({
             </p>
             <p>• El teléfono es obligatorio para enviar recordatorios</p>
             <p>• Selecciona un servicio para filtrar profesionales específicos</p>
-            <p>• Las consultas se verifican automáticamente según el horario</p>
+            <p>• Las consultas son opcionales - puedes crear citas sin asignar consulta</p>
             <p>• Sal del campo teléfono para validar y buscar cliente</p>
           </div>
 

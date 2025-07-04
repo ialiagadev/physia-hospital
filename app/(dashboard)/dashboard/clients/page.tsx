@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import Link from "next/link"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
@@ -29,7 +29,6 @@ interface Client {
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([])
-  const [filteredClients, setFilteredClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedOrgId, setSelectedOrgId] = useState("all")
   const [searchTerm, setSearchTerm] = useState("")
@@ -37,19 +36,39 @@ export default function ClientsPage() {
   const { toast } = useToast()
   const { user, userProfile, isLoading: authLoading } = useAuth()
 
-  // Función para filtrar clientes por búsqueda
-  const filterClients = (clientsList: Client[], search: string) => {
-    if (!search.trim()) {
-      return clientsList
+  // Función segura para resaltar texto en búsquedas
+  const highlightText = (text: string | null | undefined, search: string): string => {
+    // Si no hay texto o búsqueda, devolver texto original o vacío
+    if (!text || !search.trim()) {
+      return text || ""
     }
 
-    const searchLower = search.toLowerCase().trim()
-    return clientsList.filter((client) => {
-      const nameMatch = client.name.toLowerCase().includes(searchLower)
-      const taxIdMatch = client.tax_id.toLowerCase().includes(searchLower)
-      return nameMatch || taxIdMatch
-    })
+    try {
+      // Escapar caracteres especiales de regex
+      const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      const regex = new RegExp(`(${escapedSearch})`, "gi")
+      return text.replace(regex, '<mark class="bg-yellow-200 px-1 rounded">$1</mark>')
+    } catch (error) {
+      console.error("Error al resaltar texto:", error)
+      return text
+    }
   }
+
+  // Memoizar los clientes filtrados para evitar recálculos innecesarios
+  const filteredClients = useMemo(() => {
+    if (!searchTerm.trim()) {
+      return clients
+    }
+
+    const searchLower = searchTerm.toLowerCase().trim()
+    return clients.filter((client) => {
+      const nameMatch = client.name?.toLowerCase().includes(searchLower) || false
+      const taxIdMatch = client.tax_id?.toLowerCase().includes(searchLower) || false
+      const emailMatch = client.email?.toLowerCase().includes(searchLower) || false
+      const cityMatch = client.city?.toLowerCase().includes(searchLower) || false
+      return nameMatch || taxIdMatch || emailMatch || cityMatch
+    })
+  }, [clients, searchTerm])
 
   // Cargar clientes basados en la organización seleccionada
   const loadClients = async () => {
@@ -81,11 +100,19 @@ export default function ClientsPage() {
 
       // Si el usuario no es admin de Physia, filtrar por su organización
       if (!userProfile?.is_physia_admin) {
-        query = query.eq("organization_id", userProfile?.organization_id)
+        if (userProfile?.organization_id) {
+          query = query.eq("organization_id", userProfile.organization_id)
+        }
       } else if (selectedOrgId !== "all") {
         // Si es admin y seleccionó una organización específica
-        query = query.eq("organization_id", selectedOrgId)
+        const orgIdNumber = Number.parseInt(selectedOrgId)
+        if (!isNaN(orgIdNumber)) {
+          query = query.eq("organization_id", orgIdNumber)
+        }
       }
+
+      // AQUÍ ES DONDE TIENES QUE AGREGAR EL LIMIT
+      query = query.limit(5000)
 
       const { data, error } = await query
 
@@ -95,11 +122,8 @@ export default function ClientsPage() {
       }
 
       const clientsData = data || []
+      console.log(`✅ Clientes cargados: ${clientsData.length}`)
       setClients(clientsData)
-
-      // Aplicar filtro de búsqueda a los nuevos datos
-      const filtered = filterClients(clientsData, searchTerm)
-      setFilteredClients(filtered)
     } catch (error) {
       console.error("Error al cargar clientes:", error)
       toast({
@@ -107,21 +131,18 @@ export default function ClientsPage() {
         description: "No se pudieron cargar los clientes",
         variant: "destructive",
       })
+      setClients([])
     } finally {
       setLoading(false)
     }
   }
 
-  // Efecto para cargar clientes cuando cambia la organización
+  // Efecto para cargar clientes cuando cambia la organización o la autenticación
   useEffect(() => {
-    loadClients()
-  }, [selectedOrgId, user, userProfile, authLoading, toast])
-
-  // Efecto para filtrar clientes cuando cambia el término de búsqueda
-  useEffect(() => {
-    const filtered = filterClients(clients, searchTerm)
-    setFilteredClients(filtered)
-  }, [searchTerm, clients])
+    if (!authLoading && user) {
+      loadClients()
+    }
+  }, [selectedOrgId, user, userProfile, authLoading])
 
   const handleImportComplete = () => {
     loadClients() // Recargar la lista de clientes
@@ -159,16 +180,25 @@ export default function ClientsPage() {
     )
   }
 
-  // Obtener organization_id para la importación - asegurar que sea number
-  const organizationIdForImport = userProfile?.is_physia_admin
-    ? selectedOrgId !== "all"
-      ? Number.parseInt(selectedOrgId)
-      : typeof userProfile?.organization_id === "string"
-        ? Number.parseInt(userProfile.organization_id)
-        : userProfile?.organization_id || 0
-    : typeof userProfile?.organization_id === "string"
-      ? Number.parseInt(userProfile.organization_id)
-      : userProfile?.organization_id || 0
+  // Obtener organization_id para la importación - mejorar la conversión
+  const getOrganizationIdForImport = (): number => {
+    if (userProfile?.is_physia_admin && selectedOrgId !== "all") {
+      const orgId = Number.parseInt(selectedOrgId)
+      return isNaN(orgId) ? 0 : orgId
+    }
+
+    if (userProfile?.organization_id) {
+      const orgId =
+        typeof userProfile.organization_id === "string"
+          ? Number.parseInt(userProfile.organization_id)
+          : userProfile.organization_id
+      return isNaN(orgId) ? 0 : orgId
+    }
+
+    return 0
+  }
+
+  const organizationIdForImport = getOrganizationIdForImport()
 
   return (
     <div className="space-y-6">
@@ -199,12 +229,12 @@ export default function ClientsPage() {
         <OrganizationSelector selectedOrgId={selectedOrgId} onSelectOrganization={setSelectedOrgId} className="mb-6" />
       )}
 
-      {/* Barra de búsqueda */}
+      {/* Barra de búsqueda mejorada */}
       <div className="flex items-center space-x-2">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
           <Input
-            placeholder="Buscar por nombre o NIF..."
+            placeholder="Buscar por nombre, NIF, email o ciudad..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10 pr-10"
@@ -257,28 +287,22 @@ export default function ClientsPage() {
                     {searchTerm ? (
                       <span
                         dangerouslySetInnerHTML={{
-                          __html: client.name.replace(
-                            new RegExp(`(${searchTerm})`, "gi"),
-                            '<mark class="bg-yellow-200 px-1 rounded">$1</mark>',
-                          ),
+                          __html: highlightText(client.name, searchTerm),
                         }}
                       />
                     ) : (
-                      client.name
+                      client.name || "-"
                     )}
                   </TableCell>
                   <TableCell>
                     {searchTerm ? (
                       <span
                         dangerouslySetInnerHTML={{
-                          __html: client.tax_id.replace(
-                            new RegExp(`(${searchTerm})`, "gi"),
-                            '<mark class="bg-yellow-200 px-1 rounded">$1</mark>',
-                          ),
+                          __html: highlightText(client.tax_id, searchTerm),
                         }}
                       />
                     ) : (
-                      client.tax_id
+                      client.tax_id || "-"
                     )}
                   </TableCell>
                   {userProfile?.is_physia_admin && <TableCell>{client.organizations?.name || "-"}</TableCell>}
@@ -291,8 +315,28 @@ export default function ClientsPage() {
                       {client.client_type === "public" ? "Público" : "Privado"}
                     </span>
                   </TableCell>
-                  <TableCell>{client.city}</TableCell>
-                  <TableCell>{client.email || "-"}</TableCell>
+                  <TableCell>
+                    {searchTerm ? (
+                      <span
+                        dangerouslySetInnerHTML={{
+                          __html: highlightText(client.city, searchTerm),
+                        }}
+                      />
+                    ) : (
+                      client.city || "-"
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {searchTerm && client.email ? (
+                      <span
+                        dangerouslySetInnerHTML={{
+                          __html: highlightText(client.email, searchTerm),
+                        }}
+                      />
+                    ) : (
+                      client.email || "-"
+                    )}
+                  </TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="sm" asChild>
                       <Link href={`/dashboard/clients/${client.id}`}>Ver</Link>

@@ -36,6 +36,7 @@ export function useClients(organizationId?: number): UseClientsReturn {
       const { data, error: fetchError } = await supabase
         .from("clients")
         .select("*")
+        
         .eq("organization_id", organizationId)
         .order("name", { ascending: true })
 

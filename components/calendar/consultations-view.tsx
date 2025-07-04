@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback } from "react"
 import { Plus, Edit, Trash2, MapPin, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { toast } from "sonner"
+import { useAuth } from "@/app/contexts/auth-context"
 import type { Consultation } from "@/types/calendar"
 import { ConsultationService } from "@/lib/services/consultations"
 
@@ -32,6 +33,7 @@ const COLORES_DISPONIBLES = [
 ]
 
 export function ConsultationsView({ consultations, onRefreshConsultations }: ConsultationsViewProps) {
+  const { user, userProfile } = useAuth()
   const [selectedConsultation, setSelectedConsultation] = useState<Consultation | null>(null)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -49,7 +51,7 @@ export function ConsultationsView({ consultations, onRefreshConsultations }: Con
 
   const [newEquipment, setNewEquipment] = useState("")
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setFormData({
       name: "",
       description: "",
@@ -59,9 +61,9 @@ export function ConsultationsView({ consultations, onRefreshConsultations }: Con
       sort_order: 0,
     })
     setNewEquipment("")
-  }
+  }, [])
 
-  const handleEdit = (consultation: Consultation) => {
+  const handleEdit = useCallback((consultation: Consultation) => {
     setSelectedConsultation(consultation)
     setFormData({
       name: consultation.name,
@@ -72,30 +74,47 @@ export function ConsultationsView({ consultations, onRefreshConsultations }: Con
       sort_order: consultation.sort_order || 0,
     })
     setShowEditModal(true)
-  }
+  }, [])
 
-  const handleAdd = () => {
+  const handleAdd = useCallback(() => {
     resetForm()
     setFormData((prev) => ({
       ...prev,
       sort_order: consultations.length + 1,
     }))
     setShowAddModal(true)
-  }
+  }, [consultations.length, resetForm])
 
-  const handleDelete = (consultation: Consultation) => {
+  const handleDelete = useCallback((consultation: Consultation) => {
     setSelectedConsultation(consultation)
     setShowDeleteModal(true)
-  }
+  }, [])
 
   const handleSave = async () => {
     try {
+      // Verificar autenticación usando el contexto
+      if (!user) {
+        toast.error("Debes iniciar sesión para realizar esta acción")
+        return
+      }
+
+      if (!userProfile?.organization_id) {
+        toast.error("No tienes una organización asignada")
+        return
+      }
+
       setLoading(true)
 
       if (!formData.name.trim()) {
         toast.error("El nombre es obligatorio")
         return
       }
+
+      console.log("🔄 Guardando consulta...", {
+        user: user.id,
+        org: userProfile.organization_id,
+        userProfile: userProfile,
+      })
 
       const consultationData = {
         name: formData.name.trim(),
@@ -112,8 +131,8 @@ export function ConsultationsView({ consultations, onRefreshConsultations }: Con
         toast.success("Consulta actualizada correctamente")
         setShowEditModal(false)
       } else {
-        // Crear nueva consulta
-        await ConsultationService.createConsultation(consultationData)
+        // Crear nueva consulta - pasar userProfile como parámetro
+        await ConsultationService.createConsultation(consultationData, userProfile)
         toast.success("Consulta creada correctamente")
         setShowAddModal(false)
       }
@@ -123,7 +142,8 @@ export function ConsultationsView({ consultations, onRefreshConsultations }: Con
       resetForm()
     } catch (error) {
       console.error("Error saving consultation:", error)
-      toast.error("Error al guardar la consulta")
+      const errorMessage = error instanceof Error ? error.message : "Error al guardar la consulta"
+      toast.error(errorMessage)
     } finally {
       setLoading(false)
     }
@@ -141,13 +161,14 @@ export function ConsultationsView({ consultations, onRefreshConsultations }: Con
       onRefreshConsultations()
     } catch (error) {
       console.error("Error deleting consultation:", error)
-      toast.error("Error al eliminar la consulta")
+      const errorMessage = error instanceof Error ? error.message : "Error al eliminar la consulta"
+      toast.error(errorMessage)
     } finally {
       setLoading(false)
     }
   }
 
-  const addEquipment = () => {
+  const addEquipment = useCallback(() => {
     if (newEquipment.trim() && !formData.equipment.includes(newEquipment.trim())) {
       setFormData((prev) => ({
         ...prev,
@@ -155,18 +176,30 @@ export function ConsultationsView({ consultations, onRefreshConsultations }: Con
       }))
       setNewEquipment("")
     }
-  }
+  }, [newEquipment, formData.equipment])
 
-  const removeEquipment = (equipment: string) => {
+  const removeEquipment = useCallback((equipment: string) => {
     setFormData((prev) => ({
       ...prev,
       equipment: prev.equipment.filter((e) => e !== equipment),
     }))
-  }
+  }, [])
 
-  const getColorClass = (color: string) => {
+  const getColorClass = useCallback((color: string) => {
     const colorConfig = COLORES_DISPONIBLES.find((c) => c.value === color)
     return colorConfig?.class || "bg-blue-100 border-blue-500"
+  }, [])
+
+  // Verificar autenticación
+  if (!user) {
+    return (
+      <div className="h-full p-4 flex items-center justify-center">
+        <div className="text-center">
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Acceso denegado</h3>
+          <p className="text-gray-600">Debes iniciar sesión para gestionar consultas</p>
+        </div>
+      </div>
+    )
   }
 
   return (
