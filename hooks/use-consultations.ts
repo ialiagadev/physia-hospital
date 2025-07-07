@@ -8,21 +8,37 @@ export function useConsultations(organizationId?: number) {
   const [consultations, setConsultations] = useState<Consultation[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [userOrgId, setUserOrgId] = useState<number | null>(null)
 
   const fetchConsultations = async () => {
     try {
       setLoading(true)
       setError(null)
 
-      if (!organizationId) {
+      // Obtener organization_id del usuario autenticado
+      const { data: user } = await supabase.auth.getUser()
+      if (!user.user) {
         setConsultations([])
         return
       }
 
+      const { data: userData, error: userError } = await supabase
+        .from("users")
+        .select("organization_id")
+        .eq("id", user.user.id)
+        .single()
+
+      if (userError || !userData?.organization_id) {
+        setConsultations([])
+        return
+      }
+
+      setUserOrgId(userData.organization_id)
+
       const { data, error: fetchError } = await supabase
         .from("consultations")
         .select("*")
-        .eq("organization_id", organizationId)
+        .eq("organization_id", userData.organization_id)
         .eq("is_active", true)
         .order("sort_order", { ascending: true })
 
@@ -48,7 +64,7 @@ export function useConsultations(organizationId?: number) {
     excludeAppointmentId?: string,
   ) => {
     try {
-      if (!organizationId) {
+      if (!userOrgId) {
         throw new Error("Organization ID is required")
       }
 
@@ -57,17 +73,14 @@ export function useConsultations(organizationId?: number) {
         return []
       }
 
-      // Obtener consultas ocupadas en ese horario específico
-      // La lógica correcta para detectar solapamiento es:
-      // Hay solapamiento si: start_time < endTime AND end_time > startTime
       let query = supabase
         .from("appointments")
         .select("consultation_id, start_time, end_time")
         .eq("date", date)
-        .eq("organization_id", organizationId)
+        .eq("organization_id", userOrgId)
         .neq("status", "cancelled")
-        .lt("start_time", endTime) // La cita existente empieza antes de que termine la nueva
-        .gt("end_time", startTime) // La cita existente termina después de que empiece la nueva
+        .lt("start_time", endTime)
+        .gt("end_time", startTime)
 
       if (excludeAppointmentId) {
         query = query.neq("id", excludeAppointmentId)
@@ -96,7 +109,7 @@ export function useConsultations(organizationId?: number) {
     excludeAppointmentId?: string,
   ) => {
     try {
-      if (!organizationId) {
+      if (!userOrgId) {
         return false
       }
 
@@ -105,10 +118,10 @@ export function useConsultations(organizationId?: number) {
         .select("id, start_time, end_time")
         .eq("consultation_id", consultationId)
         .eq("date", date)
-        .eq("organization_id", organizationId)
+        .eq("organization_id", userOrgId)
         .neq("status", "cancelled")
-        .lt("start_time", endTime) // La cita existente empieza antes de que termine la nueva
-        .gt("end_time", startTime) // La cita existente termina después de que empiece la nueva
+        .lt("start_time", endTime)
+        .gt("end_time", startTime)
 
       if (excludeAppointmentId) {
         query = query.neq("id", excludeAppointmentId)
@@ -128,19 +141,14 @@ export function useConsultations(organizationId?: number) {
   }
 
   useEffect(() => {
-    if (organizationId) {
-      fetchConsultations()
-    } else {
-      setLoading(false)
-      setConsultations([])
-    }
-  }, [organizationId])
+    fetchConsultations()
+  }, [])
 
   return {
     consultations,
     loading,
     error,
-    organizationId,
+    organizationId: userOrgId,
     refetch: fetchConsultations,
     getAvailableConsultations,
     isConsultationAvailable,

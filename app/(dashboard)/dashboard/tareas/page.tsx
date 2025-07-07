@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { Textarea } from "@/components/ui/textarea"
 import { useState, useRef } from "react"
 import {
@@ -46,7 +45,7 @@ import {
 import { useRouter } from "next/navigation"
 import { useTasks } from "@/hooks/tasks/use-tasks"
 import { useProfessionals } from "@/hooks/tasks/use-professionals"
-import type { PrioridadTarea, EstadoTarea, Tarea } from "@/types/tasks"
+import type { PrioridadTarea, EstadoTarea, Tarea, Usuario } from "@/types/tasks"
 
 // Configuración de estados (sin incluir archivada en el tablero principal)
 const ESTADOS_CONFIG = {
@@ -86,13 +85,15 @@ function DraggableTaskCard({
   onEdit,
   onDelete,
   onArchive,
-  profesionales,
+  usuarios,
+  getNombreUsuario,
 }: {
   tarea: Tarea
   onEdit: (tarea: Tarea) => void
   onDelete: (id: number) => void
   onArchive: (id: number) => void
-  profesionales: any[]
+  usuarios: Usuario[]
+  getNombreUsuario: (id?: string) => string
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: tarea.id.toString(),
@@ -106,12 +107,6 @@ function DraggableTaskCard({
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
-  }
-
-  const getNombreProfesional = (id?: string) => {
-    if (!id) return "Sin asignar"
-    const profesional = profesionales.find((p) => p.id === id)
-    return profesional ? profesional.nombre : "Desconocido"
   }
 
   const estaVencida = (tarea: Tarea) => {
@@ -132,23 +127,22 @@ function DraggableTaskCard({
       {...attributes}
       className="bg-white shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing"
     >
-      <CardContent className="p-3 sm:p-4">
-        <div className="space-y-2 sm:space-y-3">
+      <CardContent className="p-3">
+        <div className="space-y-2">
           {/* Header de la tarea */}
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-start gap-2 flex-1 min-w-0">
-              <div className="mt-1 hidden sm:block" {...listeners}>
+              <div className="mt-1 touch-none" {...listeners}>
                 <GripVertical className="h-4 w-4 text-gray-400 cursor-grab" />
               </div>
               <h4 className="font-medium text-sm leading-tight flex-1 break-words">{tarea.titulo}</h4>
             </div>
-
-            {/* Botones de acción */}
+            {/* Botones de acción - Mejorados para móvil */}
             <div className="flex items-center gap-1 flex-shrink-0">
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 w-6 p-0 hover:bg-blue-100"
+                className="h-7 w-7 p-0 hover:bg-blue-100 touch-manipulation"
                 onClick={(e) => {
                   e.stopPropagation()
                   onEdit(tarea)
@@ -157,11 +151,10 @@ function DraggableTaskCard({
               >
                 <Edit className="h-3 w-3 text-blue-600" />
               </Button>
-
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 w-6 p-0 hover:bg-orange-100"
+                className="h-7 w-7 p-0 hover:bg-orange-100 touch-manipulation"
                 onClick={(e) => {
                   e.stopPropagation()
                   onArchive(tarea.id)
@@ -170,11 +163,10 @@ function DraggableTaskCard({
               >
                 <Archive className="h-3 w-3 text-orange-600" />
               </Button>
-
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 w-6 p-0 hover:bg-red-100"
+                className="h-7 w-7 p-0 hover:bg-red-100 touch-manipulation"
                 onClick={(e) => {
                   e.stopPropagation()
                   onDelete(tarea.id)
@@ -188,13 +180,11 @@ function DraggableTaskCard({
 
           {/* Descripción */}
           {tarea.descripcion && (
-            <p className="text-xs sm:text-sm text-gray-600 line-clamp-2 sm:line-clamp-3 ml-0 sm:ml-6">
-              {tarea.descripcion}
-            </p>
+            <p className="text-xs text-gray-600 line-clamp-2 ml-6 break-words">{tarea.descripcion}</p>
           )}
 
           {/* Badges de estado */}
-          <div className="flex flex-wrap gap-1 ml-0 sm:ml-6">
+          <div className="flex flex-wrap gap-1 ml-6">
             <Badge variant="outline" className={`text-xs ${PRIORIDADES_CONFIG[tarea.prioridad].color}`}>
               {PRIORIDADES_CONFIG[tarea.prioridad].texto}
             </Badge>
@@ -211,14 +201,14 @@ function DraggableTaskCard({
           </div>
 
           {/* Footer de la tarea */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-0 text-xs text-gray-500 pt-2 border-t ml-0 sm:ml-6">
+          <div className="flex flex-col gap-1 text-xs text-gray-500 pt-2 border-t ml-6">
             <div className="flex items-center gap-1">
-              <User className="h-3 w-3" />
-              <span className="truncate">{getNombreProfesional(tarea.asignadoA)}</span>
+              <User className="h-3 w-3 flex-shrink-0" />
+              <span className="truncate">{getNombreUsuario(tarea.asignadoA)}</span>
             </div>
             {tarea.fechaVencimiento && (
               <div className="flex items-center gap-1">
-                <Calendar className="h-3 w-3" />
+                <Calendar className="h-3 w-3 flex-shrink-0" />
                 <span>{tarea.fechaVencimiento.toLocaleDateString("es-ES")}</span>
               </div>
             )}
@@ -241,18 +231,17 @@ function TaskColumn({
 }) {
   const config = ESTADOS_CONFIG[estado]
   const IconoEstado = config.icono
-
   const { setNodeRef: setDroppableNodeRef } = useDroppable({ id: estado })
 
   return (
-    <div className="flex flex-col h-full min-h-[400px] lg:min-h-[500px]">
+    <div className="flex flex-col h-full min-h-[400px]">
       {/* Header de la columna */}
-      <div className={`${config.colorHeader} rounded-t-lg p-3 sm:p-4 border-b`}>
+      <div className={`${config.colorHeader} rounded-t-lg p-3 border-b`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <IconoEstado className={`h-4 w-4 sm:h-5 sm:w-5 ${config.colorIcono}`} />
-            <h3 className="font-semibold text-sm sm:text-base text-gray-900">{config.titulo}</h3>
-            <Badge variant="secondary" className="ml-1 sm:ml-2 text-xs">
+            <IconoEstado className={`h-4 w-4 ${config.colorIcono}`} />
+            <h3 className="font-semibold text-sm text-gray-900">{config.titulo}</h3>
+            <Badge variant="secondary" className="ml-1 text-xs">
               {tareas.length}
             </Badge>
           </div>
@@ -264,14 +253,13 @@ function TaskColumn({
         ref={setDroppableNodeRef}
         id={estado}
         data-column-id={estado}
-        className={`${config.color} flex-1 p-3 sm:p-4 rounded-b-lg overflow-y-auto space-y-2 sm:space-y-3`}
+        className={`${config.color} flex-1 p-3 rounded-b-lg overflow-y-auto space-y-2`}
       >
         {children}
-
         {tareas.length === 0 && (
-          <div className="text-center py-6 sm:py-8 text-gray-500">
-            <Circle className="h-6 w-6 sm:h-8 sm:w-8 mx-auto mb-2 opacity-50" />
-            <p className="text-xs sm:text-sm">Arrastra tareas aquí o no hay tareas en este estado</p>
+          <div className="text-center py-6 text-gray-500">
+            <Circle className="h-6 w-6 mx-auto mb-2 opacity-50" />
+            <p className="text-xs">Arrastra tareas aquí</p>
           </div>
         )}
       </div>
@@ -295,7 +283,7 @@ export default function TareasPage() {
     restaurarTarea,
   } = useTasks()
 
-  const { profesionales, loading: profesionalesLoading } = useProfessionals()
+  const { usuarios, usuariosTipo1, loading: profesionalesLoading, getNombreUsuario } = useProfessionals()
 
   // Estados locales
   const [mostrarFormulario, setMostrarFormulario] = useState(false)
@@ -322,7 +310,6 @@ export default function TareasPage() {
 
   // Referencia para drag and drop
   const overColumnRef = useRef<keyof typeof ESTADOS_CONFIG | null>(null)
-
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -334,7 +321,6 @@ export default function TareasPage() {
   // Función para encontrar la columna que contiene un elemento
   const findColumnForElement = (element: HTMLElement | null): keyof typeof ESTADOS_CONFIG | null => {
     if (!element) return null
-
     const column = element.closest("[data-column-id]")
     if (column) {
       const columnId = column.getAttribute("data-column-id")
@@ -342,7 +328,6 @@ export default function TareasPage() {
         return columnId as keyof typeof ESTADOS_CONFIG
       }
     }
-
     return null
   }
 
@@ -350,7 +335,6 @@ export default function TareasPage() {
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event
     setActiveId(active.id as string)
-
     const tarea = tareas.find((t) => t.id.toString() === active.id)
     if (tarea && tarea.estado in ESTADOS_CONFIG) {
       setActiveColumn(tarea.estado as keyof typeof ESTADOS_CONFIG)
@@ -363,7 +347,6 @@ export default function TareasPage() {
     if (!over) return
 
     let columnId: keyof typeof ESTADOS_CONFIG | null = null
-
     if (typeof over.id === "string" && over.id in ESTADOS_CONFIG) {
       columnId = over.id as keyof typeof ESTADOS_CONFIG
     } else {
@@ -386,12 +369,11 @@ export default function TareasPage() {
 
     const activeId = active.id as string
     const overId = over?.id as string
-
     const activeIndex = tareas.findIndex((t) => t.id.toString() === activeId)
+
     if (activeIndex === -1) return
 
     const activeTarea = tareas[activeIndex]
-
     let estadoDestino: keyof typeof ESTADOS_CONFIG | null = null
 
     if (overId && overId in ESTADOS_CONFIG) {
@@ -430,7 +412,6 @@ export default function TareasPage() {
         const reordenadas = arrayMove(tareas, activeIndex, overIndex)
         const tareasEnColumna = reordenadas.filter((t) => t.estado === estadoDestino)
         const indexEnColumna = tareasEnColumna.findIndex((t) => t.id === activeTarea.id)
-
         reordenarTareas(activeTarea.id, indexEnColumna)
       }
     }
@@ -501,7 +482,7 @@ export default function TareasPage() {
       !busqueda ||
       tarea.titulo.toLowerCase().includes(busqueda.toLowerCase()) ||
       tarea.descripcion.toLowerCase().includes(busqueda.toLowerCase()) ||
-      getNombreProfesional(tarea.asignadoA).toLowerCase().includes(busqueda.toLowerCase())
+      getNombreUsuario(tarea.asignadoA).toLowerCase().includes(busqueda.toLowerCase())
 
     return cumpleFiltroAsignado && cumpleFiltroPrioridad && cumpleBusqueda
   })
@@ -511,14 +492,6 @@ export default function TareasPage() {
     return tareasFiltradas.filter((tarea) => tarea.estado === estado).sort((a, b) => a.orden - b.orden)
   }
 
-  // Obtener nombre del profesional
-  const getNombreProfesional = (id?: string) => {
-    if (!id) return "Sin asignar"
-    const profesional = profesionales.find((p) => p.id === id)
-    return profesional ? profesional.nombre : "Desconocido"
-  }
-
-  // Restaurar tarea archivada
   // Obtener tarea activa para el overlay
   const tareaActiva = activeId ? tareas.find((t) => t.id.toString() === activeId) : null
 
@@ -555,86 +528,81 @@ export default function TareasPage() {
       onDragEnd={handleDragEnd}
     >
       <div className="min-h-screen bg-gray-50">
-        {/* Header */}
-        <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
-            <div className="flex items-center gap-2 sm:gap-4">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => router.push("/dashboard")}
-                className="flex items-center gap-2"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                <span className="hidden sm:inline">Volver al Dashboard</span>
-                <span className="sm:hidden">Volver</span>
+        {/* Header - Mejorado para móvil */}
+        <div className="bg-white border-b border-gray-200 px-3 sm:px-6 py-3">
+          <div className="flex flex-col gap-3">
+            {/* Primera fila: Título y botón volver */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => router.push("/dashboard")}
+                  className="flex items-center gap-2 p-2"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  <span className="hidden sm:inline">Volver</span>
+                </Button>
+                <h1 className="text-lg sm:text-2xl font-bold text-gray-900">
+                  <span className="hidden sm:inline">Gestión de Tareas</span>
+                  <span className="sm:hidden">Tareas</span>
+                </h1>
+              </div>
+
+              {/* Botón nueva tarea - Siempre visible */}
+              <Button onClick={() => setMostrarFormulario(true)} size="sm" className="flex items-center gap-2">
+                <Plus className="h-4 w-4" />
+                <span className="hidden sm:inline">Nueva Tarea</span>
+                <span className="sm:hidden">Nueva</span>
               </Button>
-              <h1 className="text-lg sm:text-2xl font-bold text-gray-900">
-                <span className="hidden sm:inline">Gestión de Tareas del Centro</span>
-                <span className="sm:hidden">Tareas</span>
-              </h1>
             </div>
 
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
+            {/* Segunda fila: Búsqueda y filtros */}
+            <div className="flex flex-col sm:flex-row gap-2">
               {/* Barra de búsqueda */}
-              <div className="relative order-1 sm:order-none">
+              <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                 <Input
                   placeholder="Buscar tareas..."
                   value={busqueda}
                   onChange={(e) => setBusqueda(e.target.value)}
-                  className="pl-10 w-full sm:w-64"
+                  className="pl-10"
                 />
               </div>
 
-              {/* Botones de acción */}
-              <div className="flex items-center gap-2 order-2 sm:order-none">
-                {/* Filtros */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setMostrarFiltros(!mostrarFiltros)}
-                  className="flex items-center gap-2"
-                >
-                  <Filter className="h-4 w-4" />
-                  <span className="hidden sm:inline">Filtros</span>
-                </Button>
-
-                {/* Botón nueva tarea */}
-                <Button
-                  type="button"
-                  onClick={() => setMostrarFormulario(true)}
-                  size="sm"
-                  className="flex items-center gap-2"
-                >
-                  <Plus className="h-4 w-4" />
-                  <span className="hidden sm:inline">Nueva Tarea</span>
-                  <span className="sm:hidden">Nueva</span>
-                </Button>
-              </div>
+              {/* Botón filtros */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setMostrarFiltros(!mostrarFiltros)}
+                className="flex items-center gap-2 whitespace-nowrap"
+              >
+                <Filter className="h-4 w-4" />
+                Filtros
+              </Button>
             </div>
           </div>
 
-          {/* Panel de filtros desktop */}
+          {/* Panel de filtros */}
           {mostrarFiltros && (
             <div className="mt-4 p-4 bg-gray-50 rounded-lg border">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="space-y-2">
-                  <Label>Estado de la tarea</Label>
+                  <Label>Estado</Label>
                   <Select value={filtroEstado} onValueChange={(value: any) => setFiltroEstado(value)}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="creadas">Tareas Creadas</SelectItem>
-                      <SelectItem value="archivadas">Tareas Archivadas</SelectItem>
-                      <SelectItem value="eliminadas">Tareas Eliminadas</SelectItem>
+                      <SelectItem value="creadas">Creadas</SelectItem>
+                      <SelectItem value="archivadas">Archivadas</SelectItem>
+                      <SelectItem value="eliminadas">Eliminadas</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Asignado a</Label>
+                  <Label>Asignar a (Solo Usuarios Tipo 1)</Label>
                   <Select
                     value={filtroAsignado.toString()}
                     onValueChange={(value) => setFiltroAsignado(value === "todos" ? "todos" : value)}
@@ -643,10 +611,10 @@ export default function TareasPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="todos">Todos los profesionales</SelectItem>
-                      {profesionales.map((prof) => (
-                        <SelectItem key={prof.id} value={prof.id.toString()}>
-                          {prof.nombre}
+                      <SelectItem value="todos">Todos</SelectItem>
+                      {usuariosTipo1.map((user) => (
+                        <SelectItem key={user.id} value={user.id}>
+                          {user.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -660,7 +628,7 @@ export default function TareasPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="todas">Todas las prioridades</SelectItem>
+                      <SelectItem value="todas">Todas</SelectItem>
                       <SelectItem value="alta">Alta</SelectItem>
                       <SelectItem value="media">Media</SelectItem>
                       <SelectItem value="baja">Baja</SelectItem>
@@ -679,7 +647,7 @@ export default function TareasPage() {
                     }}
                     className="w-full"
                   >
-                    Limpiar Filtros
+                    Limpiar
                   </Button>
                 </div>
               </div>
@@ -687,14 +655,13 @@ export default function TareasPage() {
           )}
         </div>
 
-        {/* Dashboard estilo Trello con Drag and Drop */}
-        <div className="p-4 sm:p-6">
+        {/* Contenido principal */}
+        <div className="p-3 sm:p-6">
           {filtroEstado === "creadas" ? (
-            // Vista normal del tablero para tareas creadas
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 min-h-[calc(100vh-300px)]">
+            // Tablero Kanban - Mejorado para móvil
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-[calc(100vh-250px)]">
               {(Object.keys(ESTADOS_CONFIG) as (keyof typeof ESTADOS_CONFIG)[]).map((estado) => {
                 const tareasEstado = getTareasPorEstado(estado)
-
                 return (
                   <TaskColumn key={estado} estado={estado} tareas={tareasEstado}>
                     <SortableContext
@@ -708,7 +675,8 @@ export default function TareasPage() {
                           onEdit={editarTarea}
                           onDelete={eliminarTarea}
                           onArchive={archivarTarea}
-                          profesionales={profesionales}
+                          usuarios={usuariosTipo1}
+                          getNombreUsuario={getNombreUsuario}
                         />
                       ))}
                     </SortableContext>
@@ -717,19 +685,19 @@ export default function TareasPage() {
               })}
             </div>
           ) : (
-            // Vista de lista para tareas archivadas y eliminadas
+            // Vista de lista para archivadas/eliminadas
             <div className="space-y-4">
-              <div className="bg-white rounded-lg border p-4 sm:p-6">
-                <h3 className="text-base sm:text-lg font-semibold mb-4 flex items-center gap-2">
+              <div className="bg-white rounded-lg border p-4">
+                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
                   {filtroEstado === "archivadas" ? (
                     <>
-                      <Archive className="h-4 w-4 sm:h-5 sm:w-5 text-orange-600" />
-                      Tareas Archivadas ({tareasFiltradas.length})
+                      <Archive className="h-5 w-5 text-orange-600" />
+                      Archivadas ({tareasFiltradas.length})
                     </>
                   ) : (
                     <>
-                      <Trash2 className="h-4 w-4 sm:h-5 sm:w-5 text-red-600" />
-                      Tareas Eliminadas ({tareasFiltradas.length})
+                      <Trash2 className="h-5 w-5 text-red-600" />
+                      Eliminadas ({tareasFiltradas.length})
                     </>
                   )}
                 </h3>
@@ -738,27 +706,24 @@ export default function TareasPage() {
                   <div className="text-center py-8 text-gray-500">
                     <div className="mb-2">
                       {filtroEstado === "archivadas" ? (
-                        <Archive className="h-8 w-8 sm:h-12 sm:w-12 mx-auto opacity-50" />
+                        <Archive className="h-12 w-12 mx-auto opacity-50" />
                       ) : (
-                        <Trash2 className="h-8 w-8 sm:h-12 sm:w-12 mx-auto opacity-50" />
+                        <Trash2 className="h-12 w-12 mx-auto opacity-50" />
                       )}
                     </div>
-                    <p className="text-sm sm:text-base">
-                      No hay tareas {filtroEstado === "archivadas" ? "archivadas" : "eliminadas"}
-                    </p>
+                    <p>No hay tareas {filtroEstado === "archivadas" ? "archivadas" : "eliminadas"}</p>
                   </div>
                 ) : (
-                  <div className="grid gap-3 sm:gap-4">
+                  <div className="grid gap-4">
                     {tareasFiltradas.map((tarea) => (
-                      <Card key={tarea.id} className="p-3 sm:p-4">
+                      <Card key={tarea.id} className="p-4">
                         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                           <div className="flex-1 min-w-0">
-                            <h4 className="font-medium text-sm sm:text-base mb-2 break-words">{tarea.titulo}</h4>
+                            <h4 className="font-medium mb-2 break-words">{tarea.titulo}</h4>
                             {tarea.descripcion && (
-                              <p className="text-xs sm:text-sm text-gray-600 mb-3 break-words">{tarea.descripcion}</p>
+                              <p className="text-sm text-gray-600 mb-3 break-words">{tarea.descripcion}</p>
                             )}
-
-                            <div className="flex flex-wrap gap-1 sm:gap-2 mb-3">
+                            <div className="flex flex-wrap gap-2 mb-3">
                               <Badge
                                 variant="outline"
                                 className={`text-xs ${PRIORIDADES_CONFIG[tarea.prioridad].color}`}
@@ -776,49 +741,29 @@ export default function TareasPage() {
                                 </Badge>
                               )}
                             </div>
-
-                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-gray-500">
-                              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-xs text-gray-500">
+                              <div className="flex items-center gap-1">
+                                <User className="h-3 w-3" />
+                                <span>{getNombreUsuario(tarea.asignadoA)}</span>
+                              </div>
+                              {tarea.fechaVencimiento && (
                                 <div className="flex items-center gap-1">
-                                  <User className="h-3 w-3" />
-                                  <span className="truncate">{getNombreProfesional(tarea.asignadoA)}</span>
+                                  <Calendar className="h-3 w-3" />
+                                  <span>{tarea.fechaVencimiento.toLocaleDateString("es-ES")}</span>
                                 </div>
-                                {tarea.fechaVencimiento && (
-                                  <div className="flex items-center gap-1">
-                                    <Calendar className="h-3 w-3" />
-                                    <span>{tarea.fechaVencimiento.toLocaleDateString("es-ES")}</span>
-                                  </div>
-                                )}
-                              </div>
-                              <div className="text-left sm:text-right">
-                                {filtroEstado === "archivadas" && tarea.fechaArchivada && (
-                                  <div>Archivada: {tarea.fechaArchivada.toLocaleDateString("es-ES")}</div>
-                                )}
-                                {filtroEstado === "eliminadas" && tarea.fechaEliminada && (
-                                  <div>Eliminada: {tarea.fechaEliminada.toLocaleDateString("es-ES")}</div>
-                                )}
-                              </div>
+                              )}
                             </div>
                           </div>
-
                           <div className="flex items-center gap-2 flex-shrink-0">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 p-0 hover:bg-blue-100"
-                              onClick={() => editarTarea(tarea)}
-                              title="Ver detalles"
-                            >
+                            <Button variant="ghost" size="sm" onClick={() => editarTarea(tarea)} title="Ver detalles">
                               <Edit className="h-4 w-4 text-blue-600" />
                             </Button>
-
                             {filtroEstado === "archivadas" && (
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-8 w-8 p-0 hover:bg-green-100"
                                 onClick={() => restaurarTarea(tarea.id)}
-                                title="Restaurar tarea"
+                                title="Restaurar"
                               >
                                 <CheckCircle2 className="h-4 w-4 text-green-600" />
                               </Button>
@@ -834,46 +779,35 @@ export default function TareasPage() {
           )}
         </div>
 
-        {/* Estadísticas */}
-        <div className="px-4 sm:px-6 pb-4 sm:pb-6">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+        {/* Estadísticas - Mejoradas para móvil */}
+        <div className="px-3 sm:px-6 pb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Card>
-              <CardContent className="p-3 sm:p-4 text-center">
-                <div className="text-lg sm:text-2xl font-bold text-gray-900">{tareasFiltradas.length}</div>
-                <div className="text-xs sm:text-sm text-gray-600">
-                  {filtroEstado === "creadas"
-                    ? "Tareas activas"
-                    : filtroEstado === "archivadas"
-                      ? "Tareas archivadas"
-                      : "Tareas eliminadas"}
+              <CardContent className="p-3 text-center">
+                <div className="text-xl font-bold text-gray-900">{tareasFiltradas.length}</div>
+                <div className="text-xs text-gray-600">
+                  {filtroEstado === "creadas" ? "Activas" : filtroEstado === "archivadas" ? "Archivadas" : "Eliminadas"}
                 </div>
               </CardContent>
             </Card>
-
             {filtroEstado === "creadas" && (
               <>
                 <Card>
-                  <CardContent className="p-3 sm:p-4 text-center">
-                    <div className="text-lg sm:text-2xl font-bold text-blue-600">
-                      {getTareasPorEstado("en_progreso").length}
-                    </div>
-                    <div className="text-xs sm:text-sm text-gray-600">En progreso</div>
+                  <CardContent className="p-3 text-center">
+                    <div className="text-xl font-bold text-blue-600">{getTareasPorEstado("en_progreso").length}</div>
+                    <div className="text-xs text-gray-600">En progreso</div>
                   </CardContent>
                 </Card>
                 <Card>
-                  <CardContent className="p-3 sm:p-4 text-center">
-                    <div className="text-lg sm:text-2xl font-bold text-green-600">
-                      {getTareasPorEstado("completada").length}
-                    </div>
-                    <div className="text-xs sm:text-sm text-gray-600">Completadas</div>
+                  <CardContent className="p-3 text-center">
+                    <div className="text-xl font-bold text-green-600">{getTareasPorEstado("completada").length}</div>
+                    <div className="text-xs text-gray-600">Completadas</div>
                   </CardContent>
                 </Card>
                 <Card>
-                  <CardContent className="p-3 sm:p-4 text-center">
-                    <div className="text-lg sm:text-2xl font-bold text-gray-600">
-                      {getTareasPorEstado("pendiente").length}
-                    </div>
-                    <div className="text-xs sm:text-sm text-gray-600">Pendientes</div>
+                  <CardContent className="p-3 text-center">
+                    <div className="text-xl font-bold text-gray-600">{getTareasPorEstado("pendiente").length}</div>
+                    <div className="text-xs text-gray-600">Pendientes</div>
                   </CardContent>
                 </Card>
               </>
@@ -883,7 +817,7 @@ export default function TareasPage() {
 
         {/* Modal de nueva tarea */}
         <Dialog open={mostrarFormulario} onOpenChange={setMostrarFormulario}>
-          <DialogContent className="max-w-md mx-4 sm:mx-auto">
+          <DialogContent className="max-w-md mx-4 max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Nueva Tarea</DialogTitle>
             </DialogHeader>
@@ -928,7 +862,7 @@ export default function TareasPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Asignar a</Label>
+                  <Label>Asignar a (Solo Usuarios Tipo 1)</Label>
                   <Select
                     value={nuevaTarea.asignadoA || "none"}
                     onValueChange={(value) =>
@@ -940,9 +874,9 @@ export default function TareasPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">Sin asignar</SelectItem>
-                      {profesionales.map((prof) => (
-                        <SelectItem key={prof.id} value={prof.id.toString()}>
-                          {prof.nombre}
+                      {usuariosTipo1.map((user) => (
+                        <SelectItem key={user.id} value={user.id}>
+                          {user.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -980,11 +914,10 @@ export default function TareasPage() {
             setTareaEnEdicion(null)
           }}
         >
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto mx-4">
             <DialogHeader>
               <DialogTitle>Editar Tarea</DialogTitle>
             </DialogHeader>
-
             {tareaEnEdicion && (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1034,7 +967,7 @@ export default function TareasPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Asignado a</Label>
+                    <Label>Asignar a (Solo Usuarios Tipo 1)</Label>
                     <Select
                       value={tareaEnEdicion.asignadoA || "none"}
                       onValueChange={(value) =>
@@ -1046,16 +979,16 @@ export default function TareasPage() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">Sin asignar</SelectItem>
-                        {profesionales.map((prof) => (
-                          <SelectItem key={prof.id} value={prof.id.toString()}>
-                            {prof.nombre}
+                        {usuariosTipo1.map((user) => (
+                          <SelectItem key={user.id} value={user.id}>
+                            {user.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-2 md:col-span-2">
                     <Label htmlFor="fechaVencimiento">Fecha de vencimiento</Label>
                     <Input
                       id="fechaVencimiento"
@@ -1109,17 +1042,20 @@ export default function TareasPage() {
                   </div>
                 </div>
 
-                <div className="flex justify-end gap-2 pt-4 border-t">
+                <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t">
                   <Button
                     variant="outline"
                     onClick={() => {
                       setMostrarModalEdicion(false)
                       setTareaEnEdicion(null)
                     }}
+                    className="w-full sm:w-auto"
                   >
                     Cancelar
                   </Button>
-                  <Button onClick={() => guardarTareaEditada(tareaEnEdicion)}>Guardar Cambios</Button>
+                  <Button onClick={() => guardarTareaEditada(tareaEnEdicion)} className="w-full sm:w-auto">
+                    Guardar Cambios
+                  </Button>
                 </div>
               </div>
             )}

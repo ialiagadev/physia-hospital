@@ -1,8 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { ChevronLeft, ChevronRight, Plus, Search } from "lucide-react"
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns"
 import { Button } from "@/components/ui/button"
+import { ChevronLeft, ChevronRight, Plus, Search } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CalendarSearch } from "@/components/calendar/calendar-search"
 import { ProfesionalesLegend } from "@/components/calendar/profesionales-legend"
@@ -20,7 +21,6 @@ import { useServices } from "@/hooks/use-services"
 import { useVacationRequests } from "@/hooks/use-vacation-requests"
 import { useAuth } from "@/app/contexts/auth-context"
 import { supabase } from "@/lib/supabase"
-import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from "date-fns"
 import type {
   IntervaloTiempo,
   VistaCalendario,
@@ -29,14 +29,13 @@ import type {
   AppointmentInsert,
   EstadoCita,
 } from "@/types/calendar"
-
-// Define TabPrincipal locally to include new tabs
-type TabPrincipal = "calendario" | "lista-espera" | "actividades-grupales" | "usuarios" | "consultas" | "servicios"
-
 import { WeekView } from "@/components/calendar/week-view"
 import { MonthView } from "@/components/calendar/month-view"
 import { HorarioViewDynamic } from "@/components/calendar/horario-view-dynamic"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+
+// Define TabPrincipal locally to include new tabs
+type TabPrincipal = "calendario" | "lista-espera" | "actividades-grupales" | "usuarios" | "consultas" | "servicios"
 
 // Mapeo de estados del español al inglés para la base de datos
 const mapEstadoToStatus = (estado: string): "confirmed" | "pending" | "cancelled" | "completed" | "no_show" => {
@@ -129,6 +128,7 @@ export default function MedicalCalendarSystem() {
   }
 
   const { startDate, endDate } = getDateRange()
+
   const {
     appointments,
     loading: appointmentsLoading,
@@ -208,11 +208,11 @@ export default function MedicalCalendarSystem() {
     }
   }
 
-  // Función para obtener la primera consulta disponible
+  // Función para obtener la primera consulta disponible (opcional)
   const getFirstAvailableConsultation = async (date: string, startTime: string, endTime: string) => {
     try {
       if (consultations.length === 0) {
-        throw new Error("No hay consultas configuradas")
+        return null // Retornar null si no hay consultas
       }
 
       // Verificar qué consultas están ocupadas en ese horario
@@ -228,10 +228,10 @@ export default function MedicalCalendarSystem() {
       const occupiedIds = occupiedConsultations?.map((apt) => apt.consultation_id) || []
       const availableConsultation = consultations.find((consultation) => !occupiedIds.includes(consultation.id))
 
-      return availableConsultation?.id || consultations[0].id // Fallback a la primera consulta
+      return availableConsultation?.id || null // Retornar null si no hay disponibles
     } catch (error) {
       console.error("Error getting available consultation:", error)
-      return consultations[0]?.id || null
+      return null
     }
   }
 
@@ -276,9 +276,11 @@ export default function MedicalCalendarSystem() {
       // Obtener o crear tipo de cita por defecto para el profesional
       const appointmentTypeId = await getDefaultAppointmentType(professionalUuid)
 
-      // Determinar la consulta
-      let consultationId = appointmentData.consultationId
-      if (!consultationId) {
+      // Determinar la consulta (opcional)
+      let consultationId = appointmentData.consultationId || null
+
+      // Solo buscar consulta automáticamente si no se especificó una y hay consultas disponibles
+      if (!consultationId && consultations.length > 0) {
         const endTime = appointmentData.horaFin || calculateEndTime(appointmentData.hora, appointmentData.duracion)
         consultationId = await getFirstAvailableConsultation(
           format(appointmentData.fecha, "yyyy-MM-dd"),
@@ -287,18 +289,13 @@ export default function MedicalCalendarSystem() {
         )
       }
 
-      if (!consultationId) {
-        console.error("No hay consultas disponibles")
-        return
-      }
-
       const newAppointment: AppointmentInsert = {
         user_id: currentUser.id, // Usuario que crea la cita
         organization_id: currentUser.organization_id,
         professional_id: professionalUuid, // Profesional asignado
         client_id: clientId,
         appointment_type_id: appointmentTypeId,
-        consultation_id: consultationId, // Consulta asignada
+        consultation_id: consultationId, // Puede ser null
         date: format(appointmentData.fecha, "yyyy-MM-dd"),
         start_time: appointmentData.hora,
         end_time: appointmentData.horaFin || calculateEndTime(appointmentData.hora, appointmentData.duracion),
@@ -463,7 +460,6 @@ export default function MedicalCalendarSystem() {
     return [...new Set(blocked)]
   }
 
-  // Convertir appointments de Supabase al formato esperado por los componentes
   const convertAppointmentsToLegacyFormat = (appointments: AppointmentWithDetails[]) => {
     return appointments.map((apt) => ({
       id: Number.parseInt(apt.id.slice(-8), 16), // Convertir UUID a número para compatibilidad

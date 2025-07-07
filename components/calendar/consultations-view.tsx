@@ -266,27 +266,11 @@ export function ConsultationsView({ consultations, onRefreshConsultations }: Con
             <CardContent className="p-4">
               {consultation.description && <p className="text-sm text-gray-600 mb-3">{consultation.description}</p>}
 
-              {consultation.equipment && consultation.equipment.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                    <Settings className="h-4 w-4" />
-                    Equipamiento:
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {consultation.equipment.map((item, index) => (
-                      <Badge key={index} variant="outline" className="text-xs">
-                        {item}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
+          
 
               <div className="mt-4 pt-3 border-t flex items-center justify-between text-xs text-gray-500">
                 <span>Orden: {consultation.sort_order || 0}</span>
                 <div className="flex items-center gap-1">
-                  <MapPin className="h-3 w-3" />
-                  ID: {consultation.id.slice(-8)}
                 </div>
               </div>
             </CardContent>
@@ -366,34 +350,7 @@ export function ConsultationsView({ consultations, onRefreshConsultations }: Con
               </Select>
             </div>
 
-            <div>
-              <Label>Equipamiento</Label>
-              <div className="space-y-2">
-                <div className="flex gap-2">
-                  <Input
-                    value={newEquipment}
-                    onChange={(e) => setNewEquipment(e.target.value)}
-                    placeholder="Ej: Camilla, Rayos X..."
-                    onKeyPress={(e) => e.key === "Enter" && addEquipment()}
-                  />
-                  <Button type="button" onClick={addEquipment} size="sm">
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-                {formData.equipment.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {formData.equipment.map((item, index) => (
-                      <Badge key={index} variant="outline" className="gap-1">
-                        {item}
-                        <button type="button" onClick={() => removeEquipment(item)} className="ml-1 hover:text-red-600">
-                          ×
-                        </button>
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+           
 
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
