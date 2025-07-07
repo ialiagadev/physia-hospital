@@ -33,6 +33,7 @@ interface ProfesionalesViewProps {
   isUserOnVacationDate?: (userId: string, date: Date | string) => boolean
   getUserVacationOnDate?: (userId: string, date: Date | string) => any
 }
+
 const COLORES_DISPONIBLES = [
   { value: "#14B8A6", label: "Teal", class: "bg-teal-100 border-teal-500" },
   { value: "#3B82F6", label: "Azul", class: "bg-blue-100 border-blue-500" },
@@ -64,6 +65,17 @@ export function ProfesionalesView({
   users = [],
   onRefreshUsers,
 }: ProfesionalesViewProps) {
+  // Filtrar solo usuarios de tipo 1 (profesionales)
+  const professionalUsers = users.filter((user) => user.type === 1)
+
+  // Filtrar profesionales que tengan un usuario correspondiente de tipo 1
+  const filteredProfesionales = profesionales.filter((profesional) => {
+    const correspondingUser = professionalUsers.find(
+      (user) => Number.parseInt(user.id.slice(-8), 16) === profesional.id,
+    )
+    return correspondingUser !== undefined
+  })
+
   const [selectedProfesional, setSelectedProfesional] = useState<Profesional | null>(null)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -133,7 +145,7 @@ export function ProfesionalesView({
 
     try {
       // Buscar el usuario real correspondiente
-      const realUser = users.find((u) => Number.parseInt(u.id.slice(-8), 16) === selectedProfesional.id)
+      const realUser = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === selectedProfesional.id)
 
       if (realUser) {
         // Actualizar en la base de datos
@@ -201,13 +213,14 @@ export function ProfesionalesView({
 
   const handleScheduleConfig = (profesional: Profesional) => {
     // Buscar el usuario real correspondiente
-    const realUser = users.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesional.id)
+    const realUser = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesional.id)
 
     if (realUser) {
       setSelectedUserForSchedule(realUser)
     } else {
       // Para datos mock, crear un usuario temporal
-    
+      toast.error("Este profesional no tiene usuario asociado de tipo profesional")
+      return
     }
 
     setShowScheduleModal(true)
@@ -230,10 +243,41 @@ export function ProfesionalesView({
     }
   }
 
+  // Si no hay profesionales filtrados, mostrar mensaje
+  if (filteredProfesionales.length === 0) {
+    return (
+      <div className="h-full p-4">
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h2 className="text-2xl font-bold">Gestión de Profesionales</h2>
+            <p className="text-sm text-muted-foreground">No hay profesionales disponibles</p>
+          </div>
+          <Button onClick={() => setShowAddModal(true)} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Añadir Profesional
+          </Button>
+        </div>
+
+        <div className="flex flex-col items-center justify-center h-64 text-center">
+          <div className="text-6xl mb-4">👨‍⚕️</div>
+          <h3 className="text-lg font-semibold mb-2">No hay profesionales</h3>
+          <p className="text-muted-foreground mb-4">Añade el primer profesional para comenzar</p>
+          <Button onClick={() => setShowAddModal(true)} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Añadir Primer Profesional
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="h-full p-4">
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold">Gestión de Profesionales</h2>
+        <div>
+          <h2 className="text-2xl font-bold">Gestión de Profesionales</h2>
+          <p className="text-sm text-muted-foreground">{filteredProfesionales.length} profesionales disponibles</p>
+        </div>
         <Button onClick={() => setShowAddModal(true)} className="gap-2">
           <Plus className="h-4 w-4" />
           Añadir Profesional
@@ -241,12 +285,12 @@ export function ProfesionalesView({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-        {profesionales.map((profesional) => {
+        {filteredProfesionales.map((profesional) => {
           const estadisticas = getEstadisticasProfesional(profesional.id)
           const proximasCitas = getProximasCitas(profesional.id)
 
           // Buscar usuario real para mostrar horarios
-          const realUser = users.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesional.id)
+          const realUser = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesional.id)
           const hasSchedules = realUser?.work_schedules && realUser.work_schedules.length > 0
 
           return (
@@ -264,7 +308,6 @@ export function ProfesionalesView({
                     </Avatar>
                     <div>
                       <CardTitle className="text-lg">{profesional?.nombre || profesional?.name}</CardTitle>
-                      <p className="text-sm text-gray-500">{profesional.especialidad}</p>
                       {hasSchedules && (
                         <p className="text-xs text-gray-600">
                           {realUser.work_schedules?.filter((s) => s.is_active).length} días configurados

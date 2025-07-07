@@ -1,5 +1,6 @@
 "use client"
 
+import type React from "react"
 import { useState, useEffect } from "react"
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns"
 import { Button } from "@/components/ui/button"
@@ -21,6 +22,7 @@ import { useServices } from "@/hooks/use-services"
 import { useVacationRequests } from "@/hooks/use-vacation-requests"
 import { useAuth } from "@/app/contexts/auth-context"
 import { supabase } from "@/lib/supabase"
+import { WaitingListView } from "../waiting-list/waiting-list-view"
 import type {
   IntervaloTiempo,
   VistaCalendario,
@@ -61,7 +63,7 @@ const mapStatusToEstado = (status: string): EstadoCita => {
   return mapping[status as keyof typeof mapping] || "confirmada"
 }
 
-export default function MedicalCalendarSystem() {
+const MedicalCalendarSystem: React.FC = () => {
   const { userProfile } = useAuth()
 
   // Obtener organizationId del perfil del usuario
@@ -103,6 +105,7 @@ export default function MedicalCalendarSystem() {
   // Calcular rango de fechas para las citas
   const getDateRange = () => {
     let startDate: string, endDate: string
+
     switch (vistaCalendario) {
       case "dia":
         startDate = format(currentDate, "yyyy-MM-dd")
@@ -124,6 +127,7 @@ export default function MedicalCalendarSystem() {
         startDate = format(currentDate, "yyyy-MM-dd")
         endDate = startDate
     }
+
     return { startDate, endDate }
   }
 
@@ -152,6 +156,7 @@ export default function MedicalCalendarSystem() {
   // Navegación de fechas
   const navigateDate = (direction: "prev" | "next") => {
     const newDate = new Date(currentDate)
+
     switch (vistaCalendario) {
       case "dia":
         newDate.setDate(newDate.getDate() + (direction === "next" ? 1 : -1))
@@ -163,6 +168,7 @@ export default function MedicalCalendarSystem() {
         newDate.setMonth(newDate.getMonth() + (direction === "next" ? 1 : -1))
         break
     }
+
     setCurrentDate(newDate)
   }
 
@@ -457,6 +463,7 @@ export default function MedicalCalendarSystem() {
         (vacation) => vacation.status === "approved" && vacation.start_date <= dateStr && vacation.end_date >= dateStr,
       )
       .map((vacation) => vacation.user_id)
+
     return [...new Set(blocked)]
   }
 
@@ -482,13 +489,17 @@ export default function MedicalCalendarSystem() {
   }
 
   const convertUsersToLegacyFormat = (users: any[]) => {
-    return users.map((user) => ({
+    // Filtrar solo usuarios tipo 1 (profesionales médicos)
+    const medicalProfessionals = users.filter((user) => user.type === 1)
+
+    return medicalProfessionals.map((user) => ({
       id: Number.parseInt(user.id.slice(-8), 16), // Convertir UUID a número
       nombre: user.name || "",
       name: user.name || "",
       especialidad: user.settings?.specialty || "Medicina General",
       // Usar el color de la base de datos o un color por defecto
       color: user.settings?.calendar_color || "#3B82F6",
+      type: user.type, // Incluir la propiedad type
       settings: user.settings,
     }))
   }
@@ -785,14 +796,14 @@ export default function MedicalCalendarSystem() {
 
         {tabPrincipal === "lista-espera" && (
           <div className="h-full flex flex-col">
-            <div className="px-4 py-3 border-b">
-              <h2 className="text-xl font-medium">Lista de espera</h2>
-            </div>
-            <div className="flex-1 overflow-auto">
-              <ListView
-                citas={legacyAppointments.filter((apt) => apt.estado === "pendiente")}
-                profesionales={legacyUsers}
-                onSelectCita={handleSelectLegacyAppointment}
+            <div className="flex-1 overflow-auto p-4">
+              <WaitingListView
+                organizationId={organizationId}
+                onScheduleAppointment={(entry) => {
+                  // Aquí podríamos abrir el modal de crear cita con los datos pre-rellenados
+                  console.log("Programar cita para:", entry)
+                  setShowNewAppointmentModal(true)
+                }}
               />
             </div>
           </div>
@@ -803,9 +814,7 @@ export default function MedicalCalendarSystem() {
             <div className="px-4 py-3 border-b">
               <h2 className="text-xl font-medium">Actividades grupales</h2>
             </div>
-            <div className="flex-1 overflow-auto">
-              <p className="px-4 py-4">Aquí se mostrarán las actividades grupales.</p>
-            </div>
+            
           </div>
         )}
 
@@ -877,3 +886,5 @@ export default function MedicalCalendarSystem() {
     </div>
   )
 }
+
+export default MedicalCalendarSystem

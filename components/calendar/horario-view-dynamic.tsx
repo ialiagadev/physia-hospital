@@ -5,7 +5,7 @@ import { useState } from "react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { AppointmentFormModal } from "./appointment-form-modal"
 import { HoraPreviewTooltip } from "./hora-preview-tooltip"
-import { calcularHoraFin, formatearFecha } from "@/utils/calendar-utils"
+import { calcularHoraFin } from "@/utils/calendar-utils"
 import {
   timeToMinutes,
   minutesToTime,
@@ -115,14 +115,25 @@ export function HorarioViewDynamic({
   // Obtener día de la semana (0 = domingo, 1 = lunes, etc.)
   const dayOfWeek = date.getDay()
 
-  // Filtrar profesionales activos
+  // Filtrar solo usuarios profesionales (type = 1)
+  const professionalUsers = users.filter((user) => user.type === 1)
+
+  // Filtrar profesionales que tengan un usuario correspondiente de tipo 1
+  const filteredProfesionales = profesionales.filter((profesional) => {
+    const correspondingUser = professionalUsers.find(
+      (user) => Number.parseInt(user.id.slice(-8), 16) === profesional.id,
+    )
+    return correspondingUser !== undefined
+  })
+
+  // Aplicar filtro de selección sobre los profesionales ya filtrados por tipo
   const profesionalesFiltrados =
     profesionalSeleccionado === "todos"
-      ? profesionales
-      : profesionales.filter((prof) => prof.id === profesionalSeleccionado)
+      ? filteredProfesionales
+      : filteredProfesionales.filter((prof) => prof.id === profesionalSeleccionado)
 
-  // Obtener usuarios correspondientes
-  const usuariosActivos = users.filter((user) =>
+  // Obtener usuarios correspondientes (solo profesionales)
+  const usuariosActivos = professionalUsers.filter((user) =>
     profesionalesFiltrados.some((prof) => Number.parseInt(user.id.slice(-8), 16) === prof.id),
   )
 
@@ -138,7 +149,7 @@ export function HorarioViewDynamic({
     if (!isUserOnVacationDate) return false
 
     // Encontrar el UUID del usuario correspondiente al profesional
-    const user = users.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
+    const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
     if (!user) return false
 
     return isUserOnVacationDate(user.id, date)
@@ -148,7 +159,7 @@ export function HorarioViewDynamic({
     if (!getUserVacationOnDate) return null
 
     // Encontrar el UUID del usuario correspondiente al profesional
-    const user = users.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
+    const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
     if (!user) return null
 
     return getUserVacationOnDate(user.id, date)
@@ -214,7 +225,7 @@ export function HorarioViewDynamic({
       return false
     }
 
-    const user = users.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
+    const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
     if (!user) return false
 
     const normalizedTime = normalizeTimeFormat(hora)
@@ -355,7 +366,7 @@ export function HorarioViewDynamic({
     }
 
     const citasProfesional = citas.filter((cita) => cita.profesionalId === profesionalId)
-    const user = users.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
+    const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
 
     if (!user) return []
 
@@ -411,11 +422,6 @@ export function HorarioViewDynamic({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-gray-600">
-        </div>
-      </div>
-
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         {profesionalesFiltrados.map((profesional) => {
           const citasProfesional = citas.filter((cita) => cita.profesionalId === profesional.id)
@@ -423,7 +429,7 @@ export function HorarioViewDynamic({
           const huecosLibres = renderHuecosLibres(profesional.id)
 
           // Obtener usuario correspondiente
-          const user = users.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesional.id)
+          const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesional.id)
           const workingHours = user ? getWorkingHoursForDay(user, dayOfWeek) : []
           const isWorkingToday = workingHours.length > 0
 
@@ -448,9 +454,7 @@ export function HorarioViewDynamic({
                 }}
               >
                 <div className="flex flex-col items-center justify-center py-2 px-2" style={{ height: 56 }}>
-                  <span className="font-medium text-sm leading-tight">
-                    {titulo} {nombre}
-                  </span>
+                  <span className="font-medium text-sm leading-tight">{nombre}</span>
                   {isOnVacation && (
                     <span className="text-xs text-orange-600 flex items-center gap-1">
                       {getVacationIcon(vacationInfo?.type)} {getVacationLabel(vacationInfo?.type)}

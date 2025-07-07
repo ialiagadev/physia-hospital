@@ -214,18 +214,33 @@ export interface Cita {
   consultation?: Consultation // Incluir datos completos de consulta
 }
 
-// Tipos para horarios de trabajo
+// Tipos para horarios de trabajo - ACTUALIZADOS
 export interface WorkSchedule {
   id: string
   user_id: string
   day_of_week: number | null
   start_time: string
   end_time: string
-  break_start: string | null
-  break_end: string | null
+  break_start: string | null // Mantener para compatibilidad
+  break_end: string | null // Mantener para compatibilidad
+  buffer_time_minutes: number // NUEVO: Tiempo entre citas
   is_active: boolean
   date_exception: string | null
   is_exception: boolean
+  created_at: string
+  updated_at: string
+  breaks?: WorkScheduleBreak[] // NUEVO: Múltiples descansos
+}
+
+// NUEVO: Tipo para múltiples descansos
+export interface WorkScheduleBreak {
+  id: string
+  work_schedule_id: string
+  break_name: string
+  start_time: string
+  end_time: string
+  is_active: boolean
+  sort_order: number
   created_at: string
   updated_at: string
 }
@@ -247,7 +262,7 @@ export interface Organization {
   updated_at: string
 }
 
-// Tipos modernos para la base de datos
+// Tipos modernos para la base de datos - ACTUALIZADO CON type
 export interface User {
   id: string
   name: string | null
@@ -255,6 +270,10 @@ export interface User {
   role: "admin" | "professional" | "staff"
   organization_id: number
   is_active: boolean
+  type: number // AÑADIDO: 1 = profesional, 2 = otro tipo
+  avatar_url?: string | null
+  is_physia_admin?: boolean
+  prompt?: string | null
   created_at: string
   updated_at: string
   work_schedules?: WorkSchedule[]
@@ -457,13 +476,14 @@ export interface HoraPreviewTooltipProps {
   children: React.ReactNode
 }
 
-// Interfaz principal actualizada para citas
+// Interfaz principal actualizada para citas - ACTUALIZADA CON type
 export interface Profesional {
   id: number
   nombre: string
   name?: string // Para compatibilidad
   especialidad: string
   color?: string
+  type: number // AÑADIDO: 1 = profesional médico, 2 = otro tipo
   settings?: {
     specialty?: string
     calendar_color?: string

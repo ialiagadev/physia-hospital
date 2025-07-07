@@ -52,7 +52,7 @@ export function ProfesionalesLegend({
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
       <CollapsibleTrigger asChild>
         <Button variant="outline" size="sm" className="gap-2">
-          Profesionales ({safeProfesionalesSeleccionados.length}/{safeProfesionales.length})
+          Profesionales
           <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`} />
         </Button>
       </CollapsibleTrigger>
@@ -91,7 +91,6 @@ export function ProfesionalesLegend({
                   <div className={`w-4 h-4 rounded border-2 ${colorClass}`} />
                   <label htmlFor={`prof-${profesional.id}`} className="text-sm cursor-pointer flex-1">
                     <div className="font-medium">{profesional.nombre}</div>
-                    <div className="text-xs text-gray-500">{profesional.especialidad}</div>
                   </label>
                 </div>
               )

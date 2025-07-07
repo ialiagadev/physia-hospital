@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Clock, Plus, Trash2, Save } from "lucide-react"
+import { Clock, Plus, Trash2, Save, Coffee, Utensils, Timer } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,8 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Separator } from "@/components/ui/separator"
 import { toast } from "sonner"
-import type { User, WorkSchedule } from "@/types/calendar"
+import type { User, WorkSchedule, WorkScheduleBreak } from "@/types/calendar"
 
 interface ScheduleConfigModalProps {
   isOpen: boolean
@@ -26,8 +27,10 @@ interface ScheduleSlot {
   start_time: string
   end_time: string
   is_active: boolean
-  break_start?: string
-  break_end?: string
+  buffer_time_minutes: number
+  break_start?: string // Mantener para compatibilidad
+  break_end?: string // Mantener para compatibilidad
+  breaks: WorkScheduleBreak[]
 }
 
 const DAYS_OF_WEEK = [
@@ -40,11 +43,19 @@ const DAYS_OF_WEEK = [
   { value: 0, label: "Domingo", short: "D" },
 ]
 
+const BREAK_PRESETS = [
+  { name: "Descanso Mañana", start: "11:00", end: "11:15", icon: Coffee },
+  { name: "Comida", start: "14:00", end: "15:00", icon: Utensils },
+  { name: "Descanso Tarde", start: "17:00", end: "17:15", icon: Coffee },
+]
+
 const DEFAULT_SCHEDULE: ScheduleSlot = {
   day_of_week: 1,
   start_time: "09:00",
   end_time: "17:00",
   is_active: true,
+  buffer_time_minutes: 5,
+  breaks: [],
 }
 
 export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleConfigModalProps) {
@@ -57,15 +68,17 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
     if (user.work_schedules && user.work_schedules.length > 0) {
       setSchedules(
         user.work_schedules
-          .filter((schedule) => schedule.day_of_week !== null) // Filtrar schedules con day_of_week null
+          .filter((schedule) => schedule.day_of_week !== null)
           .map((schedule) => ({
             id: schedule.id,
-            day_of_week: schedule.day_of_week as number, // Type assertion ya que filtramos los null
+            day_of_week: schedule.day_of_week as number,
             start_time: schedule.start_time,
             end_time: schedule.end_time,
             is_active: schedule.is_active,
+            buffer_time_minutes: schedule.buffer_time_minutes || 5,
             break_start: schedule.break_start || undefined,
             break_end: schedule.break_end || undefined,
+            breaks: schedule.breaks || [],
           })),
       )
     } else {
@@ -75,6 +88,8 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
         start_time: "09:00",
         end_time: "17:00",
         is_active: true,
+        buffer_time_minutes: 5,
+        breaks: [],
       }))
       setSchedules(defaultSchedules)
     }
@@ -107,6 +122,8 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
           start_time: "09:00",
           end_time: "17:00",
           is_active: true,
+          buffer_time_minutes: 5,
+          breaks: [],
         },
       ])
     }
@@ -114,6 +131,49 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
 
   const getScheduleForDay = (dayOfWeek: number) => {
     return schedules.find((s) => s.day_of_week === dayOfWeek)
+  }
+
+  // Funciones para manejar descansos
+  const addBreakToSchedule = (scheduleIndex: number, preset?: (typeof BREAK_PRESETS)[0]) => {
+    const newBreak: WorkScheduleBreak = {
+      id: `temp-${Date.now()}`,
+      work_schedule_id: schedules[scheduleIndex].id || "",
+      break_name: preset?.name || "Nuevo Descanso",
+      start_time: preset?.start || "12:00",
+      end_time: preset?.end || "12:30",
+      is_active: true,
+      sort_order: schedules[scheduleIndex].breaks.length,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+
+    const updatedSchedules = [...schedules]
+    updatedSchedules[scheduleIndex].breaks.push(newBreak)
+    setSchedules(updatedSchedules)
+  }
+
+  const removeBreakFromSchedule = (scheduleIndex: number, breakIndex: number) => {
+    const updatedSchedules = [...schedules]
+    updatedSchedules[scheduleIndex].breaks.splice(breakIndex, 1)
+    // Reordenar sort_order
+    updatedSchedules[scheduleIndex].breaks.forEach((breakItem, index) => {
+      breakItem.sort_order = index
+    })
+    setSchedules(updatedSchedules)
+  }
+
+  const updateBreakInSchedule = (
+    scheduleIndex: number,
+    breakIndex: number,
+    field: keyof WorkScheduleBreak,
+    value: any,
+  ) => {
+    const updatedSchedules = [...schedules]
+    updatedSchedules[scheduleIndex].breaks[breakIndex] = {
+      ...updatedSchedules[scheduleIndex].breaks[breakIndex],
+      [field]: value,
+    }
+    setSchedules(updatedSchedules)
   }
 
   const applyToAllDays = () => {
@@ -125,8 +185,8 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
       start_time: template.start_time,
       end_time: template.end_time,
       is_active: true,
-      break_start: template.break_start,
-      break_end: template.break_end,
+      buffer_time_minutes: template.buffer_time_minutes,
+      breaks: [...template.breaks.map((b) => ({ ...b, id: `temp-${Date.now()}-${Math.random()}` }))],
     }))
 
     setSchedules(newSchedules)
@@ -145,11 +205,16 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
           return
         }
 
-        if (schedule.break_start && schedule.break_end) {
-          if (schedule.break_start >= schedule.break_end) {
-            toast.error(
-              `Horario de descanso inválido para ${DAYS_OF_WEEK.find((d) => d.value === schedule.day_of_week)?.label}`,
-            )
+        // Validar descansos
+        for (const breakItem of schedule.breaks) {
+          if (breakItem.start_time >= breakItem.end_time) {
+            toast.error(`Descanso inválido en ${DAYS_OF_WEEK.find((d) => d.value === schedule.day_of_week)?.label}`)
+            return
+          }
+
+          // Verificar que el descanso esté dentro del horario de trabajo
+          if (breakItem.start_time < schedule.start_time || breakItem.end_time > schedule.end_time) {
+            toast.error(`El descanso "${breakItem.break_name}" está fuera del horario de trabajo`)
             return
           }
         }
@@ -163,12 +228,14 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
         start_time: schedule.start_time,
         end_time: schedule.end_time,
         is_active: schedule.is_active,
+        buffer_time_minutes: schedule.buffer_time_minutes,
         break_start: schedule.break_start || null,
         break_end: schedule.break_end || null,
         date_exception: null,
         is_exception: false,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        breaks: schedule.breaks,
       }))
 
       await onSave(workSchedules)
@@ -194,16 +261,18 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
 
       let dayMinutes = endMinutes - startMinutes
 
-      // Restar descanso si existe
-      if (schedule.break_start && schedule.break_end) {
-        const breakStart = schedule.break_start.split(":").map(Number)
-        const breakEnd = schedule.break_end.split(":").map(Number)
-        const breakStartMinutes = breakStart[0] * 60 + breakStart[1]
-        const breakEndMinutes = breakEnd[0] * 60 + breakEnd[1]
-        dayMinutes -= breakEndMinutes - breakStartMinutes
-      }
+      // Restar todos los descansos activos
+      schedule.breaks.forEach((breakItem) => {
+        if (breakItem.is_active) {
+          const breakStart = breakItem.start_time.split(":").map(Number)
+          const breakEnd = breakItem.end_time.split(":").map(Number)
+          const breakStartMinutes = breakStart[0] * 60 + breakStart[1]
+          const breakEndMinutes = breakEnd[0] * 60 + breakEnd[1]
+          dayMinutes -= breakEndMinutes - breakStartMinutes
+        }
+      })
 
-      return total + dayMinutes
+      return total + Math.max(0, dayMinutes)
     }, 0)
 
     const hours = Math.floor(totalMinutes / 60)
@@ -214,7 +283,7 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Clock className="h-5 w-5" />
@@ -230,9 +299,12 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
             </CardHeader>
             <CardContent>
               <div className="flex items-center justify-between">
-                <div>
+                <div className="space-y-1">
                   <p className="text-sm text-gray-600">Días activos: {schedules.filter((s) => s.is_active).length}</p>
                   <p className="text-sm text-gray-600">Horas de trabajo: {getWorkingHours()}</p>
+                  <p className="text-sm text-gray-600">
+                    Total descansos: {schedules.reduce((total, s) => total + s.breaks.length, 0)}
+                  </p>
                 </div>
                 <Button variant="outline" onClick={applyToAllDays} size="sm">
                   Aplicar a todos los días
@@ -248,10 +320,11 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
             </TabsList>
 
             <TabsContent value="weekly" className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {DAYS_OF_WEEK.map((day) => {
                   const schedule = getScheduleForDay(day.value)
                   const isActive = schedule?.is_active || false
+                  const scheduleIndex = schedules.findIndex((s) => s.day_of_week === day.value)
 
                   return (
                     <Card key={day.value} className={`${isActive ? "border-blue-200 bg-blue-50" : "border-gray-200"}`}>
@@ -262,20 +335,16 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
                         </div>
                       </CardHeader>
 
-                      {isActive && schedule && (
-                        <CardContent className="space-y-3">
+                      {isActive && schedule && scheduleIndex >= 0 && (
+                        <CardContent className="space-y-4">
+                          {/* Horario principal */}
                           <div className="grid grid-cols-2 gap-2">
                             <div>
                               <Label className="text-xs">Inicio</Label>
                               <Input
                                 type="time"
                                 value={schedule.start_time}
-                                onChange={(e) => {
-                                  const index = schedules.findIndex((s) => s.day_of_week === day.value)
-                                  if (index >= 0) {
-                                    updateScheduleSlot(index, "start_time", e.target.value)
-                                  }
-                                }}
+                                onChange={(e) => updateScheduleSlot(scheduleIndex, "start_time", e.target.value)}
                                 className="text-sm"
                               />
                             </div>
@@ -284,48 +353,114 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
                               <Input
                                 type="time"
                                 value={schedule.end_time}
-                                onChange={(e) => {
-                                  const index = schedules.findIndex((s) => s.day_of_week === day.value)
-                                  if (index >= 0) {
-                                    updateScheduleSlot(index, "end_time", e.target.value)
-                                  }
-                                }}
+                                onChange={(e) => updateScheduleSlot(scheduleIndex, "end_time", e.target.value)}
                                 className="text-sm"
                               />
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <Label className="text-xs">Descanso inicio</Label>
-                              <Input
-                                type="time"
-                                value={schedule.break_start || ""}
-                                onChange={(e) => {
-                                  const index = schedules.findIndex((s) => s.day_of_week === day.value)
-                                  if (index >= 0) {
-                                    updateScheduleSlot(index, "break_start", e.target.value || undefined)
-                                  }
-                                }}
-                                className="text-sm"
-                                placeholder="Opcional"
-                              />
+                          {/* Buffer time */}
+                          <div>
+                            <Label className="text-xs flex items-center gap-1">
+                              <Timer className="h-3 w-3" />
+                              Tiempo entre citas (min)
+                            </Label>
+                            <Select
+                              value={schedule.buffer_time_minutes.toString()}
+                              onValueChange={(value) =>
+                                updateScheduleSlot(scheduleIndex, "buffer_time_minutes", Number.parseInt(value))
+                              }
+                            >
+                              <SelectTrigger className="text-sm">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="0">Sin buffer</SelectItem>
+                                <SelectItem value="5">5 minutos</SelectItem>
+                                <SelectItem value="10">10 minutos</SelectItem>
+                                <SelectItem value="15">15 minutos</SelectItem>
+                                <SelectItem value="30">30 minutos</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <Separator />
+
+                          {/* Descansos */}
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <Label className="text-xs font-medium">Descansos</Label>
+                              <div className="flex gap-1">
+                                {BREAK_PRESETS.map((preset, index) => (
+                                  <Button
+                                    key={index}
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 w-6 p-0"
+                                    onClick={() => addBreakToSchedule(scheduleIndex, preset)}
+                                    title={`Añadir ${preset.name}`}
+                                  >
+                                    <preset.icon className="h-3 w-3" />
+                                  </Button>
+                                ))}
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0"
+                                  onClick={() => addBreakToSchedule(scheduleIndex)}
+                                  title="Añadir descanso personalizado"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                </Button>
+                              </div>
                             </div>
-                            <div>
-                              <Label className="text-xs">Descanso fin</Label>
-                              <Input
-                                type="time"
-                                value={schedule.break_end || ""}
-                                onChange={(e) => {
-                                  const index = schedules.findIndex((s) => s.day_of_week === day.value)
-                                  if (index >= 0) {
-                                    updateScheduleSlot(index, "break_end", e.target.value || undefined)
-                                  }
-                                }}
-                                className="text-sm"
-                                placeholder="Opcional"
-                              />
-                            </div>
+
+                            {schedule.breaks.length === 0 ? (
+                              <p className="text-xs text-gray-500 text-center py-2">Sin descansos</p>
+                            ) : (
+                              <div className="space-y-2 max-h-32 overflow-y-auto">
+                                {schedule.breaks.map((breakItem, breakIndex) => (
+                                  <div key={breakIndex} className="bg-white rounded border p-2 space-y-2">
+                                    <div className="flex items-center justify-between">
+                                      <Input
+                                        value={breakItem.break_name}
+                                        onChange={(e) =>
+                                          updateBreakInSchedule(scheduleIndex, breakIndex, "break_name", e.target.value)
+                                        }
+                                        className="text-xs h-6 flex-1 mr-2"
+                                        placeholder="Nombre del descanso"
+                                      />
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 w-6 p-0 text-red-500"
+                                        onClick={() => removeBreakFromSchedule(scheduleIndex, breakIndex)}
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </Button>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-1">
+                                      <Input
+                                        type="time"
+                                        value={breakItem.start_time}
+                                        onChange={(e) =>
+                                          updateBreakInSchedule(scheduleIndex, breakIndex, "start_time", e.target.value)
+                                        }
+                                        className="text-xs h-6"
+                                      />
+                                      <Input
+                                        type="time"
+                                        value={breakItem.end_time}
+                                        onChange={(e) =>
+                                          updateBreakInSchedule(scheduleIndex, breakIndex, "end_time", e.target.value)
+                                        }
+                                        className="text-xs h-6"
+                                      />
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </CardContent>
                       )}
@@ -344,84 +479,172 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
                 </Button>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {schedules.map((schedule, index) => (
                   <Card key={index}>
                     <CardContent className="p-4">
-                      <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
-                        <div>
-                          <Label>Día</Label>
-                          <Select
-                            value={schedule.day_of_week.toString()}
-                            onValueChange={(value) => updateScheduleSlot(index, "day_of_week", Number.parseInt(value))}
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {DAYS_OF_WEEK.map((day) => (
-                                <SelectItem key={day.value} value={day.value.toString()}>
-                                  {day.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div>
-                          <Label>Inicio</Label>
-                          <Input
-                            type="time"
-                            value={schedule.start_time}
-                            onChange={(e) => updateScheduleSlot(index, "start_time", e.target.value)}
-                          />
-                        </div>
-
-                        <div>
-                          <Label>Fin</Label>
-                          <Input
-                            type="time"
-                            value={schedule.end_time}
-                            onChange={(e) => updateScheduleSlot(index, "end_time", e.target.value)}
-                          />
-                        </div>
-
-                        <div>
-                          <Label>Descanso inicio</Label>
-                          <Input
-                            type="time"
-                            value={schedule.break_start || ""}
-                            onChange={(e) => updateScheduleSlot(index, "break_start", e.target.value || undefined)}
-                            placeholder="Opcional"
-                          />
-                        </div>
-
-                        <div>
-                          <Label>Descanso fin</Label>
-                          <Input
-                            type="time"
-                            value={schedule.break_end || ""}
-                            onChange={(e) => updateScheduleSlot(index, "break_end", e.target.value || undefined)}
-                            placeholder="Opcional"
-                          />
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <div className="flex items-center space-x-2">
-                            <Switch
-                              checked={schedule.is_active}
-                              onCheckedChange={(checked) => updateScheduleSlot(index, "is_active", checked)}
-                            />
-                            <Label className="text-sm">Activo</Label>
+                      <div className="space-y-4">
+                        {/* Configuración básica */}
+                        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+                          <div>
+                            <Label>Día</Label>
+                            <Select
+                              value={schedule.day_of_week.toString()}
+                              onValueChange={(value) =>
+                                updateScheduleSlot(index, "day_of_week", Number.parseInt(value))
+                              }
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {DAYS_OF_WEEK.map((day) => (
+                                  <SelectItem key={day.value} value={day.value.toString()}>
+                                    {day.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => removeScheduleSlot(index)}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+
+                          <div>
+                            <Label>Inicio</Label>
+                            <Input
+                              type="time"
+                              value={schedule.start_time}
+                              onChange={(e) => updateScheduleSlot(index, "start_time", e.target.value)}
+                            />
+                          </div>
+
+                          <div>
+                            <Label>Fin</Label>
+                            <Input
+                              type="time"
+                              value={schedule.end_time}
+                              onChange={(e) => updateScheduleSlot(index, "end_time", e.target.value)}
+                            />
+                          </div>
+
+                          <div>
+                            <Label>Buffer (min)</Label>
+                            <Select
+                              value={schedule.buffer_time_minutes.toString()}
+                              onValueChange={(value) =>
+                                updateScheduleSlot(index, "buffer_time_minutes", Number.parseInt(value))
+                              }
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="0">Sin buffer</SelectItem>
+                                <SelectItem value="5">5 min</SelectItem>
+                                <SelectItem value="10">10 min</SelectItem>
+                                <SelectItem value="15">15 min</SelectItem>
+                                <SelectItem value="30">30 min</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center space-x-2">
+                              <Switch
+                                checked={schedule.is_active}
+                                onCheckedChange={(checked) => updateScheduleSlot(index, "is_active", checked)}
+                              />
+                              <Label className="text-sm">Activo</Label>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => removeScheduleSlot(index)}
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+
+                        {/* Descansos detallados */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <Label className="font-medium">Descansos</Label>
+                            <div className="flex gap-2">
+                              {BREAK_PRESETS.map((preset, presetIndex) => (
+                                <Button
+                                  key={presetIndex}
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => addBreakToSchedule(index, preset)}
+                                  className="gap-1"
+                                >
+                                  <preset.icon className="h-3 w-3" />
+                                  {preset.name}
+                                </Button>
+                              ))}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => addBreakToSchedule(index)}
+                                className="gap-1"
+                              >
+                                <Plus className="h-3 w-3" />
+                                Personalizado
+                              </Button>
+                            </div>
+                          </div>
+
+                          {schedule.breaks.length === 0 ? (
+                            <div className="text-center py-4 text-gray-500 border-2 border-dashed rounded">
+                              Sin descansos configurados
+                            </div>
+                          ) : (
+                            <div className="grid gap-2">
+                              {schedule.breaks.map((breakItem, breakIndex) => (
+                                <div key={breakIndex} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
+                                  <Input
+                                    value={breakItem.break_name}
+                                    onChange={(e) =>
+                                      updateBreakInSchedule(index, breakIndex, "break_name", e.target.value)
+                                    }
+                                    className="flex-1"
+                                    placeholder="Nombre del descanso"
+                                  />
+                                  <Input
+                                    type="time"
+                                    value={breakItem.start_time}
+                                    onChange={(e) =>
+                                      updateBreakInSchedule(index, breakIndex, "start_time", e.target.value)
+                                    }
+                                    className="w-24"
+                                  />
+                                  <span className="text-gray-500">-</span>
+                                  <Input
+                                    type="time"
+                                    value={breakItem.end_time}
+                                    onChange={(e) =>
+                                      updateBreakInSchedule(index, breakIndex, "end_time", e.target.value)
+                                    }
+                                    className="w-24"
+                                  />
+                                  <Switch
+                                    checked={breakItem.is_active}
+                                    onCheckedChange={(checked) =>
+                                      updateBreakInSchedule(index, breakIndex, "is_active", checked)
+                                    }
+                                  />
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => removeBreakFromSchedule(index, breakIndex)}
+                                    className="text-red-500 hover:text-red-700"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </CardContent>
