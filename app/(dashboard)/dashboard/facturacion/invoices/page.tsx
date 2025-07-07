@@ -4,21 +4,31 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
-import { Plus, Calendar, Filter, X, ChevronDown } from "lucide-react"
+import { Plus, Calendar, Filter, X, ChevronDown, FileText } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Checkbox } from "@/components/ui/checkbox"
-import { OrganizationSelector } from "@/components/organization-selector"
 import { useToast } from "@/hooks/use-toast"
 import { InvoiceStatusSelector } from "@/components/invoices/invoice-status-selector"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { BulkDownloadButton } from "@/components/invoices/bulk-download-button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { generateUniqueInvoiceNumber } from "@/lib/invoice-utils"
+import { useAuth } from "@/app/contexts/auth-context"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 interface DateFilters {
   startDate?: Date
@@ -39,12 +49,22 @@ const statusOptions = [
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedOrgId, setSelectedOrgId] = useState("all")
   const [selectedInvoices, setSelectedInvoices] = useState<Set<number>>(new Set())
   const [dateFilters, setDateFilters] = useState<DateFilters>({})
   const [showFilters, setShowFilters] = useState(false)
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
   const { toast } = useToast()
+  const [generateModalOpen, setGenerateModalOpen] = useState(false)
+  const [selectedDateString, setSelectedDateString] = useState<string>(new Date().toISOString().split("T")[0])
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [generationResults, setGenerationResults] = useState<{
+    generated: number
+    skipped: number
+    errors: string[]
+  } | null>(null)
+
+  // Usar el AuthContext para obtener la información del usuario
+  const { userProfile } = useAuth()
 
   const loadInvoices = async () => {
     setLoading(true)
@@ -61,8 +81,9 @@ export default function InvoicesPage() {
         `)
         .order("created_at", { ascending: false })
 
-      if (selectedOrgId !== "all") {
-        query = query.eq("organization_id", selectedOrgId)
+      // Filtrar por la organización del usuario actual
+      if (userProfile?.organization_id) {
+        query = query.eq("organization_id", userProfile.organization_id)
       }
 
       if (dateFilters.startDate) {
@@ -103,8 +124,10 @@ export default function InvoicesPage() {
   }
 
   useEffect(() => {
-    loadInvoices()
-  }, [selectedOrgId, dateFilters]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (userProfile?.organization_id) {
+      loadInvoices()
+    }
+  }, [userProfile?.organization_id, dateFilters]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleStatusChange = (invoiceId: number, newStatus: string) => {
     setInvoices((currentInvoices) =>
@@ -232,6 +255,226 @@ export default function InvoicesPage() {
     { value: "12", label: "Diciembre" },
   ]
 
+  const generateDailyInvoices = async () => {
+    if (!selectedDateString) {
+      toast({
+        title: "Error",
+        description: "Selecciona una fecha específica",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!userProfile?.organization_id) {
+      toast({
+        title: "Error",
+        description: "No se pudo obtener la información de la organización",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsGenerating(true)
+    const results = { generated: 0, skipped: 0, errors: [] as string[] }
+
+    try {
+      const dateStr = selectedDateString
+      // Convertir a number igual que en nueva factura
+      const orgId = Number.parseInt(userProfile.organization_id.toString())
+
+      // Obtener organización completa - igual que en nueva factura
+      const { data: orgData, error: orgError } = await supabase
+        .from("organizations")
+        .select("*")
+        .eq("id", orgId)
+        .single()
+
+      if (orgError || !orgData) {
+        throw new Error("No se pudieron obtener los datos completos de la organización")
+      }
+
+      // Buscar citas completadas del día
+      const { data: appointments, error: appointmentsError } = await supabase
+        .from("appointments")
+        .select(`
+          *,
+          clients (*),
+          appointment_types (name, price),
+          users!appointments_professional_id_fkey (name)
+        `)
+        .eq("organization_id", orgId)
+        .eq("date", dateStr)
+        .eq("status", "completed")
+
+      if (appointmentsError) {
+        throw new Error(`Error al obtener las citas: ${appointmentsError.message}`)
+      }
+
+      if (!appointments || appointments.length === 0) {
+        toast({
+          title: "Sin citas",
+          description: "No hay citas completadas para la fecha seleccionada",
+        })
+        setIsGenerating(false)
+        return
+      }
+
+      // Verificar cuáles ya están facturadas
+      const appointmentIds = appointments.map((apt) => apt.id)
+      const { data: existingInvoiceLines } = await supabase
+        .from("invoice_lines")
+        .select("appointment_id")
+        .in("appointment_id", appointmentIds)
+
+      const invoicedAppointmentIds = new Set(existingInvoiceLines?.map((line) => line.appointment_id) || [])
+
+      // Filtrar citas no facturadas
+      const unbilledAppointments = appointments.filter((apt) => !invoicedAppointmentIds.has(apt.id))
+
+      if (unbilledAppointments.length === 0) {
+        toast({
+          title: "Ya facturadas",
+          description: "Todas las citas del día ya están facturadas",
+        })
+        setIsGenerating(false)
+        return
+      }
+
+      // Agrupar por cliente
+      const appointmentsByClient = unbilledAppointments.reduce(
+        (acc: Record<number, { client: any; appointments: any[] }>, apt: any) => {
+          if (!apt.clients?.name) {
+            results.errors.push(`Cita ${apt.id}: Cliente sin nombre`)
+            return acc
+          }
+
+          const clientKey = apt.client_id
+          if (!acc[clientKey]) {
+            acc[clientKey] = {
+              client: apt.clients,
+              appointments: [],
+            }
+          }
+          acc[clientKey].appointments.push(apt)
+          return acc
+        },
+        {} as Record<number, { client: any; appointments: any[] }>,
+      )
+
+      // Generar facturas por cliente
+      for (const [clientId, { client, appointments: clientAppointments }] of Object.entries(appointmentsByClient)) {
+        try {
+          // Generar número de factura - igual que en nueva factura
+          const { invoiceNumberFormatted, newInvoiceNumber } = await generateUniqueInvoiceNumber(orgId, "normal")
+
+          // Calcular totales
+          let baseAmount = 0
+          const invoiceLines = clientAppointments.map((apt: any) => {
+            const price = apt.appointment_types?.price || 0
+            baseAmount += price
+            return {
+              description: `${apt.appointment_types?.name || "Consulta"} - ${format(new Date(apt.date + "T" + apt.start_time), "dd/MM/yyyy HH:mm")}`,
+              quantity: 1,
+              unit_price: price,
+              vat_rate: 21,
+              irpf_rate: 0,
+              retention_rate: 0,
+              line_amount: price,
+              professional_id: apt.professional_id,
+              appointment_id: apt.id,
+            }
+          })
+
+          const vatAmount = baseAmount * 0.21
+          const totalAmount = baseAmount + vatAmount
+
+          // Información del cliente para las notas - igual que en nueva factura
+          const clientInfoText = `Cliente: ${client.name}${client.tax_id ? `, CIF/NIF: ${client.tax_id}` : ""}${client.address ? `, Dirección: ${client.address}` : ""}${client.postal_code ? `, ${client.postal_code}` : ""} ${client.city || ""}${client.province ? `, ${client.province}` : ""}`
+          const additionalNotes = `Factura generada automáticamente para citas del ${format(new Date(selectedDateString), "dd/MM/yyyy", { locale: es })}`
+          const fullNotes = clientInfoText + `\n\nNotas adicionales: ${additionalNotes}`
+
+          // Crear factura - estructura idéntica a nueva factura
+          const { data: invoiceData, error: invoiceError } = await supabase
+            .from("invoices")
+            .insert({
+              organization_id: orgId,
+              invoice_number: invoiceNumberFormatted,
+              client_id: Number.parseInt(clientId),
+              issue_date: dateStr,
+              invoice_type: "normal",
+              status: "draft",
+              base_amount: baseAmount,
+              vat_amount: vatAmount,
+              irpf_amount: 0,
+              retention_amount: 0,
+              total_amount: totalAmount,
+              notes: fullNotes,
+            })
+            .select()
+            .single()
+
+          if (invoiceError || !invoiceData) {
+            results.errors.push(`Cliente ${client.name}: Error al crear factura - ${invoiceError?.message}`)
+            continue
+          }
+
+          // Crear líneas de factura - igual que en nueva factura
+          const invoiceLinesData = invoiceLines.map((line: any) => ({
+            invoice_id: invoiceData.id,
+            description: line.description,
+            quantity: line.quantity,
+            unit_price: line.unit_price,
+            vat_rate: line.vat_rate,
+            irpf_rate: line.irpf_rate,
+            retention_rate: line.retention_rate,
+            line_amount: line.line_amount,
+            professional_id: line.professional_id ? Number.parseInt(line.professional_id.toString()) : null,
+            appointment_id: line.appointment_id,
+          }))
+
+          const { error: linesError } = await supabase.from("invoice_lines").insert(invoiceLinesData)
+
+          if (linesError) {
+            results.errors.push(`Cliente ${client.name}: Error al crear líneas de factura - ${linesError.message}`)
+            continue
+          }
+
+          // Actualizar contador de organización - igual que en nueva factura
+          const { error: updateOrgError } = await supabase
+            .from("organizations")
+            .update({ last_invoice_number: newInvoiceNumber })
+            .eq("id", orgId)
+
+          if (updateOrgError) {
+            // Error handled silently pero continúa
+          }
+
+          results.generated++
+        } catch (error) {
+          results.errors.push(`Cliente ${client.name}: ${error instanceof Error ? error.message : "Error desconocido"}`)
+        }
+      }
+
+      // Actualizar lista de facturas
+      await loadInvoices()
+
+      setGenerationResults(results)
+
+      toast({
+        title: "Generación completada",
+        description: `Se generaron ${results.generated} facturas. ${results.skipped} omitidas.`,
+      })
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Error al generar facturas",
+        variant: "destructive",
+      })
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -258,6 +501,10 @@ export default function InvoicesPage() {
               <span className="ml-1 text-xs bg-primary text-primary-foreground rounded-full px-1">•</span>
             )}
           </Button>
+          <Button variant="outline" onClick={() => setGenerateModalOpen(true)} disabled={!userProfile?.organization_id}>
+            <FileText className="mr-2 h-4 w-4" />
+            Generar del día
+          </Button>
           <Button asChild>
             <Link href="/dashboard/facturacion/invoices/new">
               <Plus className="mr-2 h-4 w-4" />
@@ -266,8 +513,6 @@ export default function InvoicesPage() {
           </Button>
         </div>
       </div>
-
-      <OrganizationSelector selectedOrgId={selectedOrgId} onSelectOrganization={setSelectedOrgId} />
 
       {showFilters && (
         <Card>
@@ -288,7 +533,7 @@ export default function InvoicesPage() {
                 <Label>Fecha desde</Label>
                 <Popover>
                   <PopoverTrigger asChild>
-                    <Button variant="outline" className="w-full justify-start text-left font-normal">
+                    <Button variant="outline" className="w-full justify-start text-left font-normal bg-transparent">
                       <Calendar className="mr-2 h-4 w-4" />
                       {dateFilters.startDate
                         ? format(dateFilters.startDate, "dd/MM/yyyy", { locale: es })
@@ -310,7 +555,7 @@ export default function InvoicesPage() {
                 <Label>Fecha hasta</Label>
                 <Popover>
                   <PopoverTrigger asChild>
-                    <Button variant="outline" className="w-full justify-start text-left font-normal">
+                    <Button variant="outline" className="w-full justify-start text-left font-normal bg-transparent">
                       <Calendar className="mr-2 h-4 w-4" />
                       {dateFilters.endDate ? format(dateFilters.endDate, "dd/MM/yyyy", { locale: es }) : "Seleccionar"}
                     </Button>
@@ -483,6 +728,69 @@ export default function InvoicesPage() {
           </TableBody>
         </Table>
       </div>
+      <Dialog open={generateModalOpen} onOpenChange={setGenerateModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Generar facturas del día</DialogTitle>
+            <DialogDescription>
+              Selecciona la fecha para generar facturas de todas las citas completadas
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="selected_date">Fecha</Label>
+              <Input
+                id="selected_date"
+                type="date"
+                value={selectedDateString}
+                onChange={(e) => setSelectedDateString(e.target.value)}
+                className="w-full"
+              />
+            </div>
+
+            {generationResults && (
+              <div className="space-y-2">
+                <div className="p-3 bg-green-50 border border-green-200 rounded-md">
+                  <p className="text-sm text-green-800">✅ {generationResults.generated} facturas generadas</p>
+                  {generationResults.skipped > 0 && (
+                    <p className="text-sm text-yellow-800">⚠️ {generationResults.skipped} citas omitidas</p>
+                  )}
+                </div>
+
+                {generationResults.errors.length > 0 && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-md max-h-32 overflow-y-auto">
+                    <p className="text-sm text-red-800 font-medium mb-1">Errores:</p>
+                    {generationResults.errors.map((error, index) => (
+                      <p key={index} className="text-xs text-red-700">
+                        • {error}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setGenerateModalOpen(false)
+                setGenerationResults(null)
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={generateDailyInvoices}
+              disabled={isGenerating || !selectedDateString || !userProfile?.organization_id}
+            >
+              {isGenerating ? "Generando..." : "Generar facturas"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

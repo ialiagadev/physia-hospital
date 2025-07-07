@@ -11,7 +11,7 @@ type UserProfile = {
   email: string
   name: string
   role: string
-  organization_id: string
+  organization_id: number
   is_physia_admin: boolean
 }
 

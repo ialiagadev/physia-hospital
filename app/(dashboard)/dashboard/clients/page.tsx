@@ -17,6 +17,7 @@ interface Client {
   id: string
   name: string
   tax_id: string
+  phone?: string // Añadir este campo
   client_type: "public" | "private"
   city: string
   email?: string
@@ -122,7 +123,7 @@ export default function ClientsPage() {
         if (debouncedSearchTerm.trim()) {
           const searchLower = debouncedSearchTerm.toLowerCase().trim()
           query = query.or(
-            `name.ilike.%${searchLower}%,tax_id.ilike.%${searchLower}%,email.ilike.%${searchLower}%,city.ilike.%${searchLower}%`,
+            `name.ilike.%${searchLower}%,tax_id.ilike.%${searchLower}%,phone.ilike.%${searchLower}%,email.ilike.%${searchLower}%,city.ilike.%${searchLower}%`,
           )
         }
 
@@ -201,6 +202,10 @@ export default function ClientsPage() {
 
   const clearSearch = () => {
     setSearchTerm("")
+  }
+
+  const handleRowClick = (clientId: string) => {
+    window.location.href = `/dashboard/clients/${clientId}`
   }
 
   // Mostrar loading mientras se autentica
@@ -282,7 +287,7 @@ export default function ClientsPage() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
           <Input
-            placeholder="Buscar por nombre, NIF, email o ciudad..."
+            placeholder="Buscar por nombre, teléfono, NIF, email o ciudad..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10 pr-10"
@@ -312,11 +317,11 @@ export default function ClientsPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Nombre</TableHead>
+              <TableHead>Teléfono</TableHead>
               <TableHead>CIF/NIF</TableHead>
-              {userProfile?.is_physia_admin && <TableHead>Organización</TableHead>}
-              <TableHead>Tipo</TableHead>
               <TableHead>Ciudad</TableHead>
               <TableHead>Email</TableHead>
+              {userProfile?.is_physia_admin && <TableHead>Organización</TableHead>}
               <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
@@ -332,7 +337,11 @@ export default function ClientsPage() {
               </TableRow>
             ) : clients.length > 0 ? (
               clients.map((client) => (
-                <TableRow key={client.id}>
+                <TableRow
+                  key={client.id}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => handleRowClick(client.id)}
+                >
                   <TableCell className="font-medium">
                     {debouncedSearchTerm ? (
                       <span
@@ -348,22 +357,23 @@ export default function ClientsPage() {
                     {debouncedSearchTerm ? (
                       <span
                         dangerouslySetInnerHTML={{
+                          __html: highlightText(client.phone, debouncedSearchTerm),
+                        }}
+                      />
+                    ) : (
+                      client.phone || "-"
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {debouncedSearchTerm ? (
+                      <span
+                        dangerouslySetInnerHTML={{
                           __html: highlightText(client.tax_id, debouncedSearchTerm),
                         }}
                       />
                     ) : (
                       client.tax_id || "-"
                     )}
-                  </TableCell>
-                  {userProfile?.is_physia_admin && <TableCell>{client.organizations?.name || "-"}</TableCell>}
-                  <TableCell>
-                    <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        client.client_type === "public" ? "bg-blue-100 text-blue-800" : "bg-green-100 text-green-800"
-                      }`}
-                    >
-                      {client.client_type === "public" ? "Público" : "Privado"}
-                    </span>
                   </TableCell>
                   <TableCell>
                     {debouncedSearchTerm ? (
@@ -387,8 +397,9 @@ export default function ClientsPage() {
                       client.email || "-"
                     )}
                   </TableCell>
+                  {userProfile?.is_physia_admin && <TableCell>{client.organizations?.name || "-"}</TableCell>}
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" asChild>
+                    <Button variant="ghost" size="sm" asChild onClick={(e) => e.stopPropagation()}>
                       <Link href={`/dashboard/clients/${client.id}`}>Ver</Link>
                     </Button>
                   </TableCell>

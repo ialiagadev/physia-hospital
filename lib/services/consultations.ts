@@ -44,7 +44,7 @@ export class ConsultationService {
 
   static async createConsultation(
     consultationData: Omit<Consultation, "id" | "created_at" | "updated_at" | "organization_id">,
-    userProfile: { organization_id: string } | null,
+    userProfile: { organization_id: number } | null,
   ): Promise<Consultation> {
     try {
       if (!userProfile?.organization_id) {

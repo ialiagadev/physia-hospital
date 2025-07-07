@@ -20,7 +20,6 @@ import {
 } from "date-fns"
 import { es } from "date-fns/locale"
 import { v4 as uuidv4 } from "uuid"
-import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
 // Icons
@@ -45,7 +44,7 @@ import {
   Stethoscope,
 } from "lucide-react"
 
-// UI Components (you'll need to install these from shadcn/ui)
+// UI Components
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -59,7 +58,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-
 import type { TipoCita, EstadoCita } from "@/types/citas"
 
 // Types
@@ -343,10 +341,12 @@ export default function MedicalCalendar() {
       if (filtros.profesional && cita.profesionalId !== filtros.profesional) return false
       if (filtros.estado && cita.estado !== filtros.estado) return false
       if (filtros.tipo && cita.tipo !== filtros.tipo) return false
+
       if (filtros.busqueda) {
         const busqueda = filtros.busqueda.toLowerCase()
         const nombrePaciente = `${paciente?.nombre} ${paciente?.apellidos}`.toLowerCase()
         const nombreProfesional = profesional?.nombre.toLowerCase() || ""
+
         if (
           !nombrePaciente.includes(busqueda) &&
           !nombreProfesional.includes(busqueda) &&
@@ -371,7 +371,6 @@ export default function MedicalCalendar() {
         horas.push(horaStr)
       }
     }
-
     return horas
   }, [configuracion])
 
@@ -467,7 +466,7 @@ export default function MedicalCalendar() {
       !appointmentForm.horaInicio ||
       !appointmentForm.horaFin
     ) {
-      toast.error("Por favor completa todos los campos obligatorios")
+      console.log("Por favor completa todos los campos obligatorios")
       return
     }
 
@@ -480,10 +479,10 @@ export default function MedicalCalendar() {
 
     if (selectedAppointment) {
       setCitas((prev) => prev.map((cita) => (cita.id === selectedAppointment.id ? nuevaCita : cita)))
-      toast.success("Cita actualizada correctamente")
+      console.log("Cita actualizada correctamente")
     } else {
       setCitas((prev) => [...prev, nuevaCita])
-      toast.success("Cita creada correctamente")
+      console.log("Cita creada correctamente")
     }
 
     setShowAppointmentForm(false)
@@ -495,7 +494,7 @@ export default function MedicalCalendar() {
     e.preventDefault()
 
     if (!patientForm.nombre || !patientForm.apellidos) {
-      toast.error("Por favor completa el nombre y apellidos")
+      console.log("Por favor completa el nombre y apellidos")
       return
     }
 
@@ -508,10 +507,10 @@ export default function MedicalCalendar() {
 
     if (selectedPatient) {
       setPacientes((prev) => prev.map((paciente) => (paciente.id === selectedPatient.id ? nuevoPaciente : paciente)))
-      toast.success("Paciente actualizado correctamente")
+      console.log("Paciente actualizado correctamente")
     } else {
       setPacientes((prev) => [...prev, nuevoPaciente])
-      toast.success("Paciente creado correctamente")
+      console.log("Paciente creado correctamente")
     }
 
     setShowPatientForm(false)
@@ -523,7 +522,7 @@ export default function MedicalCalendar() {
     e.preventDefault()
 
     if (!professionalForm.nombre || !professionalForm.especialidad) {
-      toast.error("Por favor completa el nombre y especialidad")
+      console.log("Por favor completa el nombre y especialidad")
       return
     }
 
@@ -534,10 +533,10 @@ export default function MedicalCalendar() {
 
     if (selectedProfessional) {
       setProfesionales((prev) => prev.map((prof) => (prof.id === selectedProfessional.id ? nuevoProfesional : prof)))
-      toast.success("Profesional actualizado correctamente")
+      console.log("Profesional actualizado correctamente")
     } else {
       setProfesionales((prev) => [...prev, nuevoProfesional])
-      toast.success("Profesional creado correctamente")
+      console.log("Profesional creado correctamente")
     }
 
     setShowProfessionalForm(false)
@@ -639,21 +638,21 @@ export default function MedicalCalendar() {
 
   const handleDeleteAppointment = (citaId: string) => {
     setCitas((prev) => prev.filter((cita) => cita.id !== citaId))
-    toast.success("Cita eliminada correctamente")
+    console.log("Cita eliminada correctamente")
   }
 
   const handleDeletePatient = (pacienteId: string) => {
     setPacientes((prev) => prev.filter((paciente) => paciente.id !== pacienteId))
     // También eliminar las citas del paciente
     setCitas((prev) => prev.filter((cita) => cita.pacienteId !== pacienteId))
-    toast.success("Paciente eliminado correctamente")
+    console.log("Paciente eliminado correctamente")
   }
 
   const handleDeleteProfessional = (profesionalId: string) => {
     setProfesionales((prev) => prev.filter((prof) => prof.id !== profesionalId))
     // También eliminar las citas del profesional
     setCitas((prev) => prev.filter((cita) => cita.profesionalId !== profesionalId))
-    toast.success("Profesional eliminado correctamente")
+    console.log("Profesional eliminado correctamente")
   }
 
   // Drag & Drop handlers
@@ -664,7 +663,6 @@ export default function MedicalCalendar() {
       dragOffset: { x: 0, y: 0 },
       dropZone: null,
     })
-
     e.dataTransfer.effectAllowed = "move"
     e.dataTransfer.setData("text/plain", cita.id)
   }
@@ -681,7 +679,6 @@ export default function MedicalCalendar() {
   const handleDragOver = (e: React.DragEvent, profesionalId: string, fecha: string, hora: string) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = "move"
-
     setDragState((prev) => ({
       ...prev,
       dropZone: { profesionalId, fecha, hora },
@@ -690,13 +687,11 @@ export default function MedicalCalendar() {
 
   const handleDrop = (e: React.DragEvent, profesionalId: string, fecha: string, hora: string) => {
     e.preventDefault()
-
     const citaId = e.dataTransfer.getData("text/plain")
     const cita = citas.find((c) => c.id === citaId)
 
     if (cita) {
       const horaFin = addMinutes(parseISO(`${fecha}T${hora}`), configuracion.intervaloMinutos)
-
       setCitas((prev) =>
         prev.map((c) =>
           c.id === citaId
@@ -710,17 +705,15 @@ export default function MedicalCalendar() {
             : c,
         ),
       )
-
-      toast.success("Cita movida correctamente")
+      console.log("Cita movida correctamente")
     }
-
     handleDragEnd()
   }
 
   // Quick actions
   const handleQuickStatusChange = (citaId: string, nuevoEstado: Cita["estado"]) => {
     setCitas((prev) => prev.map((cita) => (cita.id === citaId ? { ...cita, estado: nuevoEstado } : cita)))
-    toast.success(`Estado cambiado a ${nuevoEstado}`)
+    console.log(`Estado cambiado a ${nuevoEstado}`)
   }
 
   const handleDuplicateAppointment = (cita: Cita) => {
@@ -731,9 +724,8 @@ export default function MedicalCalendar() {
       estado: "programada",
       recordatorioEnviado: false,
     }
-
     setCitas((prev) => [...prev, nuevaCita])
-    toast.success("Cita duplicada para la próxima semana")
+    console.log("Cita duplicada para la próxima semana")
   }
 
   // Components
@@ -828,7 +820,7 @@ export default function MedicalCalendar() {
               <Button
                 size="sm"
                 variant="outline"
-                className="h-6 px-2 text-xs"
+                className="h-6 px-2 text-xs bg-transparent"
                 onClick={() => handleQuickStatusChange(cita.id, "confirmada")}
               >
                 Confirmar
@@ -838,7 +830,7 @@ export default function MedicalCalendar() {
               <Button
                 size="sm"
                 variant="outline"
-                className="h-6 px-2 text-xs"
+                className="h-6 px-2 text-xs bg-transparent"
                 onClick={() => handleQuickStatusChange(cita.id, "en-curso")}
               >
                 Iniciar
@@ -848,14 +840,13 @@ export default function MedicalCalendar() {
               <Button
                 size="sm"
                 variant="outline"
-                className="h-6 px-2 text-xs"
+                className="h-6 px-2 text-xs bg-transparent"
                 onClick={() => handleQuickStatusChange(cita.id, "completada")}
               >
                 Completar
               </Button>
             )}
           </div>
-
           {!cita.pagado && (
             <Badge variant="outline" className="text-xs">
               €{cita.precio}
@@ -982,7 +973,6 @@ export default function MedicalCalendar() {
             {dia}
           </div>
         ))}
-
         {diasMes.map((dia) => {
           const citasDelDia = getCitasForDate(format(dia, "yyyy-MM-dd"))
           return (
@@ -1042,7 +1032,6 @@ export default function MedicalCalendar() {
                 </div>
               </div>
             </div>
-
             <div className="flex items-center gap-2">
               <Tabs value={currentView} onValueChange={(value) => setCurrentView(value as any)}>
                 <TabsList>
@@ -1051,7 +1040,6 @@ export default function MedicalCalendar() {
                   <TabsTrigger value="mes">Mes</TabsTrigger>
                 </TabsList>
               </Tabs>
-
               <Dialog open={showAppointmentForm} onOpenChange={setShowAppointmentForm}>
                 <DialogTrigger asChild>
                   <Button onClick={resetAppointmentForm}>
@@ -1060,7 +1048,6 @@ export default function MedicalCalendar() {
                   </Button>
                 </DialogTrigger>
               </Dialog>
-
               <Dialog open={showConfigForm} onOpenChange={setShowConfigForm}>
                 <DialogTrigger asChild>
                   <Button variant="outline">
@@ -1082,7 +1069,6 @@ export default function MedicalCalendar() {
                 className="w-64"
               />
             </div>
-
             <Select
               value={filtros.profesional}
               onValueChange={(value) => setFiltros((prev) => ({ ...prev, profesional: value }))}
@@ -1091,7 +1077,7 @@ export default function MedicalCalendar() {
                 <SelectValue placeholder="Todos los profesionales" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Todos los profesionales</SelectItem>
+                <SelectItem value="all">Todos los profesionales</SelectItem>
                 {profesionales.map((prof) => (
                   <SelectItem key={prof.id} value={prof.id}>
                     {prof.nombre}
@@ -1099,7 +1085,6 @@ export default function MedicalCalendar() {
                 ))}
               </SelectContent>
             </Select>
-
             <Select
               value={filtros.estado}
               onValueChange={(value) => setFiltros((prev) => ({ ...prev, estado: value }))}
@@ -1108,7 +1093,7 @@ export default function MedicalCalendar() {
                 <SelectValue placeholder="Todos los estados" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Todos los estados</SelectItem>
+                <SelectItem value="all">Todos los estados</SelectItem>
                 <SelectItem value="programada">Programada</SelectItem>
                 <SelectItem value="confirmada">Confirmada</SelectItem>
                 <SelectItem value="en-curso">En curso</SelectItem>
@@ -1117,13 +1102,12 @@ export default function MedicalCalendar() {
                 <SelectItem value="no-asistio">No asistió</SelectItem>
               </SelectContent>
             </Select>
-
             <Select value={filtros.tipo} onValueChange={(value) => setFiltros((prev) => ({ ...prev, tipo: value }))}>
               <SelectTrigger className="w-40">
                 <SelectValue placeholder="Todos los tipos" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Todos los tipos</SelectItem>
+                <SelectItem value="all">Todos los tipos</SelectItem>
                 <SelectItem value="consulta">Consulta</SelectItem>
                 <SelectItem value="seguimiento">Seguimiento</SelectItem>
                 <SelectItem value="urgencia">Urgencia</SelectItem>
@@ -1146,7 +1130,6 @@ export default function MedicalCalendar() {
             <DialogHeader>
               <DialogTitle>{selectedAppointment ? "Editar Cita" : "Nueva Cita"}</DialogTitle>
             </DialogHeader>
-
             <form onSubmit={handleAppointmentSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -1167,7 +1150,6 @@ export default function MedicalCalendar() {
                     </SelectContent>
                   </Select>
                 </div>
-
                 <div>
                   <Label htmlFor="profesional">Profesional *</Label>
                   <Select
@@ -1197,7 +1179,6 @@ export default function MedicalCalendar() {
                     onChange={(e) => setAppointmentForm((prev) => ({ ...prev, fecha: e.target.value }))}
                   />
                 </div>
-
                 <div>
                   <Label htmlFor="horaInicio">Hora Inicio *</Label>
                   <Input
@@ -1206,7 +1187,6 @@ export default function MedicalCalendar() {
                     onChange={(e) => setAppointmentForm((prev) => ({ ...prev, horaInicio: e.target.value }))}
                   />
                 </div>
-
                 <div>
                   <Label htmlFor="horaFin">Hora Fin *</Label>
                   <Input
@@ -1235,7 +1215,6 @@ export default function MedicalCalendar() {
                     </SelectContent>
                   </Select>
                 </div>
-
                 <div>
                   <Label htmlFor="estado">Estado</Label>
                   <Select
@@ -1266,7 +1245,6 @@ export default function MedicalCalendar() {
                     placeholder="Ej: Sala 1"
                   />
                 </div>
-
                 <div>
                   <Label htmlFor="precio">Precio (€)</Label>
                   <Input
@@ -1346,7 +1324,6 @@ export default function MedicalCalendar() {
               </Button>
             </DialogTrigger>
           </Dialog>
-
           <Dialog open={showProfessionalForm} onOpenChange={setShowProfessionalForm}>
             <DialogTrigger asChild>
               <Button size="sm" variant="outline" onClick={resetProfessionalForm}>
@@ -1363,7 +1340,6 @@ export default function MedicalCalendar() {
             <DialogHeader>
               <DialogTitle>{selectedPatient ? "Editar Paciente" : "Nuevo Paciente"}</DialogTitle>
             </DialogHeader>
-
             <form onSubmit={handlePatientSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -1374,7 +1350,6 @@ export default function MedicalCalendar() {
                     placeholder="Nombre"
                   />
                 </div>
-
                 <div>
                   <Label htmlFor="apellidos">Apellidos *</Label>
                   <Input
@@ -1394,7 +1369,6 @@ export default function MedicalCalendar() {
                     placeholder="+34 666 123 456"
                   />
                 </div>
-
                 <div>
                   <Label htmlFor="email">Email</Label>
                   <Input
@@ -1467,7 +1441,6 @@ export default function MedicalCalendar() {
             <DialogHeader>
               <DialogTitle>{selectedProfessional ? "Editar Profesional" : "Nuevo Profesional"}</DialogTitle>
             </DialogHeader>
-
             <form onSubmit={handleProfessionalSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -1478,7 +1451,6 @@ export default function MedicalCalendar() {
                     placeholder="Dr. Juan Pérez"
                   />
                 </div>
-
                 <div>
                   <Label htmlFor="especialidad">Especialidad *</Label>
                   <Input
@@ -1498,7 +1470,6 @@ export default function MedicalCalendar() {
                     onChange={(e) => setProfessionalForm((prev) => ({ ...prev, color: e.target.value }))}
                   />
                 </div>
-
                 <div className="flex items-center space-x-2 pt-6">
                   <Checkbox
                     id="activo"
@@ -1537,7 +1508,6 @@ export default function MedicalCalendar() {
                           />
                           <Label className="ml-2">{dia}</Label>
                         </div>
-
                         {horario.activo && (
                           <>
                             <div>
@@ -1554,7 +1524,6 @@ export default function MedicalCalendar() {
                                 className="w-24"
                               />
                             </div>
-
                             <div>
                               <Label className="text-xs">Fin</Label>
                               <Input
@@ -1593,7 +1562,6 @@ export default function MedicalCalendar() {
             <DialogHeader>
               <DialogTitle>Configuración del Calendario</DialogTitle>
             </DialogHeader>
-
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -1604,7 +1572,6 @@ export default function MedicalCalendar() {
                     onChange={(e) => setConfiguracion((prev) => ({ ...prev, horaInicio: e.target.value }))}
                   />
                 </div>
-
                 <div>
                   <Label htmlFor="horaFin">Hora de Fin</Label>
                   <Input
@@ -1663,7 +1630,6 @@ export default function MedicalCalendar() {
                   />
                   <Label htmlFor="mostrarFinDeSemana">Mostrar fin de semana</Label>
                 </div>
-
                 <div className="flex items-center space-x-2">
                   <Checkbox
                     id="notificaciones"
@@ -1674,7 +1640,6 @@ export default function MedicalCalendar() {
                   />
                   <Label htmlFor="notificaciones">Notificaciones</Label>
                 </div>
-
                 <div className="flex items-center space-x-2">
                   <Checkbox
                     id="recordatoriosAutomaticos"
@@ -1712,7 +1677,7 @@ export default function MedicalCalendar() {
                 <Button
                   onClick={() => {
                     setShowConfigForm(false)
-                    toast.success("Configuración guardada")
+                    console.log("Configuración guardada")
                   }}
                 >
                   Guardar

@@ -1,7 +1,6 @@
 "use client"
 
 import React from "react"
-
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase/client"
@@ -31,6 +30,9 @@ export default function NewClientPage() {
     client_type: "private",
     email: "",
     phone: "",
+    birth_date: "", // Campo de fecha de nacimiento
+    gender: "", // Campo de género (opcional)
+    medical_notes: "", // Campo de notas médicas
     dir3_codes: {
       CentroGestor: "",
       UnidadTramitadora: "",
@@ -93,6 +95,9 @@ export default function NewClientPage() {
           client_type: formData.client_type,
           email: formData.email || null,
           phone: formData.phone || null,
+          birth_date: formData.birth_date || null, // Guardar fecha de nacimiento
+          gender: formData.gender || null, // Guardar género
+          medical_notes: formData.medical_notes || null, // Guardar notas médicas
           dir3_codes: formData.client_type === "public" ? formData.dir3_codes : null,
         })
         .select()
@@ -157,6 +162,35 @@ export default function NewClientPage() {
               <Input id="tax_id" name="tax_id" value={formData.tax_id} onChange={handleChange} required />
             </div>
 
+            {/* Campos de información personal */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="birth_date">Fecha de Nacimiento</Label>
+                <Input
+                  id="birth_date"
+                  name="birth_date"
+                  type="date"
+                  value={formData.birth_date}
+                  onChange={handleChange}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="gender">Género</Label>
+                <Select value={formData.gender} onValueChange={(value) => handleSelectChange("gender", value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar género" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="masculino">Masculino</SelectItem>
+                    <SelectItem value="femenino">Femenino</SelectItem>
+                    <SelectItem value="otro">Otro</SelectItem>
+                    <SelectItem value="no-especificar">Prefiero no especificar</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="address">Dirección</Label>
               <Textarea id="address" name="address" value={formData.address} onChange={handleChange} required />
@@ -202,6 +236,19 @@ export default function NewClientPage() {
                 <Label htmlFor="phone">Teléfono</Label>
                 <Input id="phone" name="phone" value={formData.phone} onChange={handleChange} />
               </div>
+            </div>
+
+            {/* Campo de notas médicas */}
+            <div className="space-y-2">
+              <Label htmlFor="medical_notes">Notas Médicas</Label>
+              <Textarea
+                id="medical_notes"
+                name="medical_notes"
+                value={formData.medical_notes}
+                onChange={handleChange}
+                placeholder="Añadir notas médicas adicionales..."
+                rows={4}
+              />
             </div>
 
             <div className="space-y-2">

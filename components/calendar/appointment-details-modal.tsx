@@ -18,7 +18,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { PatientHistoryModal } from "./patient-history-modal"
-import { toast } from "sonner"
 import type { AppointmentWithDetails } from "@/types/calendar"
 
 interface AppointmentDetailsModalProps {
@@ -54,9 +53,9 @@ export function AppointmentDetailsModal({
     try {
       await onUpdate(editedAppointment)
       setIsEditing(false)
-      toast.success("Cita actualizada correctamente")
+      console.log("Cita actualizada correctamente")
     } catch (error) {
-      toast.error("Error al actualizar la cita")
+      console.error("Error al actualizar la cita:", error)
     } finally {
       setIsSaving(false)
     }
@@ -67,9 +66,9 @@ export function AppointmentDetailsModal({
     try {
       await onDelete(appointment.id)
       setShowDeleteDialog(false)
-      toast.success("Cita eliminada correctamente")
+      console.log("Cita eliminada correctamente")
     } catch (error) {
-      toast.error("Error al eliminar la cita")
+      console.error("Error al eliminar la cita:", error)
     } finally {
       setIsDeleting(false)
     }
@@ -112,6 +111,20 @@ export function AppointmentDetailsModal({
       default:
         return status
     }
+  }
+
+  // Función para verificar si realmente hay una consulta seleccionada
+  const hasValidConsultation = () => {
+    return (
+      appointment.consultation &&
+      appointment.consultation_id &&
+      appointment.consultation_id !== "none" &&
+      appointment.consultation_id !== "" &&
+      appointment.consultation_id !== null &&
+      appointment.consultation_id !== undefined &&
+      appointment.consultation.name && // Verificar que la consulta tenga nombre
+      appointment.consultation.name.trim() !== "" // Y que no esté vacío
+    )
   }
 
   if (!isOpen) return null
@@ -212,7 +225,6 @@ export function AppointmentDetailsModal({
                     <Clock className="h-4 w-4 text-blue-600" />
                     <span className="text-sm font-medium text-gray-700">Horario:</span>
                   </div>
-
                   {isEditing ? (
                     <div className="flex items-center gap-3 flex-1">
                       <div className="flex items-center gap-2">
@@ -314,15 +326,14 @@ export function AppointmentDetailsModal({
                       <Badge className={getStatusColor(appointment.status)}>{getStatusLabel(appointment.status)}</Badge>
                     )}
                   </div>
-
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium text-gray-700">Tipo:</span>
                     <span className="text-sm text-gray-900">
                       {appointment.appointment_type?.name || "Consulta General"}
                     </span>
                   </div>
-
-                  {appointment.consultation && (
+                  {/* CONSULTA - Solo mostrar si realmente hay una consulta válida seleccionada */}
+                  {hasValidConsultation() && (
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-gray-700">Consulta:</span>
                       <div className="flex items-center gap-2">
@@ -418,7 +429,6 @@ export function AppointmentDetailsModal({
               ¿Estás seguro de que quieres eliminar esta cita?
             </DialogDescription>
           </DialogHeader>
-
           <div className="mt-3 p-3 bg-gray-50 rounded-lg">
             <p className="font-medium text-gray-900">{appointment.client.name}</p>
             <p className="text-sm text-gray-600">
@@ -427,7 +437,6 @@ export function AppointmentDetailsModal({
             </p>
           </div>
           <p className="mt-3 text-sm text-red-600">Esta acción no se puede deshacer.</p>
-
           <DialogFooter className="flex gap-2 mt-4">
             <Button variant="outline" onClick={() => setShowDeleteDialog(false)} disabled={isDeleting}>
               Cancelar

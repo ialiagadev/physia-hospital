@@ -412,9 +412,7 @@ export function HorarioViewDynamic({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-medium">{formatearFecha(date)} - Vista de Horario</h2>
         <div className="text-sm text-gray-600">
-          Horario: {minutesToTime(startMinutes)} - {minutesToTime(endMinutes)}
         </div>
       </div>
 

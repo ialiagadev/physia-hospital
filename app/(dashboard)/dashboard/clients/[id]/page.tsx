@@ -240,6 +240,7 @@ const [reportData, setReportData] = useState<ClinicalReportData | null>(null)
     phone: "",
     birth_date: "", // Agregar este campo
     gender: "", // Opcional: también puedes agregar género
+    medical_notes: "", // Añadir campo de notas médicas
     dir3_codes: {
       CentroGestor: "",
       UnidadTramitadora: "",
@@ -637,39 +638,39 @@ const [reportData, setReportData] = useState<ClinicalReportData | null>(null)
         if (orgsData) {
           setOrganizations(orgsData)
         }
+// Cargar datos del cliente
+const { data: clientData, error: clientError } = await supabase
+  .from("clients")
+  .select("*")
+  .eq("id", clientId)
+  .single()
 
-        // Cargar datos del cliente
-        const { data: clientData, error: clientError } = await supabase
-          .from("clients")
-          .select("*")
-          .eq("id", clientId)
-          .single()
+if (clientError) {
+  throw new Error("No se pudo cargar la información del cliente")
+}
 
-        if (clientError) {
-          throw new Error("No se pudo cargar la información del cliente")
-        }
-
-        if (clientData) {
-          setFormData({
-            organization_id: clientData.organization_id.toString(),
-            name: clientData.name || "",
-            tax_id: clientData.tax_id || "",
-            address: clientData.address || "",
-            postal_code: clientData.postal_code || "",
-            city: clientData.city || "",
-            province: clientData.province || "",
-            country: clientData.country || "España",
-            client_type: clientData.client_type || "private",
-            email: clientData.email || "",
-            phone: clientData.phone || "",
-            birth_date: clientData.birth_date || "", // Agregar este campo
-            gender: clientData.gender || "", // Opcional
-            dir3_codes: clientData.dir3_codes || {
-              CentroGestor: "",
-              UnidadTramitadora: "",
-              OficinaContable: "",
-            },
-          })
+if (clientData) {
+  setFormData({
+    organization_id: clientData.organization_id.toString(),
+    name: clientData.name || "",
+    tax_id: clientData.tax_id || "",
+    address: clientData.address || "",
+    postal_code: clientData.postal_code || "",
+    city: clientData.city || "",
+    province: clientData.province || "",
+    country: clientData.country || "España",
+    client_type: clientData.client_type || "private",
+    email: clientData.email || "",
+    phone: clientData.phone || "",
+    birth_date: clientData.birth_date || "",
+    gender: clientData.gender || "",
+    medical_notes: clientData.medical_notes || "", // Esta línea faltaba
+    dir3_codes: clientData.dir3_codes || {
+      CentroGestor: "",
+      UnidadTramitadora: "",
+      OficinaContable: "",
+    },
+  })
 
          // Cargar historial médico desde la base de datos
 const { data: medicalData } = await getMedicalHistory(clientId)
@@ -1105,7 +1106,6 @@ const handleSubmit = async (e: React.FormEvent) => {
 
   return (
     <div className="max-w-7xl mx-auto py-6 px-4">
-      <Breadcrumbs items={breadcrumbItems} />
 
       <div className="flex justify-between items-center mb-6 mt-4">
   <div>
@@ -1228,29 +1228,7 @@ const handleSubmit = async (e: React.FormEvent) => {
                   )}
                 </div>
 
-                <div>
-                  <Label className="text-sm text-gray-500">Tipo de Cliente</Label>
-                  {isEditing ? (
-                    <RadioGroup
-                      value={formData.client_type}
-                      onValueChange={(value) => setFormData((prev) => ({ ...prev, client_type: value }))}
-                      className="flex space-x-4 mt-2"
-                    >
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="private" id="private" />
-                        <Label htmlFor="private">Privado</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="public" id="public" />
-                        <Label htmlFor="public">Administración Pública</Label>
-                      </div>
-                    </RadioGroup>
-                  ) : (
-                    <p className="font-medium mt-1">
-                      {formData.client_type === "public" ? "Administración Pública" : "Privado"}
-                    </p>
-                  )}
-                </div>
+                
               </CardContent>
             </Card>
 
@@ -1405,293 +1383,389 @@ const handleSubmit = async (e: React.FormEvent) => {
           )}
         </TabsContent>
 
-        {/* Pestaña Información Personal */}
-      <TabsContent value="informacion-personal" className="space-y-6">
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+     
+     {/* Pestaña Información Personal */}
+<TabsContent value="informacion-personal" className="space-y-6">
+  {error && (
+    <Alert variant="destructive">
+      <AlertDescription>{error}</AlertDescription>
+    </Alert>
+  )}
 
-        <form onSubmit={handleSubmit}>
-          <Card>
-            <CardHeader>
-              <CardTitle>Información del cliente</CardTitle>
-              <CardDescription>Introduce los datos del cliente</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-3">
-                <Label htmlFor="organization_id" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                  Organización
-                </Label>
-                {isEditing ? (
-                  <Select
-                    value={formData.organization_id}
-                    onValueChange={(value) => handleSelectChange("organization_id", value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecciona una organización" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {organizations.map((org) => (
-                        <SelectItem key={org.id} value={org.id.toString()}>
-                          {org.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
-                    <p className="text-base font-medium text-gray-900 dark:text-gray-100">
-                      {organizations.find((org) => org.id.toString() === formData.organization_id)?.name ||
-                        "No asignada"}
-                    </p>
-                  </div>
-                )}
+  <form onSubmit={handleSubmit}>
+    <Card>
+      <CardHeader>
+        <CardTitle>Información del cliente</CardTitle>
+        <CardDescription>Introduce los datos del cliente</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-3">
+          <Label htmlFor="organization_id" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+            Organización
+          </Label>
+          {isEditing ? (
+            <Select
+              value={formData.organization_id}
+              onValueChange={(value) => handleSelectChange("organization_id", value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecciona una organización" />
+              </SelectTrigger>
+              <SelectContent>
+                {organizations.map((org) => (
+                  <SelectItem key={org.id} value={org.id.toString()}>
+                    {org.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
+              <p className="text-base font-medium text-gray-900 dark:text-gray-100">
+                {organizations.find((org) => org.id.toString() === formData.organization_id)?.name ||
+                  "No asignada"}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          <Label htmlFor="name" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+            Nombre o Razón Social
+          </Label>
+          {isEditing ? (
+            <Input id="name" name="name" value={formData.name} onChange={handleChange} required />
+          ) : (
+            <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
+              <p className="text-base font-medium text-gray-900 dark:text-gray-100">{formData.name}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          <Label htmlFor="tax_id" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+            CIF/NIF
+          </Label>
+          {isEditing ? (
+            <Input id="tax_id" name="tax_id" value={formData.tax_id} onChange={handleChange} required />
+          ) : (
+            <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
+              <p className="text-base font-medium text-gray-900 dark:text-gray-100">{formData.tax_id}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Campos de fecha de nacimiento y género */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-3">
+            <Label htmlFor="birth_date" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+              Fecha de Nacimiento
+            </Label>
+            {isEditing ? (
+              <Input
+                id="birth_date"
+                name="birth_date"
+                type="date"
+                value={formData.birth_date}
+                onChange={handleChange}
+              />
+            ) : (
+              <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
+                <p className="text-base font-medium text-gray-900 dark:text-gray-100">
+                  {formData.birth_date ? formatDate(formData.birth_date) : "No registrada"}
+                </p>
               </div>
+            )}
+          </div>
 
-              <div className="space-y-3">
-                <Label htmlFor="name" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                  Nombre o Razón Social
-                </Label>
-                {isEditing ? (
-                  <Input id="name" name="name" value={formData.name} onChange={handleChange} required />
-                ) : (
-                  <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
-                    <p className="text-base font-medium text-gray-900 dark:text-gray-100">{formData.name}</p>
-                  </div>
-                )}
+          <div className="space-y-3">
+            <Label htmlFor="gender" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+              Género
+            </Label>
+            {isEditing ? (
+              <Select value={formData.gender} onValueChange={(value) => handleSelectChange("gender", value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar género" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="masculino">Masculino</SelectItem>
+                  <SelectItem value="femenino">Femenino</SelectItem>
+                  <SelectItem value="otro">Otro</SelectItem>
+                  <SelectItem value="no-especificar">Prefiero no especificar</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
+                <p className="text-base font-medium text-gray-900 dark:text-gray-100">
+                  {formData.gender || "No especificado"}
+                </p>
               </div>
+            )}
+          </div>
+        </div>
 
-              <div className="space-y-3">
-                <Label htmlFor="tax_id" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                  CIF/NIF
-                </Label>
-                {isEditing ? (
-                  <Input id="tax_id" name="tax_id" value={formData.tax_id} onChange={handleChange} required />
-                ) : (
-                  <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
-                    <p className="text-base font-medium text-gray-900 dark:text-gray-100">{formData.tax_id}</p>
-                  </div>
-                )}
+        <div className="space-y-3">
+          <Label htmlFor="address" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+            Dirección
+          </Label>
+          {isEditing ? (
+            <Textarea id="address" name="address" value={formData.address} onChange={handleChange} required />
+          ) : (
+            <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
+              <p className="text-base font-medium text-gray-900 dark:text-gray-100">
+                {formData.address || "No registrada"}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-3">
+            <Label htmlFor="postal_code" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+              Código Postal
+            </Label>
+            {isEditing ? (
+              <Input
+                id="postal_code"
+                name="postal_code"
+                value={formData.postal_code}
+                onChange={handleChange}
+                required
+              />
+            ) : (
+              <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
+                <p className="text-base font-medium text-gray-900 dark:text-gray-100">
+                  {formData.postal_code || "No registrado"}
+                </p>
               </div>
+            )}
+          </div>
 
-              <div className="space-y-3">
-                <Label htmlFor="address" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                  Dirección
-                </Label>
-                {isEditing ? (
-                  <Textarea id="address" name="address" value={formData.address} onChange={handleChange} required />
-                ) : (
-                  <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
-                    <p className="text-base font-medium text-gray-900 dark:text-gray-100">{formData.address || "No registrada"}</p>
-                  </div>
-                )}
+          <div className="space-y-3">
+            <Label htmlFor="city" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+              Ciudad
+            </Label>
+            {isEditing ? (
+              <Input id="city" name="city" value={formData.city} onChange={handleChange} required />
+            ) : (
+              <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
+                <p className="text-base font-medium text-gray-900 dark:text-gray-100">
+                  {formData.city || "No registrada"}
+                </p>
               </div>
+            )}
+          </div>
+        </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-3">
-                  <Label htmlFor="postal_code" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Código Postal
-                  </Label>
-                  {isEditing ? (
-                    <Input
-                      id="postal_code"
-                      name="postal_code"
-                      value={formData.postal_code}
-                      onChange={handleChange}
-                      required
-                    />
-                  ) : (
-                    <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
-                      <p className="text-base font-medium text-gray-900 dark:text-gray-100">{formData.postal_code || "No registrado"}</p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-3">
-                  <Label htmlFor="city" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Ciudad
-                  </Label>
-                  {isEditing ? (
-                    <Input id="city" name="city" value={formData.city} onChange={handleChange} required />
-                  ) : (
-                    <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
-                      <p className="text-base font-medium text-gray-900 dark:text-gray-100">{formData.city || "No registrada"}</p>
-                    </div>
-                  )}
-                </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-3">
+            <Label htmlFor="province" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+              Provincia
+            </Label>
+            {isEditing ? (
+              <Input id="province" name="province" value={formData.province} onChange={handleChange} required />
+            ) : (
+              <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
+                <p className="text-base font-medium text-gray-900 dark:text-gray-100">
+                  {formData.province || "No registrada"}
+                </p>
               </div>
+            )}
+          </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-3">
-                  <Label htmlFor="province" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Provincia
-                  </Label>
-                  {isEditing ? (
-                    <Input id="province" name="province" value={formData.province} onChange={handleChange} required />
-                  ) : (
-                    <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
-                      <p className="text-base font-medium text-gray-900 dark:text-gray-100">{formData.province || "No registrada"}</p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-3">
-                  <Label htmlFor="country" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    País
-                  </Label>
-                  {isEditing ? (
-                    <Input id="country" name="country" value={formData.country} onChange={handleChange} required />
-                  ) : (
-                    <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
-                      <p className="text-base font-medium text-gray-900 dark:text-gray-100">{formData.country}</p>
-                    </div>
-                  )}
-                </div>
+          <div className="space-y-3">
+            <Label htmlFor="country" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+              País
+            </Label>
+            {isEditing ? (
+              <Input id="country" name="country" value={formData.country} onChange={handleChange} required />
+            ) : (
+              <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
+                <p className="text-base font-medium text-gray-900 dark:text-gray-100">{formData.country}</p>
               </div>
+            )}
+          </div>
+        </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-3">
-                  <Label htmlFor="email" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Email
-                  </Label>
-                  {isEditing ? (
-                    <Input id="email" name="email" type="email" value={formData.email} onChange={handleChange} />
-                  ) : (
-                    <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
-                      <p className="text-base font-medium text-gray-900 dark:text-gray-100">{formData.email || "No registrado"}</p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-3">
-                  <Label htmlFor="phone" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                    Teléfono
-                  </Label>
-                  {isEditing ? (
-                    <Input id="phone" name="phone" value={formData.phone} onChange={handleChange} />
-                  ) : (
-                    <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
-                      <p className="text-base font-medium text-gray-900 dark:text-gray-100">{formData.phone || "No registrado"}</p>
-                    </div>
-                  )}
-                </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-3">
+            <Label htmlFor="email" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+              Email
+            </Label>
+            {isEditing ? (
+              <Input id="email" name="email" type="email" value={formData.email} onChange={handleChange} />
+            ) : (
+              <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
+                <p className="text-base font-medium text-gray-900 dark:text-gray-100">
+                  {formData.email || "No registrado"}
+                </p>
               </div>
+            )}
+          </div>
 
-              <div className="space-y-3">
-                <Label className="text-sm font-semibold text-gray-700 dark:text-gray-300">Tipo de Cliente</Label>
-                {isEditing ? (
-                  <RadioGroup
-                    value={formData.client_type}
-                    onValueChange={(value) => setFormData((prev) => ({ ...prev, client_type: value }))}
-                    className="flex space-x-4"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="private" id="private" />
-                      <Label htmlFor="private">Privado</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="public" id="public" />
-                      <Label htmlFor="public">Administración Pública</Label>
-                    </div>
-                  </RadioGroup>
-                ) : (
-                  <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
-                    <p className="text-base font-medium text-gray-900 dark:text-gray-100">
-                      {formData.client_type === "public" ? "Administración Pública" : "Privado"}
-                    </p>
-                  </div>
-                )}
+          <div className="space-y-3">
+            <Label htmlFor="phone" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+              Teléfono
+            </Label>
+            {isEditing ? (
+              <Input id="phone" name="phone" value={formData.phone} onChange={handleChange} />
+            ) : (
+              <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
+                <p className="text-base font-medium text-gray-900 dark:text-gray-100">
+                  {formData.phone || "No registrado"}
+                </p>
               </div>
+            )}
+          </div>
+        </div>
 
-              {formData.client_type === "public" && (
-                <div className="space-y-4 border-2 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950 p-4 rounded-lg">
-                  <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100 border-b border-blue-300 dark:border-blue-700 pb-2">
-                    Códigos DIR3
-                  </h3>
-                  <div className="space-y-3">
-                    <Label htmlFor="CentroGestor" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                      Centro Gestor
-                    </Label>
-                    {isEditing ? (
-                      <Input
-                        id="CentroGestor"
-                        name="CentroGestor"
-                        value={formData.dir3_codes.CentroGestor}
-                        onChange={handleDir3Change}
-                        required
-                      />
-                    ) : (
-                      <div className="bg-white dark:bg-gray-800 p-3 rounded-md border">
-                        <p className="text-base font-medium text-gray-900 dark:text-gray-100">{formData.dir3_codes.CentroGestor || "No registrado"}</p>
-                      </div>
-                    )}
-                  </div>
+        {/* Campo de notas médicas */}
+        <div className="space-y-3">
+          <Label htmlFor="medical_notes" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+            Notas Médicas
+          </Label>
+          {isEditing ? (
+            <Textarea
+              id="medical_notes"
+              name="medical_notes"
+              value={formData.medical_notes}
+              onChange={handleChange}
+              placeholder="Añadir notas médicas adicionales..."
+              rows={4}
+            />
+          ) : (
+            <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
+              <p className="text-base font-medium text-gray-900 dark:text-gray-100 whitespace-pre-wrap">
+                {formData.medical_notes || "No hay notas registradas"}
+              </p>
+            </div>
+          )}
+        </div>
 
-                  <div className="space-y-3">
-                    <Label htmlFor="UnidadTramitadora" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                      Unidad Tramitadora
-                    </Label>
-                    {isEditing ? (
-                      <Input
-                        id="UnidadTramitadora"
-                        name="UnidadTramitadora"
-                        value={formData.dir3_codes.UnidadTramitadora}
-                        onChange={handleDir3Change}
-                        required
-                      />
-                    ) : (
-                      <div className="bg-white dark:bg-gray-800 p-3 rounded-md border">
-                        <p className="text-base font-medium text-gray-900 dark:text-gray-100">{formData.dir3_codes.UnidadTramitadora || "No registrado"}</p>
-                      </div>
-                    )}
-                  </div>
+        <div className="space-y-3">
+          <Label className="text-sm font-semibold text-gray-700 dark:text-gray-300">Tipo de Cliente</Label>
+          {isEditing ? (
+            <RadioGroup
+              value={formData.client_type}
+              onValueChange={(value) => setFormData((prev) => ({ ...prev, client_type: value }))}
+              className="flex space-x-4"
+            >
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="private" id="private" />
+                <Label htmlFor="private">Privado</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="public" id="public" />
+                <Label htmlFor="public">Administración Pública</Label>
+              </div>
+            </RadioGroup>
+          ) : (
+            <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
+              <p className="text-base font-medium text-gray-900 dark:text-gray-100">
+                {formData.client_type === "public" ? "Administración Pública" : "Privado"}
+              </p>
+            </div>
+          )}
+        </div>
 
-                  <div className="space-y-3">
-                    <Label htmlFor="OficinaContable" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                      Oficina Contable
-                    </Label>
-                    {isEditing ? (
-                      <Input
-                        id="OficinaContable"
-                        name="OficinaContable"
-                        value={formData.dir3_codes.OficinaContable}
-                        onChange={handleDir3Change}
-                        required
-                      />
-                    ) : (
-                      <div className="bg-white dark:bg-gray-800 p-3 rounded-md border">
-                        <p className="text-base font-medium text-gray-900 dark:text-gray-100">{formData.dir3_codes.OficinaContable || "No registrado"}</p>
-                      </div>
-                    )}
-                  </div>
+        {formData.client_type === "public" && (
+          <div className="space-y-4 border-2 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950 p-4 rounded-lg">
+            <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100 border-b border-blue-300 dark:border-blue-700 pb-2">
+              Códigos DIR3
+            </h3>
+            <div className="space-y-3">
+              <Label htmlFor="CentroGestor" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                Centro Gestor
+              </Label>
+              {isEditing ? (
+                <Input
+                  id="CentroGestor"
+                  name="CentroGestor"
+                  value={formData.dir3_codes.CentroGestor}
+                  onChange={handleDir3Change}
+                  required
+                />
+              ) : (
+                <div className="bg-white dark:bg-gray-800 p-3 rounded-md border">
+                  <p className="text-base font-medium text-gray-900 dark:text-gray-100">
+                    {formData.dir3_codes.CentroGestor || "No registrado"}
+                  </p>
                 </div>
               )}
-            </CardContent>
-            {isEditing && (
-              <CardFooter className="flex justify-between">
-                <Button type="button" variant="outline" onClick={() => setIsEditing(false)}>
-                  Cancelar
-                </Button>
-                <Button type="submit" disabled={isSaving}>
-                  {isSaving ? "Guardando..." : "Guardar Cliente"}
-                </Button>
-              </CardFooter>
-            )}
-          </Card>
-        </form>
+            </div>
 
-        {!isEditing && (
-          <div className="flex justify-end">
-            <Button onClick={() => setIsEditing(true)}>
-              <Edit className="mr-2 h-4 w-4" />
-              Editar Cliente
-            </Button>
-            
+            <div className="space-y-3">
+              <Label
+                htmlFor="UnidadTramitadora"
+                className="text-sm font-semibold text-gray-700 dark:text-gray-300"
+              >
+                Unidad Tramitadora
+              </Label>
+              {isEditing ? (
+                <Input
+                  id="UnidadTramitadora"
+                  name="UnidadTramitadora"
+                  value={formData.dir3_codes.UnidadTramitadora}
+                  onChange={handleDir3Change}
+                  required
+                />
+              ) : (
+                <div className="bg-white dark:bg-gray-800 p-3 rounded-md border">
+                  <p className="text-base font-medium text-gray-900 dark:text-gray-100">
+                    {formData.dir3_codes.UnidadTramitadora || "No registrado"}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              <Label
+                htmlFor="OficinaContable"
+                className="text-sm font-semibold text-gray-700 dark:text-gray-300"
+              >
+                Oficina Contable
+              </Label>
+              {isEditing ? (
+                <Input
+                  id="OficinaContable"
+                  name="OficinaContable"
+                  value={formData.dir3_codes.OficinaContable}
+                  onChange={handleDir3Change}
+                  required
+                />
+              ) : (
+                <div className="bg-white dark:bg-gray-800 p-3 rounded-md border">
+                  <p className="text-base font-medium text-gray-900 dark:text-gray-100">
+                    {formData.dir3_codes.OficinaContable || "No registrado"}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         )}
-      </TabsContent>
+      </CardContent>
+      {isEditing && (
+        <CardFooter className="flex justify-between">
+          <Button type="button" variant="outline" onClick={() => setIsEditing(false)}>
+            Cancelar
+          </Button>
+          <Button type="submit" disabled={isSaving}>
+            {isSaving ? "Guardando..." : "Guardar Cliente"}
+          </Button>
+        </CardFooter>
+      )}
+    </Card>
+  </form>
+
+  {!isEditing && (
+    <div className="flex justify-end">
+      <Button onClick={() => setIsEditing(true)}>
+        <Edit className="mr-2 h-4 w-4" />
+        Editar Cliente
+      </Button>
+    </div>
+  )}
+</TabsContent>
         {/* Pestaña Historial Médico */}
 <TabsContent value="historial" className="space-y-6">
   <div className="flex items-center justify-between">
@@ -2811,7 +2885,7 @@ const handleSubmit = async (e: React.FormEvent) => {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Shield className="w-5 h-5 text-purple-600" />
-                      12. Revisión por Sistemas
+                      10. Revisión por Sistemas
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -2875,7 +2949,7 @@ const handleSubmit = async (e: React.FormEvent) => {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Brain className="w-5 h-5 text-purple-600" />
-                      10. Función Neurológica
+                      11. Función Neurológica
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -2979,7 +3053,7 @@ const handleSubmit = async (e: React.FormEvent) => {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Eye className="w-5 h-5 text-indigo-600" />
-                      11. Función Psicológica/Emocional
+                      12. Función Psicológica/Emocional
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -3364,27 +3438,7 @@ const handleSubmit = async (e: React.FormEvent) => {
                 {/* Campos personalizados para diagnóstico */}
                 {renderCustomFields("diagnostico")}
 
-                {/* Información del profesional */}
-                <Card className="bg-blue-50 border-blue-200">
-                  <CardContent className="pt-6">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                      <div>
-                        <span className="font-medium text-gray-700">Fecha de creación:</span>
-                        <p className="text-gray-600">{new Date(historial.fechaCreacion).toLocaleDateString("es-ES")}</p>
-                      </div>
-                      <div>
-                        <span className="font-medium text-gray-700">Profesional:</span>
-                        <p className="text-gray-600">{historial.profesional}</p>
-                      </div>
-                      <div>
-                        <span className="font-medium text-gray-700">Última actualización:</span>
-                        <p className="text-gray-600">
-                          {new Date(historial.ultimaActualizacion).toLocaleDateString("es-ES")}
-                        </p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+              
               </div>
             </TabsContent>
           </Tabs>

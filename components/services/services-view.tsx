@@ -10,7 +10,7 @@ import { ServiceFormModal } from "./services-form-modal"
 import type { Service } from "@/types/services"
 
 interface ServicesViewProps {
-  organizationId?: number
+  organizationId: number
   onRefreshServices?: () => void
 }
 
@@ -127,7 +127,6 @@ export function ServicesView({ organizationId, onRefreshServices }: ServicesView
                   </div>
                 </div>
               </CardHeader>
-
               <CardContent className="flex flex-col flex-1">
                 {/* Descripción con altura fija */}
                 <div className="h-12 mb-4 flex-shrink-0">

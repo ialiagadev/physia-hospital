@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button"
 import { Plus, Edit, Trash2 } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { OrganizationSelector } from "@/components/organization-selector"
 import { useToast } from "@/hooks/use-toast"
+import { useAuth } from "@/app/contexts/auth-context"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,68 +39,36 @@ interface Service {
   updated_at: string
 }
 
-interface Organization {
-  id: number
-  name: string
-}
-
 export default function ServicesPage() {
+  const { userProfile, isLoading: authLoading } = useAuth()
   const [services, setServices] = useState<Service[]>([])
-  const [organizations, setOrganizations] = useState<Organization[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedOrgId, setSelectedOrgId] = useState("all")
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [serviceToDelete, setServiceToDelete] = useState<number | null>(null)
   const { toast } = useToast()
 
-  // Cargar organizaciones
-  useEffect(() => {
-    async function loadOrganizations() {
-      try {
-        const { data, error } = await supabase.from("organizations").select("id, name").order("name")
-
-        if (error) {
-          console.error("Error loading organizations:", error)
-          return
-        }
-
-        setOrganizations(data || [])
-      } catch (error) {
-        console.error("Error loading organizations:", error)
-      }
-    }
-
-    loadOrganizations()
-  }, [])
-
-  // Cargar servicios basados en la organización seleccionada
+  // Cargar servicios de la organización del usuario
   useEffect(() => {
     async function loadServices() {
+      if (authLoading) return
+
+      if (!userProfile?.organization_id) {
+        setLoading(false)
+        return
+      }
+
       setLoading(true)
       try {
-        console.log("🔍 Loading services for organization:", selectedOrgId)
-
-        let query = supabase
+        const { data, error } = await supabase
           .from("services")
           .select("*")
+          .eq("organization_id", userProfile.organization_id)
           .order("sort_order", { ascending: true })
           .order("name", { ascending: true })
 
-        // Filtrar por organización si se ha seleccionado una específica
-        if (selectedOrgId !== "all") {
-          query = query.eq("organization_id", Number.parseInt(selectedOrgId))
-        }
-
-        const { data, error } = await query
-
-        console.log("📊 Services loaded:", data)
-        console.log("❌ Error:", error)
-
         if (error) throw error
-
         setServices(data || [])
       } catch (error) {
-        console.error("Error al cargar servicios:", error)
         toast({
           title: "Error",
           description: "No se pudieron cargar los servicios",
@@ -112,7 +80,7 @@ export default function ServicesPage() {
     }
 
     loadServices()
-  }, [selectedOrgId, toast])
+  }, [userProfile, authLoading, toast])
 
   const handleDeleteClick = (serviceId: number) => {
     setServiceToDelete(serviceId)
@@ -133,7 +101,6 @@ export default function ServicesPage() {
         description: "El servicio ha sido eliminado correctamente",
       })
     } catch (error) {
-      console.error("Error al eliminar el servicio:", error)
       toast({
         title: "Error",
         description: "No se pudo eliminar el servicio",
@@ -154,7 +121,6 @@ export default function ServicesPage() {
     )
   }
 
-
   const formatDuration = (duration: number) => {
     if (duration >= 60) {
       const hours = Math.floor(duration / 60)
@@ -164,9 +130,26 @@ export default function ServicesPage() {
     return `${duration}min`
   }
 
-  const getOrganizationName = (orgId: number) => {
-    const org = organizations.find((o) => o.id === orgId)
-    return org?.name || `Organización ${orgId}`
+  if (authLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          <span className="ml-2">Cargando...</span>
+        </div>
+      </div>
+    )
+  }
+
+  if (!userProfile?.organization_id) {
+    return (
+      <div className="space-y-6">
+        <div className="text-center py-12">
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Sin organización</h3>
+          <p className="text-gray-600">No tienes una organización asignada para gestionar servicios</p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -184,16 +167,12 @@ export default function ServicesPage() {
         </Button>
       </div>
 
-      {/* Selector de organización */}
-      <OrganizationSelector selectedOrgId={selectedOrgId} onSelectOrganization={setSelectedOrgId} className="mb-6" />
-
       <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Nombre</TableHead>
               <TableHead>Categoría</TableHead>
-              <TableHead>Organización</TableHead>
               <TableHead>Duración</TableHead>
               <TableHead>Precio</TableHead>
               <TableHead>IVA</TableHead>
@@ -206,7 +185,7 @@ export default function ServicesPage() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={10} className="h-24 text-center">
+                <TableCell colSpan={9} className="h-24 text-center">
                   <div className="flex items-center justify-center gap-2">
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
                     Cargando servicios...
@@ -230,7 +209,6 @@ export default function ServicesPage() {
                       <span className="text-gray-400">-</span>
                     )}
                   </TableCell>
-                  <TableCell>{getOrganizationName(service.organization_id)}</TableCell>
                   <TableCell>{formatDuration(service.duration)}</TableCell>
                   <TableCell className="font-medium">{formatPrice(service.price)}</TableCell>
                   <TableCell>{service.vat_rate}%</TableCell>
@@ -269,14 +247,10 @@ export default function ServicesPage() {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={10} className="h-24 text-center">
+                <TableCell colSpan={9} className="h-24 text-center">
                   <div className="flex flex-col items-center gap-2">
                     <p className="text-gray-500">No hay servicios registrados</p>
-                    {selectedOrgId !== "all" && (
-                      <p className="text-sm text-gray-400">
-                        Prueba seleccionando "Todas las organizaciones" o crea un nuevo servicio
-                      </p>
-                    )}
+                    <p className="text-sm text-gray-400">Crea tu primer servicio para comenzar</p>
                   </div>
                 </TableCell>
               </TableRow>
