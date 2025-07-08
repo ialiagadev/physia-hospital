@@ -26,10 +26,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Plus, Trash2, Settings } from "lucide-react"
+import { Plus, Trash2, Settings, Percent, Search, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { SignaturePad } from "@/components/signature-pad"
 import { useToast } from "@/hooks/use-toast"
+import { useAuth } from "@/app/contexts/auth-context"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 
 interface Organization {
   id: number
@@ -49,6 +52,7 @@ interface InvoiceLine {
   description: string
   quantity: number
   unit_price: number
+  discount_percentage: number
   vat_rate: number
   irpf_rate: number
   retention_rate: number
@@ -88,30 +92,44 @@ interface Professional {
   active: boolean
 }
 
+interface OriginalInvoice {
+  id: number
+  invoice_number: string
+  issue_date: string
+  total_amount: number
+  client_name: string
+  client_data: any
+  invoice_lines: any[]
+}
+
 export default function NewInvoicePage() {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { toast } = useToast()
+  const { userProfile } = useAuth()
 
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [services, setServices] = useState<Service[]>([])
   const [professionals, setProfessionals] = useState<Professional[]>([])
-  const [existingInvoices, setExistingInvoices] = useState<
-    Array<{ id: number; invoice_number: string; issue_date: string; total_amount: number; client_name: string }>
-  >([])
+  const [existingInvoices, setExistingInvoices] = useState<OriginalInvoice[]>([])
 
   const [selectedOrganization, setSelectedOrganization] = useState<Organization | null>(null)
   const [isNewClient, setIsNewClient] = useState(true)
-  const [selectedClientId, setSelectedClientId] = useState<string>("")
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [serviceDialogOpen, setServiceDialogOpen] = useState(false)
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null)
   const [suggestedInvoiceNumber, setSuggestedInvoiceNumber] = useState("")
   const [isLoadingInitialData, setIsLoadingInitialData] = useState(true)
   const [invoiceNumberConfigOpen, setInvoiceNumberConfigOpen] = useState(false)
-  const [isSavingConfig, setIsSavingConfig] = useState(false)
   const [signature, setSignature] = useState<string | null>(null)
+
+  // Estados para búsqueda de clientes
+  const [clientSearchOpen, setClientSearchOpen] = useState(false)
+  const [clientSearchQuery, setClientSearchQuery] = useState("")
+  const [clientSearchResults, setClientSearchResults] = useState<Client[]>([])
+  const [isSearchingClients, setIsSearchingClients] = useState(false)
 
   const [invoiceType, setInvoiceType] = useState<InvoiceType>("normal")
 
@@ -127,6 +145,7 @@ export default function NewInvoicePage() {
       description: "",
       quantity: 1,
       unit_price: 0,
+      discount_percentage: 0,
       vat_rate: 21,
       irpf_rate: 0,
       retention_rate: 0,
@@ -134,7 +153,6 @@ export default function NewInvoicePage() {
       professional_id: null,
     },
   ])
-  const [debugInfo, setDebugInfo] = useState<string | null>(null)
 
   const [formData, setFormData] = useState({
     organization_id: "",
@@ -157,27 +175,42 @@ export default function NewInvoicePage() {
     },
   })
 
-  const baseAmount = invoiceLines.reduce((sum, line) => {
-    const lineAmount = line.line_amount || 0
-    return sum + lineAmount
+  // Calcular totales considerando descuentos por línea
+  const subtotalAmount = invoiceLines.reduce((sum, line) => {
+    const lineSubtotal = line.quantity * line.unit_price
+    return sum + lineSubtotal
   }, 0)
 
+  const totalDiscountAmount = invoiceLines.reduce((sum, line) => {
+    const lineSubtotal = line.quantity * line.unit_price
+    const lineDiscount = (lineSubtotal * line.discount_percentage) / 100
+    return sum + lineDiscount
+  }, 0)
+
+  const baseAmount = subtotalAmount - totalDiscountAmount
+
   const vatAmount = invoiceLines.reduce((sum, line) => {
-    const lineAmount = line.line_amount || 0
-    const vatRate = line.vat_rate || 0
-    return sum + (lineAmount * vatRate) / 100
+    const lineSubtotal = line.quantity * line.unit_price
+    const lineDiscount = (lineSubtotal * line.discount_percentage) / 100
+    const lineBase = lineSubtotal - lineDiscount
+    const lineVat = (lineBase * line.vat_rate) / 100
+    return sum + lineVat
   }, 0)
 
   const irpfAmount = invoiceLines.reduce((sum, line) => {
-    const lineAmount = line.line_amount || 0
-    const irpfRate = line.irpf_rate || 0
-    return sum + (lineAmount * irpfRate) / 100
+    const lineSubtotal = line.quantity * line.unit_price
+    const lineDiscount = (lineSubtotal * line.discount_percentage) / 100
+    const lineBase = lineSubtotal - lineDiscount
+    const lineIrpf = (lineBase * line.irpf_rate) / 100
+    return sum + lineIrpf
   }, 0)
 
   const retentionAmount = invoiceLines.reduce((sum, line) => {
-    const lineAmount = line.line_amount || 0
-    const retentionRate = line.retention_rate || 0
-    return sum + (lineAmount * retentionRate) / 100
+    const lineSubtotal = line.quantity * line.unit_price
+    const lineDiscount = (lineSubtotal * line.discount_percentage) / 100
+    const lineBase = lineSubtotal - lineDiscount
+    const lineRetention = (lineBase * line.retention_rate) / 100
+    return sum + lineRetention
   }, 0)
 
   const totalAmount = baseAmount + vatAmount - irpfAmount - retentionAmount
@@ -200,7 +233,15 @@ export default function NewInvoicePage() {
 
         setOrganizations(orgsData)
 
-        const firstOrg = orgsData[0]
+        // Si el usuario tiene una organización asignada, seleccionarla por defecto
+        let firstOrg = orgsData[0]
+        if (userProfile && userProfile.organization_id) {
+          const userOrg = orgsData.find((org) => org.id === userProfile.organization_id)
+          if (userOrg) {
+            firstOrg = userOrg
+          }
+        }
+
         setFormData((prev) => ({ ...prev, organization_id: firstOrg.id.toString() }))
         setSelectedOrganization(firstOrg)
 
@@ -224,7 +265,7 @@ export default function NewInvoicePage() {
     }
 
     fetchData()
-  }, [])
+  }, [userProfile])
 
   const fetchClients = async (organizationId: number) => {
     try {
@@ -240,8 +281,94 @@ export default function NewInvoicePage() {
 
       setClients(clientsData || [])
     } catch (err) {
-      // Error handled silently
+      console.error("Error fetching clients:", err)
     }
+  }
+
+  const searchClients = async (query: string) => {
+    if (!query.trim() || !selectedOrganization) {
+      setClientSearchResults([])
+      return
+    }
+
+    setIsSearchingClients(true)
+    try {
+      const searchTerm = `%${query.trim()}%`
+      const { data, error } = await supabase
+        .from("clients")
+        .select("*")
+        .eq("organization_id", selectedOrganization.id)
+        .or(`name.ilike.${searchTerm},tax_id.ilike.${searchTerm},email.ilike.${searchTerm},phone.ilike.${searchTerm}`)
+        .order("name", { ascending: true })
+        .limit(10)
+
+      if (error) {
+        console.error("Error searching clients:", error)
+        return
+      }
+
+      setClientSearchResults(data || [])
+    } catch (error) {
+      console.error("Error in client search:", error)
+    } finally {
+      setIsSearchingClients(false)
+    }
+  }
+
+  const handleClientSearch = (query: string) => {
+    setClientSearchQuery(query)
+    searchClients(query)
+  }
+
+  const selectClient = (client: Client) => {
+    setSelectedClient(client)
+    setIsNewClient(false)
+    setClientSearchOpen(false)
+    setClientSearchQuery(client.name)
+
+    // Llenar los datos del formulario con los datos del cliente
+    setFormData((prev) => ({
+      ...prev,
+      client_name: client.name,
+      client_tax_id: client.tax_id,
+      client_address: client.address,
+      client_postal_code: client.postal_code,
+      client_city: client.city,
+      client_province: client.province,
+      client_country: client.country || "España",
+      client_email: client.email || "",
+      client_phone: client.phone || "",
+      client_type: client.client_type,
+      dir3_codes: client.dir3_codes || {
+        CentroGestor: "",
+        UnidadTramitadora: "",
+        OficinaContable: "",
+      },
+    }))
+  }
+
+  const clearClientSelection = () => {
+    setSelectedClient(null)
+    setClientSearchQuery("")
+    setIsNewClient(true)
+    setFormData((prev) => ({
+      ...prev,
+      client_name: "",
+      client_tax_id: "",
+      client_address: "",
+      client_postal_code: "",
+      client_city: "",
+      client_province: "",
+      client_country: "España",
+      client_email: "",
+      client_phone: "",
+      client_type: "private",
+      dir3_codes: {
+        CentroGestor: "",
+        UnidadTramitadora: "",
+        OficinaContable: "",
+      },
+    }))
   }
 
   const fetchServices = async (organizationId: number) => {
@@ -259,7 +386,7 @@ export default function NewInvoicePage() {
 
       setServices(servicesData || [])
     } catch (err) {
-      // Error handled silently
+      console.error("Error fetching services:", err)
     }
   }
 
@@ -278,12 +405,13 @@ export default function NewInvoicePage() {
 
       setProfessionals(professionalsData || [])
     } catch (err) {
-      // Error handled silently
+      console.error("Error fetching professionals:", err)
     }
   }
 
   const fetchExistingInvoices = async (organizationId: number) => {
     try {
+      // Obtener facturas con información más completa del cliente
       const { data: invoicesData, error: invoicesError } = await supabase
         .from("invoices")
         .select(`
@@ -291,42 +419,187 @@ export default function NewInvoicePage() {
         invoice_number,
         issue_date,
         total_amount,
-        clients(name)
+        client_id,
+        clients!inner (
+          id,
+          name,
+          tax_id,
+          address,
+          postal_code,
+          city,
+          province,
+          country,
+          email,
+          phone,
+          client_type,
+          dir3_codes
+        )
       `)
         .eq("organization_id", organizationId)
         .eq("invoice_type", "normal")
         .order("issue_date", { ascending: false })
 
       if (invoicesError) {
+        console.error("Error fetching invoices:", invoicesError)
         throw new Error(`Error al obtener las facturas: ${invoicesError.message}`)
       }
 
-      const formattedInvoices = ((invoicesData as any[]) || []).map((invoice) => {
-        let clientName = "Cliente no encontrado"
+      if (!invoicesData || invoicesData.length === 0) {
+        setExistingInvoices([])
+        return
+      }
 
-        if (invoice.clients) {
-          if (Array.isArray(invoice.clients)) {
-            clientName =
-              invoice.clients.length > 0 ? invoice.clients[0]?.name || "Cliente no encontrado" : "Cliente no encontrado"
-          } else if (typeof invoice.clients === "object" && invoice.clients.name) {
-            clientName = invoice.clients.name
+      // Procesar los datos y obtener las líneas de cada factura
+      const formattedInvoices = await Promise.all(
+        invoicesData.map(async (invoice: any) => {
+          let clientName = "Cliente no encontrado"
+          let clientData = null
+
+          // Manejar la relación con clients
+          if (invoice.clients) {
+            const client = Array.isArray(invoice.clients) ? invoice.clients[0] : invoice.clients
+            if (client) {
+              clientName = client.name || "Cliente no encontrado"
+              clientData = client
+            }
           }
-        }
 
-        return {
-          id: invoice.id,
-          invoice_number: invoice.invoice_number,
-          issue_date: invoice.issue_date,
-          total_amount: invoice.total_amount,
-          client_name: clientName,
-        }
-      })
+          // Obtener líneas de factura para cada factura
+          const { data: linesData, error: linesError } = await supabase
+            .from("invoice_lines")
+            .select("*")
+            .eq("invoice_id", invoice.id)
+
+          if (linesError) {
+            console.error("Error fetching invoice lines:", linesError)
+          }
+
+          return {
+            id: invoice.id,
+            invoice_number: invoice.invoice_number,
+            issue_date: invoice.issue_date,
+            total_amount: invoice.total_amount,
+            client_name: clientName,
+            client_data: clientData,
+            invoice_lines: linesData || [],
+          }
+        }),
+      )
 
       setExistingInvoices(formattedInvoices)
     } catch (err) {
+      console.error("Error in fetchExistingInvoices:", err)
       toast({
         title: "Error al cargar facturas",
         description: err instanceof Error ? err.message : "Error al cargar las facturas",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const loadOriginalInvoiceData = async (invoiceNumber: string) => {
+    const originalInvoice = existingInvoices.find((inv) => inv.invoice_number === invoiceNumber)
+
+    if (!originalInvoice) {
+      toast({
+        title: "Error",
+        description: "No se pudo encontrar la factura original",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      // Obtener los datos completos de la factura original incluyendo cliente
+      const { data: fullInvoiceData, error: invoiceError } = await supabase
+        .from("invoices")
+        .select(`
+        *,
+        clients (
+          id,
+          name,
+          tax_id,
+          address,
+          postal_code,
+          city,
+          province,
+          country,
+          email,
+          phone,
+          client_type,
+          dir3_codes
+        )
+      `)
+        .eq("invoice_number", invoiceNumber)
+        .eq("organization_id", selectedOrganization?.id)
+        .single()
+
+      if (invoiceError) {
+        throw new Error(`Error al obtener la factura original: ${invoiceError.message}`)
+      }
+
+      if (!fullInvoiceData) {
+        throw new Error("No se encontró la factura original")
+      }
+
+      // Cargar datos del cliente si existe
+      if (fullInvoiceData.clients) {
+        const clientData = Array.isArray(fullInvoiceData.clients) ? fullInvoiceData.clients[0] : fullInvoiceData.clients
+
+        if (clientData) {
+          // Establecer cliente existente
+          setSelectedClient(clientData)
+          setIsNewClient(false)
+          setClientSearchQuery(clientData.name)
+
+          // Llenar formulario con datos del cliente
+          setFormData((prev) => ({
+            ...prev,
+            client_name: clientData.name || "",
+            client_tax_id: clientData.tax_id || "",
+            client_address: clientData.address || "",
+            client_postal_code: clientData.postal_code || "",
+            client_city: clientData.city || "",
+            client_province: clientData.province || "",
+            client_country: clientData.country || "España",
+            client_email: clientData.email || "",
+            client_phone: clientData.phone || "",
+            client_type: clientData.client_type || "private",
+            dir3_codes: clientData.dir3_codes || {
+              CentroGestor: "",
+              UnidadTramitadora: "",
+              OficinaContable: "",
+            },
+          }))
+        }
+      }
+
+      // Cargar líneas de factura si existen
+      if (originalInvoice.invoice_lines && originalInvoice.invoice_lines.length > 0) {
+        const originalLines = originalInvoice.invoice_lines.map((line: any) => ({
+          id: crypto.randomUUID(),
+          description: line.description || "",
+          quantity: line.quantity || 1,
+          unit_price: line.unit_price || 0,
+          discount_percentage: line.discount_percentage || 0,
+          vat_rate: line.vat_rate || 21,
+          irpf_rate: line.irpf_rate || 0,
+          retention_rate: line.retention_rate || 0,
+          line_amount: line.line_amount || 0,
+          professional_id: line.professional_id ? line.professional_id.toString() : null,
+        }))
+        setInvoiceLines(originalLines)
+      }
+
+      toast({
+        title: "Datos cargados",
+        description: "Se han cargado los datos del cliente y las líneas de la factura original",
+      })
+    } catch (error) {
+      console.error("Error loading original invoice data:", error)
+      toast({
+        title: "Error al cargar datos",
+        description: error instanceof Error ? error.message : "Error al cargar los datos de la factura original",
         variant: "destructive",
       })
     }
@@ -363,34 +636,6 @@ export default function NewInvoicePage() {
     updateSuggestedNumber()
   }, [invoiceType, selectedOrganization])
 
-  const handleClientSelect = (clientId: string) => {
-    setSelectedClientId(clientId)
-
-    if (clientId) {
-      const selectedClient = clients.find((c) => c.id.toString() === clientId)
-      if (selectedClient) {
-        setFormData((prev) => ({
-          ...prev,
-          client_name: selectedClient.name,
-          client_tax_id: selectedClient.tax_id,
-          client_address: selectedClient.address,
-          client_postal_code: selectedClient.postal_code,
-          client_city: selectedClient.city,
-          client_province: selectedClient.province,
-          client_country: selectedClient.country || "España",
-          client_email: selectedClient.email || "",
-          client_phone: selectedClient.phone || "",
-          client_type: selectedClient.client_type,
-          dir3_codes: selectedClient.dir3_codes || {
-            CentroGestor: "",
-            UnidadTramitadora: "",
-            OficinaContable: "",
-          },
-        }))
-      }
-    }
-  }
-
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
     setFormData((prev) => ({ ...prev, [name]: value }))
@@ -408,16 +653,21 @@ export default function NewInvoicePage() {
     }))
   }
 
+  const calculateLineAmount = (line: InvoiceLine) => {
+    const subtotal = line.quantity * line.unit_price
+    const discount = (subtotal * line.discount_percentage) / 100
+    return subtotal - discount
+  }
+
   const handleLineChange = (id: string, field: string, value: string | number) => {
     setInvoiceLines((prev) =>
       prev.map((line) => {
         if (line.id === id) {
           const updatedLine = { ...line, [field]: value }
 
-          if (field === "quantity" || field === "unit_price") {
-            const quantity = Number.parseFloat(updatedLine.quantity.toString()) || 0
-            const unitPrice = Number.parseFloat(updatedLine.unit_price.toString()) || 0
-            updatedLine.line_amount = quantity * unitPrice
+          // Recalcular el importe de línea cuando cambie cantidad, precio unitario o descuento
+          if (field === "quantity" || field === "unit_price" || field === "discount_percentage") {
+            updatedLine.line_amount = calculateLineAmount(updatedLine)
           }
 
           return updatedLine
@@ -435,6 +685,7 @@ export default function NewInvoicePage() {
         description: "",
         quantity: 1,
         unit_price: 0,
+        discount_percentage: 0,
         vat_rate: 21,
         irpf_rate: 0,
         retention_rate: 0,
@@ -467,8 +718,8 @@ export default function NewInvoicePage() {
               vat_rate: service.vat_rate,
               irpf_rate: service.irpf_rate,
               retention_rate: service.retention_rate,
-              line_amount: line.quantity * service.price,
             }
+            updatedLine.line_amount = calculateLineAmount(updatedLine)
             return updatedLine
           }
           return line
@@ -483,7 +734,7 @@ export default function NewInvoicePage() {
     setInvoiceLines((prev) =>
       prev.map((line) => {
         if (line.id === lineId) {
-          return { ...line, professional_id: professionalId }
+          return { ...line, professional_id: professionalId === "none" ? null : professionalId }
         }
         return line
       }),
@@ -505,11 +756,17 @@ export default function NewInvoicePage() {
     }
   }
 
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat("es-ES", {
+      style: "currency",
+      currency: "EUR",
+    }).format(amount)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
-    setDebugInfo(null)
 
     try {
       if (!selectedOrganization) {
@@ -518,6 +775,10 @@ export default function NewInvoicePage() {
 
       if (!formData.client_name || !formData.client_tax_id) {
         throw new Error("Debes introducir al menos el nombre y CIF/NIF del cliente")
+      }
+
+      if (!userProfile || !userProfile.id) {
+        throw new Error("No se pudo obtener la información del usuario actual")
       }
 
       const { data: orgData, error: orgError } = await supabase
@@ -558,12 +819,12 @@ export default function NewInvoicePage() {
           .single()
 
         if (clientError) {
-          // Error handled silently
+          console.error("Error creating client:", clientError)
         } else if (newClient) {
           clientId = newClient.id
         }
-      } else {
-        clientId = selectedClientId ? Number.parseInt(selectedClientId) : null
+      } else if (selectedClient) {
+        clientId = selectedClient.id
       }
 
       const clientInfoText = `Cliente: ${formData.client_name}, CIF/NIF: ${formData.client_tax_id}, Dirección: ${formData.client_address}, ${formData.client_postal_code} ${formData.client_city}, ${formData.client_province}`
@@ -577,15 +838,10 @@ export default function NewInvoicePage() {
       if (signature) {
         try {
           const timestamp = Date.now()
-          const organizationId = formData.organization_id
           const path = `signatures/${invoiceNumberFormatted}_${timestamp}.png`
           signatureUrl = await saveBase64ImageToStorage(signature, path, Number.parseInt(formData.organization_id))
-
-          if (!signatureUrl) {
-            // Signature save failed silently
-          }
         } catch (error) {
-          // Error handled silently
+          console.error("Error saving signature:", error)
         }
       }
 
@@ -598,6 +854,7 @@ export default function NewInvoicePage() {
         invoice_type: invoiceType,
         status: "draft",
         base_amount: baseAmount,
+        discount_amount: totalDiscountAmount,
         vat_amount: vatAmount,
         irpf_amount: irpfAmount,
         retention_amount: retentionAmount,
@@ -656,12 +913,6 @@ export default function NewInvoicePage() {
           a.click()
 
           setTimeout(() => URL.revokeObjectURL(url), 100)
-
-          if (pdfUrl) {
-            // PDF saved successfully
-          } else {
-            // PDF save failed but downloaded locally
-          }
         } catch (pdfError) {
           const url = URL.createObjectURL(pdfBlob)
           const a = document.createElement("a")
@@ -705,7 +956,7 @@ export default function NewInvoicePage() {
         .eq("id", selectedOrganization.id)
 
       if (updateOrgError) {
-        // Error handled silently
+        console.error("Error updating organization:", updateOrgError)
       }
 
       let originalInvoiceId: number | null = null
@@ -731,7 +982,14 @@ export default function NewInvoicePage() {
         throw new Error("Debes seleccionar una factura original para rectificar")
       }
 
-      supabase
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) {
+        throw new Error("Usuario no autenticado")
+      }
+
+      const { data: invoiceData, error: invoiceError } = await supabase
         .from("invoices")
         .insert({
           organization_id: Number.parseInt(formData.organization_id),
@@ -745,10 +1003,12 @@ export default function NewInvoicePage() {
           irpf_amount: irpfAmount,
           retention_amount: retentionAmount,
           total_amount: totalAmount,
+          discount_amount: totalDiscountAmount,
           notes: fullNotes,
           signature: signature,
           signature_url: signatureUrl,
           pdf_url: pdfUrl,
+          created_by: user.id,
           ...(invoiceType === "rectificativa" && {
             original_invoice_id: originalInvoiceId,
             rectification_reason: rectificativeData.rectification_reason,
@@ -756,59 +1016,46 @@ export default function NewInvoicePage() {
           }),
         })
         .select()
-        .then(({ data: invoiceData, error: invoiceError }) => {
-          if (invoiceError) {
-            toast({
-              title: "Error al guardar la factura",
-              description: "Se ha generado el PDF pero no se pudo guardar la factura en la base de datos.",
-              variant: "destructive",
-            })
-            return
-          }
+        .single()
 
-          if (!invoiceData || invoiceData.length === 0) {
-            toast({
-              title: "Error al guardar la factura",
-              description: "Se ha generado el PDF pero no se pudo guardar la factura en la base de datos.",
-              variant: "destructive",
-            })
-            return
-          }
+      if (invoiceError) {
+        throw new Error(`Error al guardar la factura: ${invoiceError.message}`)
+      }
 
-          const dbInvoice = invoiceData[0]
+      if (!invoiceData) {
+        throw new Error("No se pudo guardar la factura")
+      }
 
-          const invoiceLines_db = invoiceLines.map((line) => ({
-            invoice_id: dbInvoice.id,
-            description: line.description,
-            quantity: line.quantity,
-            unit_price: line.unit_price,
-            vat_rate: line.vat_rate,
-            irpf_rate: line.irpf_rate,
-            retention_rate: line.retention_rate,
-            line_amount: line.line_amount,
-            professional_id: line.professional_id ? Number.parseInt(line.professional_id) : null,
-          }))
+      const invoiceLines_db = invoiceLines.map((line) => ({
+        invoice_id: invoiceData.id,
+        description: line.description,
+        quantity: line.quantity,
+        unit_price: line.unit_price,
+        discount_percentage: line.discount_percentage,
+        vat_rate: line.vat_rate,
+        irpf_rate: line.irpf_rate,
+        retention_rate: line.retention_rate,
+        line_amount: line.line_amount,
+        professional_id: line.professional_id ? Number.parseInt(line.professional_id) : null,
+      }))
 
-          supabase
-            .from("invoice_lines")
-            .insert(invoiceLines_db)
-            .then(({ error: linesError }) => {
-              if (linesError) {
-                toast({
-                  title: "Error al guardar las líneas de factura",
-                  description: "Se ha generado el PDF pero no se pudieron guardar todas las líneas de la factura.",
-                  variant: "destructive",
-                })
-              } else {
-                toast({
-                  title: "Factura creada correctamente",
-                  description: pdfUrl
-                    ? "La factura se ha creado, el PDF se ha descargado y guardado en el servidor."
-                    : "La factura se ha creado y el PDF se ha descargado.",
-                })
-              }
-            })
+      const { error: linesError } = await supabase.from("invoice_lines").insert(invoiceLines_db)
+
+      if (linesError) {
+        console.error("Error saving invoice lines:", linesError)
+        toast({
+          title: "Error al guardar las líneas de factura",
+          description: "Se ha generado el PDF pero no se pudieron guardar todas las líneas de la factura.",
+          variant: "destructive",
         })
+      } else {
+        toast({
+          title: "Factura creada correctamente",
+          description: pdfUrl
+            ? "La factura se ha creado, el PDF se ha descargado y guardado en el servidor."
+            : "La factura se ha creado y el PDF se ha descargado.",
+        })
+      }
 
       router.push("/dashboard/facturacion/invoices")
     } catch (err) {
@@ -847,12 +1094,6 @@ export default function NewInvoicePage() {
               {error && (
                 <Alert variant="destructive">
                   <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-
-              {debugInfo && (
-                <Alert>
-                  <AlertDescription>{debugInfo}</AlertDescription>
                 </Alert>
               )}
 
@@ -934,12 +1175,13 @@ export default function NewInvoicePage() {
                     <Label htmlFor="original_invoice_number">Factura Original a Rectificar *</Label>
                     <Select
                       value={rectificativeData.original_invoice_number}
-                      onValueChange={(value) =>
+                      onValueChange={(value) => {
                         setRectificativeData((prev) => ({
                           ...prev,
                           original_invoice_number: value,
                         }))
-                      }
+                        loadOriginalInvoiceData(value)
+                      }}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Selecciona la factura a rectificar" />
@@ -951,6 +1193,7 @@ export default function NewInvoicePage() {
                               <span className="font-medium">{invoice.invoice_number}</span>
                               <span className="text-sm text-muted-foreground">
                                 {new Date(invoice.issue_date).toLocaleDateString()} - {invoice.total_amount.toFixed(2)}€
+                                - {invoice.client_name}
                               </span>
                             </div>
                           </SelectItem>
@@ -1025,10 +1268,11 @@ export default function NewInvoicePage() {
               </div>
             </CardContent>
           </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>Datos del Cliente</CardTitle>
-              <CardDescription>Selecciona un cliente existente o crea uno nuevo</CardDescription>
+              <CardDescription>Busca un cliente existente o crea uno nuevo</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center space-x-2">
@@ -1038,19 +1282,55 @@ export default function NewInvoicePage() {
 
               {!isNewClient && (
                 <div className="space-y-2">
-                  <Label htmlFor="client_id">Seleccionar Cliente</Label>
-                  <Select value={selectedClientId} onValueChange={handleClientSelect}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecciona un cliente" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {clients.map((client) => (
-                        <SelectItem key={client.id} value={client.id.toString()}>
-                          {client.name} - {client.tax_id}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label>Buscar Cliente</Label>
+                  <Popover open={clientSearchOpen} onOpenChange={setClientSearchOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={clientSearchOpen}
+                        className="w-full justify-between bg-transparent"
+                      >
+                        {selectedClient ? selectedClient.name : "Buscar cliente..."}
+                        <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-full p-0">
+                      <Command>
+                        <CommandInput
+                          placeholder="Buscar por nombre, CIF, email o teléfono..."
+                          value={clientSearchQuery}
+                          onValueChange={handleClientSearch}
+                        />
+                        <CommandList>
+                          <CommandEmpty>
+                            {isSearchingClients ? "Buscando..." : "No se encontraron clientes"}
+                          </CommandEmpty>
+                          <CommandGroup>
+                            {clientSearchResults.map((client) => (
+                              <CommandItem key={client.id} value={client.name} onSelect={() => selectClient(client)}>
+                                <div className="flex flex-col">
+                                  <span className="font-medium">{client.name}</span>
+                                  <span className="text-sm text-muted-foreground">
+                                    {client.tax_id} - {client.email || client.phone || "Sin contacto"}
+                                  </span>
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+
+                  {selectedClient && (
+                    <div className="flex items-center justify-between p-2 bg-muted rounded-md">
+                      <span className="text-sm">Cliente seleccionado: {selectedClient.name}</span>
+                      <Button type="button" variant="ghost" size="sm" onClick={clearClientSelection}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1062,7 +1342,7 @@ export default function NewInvoicePage() {
                   value={formData.client_name}
                   onChange={handleChange}
                   required
-                  readOnly={!isNewClient && selectedClientId !== ""}
+                  readOnly={!isNewClient && selectedClient !== null}
                 />
               </div>
 
@@ -1074,7 +1354,7 @@ export default function NewInvoicePage() {
                   value={formData.client_tax_id}
                   onChange={handleChange}
                   required
-                  readOnly={!isNewClient && selectedClientId !== ""}
+                  readOnly={!isNewClient && selectedClient !== null}
                 />
               </div>
 
@@ -1086,7 +1366,7 @@ export default function NewInvoicePage() {
                   value={formData.client_address}
                   onChange={handleChange}
                   required
-                  readOnly={!isNewClient && selectedClientId !== ""}
+                  readOnly={!isNewClient && selectedClient !== null}
                 />
               </div>
 
@@ -1099,7 +1379,7 @@ export default function NewInvoicePage() {
                     value={formData.client_postal_code}
                     onChange={handleChange}
                     required
-                    readOnly={!isNewClient && selectedClientId !== ""}
+                    readOnly={!isNewClient && selectedClient !== null}
                   />
                 </div>
 
@@ -1111,7 +1391,7 @@ export default function NewInvoicePage() {
                     value={formData.client_city}
                     onChange={handleChange}
                     required
-                    readOnly={!isNewClient && selectedClientId !== ""}
+                    readOnly={!isNewClient && selectedClient !== null}
                   />
                 </div>
               </div>
@@ -1125,7 +1405,7 @@ export default function NewInvoicePage() {
                     value={formData.client_province}
                     onChange={handleChange}
                     required
-                    readOnly={!isNewClient && selectedClientId !== ""}
+                    readOnly={!isNewClient && selectedClient !== null}
                   />
                 </div>
 
@@ -1137,7 +1417,7 @@ export default function NewInvoicePage() {
                     value={formData.client_country}
                     onChange={handleChange}
                     required
-                    readOnly={!isNewClient && selectedClientId !== ""}
+                    readOnly={!isNewClient && selectedClient !== null}
                   />
                 </div>
               </div>
@@ -1151,7 +1431,7 @@ export default function NewInvoicePage() {
                     type="email"
                     value={formData.client_email}
                     onChange={handleChange}
-                    readOnly={!isNewClient && selectedClientId !== ""}
+                    readOnly={!isNewClient && selectedClient !== null}
                   />
                 </div>
 
@@ -1162,7 +1442,7 @@ export default function NewInvoicePage() {
                     name="client_phone"
                     value={formData.client_phone}
                     onChange={handleChange}
-                    readOnly={!isNewClient && selectedClientId !== ""}
+                    readOnly={!isNewClient && selectedClient !== null}
                   />
                 </div>
               </div>
@@ -1226,6 +1506,7 @@ export default function NewInvoicePage() {
               )}
             </CardContent>
           </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>Líneas de Factura</CardTitle>
@@ -1258,7 +1539,7 @@ export default function NewInvoicePage() {
                           <Button
                             type="button"
                             variant="outline"
-                            className="w-full justify-start"
+                            className="w-full justify-start bg-transparent"
                             onClick={() => openServiceDialog(line.id)}
                           >
                             {line.description ? line.description : "Seleccionar servicio"}
@@ -1269,8 +1550,8 @@ export default function NewInvoicePage() {
                       <div className="space-y-2">
                         <Label htmlFor={`professional-${line.id}`}>Profesional (opcional)</Label>
                         <Select
-                          value={line.professional_id || ""}
-                          onValueChange={(value) => handleProfessionalSelect(line.id, value === "" ? null : value)}
+                          value={line.professional_id || "none"}
+                          onValueChange={(value) => handleProfessionalSelect(line.id, value)}
                         >
                           <SelectTrigger>
                             <SelectValue placeholder="Seleccionar profesional" />
@@ -1287,7 +1568,7 @@ export default function NewInvoicePage() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor={`description-${line.id}`}>Descripción</Label>
                         <Input
@@ -1325,6 +1606,24 @@ export default function NewInvoicePage() {
                             handleLineChange(line.id, "unit_price", Number.parseFloat(e.target.value) || 0)
                           }
                           required
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor={`discount_percentage-${line.id}`} className="flex items-center gap-1">
+                          <Percent className="h-3 w-3" />
+                          Descuento (%)
+                        </Label>
+                        <Input
+                          id={`discount_percentage-${line.id}`}
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          value={line.discount_percentage}
+                          onChange={(e) =>
+                            handleLineChange(line.id, "discount_percentage", Number.parseFloat(e.target.value) || 0)
+                          }
                         />
                       </div>
                     </div>
@@ -1374,19 +1673,29 @@ export default function NewInvoicePage() {
                       </div>
                     </div>
 
-                    <div className="mt-4 text-right">
-                      <p className="font-medium">Importe: {line.line_amount.toFixed(2)} €</p>
+                    <div className="mt-4 text-right space-y-1">
+                      <div className="text-sm text-muted-foreground">
+                        Subtotal: {(line.quantity * line.unit_price).toFixed(2)} €
+                      </div>
+                      {line.discount_percentage > 0 && (
+                        <div className="text-sm text-red-600">
+                          Descuento ({line.discount_percentage}%): -
+                          {((line.quantity * line.unit_price * line.discount_percentage) / 100).toFixed(2)} €
+                        </div>
+                      )}
+                      <div className="font-medium">Importe: {line.line_amount.toFixed(2)} €</div>
                     </div>
                   </div>
                 ))}
 
-                <Button type="button" variant="outline" onClick={addLine} className="w-full">
+                <Button type="button" variant="outline" onClick={addLine} className="w-full bg-transparent">
                   <Plus className="mr-2 h-4 w-4" />
                   Añadir Línea
                 </Button>
               </div>
             </CardContent>
           </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>Resumen de Totales</CardTitle>
@@ -1394,6 +1703,16 @@ export default function NewInvoicePage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span>Subtotal:</span>
+                  <span>{subtotalAmount.toFixed(2)} €</span>
+                </div>
+                {totalDiscountAmount > 0 && (
+                  <div className="flex justify-between text-red-600">
+                    <span>Descuentos totales:</span>
+                    <span>-{totalDiscountAmount.toFixed(2)} €</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span>Base imponible:</span>
                   <span>{baseAmount.toFixed(2)} €</span>
@@ -1422,6 +1741,7 @@ export default function NewInvoicePage() {
               </div>
             </CardContent>
           </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>Firma Digital</CardTitle>
@@ -1431,6 +1751,7 @@ export default function NewInvoicePage() {
               <SignaturePad onSignatureChange={handleSignatureChange} width={400} height={200} />
             </CardContent>
           </Card>
+
           <Dialog open={serviceDialogOpen} onOpenChange={setServiceDialogOpen}>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
@@ -1447,29 +1768,32 @@ export default function NewInvoicePage() {
                         onClick={() => applyServiceToLine(service)}
                       >
                         <div>
-                          <p className="font-medium">{service.name}</p>
+                          <h4 className="font-medium">{service.name}</h4>
                           {service.description && (
                             <p className="text-sm text-muted-foreground">{service.description}</p>
                           )}
-                          <p className="text-sm">
+                          <p className="text-sm text-muted-foreground">
                             IVA: {service.vat_rate}% | IRPF: {service.irpf_rate}% | Retención: {service.retention_rate}%
                           </p>
                         </div>
-                        <p className="font-medium">{service.price.toFixed(2)} €</p>
+                        <div className="text-right">
+                          <p className="font-medium">{service.price.toFixed(2)} €</p>
+                        </div>
                       </div>
                     ))
                   ) : (
-                    <p className="text-center py-4">No hay servicios disponibles</p>
+                    <p className="text-center text-muted-foreground py-4">No hay servicios disponibles</p>
                   )}
                 </div>
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setServiceDialogOpen(false)}>
+                <Button type="button" variant="outline" onClick={() => setServiceDialogOpen(false)}>
                   Cancelar
                 </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
           <InvoiceNumberConfigModal
             open={invoiceNumberConfigOpen}
             onOpenChange={setInvoiceNumberConfigOpen}
@@ -1477,19 +1801,15 @@ export default function NewInvoicePage() {
             invoiceType={invoiceType}
             onConfigSaved={handleConfigSaved}
           />
-        </div>
 
-        <div className="mt-6 flex justify-end">
-          <Button type="submit" disabled={isLoading} className="w-full md:w-auto">
-            {isLoading ? (
-              <>
-                <span className="mr-2">Guardando...</span>
-                <span className="animate-spin">⏳</span>
-              </>
-            ) : (
-              "Guardar Factura"
-            )}
-          </Button>
+          <div className="flex justify-end space-x-4">
+            <Button type="button" variant="outline" onClick={() => router.back()}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={isLoading}>
+              {isLoading ? "Creando..." : "Crear Factura"}
+            </Button>
+          </div>
         </div>
       </form>
     </div>
