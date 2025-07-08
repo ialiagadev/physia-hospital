@@ -35,7 +35,7 @@ interface HorarioViewDynamicProps {
   vacationRequests?: any[]
   isUserOnVacationDate?: (userId: string, date: Date | string) => boolean
   getUserVacationOnDate?: (userId: string, date: Date | string) => any
-  workSchedules?: WorkSchedule[]
+  workSchedules?: WorkSchedule[] // DATOS DEL SISTEMA NUEVO
 }
 
 const getColorProfesional = (profesional: Profesional) => {
@@ -82,12 +82,14 @@ const normalizeTimeFormat = (time: string): string => {
   return time
 }
 
+// FUNCIÓN SIMPLIFICADA - SOLO SISTEMA NUEVO
 const getUserWorkSchedulesForDay = (userId: string, dayOfWeek: number, workSchedules: WorkSchedule[]) => {
   return workSchedules.filter(
     (schedule) => schedule.user_id === userId && schedule.day_of_week === dayOfWeek && schedule.is_active,
   )
 }
 
+// FUNCIÓN SIMPLIFICADA - SOLO SISTEMA NUEVO
 const isTimeInBreak = (timeInMinutes: number, userSchedules: WorkSchedule[]) => {
   return userSchedules.some((schedule) => {
     return schedule.breaks?.some((breakItem) => {
@@ -113,7 +115,7 @@ export function HorarioViewDynamic({
   vacationRequests = [],
   isUserOnVacationDate = () => false,
   getUserVacationOnDate = () => null,
-  workSchedules = [],
+  workSchedules = [], // SOLO SISTEMA NUEVO
 }: HorarioViewDynamicProps) {
   const [draggedCita, setDraggedCita] = useState<Cita | null>(null)
   const [dragOverProfesional, setDragOverProfesional] = useState<number | null>(null)
@@ -218,7 +220,9 @@ export function HorarioViewDynamic({
     return minutesToTime(minutosAjustados)
   }
 
+  // FUNCIÓN SIMPLIFICADA - SOLO SISTEMA NUEVO
   const puedeCrearCitaEnHora = (profesionalId: number, hora: string): boolean => {
+    // Verificar vacaciones primero
     if (isProfessionalOnVacation(profesionalId)) {
       return false
     }
@@ -229,12 +233,15 @@ export function HorarioViewDynamic({
     const normalizedTime = normalizeTimeFormat(hora)
     const timeInMinutes = timeToMinutes(normalizedTime)
 
+    // Verificar si está en horario de trabajo básico
     if (!isUserWorkingAt(user, dayOfWeek, timeInMinutes)) {
       return false
     }
 
+    // Obtener horarios del usuario para este día - SOLO SISTEMA NUEVO
     const userSchedules = getUserWorkSchedulesForDay(user.id, dayOfWeek, workSchedules)
 
+    // Verificar si está en algún descanso - SOLO SISTEMA NUEVO
     if (isTimeInBreak(timeInMinutes, userSchedules)) {
       return false
     }
@@ -353,40 +360,8 @@ export function HorarioViewDynamic({
     setShowNewAppointmentModal(true)
   }
 
-  // NUEVA FUNCIÓN - DETECTA QUE SLOT TIENE DESCANSO
-  const getBreakForTimeSlot = (profesionalId: number, slotTime: string) => {
-    const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
-    if (!user) return null
-
-    const userSchedules = getUserWorkSchedulesForDay(user.id, dayOfWeek, workSchedules)
-    const slotMinutes = timeToMinutes(slotTime)
-    const slotEndMinutes = slotMinutes + intervaloTiempo
-
-    // Buscar si hay algún descanso que se superponga con este slot
-    for (const schedule of userSchedules) {
-      if (!schedule.breaks) continue
-
-      for (const breakItem of schedule.breaks) {
-        if (!breakItem.is_active) continue
-
-        const breakStart = timeToMinutes(breakItem.start_time)
-        const breakEnd = timeToMinutes(breakItem.end_time)
-
-        // Verificar si el descanso se superpone con el slot
-        if (breakStart < slotEndMinutes && breakEnd > slotMinutes) {
-          return {
-            ...breakItem,
-            duration: breakEnd - breakStart,
-          }
-        }
-      }
-    }
-
-    return null
-  }
-
-  // FUNCIÓN SIMPLIFICADA - GENERA SLOTS BASADOS EN GRID
-  const renderSlotsYDescansos = (profesionalId: number): JSX.Element[] => {
+  // FUNCIÓN MEJORADA - FRAGMENTA SLOTS ALREDEDOR DE DESCANSOS
+  const renderHuecosLibres = (profesionalId: number): JSX.Element[] => {
     if (isProfessionalOnVacation(profesionalId)) {
       return []
     }
@@ -395,112 +370,180 @@ export function HorarioViewDynamic({
     const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
     if (!user) return []
 
-    const elementos: JSX.Element[] = []
-    const slotHeight = 100 / timeSlots.length // Altura fija para cada slot
+    const workingHours = getWorkingHoursForDay(user, dayOfWeek)
+    const userSchedules = getUserWorkSchedulesForDay(user.id, dayOfWeek, workSchedules)
+    const huecos: JSX.Element[] = []
 
-    timeSlots.forEach((slotTime, index) => {
-      const slotMinutes = timeToMinutes(slotTime)
-      const slotEndMinutes = slotMinutes + intervaloTiempo
-      const slotEndTime = minutesToTime(slotEndMinutes)
+    for (const hours of workingHours) {
+      // Obtener todos los descansos para este horario de trabajo
+      const schedule = userSchedules.find(
+        (s) => timeToMinutes(s.start_time) <= hours.start && timeToMinutes(s.end_time) >= hours.end,
+      )
 
-      // Verificar si este slot tiene un descanso
-      const breakInfo = getBreakForTimeSlot(profesionalId, slotTime)
+      const descansos = schedule?.breaks?.filter((b) => b.is_active) || []
 
-      if (breakInfo) {
-        // RENDERIZAR DESCANSO - TAMAÑO FIJO DE 1 SLOT
+      // Crear segmentos de tiempo entre descansos
+      const segmentos: { start: number; end: number }[] = []
+
+      if (descansos.length === 0) {
+        // Sin descansos, todo el horario es un segmento
+        segmentos.push({ start: hours.start, end: hours.end })
+      } else {
+        // Ordenar descansos por hora de inicio
+        const descansosOrdenados = [...descansos].sort(
+          (a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time),
+        )
+
+        let inicioSegmento = hours.start
+
+        for (const descanso of descansosOrdenados) {
+          const inicioDescanso = timeToMinutes(descanso.start_time)
+          const finDescanso = timeToMinutes(descanso.end_time)
+
+          // Segmento antes del descanso
+          if (inicioSegmento < inicioDescanso) {
+            segmentos.push({
+              start: inicioSegmento,
+              end: Math.min(inicioDescanso, hours.end),
+            })
+          }
+
+          // Actualizar inicio para el siguiente segmento
+          inicioSegmento = Math.max(finDescanso, inicioSegmento)
+        }
+
+        // Segmento después del último descanso
+        if (inicioSegmento < hours.end) {
+          segmentos.push({ start: inicioSegmento, end: hours.end })
+        }
+      }
+
+      // Generar slots dentro de cada segmento
+      for (const segmento of segmentos) {
+        for (let minutos = segmento.start; minutos < segmento.end; minutos += intervaloTiempo) {
+          const finSlot = Math.min(minutos + intervaloTiempo, segmento.end)
+
+          // Solo crear slot si tiene la duración mínima
+          if (finSlot - minutos >= intervaloTiempo) {
+            const horaInicio = minutesToTime(minutos)
+            const horaFin = minutesToTime(finSlot)
+
+            // Verificar si hay cita en este slot
+            const ocupado = citasProfesional.some((cita) => {
+              const normalizedStartTime = normalizeTimeFormat(cita.hora)
+              const horaInicioCita = timeToMinutes(normalizedStartTime)
+              const horaFinCita = horaInicioCita + cita.duracion
+              return horaInicioCita < finSlot && horaFinCita > minutos
+            })
+
+            if (!ocupado) {
+              huecos.push(
+                <div
+                  key={`hueco-${horaInicio}-${profesionalId}`}
+                  className="absolute rounded-md cursor-pointer border bg-white hover:brightness-95 transition-all"
+                  style={{
+                    top: `${calcularPosicionCita(horaInicio)}%`,
+                    left: 0,
+                    right: 0,
+                    width: "100%",
+                    height: `${calcularAlturaCita(finSlot - minutos)}%`,
+                    backgroundImage: "radial-gradient(circle, #e5e7eb 1px, transparent 1px)",
+                    backgroundSize: "8px 8px",
+                    zIndex: 5,
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (puedeCrearCitaEnHora(profesionalId, horaInicio)) {
+                      setNewAppointmentData({
+                        fecha: date,
+                        hora: horaInicio,
+                        profesionalId: profesionalId,
+                      })
+                      setShowNewAppointmentModal(true)
+                    } else {
+                      const isOnVacation = isProfessionalOnVacation(profesionalId)
+                      const message = isOnVacation
+                        ? "No se puede crear cita: el profesional está de vacaciones"
+                        : "No se puede crear cita: fuera del horario de trabajo o en período de descanso"
+                      toast.error(message)
+                    }
+                  }}
+                >
+                  <div className="flex flex-col p-2">
+                    <div className="flex items-center">
+                      <div className="w-4 h-4 rounded-full border border-gray-400 bg-white flex items-center justify-center text-xs mr-1">
+                        <span>+</span>
+                      </div>
+                      <div className="text-xs font-medium text-gray-700">
+                        {horaInicio} - {horaFin}
+                      </div>
+                    </div>
+                  </div>
+                </div>,
+              )
+            }
+          }
+        }
+      }
+    }
+
+    return huecos
+  }
+
+  // FUNCIÓN MEJORADA - MEJOR VISUALIZACIÓN DE DESCANSOS
+  const renderDescansos = (profesionalId: number): JSX.Element[] => {
+    const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
+    if (!user) return []
+
+    const userSchedules = getUserWorkSchedulesForDay(user.id, dayOfWeek, workSchedules)
+    const descansos: JSX.Element[] = []
+
+    userSchedules.forEach((schedule, scheduleIndex) => {
+      schedule.breaks?.forEach((breakItem, breakIndex) => {
+        if (!breakItem.is_active) return
+
+        const breakStart = timeToMinutes(breakItem.start_time)
+        const breakEnd = timeToMinutes(breakItem.end_time)
+        const posicionTop = ((breakStart - startMinutes) / duracionDia) * 100
+        const altura = ((breakEnd - breakStart) / duracionDia) * 100
+
+        // Calcular duración para mostrar información adicional
+        const duracionMinutos = breakEnd - breakStart
         const duracionTexto =
-          breakInfo.duration >= 60
-            ? `${Math.floor(breakInfo.duration / 60)}h ${breakInfo.duration % 60 > 0 ? `${breakInfo.duration % 60}m` : ""}`
-            : `${breakInfo.duration}m`
+          duracionMinutos >= 60
+            ? `${Math.floor(duracionMinutos / 60)}h ${duracionMinutos % 60 > 0 ? `${duracionMinutos % 60}m` : ""}`
+            : `${duracionMinutos}m`
 
-        elementos.push(
+        descansos.push(
           <div
-            key={`break-${profesionalId}-${index}`}
+            key={`break-${scheduleIndex}-${breakIndex}`}
             className="absolute rounded-md border-2 border-dashed border-orange-300 bg-orange-50 flex items-center justify-center shadow-sm"
             style={{
-              top: `${index * slotHeight}%`,
+              top: `${Math.max(0, posicionTop)}%`,
               left: 0,
               right: 0,
               width: "100%",
-              height: `${slotHeight}%`, // ✅ ALTURA FIJA = 1 SLOT
+              height: `${Math.max(2, altura)}%`, // Altura mínima de 2%
               zIndex: 3,
+              minHeight: "40px", // Altura mínima en píxeles
             }}
           >
             <div className="text-center p-1">
               <div className="text-xs font-medium text-orange-700 flex items-center justify-center gap-1">
                 <span>☕</span>
-                <span>{breakInfo.break_name}</span>
+                <span>{breakItem.break_name}</span>
               </div>
               <div className="text-xs text-orange-600 mt-1">
-                {breakInfo.start_time} - {breakInfo.end_time}
+                {breakItem.start_time} - {breakItem.end_time}
               </div>
-              <div className="text-xs text-orange-500 opacity-75">({duracionTexto})</div>
+              {duracionMinutos > 15 && <div className="text-xs text-orange-500 opacity-75">({duracionTexto})</div>}
             </div>
           </div>,
         )
-      } else {
-        // Verificar si está en horario de trabajo
-        if (isUserWorkingAt(user, dayOfWeek, slotMinutes)) {
-          // Verificar si hay cita en este slot
-          const ocupado = citasProfesional.some((cita) => {
-            const normalizedStartTime = normalizeTimeFormat(cita.hora)
-            const horaInicioCita = timeToMinutes(normalizedStartTime)
-            const horaFinCita = horaInicioCita + cita.duracion
-            return horaInicioCita < slotEndMinutes && horaFinCita > slotMinutes
-          })
-
-          if (!ocupado) {
-            // RENDERIZAR SLOT DISPONIBLE - TAMAÑO FIJO DE 1 SLOT
-            elementos.push(
-              <div
-                key={`slot-${profesionalId}-${index}`}
-                className="absolute rounded-md cursor-pointer border bg-white hover:brightness-95 transition-all"
-                style={{
-                  top: `${index * slotHeight}%`,
-                  left: 0,
-                  right: 0,
-                  width: "100%",
-                  height: `${slotHeight}%`, // ✅ ALTURA FIJA = 1 SLOT
-                  backgroundImage: "radial-gradient(circle, #e5e7eb 1px, transparent 1px)",
-                  backgroundSize: "8px 8px",
-                  zIndex: 5,
-                }}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  if (puedeCrearCitaEnHora(profesionalId, slotTime)) {
-                    setNewAppointmentData({
-                      fecha: date,
-                      hora: slotTime,
-                      profesionalId: profesionalId,
-                    })
-                    setShowNewAppointmentModal(true)
-                  } else {
-                    const isOnVacation = isProfessionalOnVacation(profesionalId)
-                    const message = isOnVacation
-                      ? "No se puede crear cita: el profesional está de vacaciones"
-                      : "No se puede crear cita: fuera del horario de trabajo o en período de descanso"
-                    toast.error(message)
-                  }
-                }}
-              >
-                <div className="flex flex-col p-2">
-                  <div className="flex items-center">
-                    <div className="w-4 h-4 rounded-full border border-gray-400 bg-white flex items-center justify-center text-xs mr-1">
-                      <span>+</span>
-                    </div>
-                    <div className="text-xs font-medium text-gray-700">
-                      {slotTime} - {slotEndTime}
-                    </div>
-                  </div>
-                </div>
-              </div>,
-            )
-          }
-        }
-      }
+      })
     })
 
-    return elementos
+    return descansos
   }
 
   if (timeSlots.length === 0) {
@@ -523,7 +566,8 @@ export function HorarioViewDynamic({
         {profesionalesFiltrados.map((profesional) => {
           const citasProfesional = citas.filter((cita) => cita.profesionalId === profesional.id)
           const { titulo, nombre } = extraerTituloProfesional(profesional?.name)
-          const slotsYDescansos = renderSlotsYDescansos(profesional.id)
+          const huecosLibres = renderHuecosLibres(profesional.id)
+          const descansos = renderDescansos(profesional.id)
 
           // Obtener usuario correspondiente
           const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesional.id)
@@ -601,17 +645,20 @@ export function HorarioViewDynamic({
                   </div>
                 ) : (
                   <>
-                    {/* Líneas de hora - GRID UNIFORME */}
+                    {/* Líneas de hora */}
                     {timeSlots.map((hora, index) => (
                       <div
                         key={hora}
                         className="absolute w-full border-t border-gray-200"
-                        style={{ top: `${(index / timeSlots.length) * 100}%` }}
+                        style={{ top: `${(index / (timeSlots.length - 1)) * 100}%` }}
                       />
                     ))}
 
-                    {/* Slots disponibles y descansos - TAMAÑO UNIFORME */}
-                    {slotsYDescansos}
+                    {/* Períodos de descanso - SOLO SISTEMA NUEVO */}
+                    {descansos}
+
+                    {/* Huecos libres - solo en horario de trabajo y sin vacaciones */}
+                    {huecosLibres}
 
                     {/* Citas */}
                     <TooltipProvider>

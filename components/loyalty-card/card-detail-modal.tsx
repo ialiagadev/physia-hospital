@@ -21,13 +21,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 
 interface CardDetailModalProps {
@@ -51,6 +45,32 @@ export function CardDetailModal({ open, onOpenChange, cardId, onCardUpdated }: C
       loadCardData()
     }
   }, [open, cardId])
+
+  // Agregar después del useEffect existente
+  useEffect(() => {
+    // Forzar recarga cuando cambie el cardId o se abra el modal
+    if (open && cardId) {
+      // Limpiar estados previos
+      setCard(null)
+      setSessions([])
+      setClient(null)
+      setError(null)
+      // Cargar datos frescos
+      loadCardData()
+    }
+  }, [open, cardId])
+
+  // Agregar un nuevo useEffect para detectar cambios externos
+  useEffect(() => {
+    // Si el modal está abierto y hay una tarjeta, recargar datos cada vez que onCardUpdated cambie
+    if (open && cardId && card) {
+      const timeoutId = setTimeout(() => {
+        loadCardData()
+      }, 100) // Pequeño delay para asegurar que la DB se haya actualizado
+
+      return () => clearTimeout(timeoutId)
+    }
+  }, [onCardUpdated])
 
   const loadCardData = async () => {
     if (!cardId) return
@@ -112,7 +132,7 @@ export function CardDetailModal({ open, onOpenChange, cardId, onCardUpdated }: C
     try {
       await LoyaltyCardService.addSession(cardId)
 
-      // Recargar los datos
+      // Forzar recarga inmediata
       await loadCardData()
       onCardUpdated()
 
@@ -135,7 +155,7 @@ export function CardDetailModal({ open, onOpenChange, cardId, onCardUpdated }: C
     try {
       await LoyaltyCardService.redeemReward(cardId)
 
-      // Recargar los datos
+      // Forzar recarga inmediata
       await loadCardData()
       onCardUpdated()
 
@@ -160,8 +180,8 @@ export function CardDetailModal({ open, onOpenChange, cardId, onCardUpdated }: C
     try {
       await LoyaltyCardService.updateCard(card.id, { status: "cancelled" })
 
-      // Actualizar el estado local
-      setCard({ ...card, status: "cancelled" })
+      // Forzar recarga inmediata en lugar de solo actualizar estado local
+      await loadCardData()
       onCardUpdated()
 
       toast({
@@ -224,9 +244,7 @@ export function CardDetailModal({ open, onOpenChange, cardId, onCardUpdated }: C
             <DialogTitle>Tarjeta de Fidelización #{cardId}</DialogTitle>
             {card && <Badge variant={getStatusBadgeVariant(card.status)}>{getStatusText(card.status)}</Badge>}
           </div>
-          <DialogDescription>
-            Detalles y gestión de la tarjeta de fidelización
-          </DialogDescription>
+          <DialogDescription>Detalles y gestión de la tarjeta de fidelización</DialogDescription>
         </DialogHeader>
 
         {error ? (
@@ -240,7 +258,11 @@ export function CardDetailModal({ open, onOpenChange, cardId, onCardUpdated }: C
             <div className="h-[280px] bg-muted animate-pulse rounded"></div>
           </div>
         ) : (
-          <Tabs defaultValue="card" className="w-full">
+          <Tabs
+            key={`card-${card.id}-${card.completed_sessions}-${card.status}`}
+            defaultValue="card"
+            className="w-full"
+          >
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="card">Tarjeta</TabsTrigger>
               <TabsTrigger value="sessions">Historial</TabsTrigger>
@@ -258,7 +280,7 @@ export function CardDetailModal({ open, onOpenChange, cardId, onCardUpdated }: C
                   readOnly={!(card.status === "active" || card.status === "completed")}
                 />
               </div>
-              
+
               {card.status !== "cancelled" && card.status !== "redeemed" && (
                 <div className="flex justify-center mt-6">
                   <AlertDialog>
@@ -269,7 +291,8 @@ export function CardDetailModal({ open, onOpenChange, cardId, onCardUpdated }: C
                       <AlertDialogHeader>
                         <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
                         <AlertDialogDescription>
-                          Esta acción no se puede deshacer. La tarjeta quedará marcada como cancelada y no se podrán registrar más sesiones.
+                          Esta acción no se puede deshacer. La tarjeta quedará marcada como cancelada y no se podrán
+                          registrar más sesiones.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
