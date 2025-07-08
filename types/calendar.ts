@@ -214,24 +214,6 @@ export interface Cita {
   consultation?: Consultation // Incluir datos completos de consulta
 }
 
-// Tipos para horarios de trabajo - ACTUALIZADOS
-export interface WorkSchedule {
-  id: string
-  user_id: string
-  day_of_week: number | null
-  start_time: string
-  end_time: string
-  break_start: string | null // Mantener para compatibilidad
-  break_end: string | null // Mantener para compatibilidad
-  buffer_time_minutes: number // NUEVO: Tiempo entre citas
-  is_active: boolean
-  date_exception: string | null
-  is_exception: boolean
-  created_at: string
-  updated_at: string
-  breaks?: WorkScheduleBreak[] // NUEVO: Múltiples descansos
-}
-
 // NUEVO: Tipo para múltiples descansos
 export interface WorkScheduleBreak {
   id: string
@@ -243,6 +225,23 @@ export interface WorkScheduleBreak {
   sort_order: number
   created_at: string
   updated_at: string
+}
+
+// Tipos para horarios de trabajo - ACTUALIZADOS PARA SISTEMA NUEVO
+export interface WorkSchedule {
+  id: string
+  user_id: string
+  day_of_week: number | null
+  start_time: string
+  end_time: string
+  // ELIMINADOS: break_start y break_end ya no son parte del tipo
+  buffer_time_minutes: number // Tiempo entre citas
+  is_active: boolean
+  date_exception: string | null
+  is_exception: boolean
+  created_at: string
+  updated_at: string
+  breaks: WorkScheduleBreak[] // SOLO sistema nuevo - array requerido
 }
 
 export interface ProfessionalSettings {
@@ -603,7 +602,7 @@ export interface ConfiguracionCalendario {
   mostrarFinesSemana: boolean
 }
 
-// Horarios de trabajo
+// Horarios de trabajo - ACTUALIZADO PARA SISTEMA NUEVO
 export interface HorarioTrabajo {
   id: string
   profesionalId: number
@@ -611,4 +610,6 @@ export interface HorarioTrabajo {
   horaInicio: string
   horaFin: string
   activo: boolean
+  // ELIMINADOS: descansoInicio y descansoFin
+  breaks: WorkScheduleBreak[] // SOLO sistema nuevo
 }

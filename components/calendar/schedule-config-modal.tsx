@@ -29,8 +29,6 @@ interface ScheduleSlot {
   end_time: string
   is_active: boolean
   buffer_time_minutes: number
-  break_start?: string // Mantener para compatibilidad
-  break_end?: string // Mantener para compatibilidad
   breaks: WorkScheduleBreak[]
 }
 
@@ -45,9 +43,9 @@ const DAYS_OF_WEEK = [
 ]
 
 const BREAK_PRESETS = [
-  { name: "Descanso Mañana", start: "11:00", end: "11:15", icon: Coffee },
+  { name: "Descanso Mañana", start: "11:00", end: "11:30", icon: Coffee },
   { name: "Comida", start: "14:00", end: "15:00", icon: Utensils },
-  { name: "Descanso Tarde", start: "17:00", end: "17:15", icon: Coffee },
+  { name: "Descanso Tarde", start: "17:00", end: "17:30", icon: Coffee },
 ]
 
 const DEFAULT_SCHEDULE: ScheduleSlot = {
@@ -64,29 +62,30 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
   const [activeTab, setActiveTab] = useState("weekly")
   const [isLoading, setIsLoading] = useState(false)
 
-  // Use the hook to get fresh data
-  const { schedules: freshSchedules, loading: schedulesLoading } = useWorkSchedules(user.id)
+  // CORREGIDO: Usar el hook correctamente
+  const { getUserSchedules, loading: schedulesLoading } = useWorkSchedules(user.organization_id?.toString())
 
-  // Inicializar horarios desde el hook (datos frescos) o desde el usuario
+  // CORREGIDO: useEffect con dependencias estables
   useEffect(() => {
-    const sourceSchedules = freshSchedules.length > 0 ? freshSchedules : user.work_schedules
+    if (!isOpen) return // Solo ejecutar cuando el modal esté abierto
 
-    if (sourceSchedules && sourceSchedules.length > 0) {
-      const processedSchedules = sourceSchedules
+    // Obtener horarios del usuario desde el hook
+    const userSchedules = getUserSchedules(user.id)
+
+    if (userSchedules && userSchedules.length > 0) {
+      // Convertir WorkSchedule[] a ScheduleSlot[]
+      const processedSchedules = userSchedules
         .filter((schedule) => schedule.day_of_week !== null)
-        .map((schedule) => {
-          return {
-            id: schedule.id,
-            day_of_week: schedule.day_of_week as number,
-            start_time: schedule.start_time,
-            end_time: schedule.end_time,
-            is_active: schedule.is_active,
-            buffer_time_minutes: schedule.buffer_time_minutes || 5,
-            break_start: schedule.break_start || undefined,
-            break_end: schedule.break_end || undefined,
-            breaks: schedule.breaks || [],
-          }
-        })
+        .map((schedule) => ({
+          id: schedule.id,
+          day_of_week: schedule.day_of_week as number,
+          start_time: schedule.start_time,
+          end_time: schedule.end_time,
+          is_active: schedule.is_active,
+          buffer_time_minutes: schedule.buffer_time_minutes || 5,
+          breaks: schedule.breaks || [],
+        }))
+
       setSchedules(processedSchedules)
     } else {
       // Crear horario por defecto para días laborables
@@ -100,7 +99,33 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
       }))
       setSchedules(defaultSchedules)
     }
-  }, [user, freshSchedules])
+  }, [user.id, isOpen]) // ← CORREGIDO: Solo depende de user.id e isOpen
+
+  // NUEVO: useEffect separado para actualizar cuando cambien los datos del hook
+  useEffect(() => {
+    if (!isOpen) return
+
+    const userSchedules = getUserSchedules(user.id)
+    if (userSchedules && userSchedules.length > 0) {
+      const processedSchedules = userSchedules
+        .filter((schedule) => schedule.day_of_week !== null)
+        .map((schedule) => ({
+          id: schedule.id,
+          day_of_week: schedule.day_of_week as number,
+          start_time: schedule.start_time,
+          end_time: schedule.end_time,
+          is_active: schedule.is_active,
+          buffer_time_minutes: schedule.buffer_time_minutes || 5,
+          breaks: schedule.breaks || [],
+        }))
+
+      // Solo actualizar si hay cambios reales
+      setSchedules((prevSchedules) => {
+        const hasChanges = JSON.stringify(prevSchedules) !== JSON.stringify(processedSchedules)
+        return hasChanges ? processedSchedules : prevSchedules
+      })
+    }
+  }, [getUserSchedules, user.id, isOpen])
 
   const addScheduleSlot = () => {
     setSchedules([...schedules, { ...DEFAULT_SCHEDULE }])
@@ -121,7 +146,6 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
     if (existingIndex >= 0) {
       updateScheduleSlot(existingIndex, "is_active", !schedules[existingIndex].is_active)
     } else {
-      // Crear nuevo horario para este día
       setSchedules([
         ...schedules,
         {
@@ -162,10 +186,12 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
   const removeBreakFromSchedule = (scheduleIndex: number, breakIndex: number) => {
     const updatedSchedules = [...schedules]
     updatedSchedules[scheduleIndex].breaks.splice(breakIndex, 1)
+
     // Reordenar sort_order
     updatedSchedules[scheduleIndex].breaks.forEach((breakItem, index) => {
       breakItem.sort_order = index
     })
+
     setSchedules(updatedSchedules)
   }
 
@@ -227,7 +253,7 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
         }
       }
 
-      // Convertir ScheduleSlot[] a WorkSchedule[] para el callback
+      // Convertir ScheduleSlot[] a WorkSchedule[]
       const workSchedules: WorkSchedule[] = validSchedules.map((schedule) => ({
         id: schedule.id || "",
         user_id: user.id,
@@ -236,8 +262,6 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
         end_time: schedule.end_time,
         is_active: schedule.is_active,
         buffer_time_minutes: schedule.buffer_time_minutes,
-        break_start: schedule.break_start || null,
-        break_end: schedule.break_end || null,
         date_exception: null,
         is_exception: false,
         created_at: new Date().toISOString(),
@@ -348,6 +372,7 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
                           <Switch checked={isActive} onCheckedChange={() => toggleDayActive(day.value)} />
                         </div>
                       </CardHeader>
+
                       {isActive && schedule && scheduleIndex >= 0 && (
                         <CardContent className="space-y-4">
                           {/* Horario principal */}

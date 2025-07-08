@@ -62,8 +62,7 @@ export class WorkScheduleService {
         end_time: schedule.end_time,
         is_active: schedule.is_active ?? true,
         buffer_time_minutes: schedule.buffer_time_minutes || 5,
-        break_start: schedule.break_start || null, // Mantener para compatibilidad
-        break_end: schedule.break_end || null, // Mantener para compatibilidad
+      
         date_exception: schedule.date_exception || null,
         is_exception: schedule.is_exception || false,
       }))

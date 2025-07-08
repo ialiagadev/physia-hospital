@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { ChevronDown, Eye, EyeOff } from 'lucide-react'
+import { ChevronDown, Eye, EyeOff, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -12,6 +12,7 @@ interface ProfesionalesLegendProps {
   profesionalesSeleccionados: number[]
   onToggleProfesional: (profesionalId: number) => void
   onToggleAll: () => void
+  iconOnly?: boolean // Nueva prop opcional
 }
 
 const COLORES_PROFESIONALES = {
@@ -28,14 +29,15 @@ export function ProfesionalesLegend({
   profesionalesSeleccionados = [],
   onToggleProfesional,
   onToggleAll,
+  iconOnly = false, // Valor por defecto
 }: ProfesionalesLegendProps) {
   const [isOpen, setIsOpen] = useState(false)
 
   // Add safety checks for undefined arrays
   const safeProfesionales = profesionales || []
   const safeProfesionalesSeleccionados = profesionalesSeleccionados || []
-
-  const todosSeleccionados = safeProfesionalesSeleccionados.length === safeProfesionales.length && safeProfesionales.length > 0
+  const todosSeleccionados =
+    safeProfesionalesSeleccionados.length === safeProfesionales.length && safeProfesionales.length > 0
   const algunosSeleccionados =
     safeProfesionalesSeleccionados.length > 0 && safeProfesionalesSeleccionados.length < safeProfesionales.length
 
@@ -43,7 +45,7 @@ export function ProfesionalesLegend({
   if (safeProfesionales.length === 0) {
     return (
       <Button variant="outline" size="sm" disabled>
-        Sin profesionales
+        {iconOnly ? <Users className="h-4 w-4" /> : "Sin profesionales"}
       </Button>
     )
   }
@@ -51,9 +53,15 @@ export function ProfesionalesLegend({
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
       <CollapsibleTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-2">
-          Profesionales
-          <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+        <Button variant="outline" size="sm" className={iconOnly ? "w-10" : "gap-2"}>
+          {iconOnly ? (
+            <Users className="h-4 w-4" />
+          ) : (
+            <>
+              Profesionales
+              <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+            </>
+          )}
         </Button>
       </CollapsibleTrigger>
       <CollapsibleContent className="absolute top-full right-0 mt-2 bg-white border rounded-md shadow-lg p-4 z-50 min-w-[250px]">

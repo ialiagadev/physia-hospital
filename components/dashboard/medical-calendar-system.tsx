@@ -4,7 +4,7 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns"
 import { Button } from "@/components/ui/button"
-import { ChevronLeft, ChevronRight, Plus, Search } from "lucide-react"
+import { ChevronLeft, ChevronRight, Plus, Search, Clock } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CalendarSearch } from "@/components/calendar/calendar-search"
 import { ProfesionalesLegend } from "@/components/calendar/profesionales-legend"
@@ -20,7 +20,7 @@ import { useClients } from "@/hooks/use-clients"
 import { useConsultations } from "@/hooks/use-consultations"
 import { useServices } from "@/hooks/use-services"
 import { useVacations } from "@/hooks/use-vacations"
-import { useWorkSchedules } from "@/hooks/use-work-schedules" // NUEVO
+import { useWorkSchedules } from "@/hooks/use-work-schedules"
 import { useAuth } from "@/app/contexts/auth-context"
 import { supabase } from "@/lib/supabase"
 import { WaitingListView } from "../waiting-list/waiting-list-view"
@@ -35,7 +35,7 @@ import type {
 import { WeekView } from "@/components/calendar/week-view"
 import { MonthView } from "@/components/calendar/month-view"
 import { HorarioViewDynamic } from "@/components/calendar/horario-view-dynamic"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select"
 
 // Define TabPrincipal locally to include new tabs
 type TabPrincipal = "calendario" | "lista-espera" | "actividades-grupales" | "usuarios" | "consultas" | "servicios"
@@ -108,7 +108,7 @@ const MedicalCalendarSystem: React.FC = () => {
     getAvailableUsers,
   } = useVacations(organizationId)
 
-  // NUEVO: Hook de horarios de trabajo
+  // Hook de horarios de trabajo
   const { schedules: allWorkSchedules, loading: schedulesLoading } = useWorkSchedules(organizationId?.toString())
 
   // Calcular rango de fechas para las citas
@@ -254,7 +254,6 @@ const MedicalCalendarSystem: React.FC = () => {
       }
 
       const appointmentTypeId = await getDefaultAppointmentType(professionalUuid)
-
       let consultationId = null
       if (appointmentData.consultationId && appointmentData.consultationId !== "none") {
         consultationId = appointmentData.consultationId
@@ -320,7 +319,6 @@ const MedicalCalendarSystem: React.FC = () => {
       const numericId = Number.parseInt(apt.id.slice(-8), 16)
       return numericId === cita.id
     })
-
     if (originalAppointment) {
       handleSelectAppointment(originalAppointment)
     }
@@ -430,7 +428,7 @@ const MedicalCalendarSystem: React.FC = () => {
     clientsLoading ||
     servicesLoading ||
     vacationLoading ||
-    schedulesLoading // NUEVO
+    schedulesLoading
   ) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -497,14 +495,29 @@ const MedicalCalendarSystem: React.FC = () => {
             {/* Barra de herramientas reorganizada */}
             <div className="border-b px-4 py-2">
               <div className="flex items-center justify-between">
-                {/* Tabs de vista temporal */}
-                <Tabs value={vistaCalendario} onValueChange={(value) => setVistaCalendario(value as VistaCalendario)}>
-                  <TabsList>
-                    <TabsTrigger value="dia">Día</TabsTrigger>
-                    <TabsTrigger value="semana">Semana</TabsTrigger>
-                    <TabsTrigger value="mes">Mes</TabsTrigger>
-                  </TabsList>
-                </Tabs>
+                {/* Tabs de vista temporal y sub-vista JUNTAS */}
+                <div className="flex items-center gap-4">
+                  <Tabs value={vistaCalendario} onValueChange={(value) => setVistaCalendario(value as VistaCalendario)}>
+                    <TabsList>
+                      <TabsTrigger value="dia">Día</TabsTrigger>
+                      <TabsTrigger value="semana">Semana</TabsTrigger>
+                      <TabsTrigger value="mes">Mes</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+
+                  {/* Separador visual */}
+                  <div className="w-px h-6 bg-border" />
+
+                  <Tabs
+                    value={subVistaCalendario}
+                    onValueChange={(value) => setSubVistaCalendario(value as SubVistaCalendario)}
+                  >
+                    <TabsList>
+                      <TabsTrigger value="horario">Horario</TabsTrigger>
+                      <TabsTrigger value="lista">Lista</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                </div>
 
                 {/* Controles de navegación y herramientas unificados */}
                 <div className="flex items-center gap-2">
@@ -543,7 +556,7 @@ const MedicalCalendarSystem: React.FC = () => {
                     )}
                   </div>
 
-                  {/* Profesionales - Usuarios */}
+                  {/* Profesionales - SOLO ICONO */}
                   <div className="relative">
                     <ProfesionalesLegend
                       profesionales={legacyUsers}
@@ -565,16 +578,17 @@ const MedicalCalendarSystem: React.FC = () => {
                         if (userId) handleToggleUsuario(userId)
                       }}
                       onToggleAll={handleToggleAllUsuarios}
+                      iconOnly={true} // Nueva prop para mostrar solo icono
                     />
                   </div>
 
-                  {/* Ajustes - Select compacto */}
+                  {/* Tiempo - SOLO ICONO */}
                   <Select
                     value={intervaloTiempo.toString()}
                     onValueChange={(value) => setIntervaloTiempo(Number(value) as IntervaloTiempo)}
                   >
-                    <SelectTrigger className="w-24">
-                      <SelectValue />
+                    <SelectTrigger className="w-10">
+                      <Clock className="h-16 w-16" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="15">15 min</SelectItem>
@@ -589,21 +603,6 @@ const MedicalCalendarSystem: React.FC = () => {
                     <Plus className="h-4 w-4" />
                   </Button>
                 </div>
-              </div>
-            </div>
-
-            {/* Sub-navegación del calendario */}
-            <div className="border-b">
-              <div className="px-4 py-2">
-                <Tabs
-                  value={subVistaCalendario}
-                  onValueChange={(value) => setSubVistaCalendario(value as SubVistaCalendario)}
-                >
-                  <TabsList>
-                    <TabsTrigger value="horario">Horario</TabsTrigger>
-                    <TabsTrigger value="lista">Lista</TabsTrigger>
-                  </TabsList>
-                </Tabs>
               </div>
             </div>
 
@@ -633,7 +632,7 @@ const MedicalCalendarSystem: React.FC = () => {
                         }),
                       )}
                       users={users.filter((user) => usuariosSeleccionados.includes(user.id))}
-                      workSchedules={allWorkSchedules} // NUEVO: Pasar horarios de trabajo
+                      workSchedules={allWorkSchedules}
                       onSelectCita={handleSelectLegacyAppointment}
                       profesionalSeleccionado="todos"
                       profesionalesSeleccionados={usuariosSeleccionados.map((id) => {

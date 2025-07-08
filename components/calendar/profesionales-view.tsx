@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Calendar, Clock, Plus, Edit } from 'lucide-react'
+import { Calendar, Clock, Plus, Edit } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -29,7 +29,6 @@ interface ProfesionalesViewProps {
   onAddProfesional?: (profesional: Omit<Profesional, "id">) => void
   users?: User[]
   onRefreshUsers?: () => void
-  // Añadir estas líneas:
   vacationRequests?: any[]
   isUserOnVacationDate?: (userId: string, date: Date | string) => boolean
   getUserVacationOnDate?: (userId: string, date: Date | string) => any
@@ -66,19 +65,28 @@ export function ProfesionalesView({
   users = [],
   onRefreshUsers,
 }: ProfesionalesViewProps) {
-  // NUEVO: Obtener organizationId del contexto de autenticación
   const { userProfile } = useAuth()
   const organizationId = userProfile?.organization_id?.toString()
+
+  // CORREGIDO: Usar el hook correctamente
+  const {
+    schedules,
+    saveSchedules,
+    getUserSchedules,
+    refetch,
+    loading: schedulesLoading,
+  } = useWorkSchedules(organizationId)
 
   // Filtrar solo usuarios de tipo 1 (profesionales)
   const professionalUsers = users.filter((user) => user.type === 1)
 
-  // Filtrar profesionales que tengan un usuario correspondiente de tipo 1
+  // MEJORADO: Lógica más clara para filtrar profesionales
   const filteredProfesionales = profesionales.filter((profesional) => {
-    const correspondingUser = professionalUsers.find(
-      (user) => Number.parseInt(user.id.slice(-8), 16) === profesional.id,
-    )
-    return correspondingUser !== undefined
+    return professionalUsers.some((user) => {
+      // Comparar IDs de manera más robusta
+      const userIdNumber = Number.parseInt(user.id.slice(-8), 16)
+      return userIdNumber === profesional.id
+    })
   })
 
   const [selectedProfesional, setSelectedProfesional] = useState<Profesional | null>(null)
@@ -91,9 +99,6 @@ export function ProfesionalesView({
   })
   const [showScheduleModal, setShowScheduleModal] = useState(false)
   const [selectedUserForSchedule, setSelectedUserForSchedule] = useState<User | null>(null)
-
-  // CORREGIDO: Usar organizationId en lugar de userId específico
-  const { saveSchedules, refetch } = useWorkSchedules(organizationId)
 
   // Obtener estadísticas de un profesional
   const getEstadisticasProfesional = (profesionalId: number) => {
@@ -203,11 +208,6 @@ export function ProfesionalesView({
     setEditForm({ nombre: "", especialidad: "", color: "#3B82F6" })
   }
 
-  const getColorClass = (color: string) => {
-    const colorConfig = COLORES_DISPONIBLES.find((c) => c.value === color)
-    return colorConfig?.class || "bg-blue-100 border-blue-500"
-  }
-
   const getInitials = (nombre: string) => {
     return nombre
       .split(" ")
@@ -224,24 +224,21 @@ export function ProfesionalesView({
     if (realUser) {
       setSelectedUserForSchedule(realUser)
     } else {
-      // Para datos mock, crear un usuario temporal
       toast.error("Este profesional no tiene usuario asociado de tipo profesional")
       return
     }
-
     setShowScheduleModal(true)
   }
 
-  // CORREGIDO: Función handleSaveSchedules con parámetros correctos
-  const handleSaveSchedules = async (schedules: any[]) => {
+  // CORREGIDO: Función handleSaveSchedules simplificada
+  const handleSaveSchedules = async (newSchedules: any[]) => {
     if (!selectedUserForSchedule) {
       toast.error("No hay usuario seleccionado")
       return
     }
 
     try {
-      // CORREGIDO: Pasar userId y schedules como parámetros separados
-      await saveSchedules(selectedUserForSchedule.id, schedules)
+      await saveSchedules(selectedUserForSchedule.id, newSchedules)
       toast.success("Horarios guardados correctamente")
       setShowScheduleModal(false)
       setSelectedUserForSchedule(null)
@@ -255,6 +252,13 @@ export function ProfesionalesView({
       console.error("Error saving schedules:", error)
       toast.error("Error al guardar horarios")
     }
+  }
+
+  // NUEVA: Función para obtener horarios de un profesional
+  const getProfessionalSchedules = (profesionalId: number) => {
+    const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
+    if (!user) return []
+    return getUserSchedules(user.id)
   }
 
   // Si no hay profesionales filtrados, mostrar mensaje
@@ -303,15 +307,18 @@ export function ProfesionalesView({
           const estadisticas = getEstadisticasProfesional(profesional.id)
           const proximasCitas = getProximasCitas(profesional.id)
 
-          // Buscar usuario real para mostrar horarios
-          const realUser = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesional.id)
-          const hasSchedules = realUser?.work_schedules && realUser.work_schedules.length > 0
+          // MEJORADO: Obtener horarios del profesional
+          const professionalSchedules = getProfessionalSchedules(profesional.id)
+          const hasSchedules = professionalSchedules.length > 0
 
           return (
             <Card key={profesional.id} className="h-fit">
               <CardHeader
                 className="rounded-t-lg"
-                style={{ backgroundColor: `${profesional.color}20`, borderColor: profesional.color }}
+                style={{
+                  backgroundColor: `${profesional.color}20`,
+                  borderColor: profesional.color,
+                }}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -324,7 +331,7 @@ export function ProfesionalesView({
                       <CardTitle className="text-lg">{profesional?.nombre || profesional?.name}</CardTitle>
                       {hasSchedules && (
                         <p className="text-xs text-gray-600">
-                          {realUser.work_schedules?.filter((s) => s.is_active).length} días configurados
+                          {professionalSchedules.filter((s) => s.is_active).length} días configurados
                         </p>
                       )}
                     </div>
@@ -390,8 +397,8 @@ export function ProfesionalesView({
                       <div className="mt-4 p-3 bg-gray-50 rounded-lg">
                         <h4 className="text-sm font-medium mb-2">Horarios configurados:</h4>
                         <div className="space-y-1">
-                          {realUser.work_schedules
-                            ?.filter((s) => s.is_active)
+                          {professionalSchedules
+                            .filter((s) => s.is_active)
                             .map((schedule) => {
                               const dayNames = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"]
                               return (
