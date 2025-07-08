@@ -490,7 +490,7 @@ export function HorarioViewDynamic({
     return huecos
   }
 
-  // FUNCIÓN MEJORADA - MEJOR VISUALIZACIÓN DE DESCANSOS
+  // FUNCIÓN MEJORADA - MEJOR VISUALIZACIÓN PARA DESCANSOS PEQUEÑOS
   const renderDescansos = (profesionalId: number): JSX.Element[] => {
     const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
     if (!user) return []
@@ -507,38 +507,87 @@ export function HorarioViewDynamic({
         const posicionTop = ((breakStart - startMinutes) / duracionDia) * 100
         const altura = ((breakEnd - breakStart) / duracionDia) * 100
 
-        // Calcular duración para mostrar información adicional
+        // Calcular duración para el tooltip
         const duracionMinutos = breakEnd - breakStart
         const duracionTexto =
           duracionMinutos >= 60
             ? `${Math.floor(duracionMinutos / 60)}h ${duracionMinutos % 60 > 0 ? `${duracionMinutos % 60}m` : ""}`
             : `${duracionMinutos}m`
 
+        // Obtener emoji según el tipo de descanso
+        const getBreakIcon = (name: string) => {
+          const lowerName = name.toLowerCase()
+          if (lowerName.includes("comida") || lowerName.includes("almuerzo")) return "🍽️"
+          if (lowerName.includes("café") || lowerName.includes("mañana") || lowerName.includes("tarde")) return "☕"
+          if (lowerName.includes("descanso")) return "⏸️"
+          return "☕"
+        }
+
+        // Función para truncar texto
+        const truncateText = (text: string, maxLength: number) => {
+          return text.length > maxLength ? text.substring(0, maxLength) + "..." : text
+        }
+
         descansos.push(
-          <div
-            key={`break-${scheduleIndex}-${breakIndex}`}
-            className="absolute rounded-md border-2 border-dashed border-orange-300 bg-orange-50 flex items-center justify-center shadow-sm"
-            style={{
-              top: `${Math.max(0, posicionTop)}%`,
-              left: 0,
-              right: 0,
-              width: "100%",
-              height: `${Math.max(2, altura)}%`, // Altura mínima de 2%
-              zIndex: 3,
-              minHeight: "40px", // Altura mínima en píxeles
-            }}
-          >
-            <div className="text-center p-1">
-              <div className="text-xs font-medium text-orange-700 flex items-center justify-center gap-1">
-                <span>☕</span>
-                <span>{breakItem.break_name}</span>
-              </div>
-              <div className="text-xs text-orange-600 mt-1">
-                {breakItem.start_time} - {breakItem.end_time}
-              </div>
-              {duracionMinutos > 15 && <div className="text-xs text-orange-500 opacity-75">({duracionTexto})</div>}
-            </div>
-          </div>,
+          <TooltipProvider key={`break-${scheduleIndex}-${breakIndex}`}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div
+                  className="absolute rounded-md border-2 border-dashed border-orange-300 bg-orange-50 flex items-center justify-center shadow-sm cursor-help"
+                  style={{
+                    top: `${Math.max(0, posicionTop)}%`,
+                    left: 0,
+                    right: 0,
+                    width: "100%",
+                    height: `${Math.max(1.5, altura)}%`,
+                    zIndex: 3,
+                    minHeight: duracionMinutos < 15 ? "20px" : duracionMinutos < 30 ? "30px" : "40px",
+                  }}
+                >
+                  <div className="text-center p-1 w-full overflow-hidden">
+                    {duracionMinutos < 15 ? (
+                      // Para descansos muy cortos (< 15 min): solo emoji pequeño
+                      <div className="flex items-center justify-center">
+                        <span className="text-sm">{getBreakIcon(breakItem.break_name)}</span>
+                      </div>
+                    ) : duracionMinutos < 30 ? (
+                      // Para descansos cortos (15-30 min): emoji arriba, texto abajo en columna
+                      <div className="flex flex-col items-center justify-center gap-0.5">
+                        <span className="text-sm">{getBreakIcon(breakItem.break_name)}</span>
+                        <span className="text-[10px] font-medium text-orange-700 leading-tight">
+                          {truncateText(breakItem.break_name, 8)}
+                        </span>
+                      </div>
+                    ) : duracionMinutos < 60 ? (
+                      // Para descansos medianos (30-60 min): emoji + nombre pequeño horizontal
+                      <div className="text-xs font-medium text-orange-700 flex items-center justify-center gap-1">
+                        <span className="text-sm">{getBreakIcon(breakItem.break_name)}</span>
+                        <span className="truncate text-xs">{breakItem.break_name}</span>
+                      </div>
+                    ) : (
+                      // Para descansos largos (> 60 min): emoji + nombre normal
+                      <div className="text-sm font-medium text-orange-700 flex items-center justify-center gap-1">
+                        <span className="text-base">{getBreakIcon(breakItem.break_name)}</span>
+                        <span className="truncate">{breakItem.break_name}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="max-w-xs">
+                <div className="space-y-1">
+                  <div className="font-medium flex items-center gap-2">
+                    <span>{getBreakIcon(breakItem.break_name)}</span>
+                    {breakItem.break_name}
+                  </div>
+                  <div className="text-sm">
+                    {breakItem.start_time} - {breakItem.end_time}
+                  </div>
+                  <div className="text-sm text-gray-600">Duración: {duracionTexto}</div>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>,
         )
       })
     })
@@ -654,7 +703,7 @@ export function HorarioViewDynamic({
                       />
                     ))}
 
-                    {/* Períodos de descanso - SOLO SISTEMA NUEVO */}
+                    {/* Períodos de descanso - MEJORADOS PARA DESCANSOS PEQUEÑOS */}
                     {descansos}
 
                     {/* Huecos libres - solo en horario de trabajo y sin vacaciones */}
