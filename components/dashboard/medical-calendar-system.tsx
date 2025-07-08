@@ -19,7 +19,7 @@ import { useAppointments } from "@/hooks/use-appointments"
 import { useClients } from "@/hooks/use-clients"
 import { useConsultations } from "@/hooks/use-consultations"
 import { useServices } from "@/hooks/use-services"
-import { useVacationRequests } from "@/hooks/use-vacation-requests"
+import { useVacations } from "@/hooks/use-vacations"
 import { useAuth } from "@/app/contexts/auth-context"
 import { supabase } from "@/lib/supabase"
 import { WaitingListView } from "../waiting-list/waiting-list-view"
@@ -83,7 +83,7 @@ const MedicalCalendarSystem: React.FC = () => {
   const [usuariosSeleccionados, setUsuariosSeleccionados] = useState<string[]>([])
   const [showSearch, setShowSearch] = useState(false)
 
-  // Hooks de datos - ahora con organizationId
+  // Hooks de datos optimizados
   const { users, currentUser, loading: usersLoading, refetch: refetchUsers } = useUsers(organizationId)
   const { clients, loading: clientsLoading, error: clientsError, createClient } = useClients(organizationId)
   const {
@@ -91,6 +91,7 @@ const MedicalCalendarSystem: React.FC = () => {
     loading: consultationsLoading,
     error: consultationsError,
     refetch: refetchConsultations,
+    getFirstAvailableConsultation,
   } = useConsultations(organizationId)
   const {
     services,
@@ -99,13 +100,18 @@ const MedicalCalendarSystem: React.FC = () => {
     refetch: refetchServices,
   } = useServices(organizationId)
 
-  // Hook de vacaciones
-  const { requests: vacationRequests, loading: vacationLoading, isUserOnVacation } = useVacationRequests(organizationId)
+  // Hook de vacaciones optimizado
+  const {
+    vacationRequests,
+    loading: vacationLoading,
+    isUserOnVacation: isUserOnVacationHook,
+    getUserVacation,
+    getAvailableUsers,
+  } = useVacations(organizationId)
 
   // Calcular rango de fechas para las citas
   const getDateRange = () => {
     let startDate: string, endDate: string
-
     switch (vistaCalendario) {
       case "dia":
         startDate = format(currentDate, "yyyy-MM-dd")
@@ -127,12 +133,10 @@ const MedicalCalendarSystem: React.FC = () => {
         startDate = format(currentDate, "yyyy-MM-dd")
         endDate = startDate
     }
-
     return { startDate, endDate }
   }
 
   const { startDate, endDate } = getDateRange()
-
   const {
     appointments,
     loading: appointmentsLoading,
@@ -156,7 +160,6 @@ const MedicalCalendarSystem: React.FC = () => {
   // Navegación de fechas
   const navigateDate = (direction: "prev" | "next") => {
     const newDate = new Date(currentDate)
-
     switch (vistaCalendario) {
       case "dia":
         newDate.setDate(newDate.getDate() + (direction === "next" ? 1 : -1))
@@ -168,7 +171,6 @@ const MedicalCalendarSystem: React.FC = () => {
         newDate.setMonth(newDate.getMonth() + (direction === "next" ? 1 : -1))
         break
     }
-
     setCurrentDate(newDate)
   }
 
@@ -214,34 +216,7 @@ const MedicalCalendarSystem: React.FC = () => {
     }
   }
 
-  // Función para obtener la primera consulta disponible (opcional)
-  const getFirstAvailableConsultation = async (date: string, startTime: string, endTime: string) => {
-    try {
-      if (consultations.length === 0) {
-        return null // Retornar null si no hay consultas
-      }
-
-      // Verificar qué consultas están ocupadas en ese horario
-      const { data: occupiedConsultations, error } = await supabase
-        .from("appointments")
-        .select("consultation_id")
-        .eq("date", date)
-        .neq("status", "cancelled")
-        .or(`start_time.lt.${endTime},end_time.gt.${startTime}`)
-
-      if (error) throw error
-
-      const occupiedIds = occupiedConsultations?.map((apt) => apt.consultation_id) || []
-      const availableConsultation = consultations.find((consultation) => !occupiedIds.includes(consultation.id))
-
-      return availableConsultation?.id || null // Retornar null si no hay disponibles
-    } catch (error) {
-      console.error("Error getting available consultation:", error)
-      return null
-    }
-  }
-
-  // Handlers de citas
+  // Handlers de citas optimizados
   const handleAddAppointment = async (appointmentData: any) => {
     try {
       if (!currentUser) {
@@ -269,11 +244,15 @@ const MedicalCalendarSystem: React.FC = () => {
         clientId = newClient.id
       }
 
-      // Determinar el profesional
+      // Determinar el profesional - CORREGIDO
       let professionalUuid = currentUser.id // Por defecto, el usuario actual
+
+      // Si viene profesionalId del appointmentData (del modal o del slot clickeado)
       if (appointmentData.profesionalId) {
-        // Buscar el profesional por el ID numérico convertido
-        const prof = users.find((u) => Number.parseInt(u.id.slice(-8), 16) === appointmentData.profesionalId)
+        const prof = users.find((u) => {
+          const numericId = Number.parseInt(u.id.slice(-8), 16)
+          return numericId === appointmentData.profesionalId
+        })
         if (prof) {
           professionalUuid = prof.id
         }
@@ -282,23 +261,29 @@ const MedicalCalendarSystem: React.FC = () => {
       // Obtener o crear tipo de cita por defecto para el profesional
       const appointmentTypeId = await getDefaultAppointmentType(professionalUuid)
 
-      // Determinar la consulta (opcional)
-      let consultationId = appointmentData.consultationId || null
+      // Determinar la consulta (opcional) - CORREGIDO
+      let consultationId = null
 
-      // Solo buscar consulta automáticamente si no se especificó una y hay consultas disponibles
-      if (!consultationId && consultations.length > 0) {
-        const endTime = appointmentData.horaFin || calculateEndTime(appointmentData.hora, appointmentData.duracion)
-        consultationId = await getFirstAvailableConsultation(
-          format(appointmentData.fecha, "yyyy-MM-dd"),
-          appointmentData.hora,
-          endTime,
-        )
+      // Solo asignar consulta si se especificó una explícitamente (no "none")
+      if (appointmentData.consultationId && appointmentData.consultationId !== "none") {
+        consultationId = appointmentData.consultationId
       }
+      // NO buscar consulta automáticamente si no se especificó una
+
+      // Eliminar esta lógica automática:
+      // if (!consultationId && appointmentData.consultationId !== "none" && consultations.length > 0) {
+      //   const endTime = appointmentData.horaFin || calculateEndTime(appointmentData.hora, appointmentData.duracion)
+      //   consultationId = await getFirstAvailableConsultation(
+      //     format(appointmentData.fecha, "yyyy-MM-dd"),
+      //     appointmentData.hora,
+      //     endTime,
+      //   )
+      // }
 
       const newAppointment: AppointmentInsert = {
         user_id: currentUser.id, // Usuario que crea la cita
         organization_id: currentUser.organization_id,
-        professional_id: professionalUuid, // Profesional asignado
+        professional_id: professionalUuid, // Profesional asignado - CORREGIDO
         client_id: clientId,
         appointment_type_id: appointmentTypeId,
         consultation_id: consultationId, // Puede ser null
@@ -312,7 +297,7 @@ const MedicalCalendarSystem: React.FC = () => {
       }
 
       await createAppointment(newAppointment)
-      console.log("Cita creada correctamente")
+      console.log("Cita creada correctamente para profesional:", professionalUuid)
     } catch (error) {
       console.error("Error creating appointment:", error)
     }
@@ -431,41 +416,9 @@ const MedicalCalendarSystem: React.FC = () => {
     }
   }
 
-  // Funciones helper para vacaciones
-  const isUserOnVacationDate = (userId: string, date: Date | string): boolean => {
-    const dateStr = typeof date === "string" ? date : format(date, "yyyy-MM-dd")
-    return vacationRequests.some(
-      (vacation) =>
-        vacation.user_id === userId &&
-        vacation.status === "approved" &&
-        vacation.start_date <= dateStr &&
-        vacation.end_date >= dateStr,
-    )
-  }
-
-  const getUserVacationOnDate = (userId: string, date: Date | string) => {
-    const dateStr = typeof date === "string" ? date : format(date, "yyyy-MM-dd")
-    return (
-      vacationRequests.find(
-        (vacation) =>
-          vacation.user_id === userId &&
-          vacation.status === "approved" &&
-          vacation.start_date <= dateStr &&
-          vacation.end_date >= dateStr,
-      ) || null
-    )
-  }
-
-  const getBlockedUsersOnDate = (date: Date | string): string[] => {
-    const dateStr = typeof date === "string" ? date : format(date, "yyyy-MM-dd")
-    const blocked = vacationRequests
-      .filter(
-        (vacation) => vacation.status === "approved" && vacation.start_date <= dateStr && vacation.end_date >= dateStr,
-      )
-      .map((vacation) => vacation.user_id)
-
-    return [...new Set(blocked)]
-  }
+  // Funciones helper para vacaciones - ahora usando el hook optimizado
+  const isUserOnVacationDate = isUserOnVacationHook
+  const getUserVacationOnDate = getUserVacation
 
   const convertAppointmentsToLegacyFormat = (appointments: AppointmentWithDetails[]) => {
     return appointments.map((apt) => ({
@@ -491,7 +444,6 @@ const MedicalCalendarSystem: React.FC = () => {
   const convertUsersToLegacyFormat = (users: any[]) => {
     // Filtrar solo usuarios tipo 1 (profesionales médicos)
     const medicalProfessionals = users.filter((user) => user.type === 1)
-
     return medicalProfessionals.map((user) => ({
       id: Number.parseInt(user.id.slice(-8), 16), // Convertir UUID a número
       nombre: user.name || "",
@@ -814,7 +766,6 @@ const MedicalCalendarSystem: React.FC = () => {
             <div className="px-4 py-3 border-b">
               <h2 className="text-xl font-medium">Actividades grupales</h2>
             </div>
-            
           </div>
         )}
 

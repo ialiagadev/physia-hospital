@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { supabase } from "@/lib/supabase/client"
 import type { Consultation } from "@/types/calendar"
 
@@ -10,7 +10,7 @@ export function useConsultations(organizationId?: number) {
   const [error, setError] = useState<string | null>(null)
   const [userOrgId, setUserOrgId] = useState<number | null>(null)
 
-  const fetchConsultations = async () => {
+  const fetchConsultations = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
@@ -19,6 +19,7 @@ export function useConsultations(organizationId?: number) {
       const { data: user } = await supabase.auth.getUser()
       if (!user.user) {
         setConsultations([])
+        setUserOrgId(null)
         return
       }
 
@@ -30,6 +31,7 @@ export function useConsultations(organizationId?: number) {
 
       if (userError || !userData?.organization_id) {
         setConsultations([])
+        setUserOrgId(null)
         return
       }
 
@@ -52,97 +54,104 @@ export function useConsultations(organizationId?: number) {
     } catch (err) {
       setError("Error inesperado al cargar consultas")
       setConsultations([])
+      setUserOrgId(null)
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  const getAvailableConsultations = async (
-    date: string,
-    startTime: string,
-    endTime: string,
-    excludeAppointmentId?: string,
-  ) => {
-    try {
-      if (!userOrgId) {
-        throw new Error("Organization ID is required")
+  const getAvailableConsultations = useCallback(
+    async (date: string, startTime: string, endTime: string, excludeAppointmentId?: string) => {
+      try {
+        // Verificaciones rápidas
+        if (!userOrgId || consultations.length === 0) {
+          return consultations
+        }
+
+        // Query optimizada - solo los campos necesarios
+        let query = supabase
+          .from("appointments")
+          .select("consultation_id")
+          .eq("date", date)
+          .eq("organization_id", userOrgId)
+          .in("status", ["confirmed", "pending"])
+          .not("consultation_id", "is", null)
+          .lt("start_time", endTime)
+          .gt("end_time", startTime)
+
+        // Excluir cita actual si existe
+        if (excludeAppointmentId && excludeAppointmentId !== "undefined" && excludeAppointmentId.trim() !== "") {
+          query = query.neq("id", excludeAppointmentId)
+        }
+
+        const { data: occupiedAppointments, error } = await query
+
+        if (error) {
+          return consultations
+        }
+
+        // Filtrado rápido
+        const occupiedIds = new Set(occupiedAppointments?.map((apt) => apt.consultation_id).filter(Boolean) || [])
+
+        return consultations.filter((consultation) => !occupiedIds.has(consultation.id))
+      } catch (err) {
+        return consultations
       }
+    },
+    [userOrgId, consultations],
+  )
 
-      // Si no hay consultas cargadas, devolver array vacío
-      if (consultations.length === 0) {
-        return []
-      }
+  const isConsultationAvailable = useCallback(
+    async (consultationId: string, date: string, startTime: string, endTime: string, excludeAppointmentId?: string) => {
+      try {
+        if (!userOrgId) {
+          return false
+        }
 
-      let query = supabase
-        .from("appointments")
-        .select("consultation_id, start_time, end_time")
-        .eq("date", date)
-        .eq("organization_id", userOrgId)
-        .neq("status", "cancelled")
-        .lt("start_time", endTime)
-        .gt("end_time", startTime)
+        let query = supabase
+          .from("appointments")
+          .select("id, start_time, end_time")
+          .eq("consultation_id", consultationId)
+          .eq("date", date)
+          .eq("organization_id", userOrgId)
+          .neq("status", "cancelled")
+          .lt("start_time", endTime)
+          .gt("end_time", startTime)
 
-      if (excludeAppointmentId) {
-        query = query.neq("id", excludeAppointmentId)
-      }
+        if (excludeAppointmentId && excludeAppointmentId !== "undefined") {
+          query = query.neq("id", excludeAppointmentId)
+        }
 
-      const { data: occupiedConsultations, error } = await query
+        const { data, error } = await query
 
-      if (error) {
-        throw error
-      }
+        if (error) {
+          throw error
+        }
 
-      const occupiedIds = occupiedConsultations?.map((apt) => apt.consultation_id) || []
-      const available = consultations.filter((consultation) => !occupiedIds.includes(consultation.id))
-
-      return available
-    } catch (err) {
-      throw err
-    }
-  }
-
-  const isConsultationAvailable = async (
-    consultationId: string,
-    date: string,
-    startTime: string,
-    endTime: string,
-    excludeAppointmentId?: string,
-  ) => {
-    try {
-      if (!userOrgId) {
+        return !data || data.length === 0
+      } catch (err) {
         return false
       }
+    },
+    [userOrgId],
+  )
 
-      let query = supabase
-        .from("appointments")
-        .select("id, start_time, end_time")
-        .eq("consultation_id", consultationId)
-        .eq("date", date)
-        .eq("organization_id", userOrgId)
-        .neq("status", "cancelled")
-        .lt("start_time", endTime)
-        .gt("end_time", startTime)
-
-      if (excludeAppointmentId) {
-        query = query.neq("id", excludeAppointmentId)
+  // Nueva función para obtener la primera consulta disponible
+  const getFirstAvailableConsultation = useCallback(
+    async (date: string, startTime: string, endTime: string, excludeAppointmentId?: string) => {
+      try {
+        const available = await getAvailableConsultations(date, startTime, endTime, excludeAppointmentId)
+        return available.length > 0 ? available[0].id : null
+      } catch (err) {
+        return null
       }
-
-      const { data, error } = await query
-
-      if (error) {
-        throw error
-      }
-
-      const isAvailable = !data || data.length === 0
-      return isAvailable
-    } catch (err) {
-      return false
-    }
-  }
+    },
+    [getAvailableConsultations],
+  )
 
   useEffect(() => {
     fetchConsultations()
-  }, [])
+  }, [fetchConsultations])
 
   return {
     consultations,
@@ -152,5 +161,6 @@ export function useConsultations(organizationId?: number) {
     refetch: fetchConsultations,
     getAvailableConsultations,
     isConsultationAvailable,
+    getFirstAvailableConsultation,
   }
 }

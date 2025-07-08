@@ -13,7 +13,6 @@ export function useServices(organizationId?: number) {
   // Función para obtener servicios
   const fetchServices = useCallback(async () => {
     if (!organizationId) {
-      console.log("❌ useServices: No organizationId provided")
       setServices([])
       setLoading(false)
       return
@@ -22,8 +21,6 @@ export function useServices(organizationId?: number) {
     try {
       setLoading(true)
       setError(null)
-
-      console.log("🔍 useServices: Fetching services for organizationId:", organizationId)
 
       // Consulta simple sin JOINs problemáticos
       const { data, error: fetchError } = await supabase
@@ -34,16 +31,12 @@ export function useServices(organizationId?: number) {
         .order("sort_order", { ascending: true })
         .order("name", { ascending: true })
 
-      console.log("🎯 useServices: Services fetched:", data)
-      console.log("❌ useServices: Error:", fetchError)
-
       if (fetchError) {
         console.error("Error fetching services:", fetchError)
         throw fetchError
       }
 
       setServices(data || [])
-      console.log("✅ useServices: Services set successfully:", data?.length || 0, "services")
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Error desconocido al cargar servicios"
       setError(errorMessage)
@@ -56,13 +49,9 @@ export function useServices(organizationId?: number) {
   // Función para crear servicio
   const createService = useCallback(async (serviceData: ServiceInsert): Promise<Service> => {
     try {
-      console.log("➕ useServices: Creating service:", serviceData)
-
       const { data, error } = await supabase.from("services").insert(serviceData).select().single()
 
       if (error) throw error
-
-      console.log("✅ useServices: Service created:", data)
 
       // Actualizar la lista local
       setServices((prev) => [...prev, data].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)))
@@ -80,8 +69,6 @@ export function useServices(organizationId?: number) {
   // Función para actualizar servicio
   const updateService = useCallback(async (id: number, updates: Partial<ServiceInsert>): Promise<Service> => {
     try {
-      console.log("✏️ useServices: Updating service:", id, updates)
-
       const { data, error } = await supabase
         .from("services")
         .update({ ...updates, updated_at: new Date().toISOString() })
@@ -90,8 +77,6 @@ export function useServices(organizationId?: number) {
         .single()
 
       if (error) throw error
-
-      console.log("✅ useServices: Service updated:", data)
 
       // Actualizar la lista local
       setServices((prev) =>
@@ -113,13 +98,9 @@ export function useServices(organizationId?: number) {
   // Función para eliminar servicio
   const deleteService = useCallback(async (id: number): Promise<void> => {
     try {
-      console.log("🗑️ useServices: Deleting service:", id)
-
       const { error } = await supabase.from("services").delete().eq("id", id)
 
       if (error) throw error
-
-      console.log("✅ useServices: Service deleted")
 
       // Actualizar la lista local
       setServices((prev) => prev.filter((service) => service.id !== id))
@@ -139,8 +120,6 @@ export function useServices(organizationId?: number) {
       if (!organizationId) return []
 
       try {
-        console.log("👤 useServices: Fetching user services for:", userId)
-
         // Consulta corregida: obtener servicios del usuario a través de user_services
         const { data, error } = await supabase
           .from("user_services")
@@ -172,8 +151,6 @@ export function useServices(organizationId?: number) {
           .eq("services.organization_id", organizationId)
           .eq("services.active", true)
 
-        console.log("✅ useServices: User services:", data)
-
         if (error) throw error
 
         // Transformar los datos para que sean más fáciles de usar
@@ -192,14 +169,59 @@ export function useServices(organizationId?: number) {
     [organizationId],
   )
 
+  // Obtener usuarios asignados a un servicio
+  const getServiceUsers = useCallback(
+    async (serviceId: string, users: any[]) => {
+      if (!organizationId || !serviceId) {
+        return users.filter((user) => user.type === 1) // Solo profesionales
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from("user_services")
+          .select(`
+          user_id,
+          users!inner (
+            id,
+            name,
+            email,
+            role,
+            organization_id,
+            type
+          )
+        `)
+          .eq("service_id", serviceId)
+
+        if (error) {
+          return users.filter((user) => user.type === 1)
+        }
+
+        const serviceUsers: any[] = []
+        if (data) {
+          for (const item of data) {
+            if (item.users && typeof item.users === "object" && !Array.isArray(item.users)) {
+              const user = item.users as any
+              if (user.organization_id === organizationId && user.type === 1) {
+                serviceUsers.push(user)
+              }
+            }
+          }
+        }
+
+        return serviceUsers
+      } catch (err) {
+        return users.filter((user) => user.type === 1)
+      }
+    },
+    [organizationId],
+  )
+
   // Función para obtener todos los servicios disponibles para un usuario
   const getAvailableServicesForUser = useCallback(
     async (userId: string) => {
       if (!organizationId) return []
 
       try {
-        console.log("🔍 useServices: Fetching available services for user:", userId)
-
         // Obtener servicios ya asignados al usuario
         const { data: assignedServices, error: assignedError } = await supabase
           .from("user_services")
@@ -222,7 +244,6 @@ export function useServices(organizationId?: number) {
 
         if (availableError) throw availableError
 
-        console.log("✅ useServices: Available services:", availableServices)
         return availableServices || []
       } catch (err) {
         console.error("💥 useServices: Error fetching available services:", err)
@@ -235,8 +256,6 @@ export function useServices(organizationId?: number) {
   // Función para asignar servicio a usuario
   const assignServiceToUser = useCallback(async (userId: string, serviceId: number): Promise<void> => {
     try {
-      console.log("🔗 useServices: Assigning service to user:", { userId, serviceId })
-
       const { error } = await supabase.from("user_services").insert({
         user_id: userId,
         service_id: serviceId,
@@ -244,7 +263,6 @@ export function useServices(organizationId?: number) {
 
       if (error) throw error
 
-      console.log("✅ useServices: Service assigned to user")
       toast.success("Servicio asignado al usuario correctamente")
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Error al asignar servicio"
@@ -257,13 +275,10 @@ export function useServices(organizationId?: number) {
   // Función para desasignar servicio de usuario
   const unassignServiceFromUser = useCallback(async (userId: string, serviceId: number): Promise<void> => {
     try {
-      console.log("🔗 useServices: Unassigning service from user:", { userId, serviceId })
-
       const { error } = await supabase.from("user_services").delete().eq("user_id", userId).eq("service_id", serviceId)
 
       if (error) throw error
 
-      console.log("✅ useServices: Service unassigned from user")
       toast.success("Servicio desasignado del usuario correctamente")
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Error al desasignar servicio"
@@ -290,5 +305,6 @@ export function useServices(organizationId?: number) {
     getAvailableServicesForUser,
     assignServiceToUser,
     unassignServiceFromUser,
+    getServiceUsers,
   }
 }

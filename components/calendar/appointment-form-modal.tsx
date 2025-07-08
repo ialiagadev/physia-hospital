@@ -9,10 +9,26 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2, Phone, User, CheckCircle, AlertTriangle, MapPin, Info, Briefcase, Search } from "lucide-react"
+import {
+  Loader2,
+  Phone,
+  User,
+  CheckCircle,
+  AlertTriangle,
+  MapPin,
+  Info,
+  Briefcase,
+  Search,
+  Calendar,
+  Clock,
+  AlertCircle,
+} from "lucide-react"
 import { useClients } from "@/hooks/use-clients"
 import { useUsers } from "@/hooks/use-users"
 import { useConsultations } from "@/hooks/use-consultations"
+import { useServices } from "@/hooks/use-services"
+import { useVacations } from "@/hooks/use-vacations"
+import { useAppointmentConflicts } from "@/hooks/use-appointment-conflicts"
 import { useAuth } from "@/app/contexts/auth-context"
 import { normalizePhoneNumber, formatPhoneNumber, isValidPhoneNumber } from "@/utils/phone-utils"
 import { supabase } from "@/lib/supabase/client"
@@ -26,30 +42,6 @@ interface AppointmentFormModalProps {
   citaExistente?: Cita
   onClose: () => void
   onSubmit: (cita: Partial<Cita>) => void
-}
-
-interface Service {
-  id: number
-  name: string
-  description?: string
-  price: number
-  duration: number
-  color: string
-  category?: string
-  active: boolean
-  organization_id: number
-}
-
-interface SupabaseUser {
-  id: string
-  name: string | null
-  email: string
-  role: string
-  organization_id: number
-  type: number
-  is_active?: boolean
-  created_at?: string
-  updated_at?: string
 }
 
 interface ClientMatch {
@@ -76,28 +68,33 @@ export function AppointmentFormModal({
 }: AppointmentFormModalProps) {
   const { userProfile } = useAuth()
   const organizationId = userProfile?.organization_id ? Number(userProfile.organization_id) : undefined
+
+  // Hooks centralizados
   const { clients } = useClients(organizationId)
   const { users } = useUsers(organizationId)
   const { consultations, loading: consultationsLoading, getAvailableConsultations } = useConsultations(organizationId)
+  const { services, loading: servicesLoading, getServiceUsers } = useServices(organizationId)
+  const { getAvailableUsers } = useVacations(organizationId)
+  const { conflicts, loading: conflictsLoading, checkConflicts } = useAppointmentConflicts(organizationId)
 
-  // Estados para servicios
-  const [services, setServices] = useState<Service[]>([])
-  const [loadingServices, setLoadingServices] = useState(false)
-  const [filteredUsers, setFilteredUsers] = useState<SupabaseUser[]>([])
-  const [loadingFilteredUsers, setLoadingFilteredUsers] = useState(false)
-
-  // Estados para búsqueda mejorada de clientes
+  // Estados simplificados
+  const [availableConsultations, setAvailableConsultations] = useState<typeof consultations>([])
+  const [filteredUsers, setFilteredUsers] = useState<any[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [clientMatches, setClientMatches] = useState<ClientMatch[]>([])
   const [showMatches, setShowMatches] = useState(false)
   const [searchingClients, setSearchingClients] = useState(false)
+  const [clienteEncontrado, setClienteEncontrado] = useState<any>(null)
+  const [telefonoValidado, setTelefonoValidado] = useState(false)
+  const [errors, setErrors] = useState<{ [key: string]: string }>({})
+  const [telefonoFormateado, setTelefonoFormateado] = useState("")
 
-  // Refs para evitar llamadas múltiples
-  const isCheckingRef = useRef(false)
-  const lastCheckParamsRef = useRef<string>("")
-  const searchTimeoutRef = useRef<NodeJS.Timeout>()
+  // Refs para timeouts
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
+  const conflictCheckTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
+  const consultationCheckTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
 
-  // Función para calcular hora fin - memoizada para evitar re-creaciones
+  // Función para calcular hora fin
   const calcularHoraFin = useCallback((horaInicio: string, duracion: number) => {
     const [horas, minutos] = horaInicio.split(":").map(Number)
     const totalMinutos = horas * 60 + minutos + duracion
@@ -110,6 +107,7 @@ export function AppointmentFormModal({
     telefonoPaciente: citaExistente?.telefonoPaciente || "",
     nombrePaciente: citaExistente?.nombrePaciente || "",
     apellidosPaciente: citaExistente?.apellidosPaciente || "",
+    fecha: citaExistente?.fecha instanceof Date ? citaExistente.fecha : new Date(citaExistente?.fecha || fecha),
     hora: citaExistente?.hora || hora,
     duracion: citaExistente?.duracion || 45,
     notas: citaExistente?.notas || "",
@@ -120,25 +118,99 @@ export function AppointmentFormModal({
     service_id: citaExistente?.service_id || "",
   })
 
-  const [clienteEncontrado, setClienteEncontrado] = useState<any>(null)
-  const [buscandoCliente, setBuscandoCliente] = useState(false)
-  const [telefonoValidado, setTelefonoValidado] = useState(false)
-  const [errors, setErrors] = useState<{ [key: string]: string }>({})
-  const [telefonoFormateado, setTelefonoFormateado] = useState("")
-  const [availableConsultations, setAvailableConsultations] = useState(consultations)
-  const [checkingConsultations, setCheckingConsultations] = useState(false)
-
-  // Inicializar el campo de búsqueda con los datos existentes
-  useEffect(() => {
-    if (citaExistente) {
-      const searchValue =
-        citaExistente.telefonoPaciente ||
-        `${citaExistente.nombrePaciente} ${citaExistente.apellidosPaciente || ""}`.trim()
-      setSearchTerm(searchValue)
+  // Verificar consultas disponibles
+  const checkConsultationAvailability = useCallback(async () => {
+    if (!formData.hora || !formData.duracion || consultationsLoading) {
+      return
     }
-  }, [citaExistente])
 
-  // Función mejorada para buscar clientes - optimizada para números
+    try {
+      const endTime = calcularHoraFin(formData.hora, formData.duracion)
+      const dateString = (formData.fecha instanceof Date ? formData.fecha : new Date(formData.fecha))
+        .toISOString()
+        .split("T")[0]
+
+      const available = await getAvailableConsultations(
+        dateString,
+        formData.hora,
+        endTime,
+        citaExistente?.id ? citaExistente.id.toString() : undefined,
+      )
+
+      setAvailableConsultations(available)
+
+      // Si la consulta seleccionada ya no está disponible, resetear
+      if (
+        formData.consultationId &&
+        formData.consultationId !== "none" &&
+        !available.find((c) => c.id === formData.consultationId)
+      ) {
+        setFormData((prev) => ({ ...prev, consultationId: "none" }))
+      }
+    } catch (error) {
+      setAvailableConsultations(consultations)
+    }
+  }, [
+    formData.hora,
+    formData.duracion,
+    formData.fecha,
+    consultationsLoading,
+    getAvailableConsultations,
+    calcularHoraFin,
+    citaExistente?.id,
+    formData.consultationId,
+    consultations,
+  ])
+
+  // Verificar conflictos de citas
+  const checkAppointmentConflicts = useCallback(async () => {
+    if (!formData.fecha || !formData.hora || !formData.duracion || !formData.profesionalId) {
+      return
+    }
+
+    const professionalUuid = users.find((u) => Number.parseInt(u.id.slice(-8), 16) === formData.profesionalId)?.id
+    if (!professionalUuid) return
+
+    await checkConflicts(
+      formData.fecha,
+      formData.hora,
+      formData.duracion,
+      professionalUuid,
+      citaExistente?.id ? citaExistente.id.toString() : undefined,
+    )
+  }, [
+    formData.fecha,
+    formData.hora,
+    formData.duracion,
+    formData.profesionalId,
+    users,
+    checkConflicts,
+    citaExistente?.id,
+  ])
+
+  // Filtrar usuarios por servicio y vacaciones
+  const updateFilteredUsers = useCallback(async () => {
+    let usersToFilter = users.filter((user) => user.type === 1) // Solo profesionales
+
+    // Si hay servicio seleccionado, filtrar por servicio
+    if (formData.service_id) {
+      usersToFilter = await getServiceUsers(formData.service_id, users)
+    }
+
+    // Filtrar por vacaciones
+    const availableUsers = await getAvailableUsers(usersToFilter, formData.fecha)
+    setFilteredUsers(availableUsers)
+
+    // Si el profesional seleccionado ya no está disponible, resetear
+    if (
+      formData.profesionalId &&
+      !availableUsers.find((user) => Number.parseInt(user.id.slice(-8), 16) === formData.profesionalId)
+    ) {
+      setFormData((prev) => ({ ...prev, profesionalId: 0 }))
+    }
+  }, [formData.service_id, formData.fecha, formData.profesionalId, users, getServiceUsers, getAvailableUsers])
+
+  // Función para buscar clientes (sin cambios)
   const searchClients = useCallback(
     async (term: string) => {
       if (!term || term.length < 1) {
@@ -147,19 +219,12 @@ export function AppointmentFormModal({
         return
       }
 
-      // Limpiar timeout anterior
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current)
-      }
-
       setSearchingClients(true)
-
       try {
         const matches: ClientMatch[] = []
         const termLower = term.toLowerCase().trim()
 
-        // Buscar por teléfono SOLO si tiene 3 o más dígitos consecutivos
-        const phoneDigits = term.replace(/\D/g, "") // Extraer solo dígitos
+        const phoneDigits = term.replace(/\D/g, "")
         if (phoneDigits.length >= 3) {
           const { data: phoneMatches, error: phoneError } = await supabase
             .from("clients")
@@ -180,7 +245,6 @@ export function AppointmentFormModal({
           }
         }
 
-        // Buscar por nombre solo si no es un número puro
         if (!/^\d+$/.test(term)) {
           const { data: nameMatches, error: nameError } = await supabase
             .from("clients")
@@ -191,7 +255,6 @@ export function AppointmentFormModal({
 
           if (!nameError && nameMatches) {
             nameMatches.forEach((client) => {
-              // Evitar duplicados si ya se encontró por teléfono
               if (!matches.find((m) => m.id === client.id)) {
                 matches.push({
                   id: client.id,
@@ -207,7 +270,6 @@ export function AppointmentFormModal({
         setClientMatches(matches)
         setShowMatches(matches.length > 0)
       } catch (error) {
-        console.error("Error searching clients:", error)
         setClientMatches([])
         setShowMatches(false)
       } finally {
@@ -217,12 +279,80 @@ export function AppointmentFormModal({
     [organizationId],
   )
 
-  // Función para seleccionar un cliente de las coincidencias
+  // Effects optimizados
+  useEffect(() => {
+    if (!consultationsLoading) {
+      if (consultations.length > 0) {
+        checkConsultationAvailability()
+      } else {
+        setAvailableConsultations([])
+      }
+    }
+  }, [consultations, consultationsLoading, checkConsultationAvailability])
+
+  // Verificar consultas con debounce
+  useEffect(() => {
+    if (consultationCheckTimeoutRef.current) {
+      clearTimeout(consultationCheckTimeoutRef.current)
+    }
+
+    consultationCheckTimeoutRef.current = setTimeout(() => {
+      checkConsultationAvailability()
+    }, 300)
+
+    return () => {
+      if (consultationCheckTimeoutRef.current) {
+        clearTimeout(consultationCheckTimeoutRef.current)
+      }
+    }
+  }, [formData.hora, formData.duracion, formData.fecha])
+
+  // Verificar conflictos con debounce
+  useEffect(() => {
+    if (conflictCheckTimeoutRef.current) {
+      clearTimeout(conflictCheckTimeoutRef.current)
+    }
+
+    conflictCheckTimeoutRef.current = setTimeout(() => {
+      checkAppointmentConflicts()
+    }, 500)
+
+    return () => {
+      if (conflictCheckTimeoutRef.current) {
+        clearTimeout(conflictCheckTimeoutRef.current)
+      }
+    }
+  }, [checkAppointmentConflicts])
+
+  // Actualizar usuarios filtrados
+  useEffect(() => {
+    updateFilteredUsers()
+  }, [updateFilteredUsers])
+
+  // Inicializar búsqueda con datos existentes
+  useEffect(() => {
+    if (citaExistente) {
+      const searchValue =
+        citaExistente.telefonoPaciente ||
+        `${citaExistente.nombrePaciente} ${citaExistente.apellidosPaciente || ""}`.trim()
+      setSearchTerm(searchValue)
+    }
+  }, [citaExistente])
+
+  // Limpiar timeouts
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
+      if (conflictCheckTimeoutRef.current) clearTimeout(conflictCheckTimeoutRef.current)
+      if (consultationCheckTimeoutRef.current) clearTimeout(consultationCheckTimeoutRef.current)
+    }
+  }, [])
+
+  // Handlers (simplificados, manteniendo la lógica esencial)
   const selectClient = useCallback((client: ClientMatch) => {
     setClienteEncontrado(client)
     setTelefonoValidado(true)
     setShowMatches(false)
-
     const nombreCompleto = client.name.split(" ")
     const nombre = nombreCompleto[0] || ""
     const apellidos = nombreCompleto.slice(1).join(" ") || ""
@@ -233,7 +363,6 @@ export function AppointmentFormModal({
       nombrePaciente: nombre,
       apellidosPaciente: apellidos,
     }))
-
     setSearchTerm(`${client.name} - ${client.phone}`)
     setTelefonoFormateado(formatPhoneNumber(client.phone || ""))
   }, [])
@@ -243,17 +372,14 @@ export function AppointmentFormModal({
       const value = e.target.value
       setSearchTerm(value)
 
-      // Resetear estado
       setClienteEncontrado(null)
       setTelefonoValidado(false)
       setTelefonoFormateado("")
 
-      // Limpiar timeout anterior
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current)
       }
 
-      // Buscar con debounce
       searchTimeoutRef.current = setTimeout(() => {
         searchClients(value)
       }, 300)
@@ -262,17 +388,13 @@ export function AppointmentFormModal({
   )
 
   const handleSearchBlur = useCallback(() => {
-    // Si no hay cliente seleccionado pero hay texto, intentar extraer datos
     if (!clienteEncontrado && searchTerm) {
       const phoneDigits = searchTerm.replace(/\D/g, "")
-
-      // Si tiene 3 o más dígitos, tratarlo como teléfono
       if (phoneDigits.length >= 3) {
         setFormData((prev) => ({ ...prev, telefonoPaciente: phoneDigits }))
         setTelefonoValidado(true)
         setTelefonoFormateado(formatPhoneNumber(phoneDigits))
       } else {
-        // Si parece un nombre, extraer nombre y apellidos
         const parts = searchTerm.trim().split(" ")
         const nombre = parts[0] || ""
         const apellidos = parts.slice(1).join(" ") || ""
@@ -284,247 +406,9 @@ export function AppointmentFormModal({
         }))
       }
     }
-
-    // Ocultar coincidencias después de un delay
     setTimeout(() => setShowMatches(false), 200)
   }, [clienteEncontrado, searchTerm])
 
-  // Limpiar timeout al desmontar
-  useEffect(() => {
-    return () => {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current)
-      }
-    }
-  }, [])
-
-  // Inicializar filteredUsers con users al cargar
-  useEffect(() => {
-    const convertedUsers: SupabaseUser[] = users.map((user) => ({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      organization_id: user.organization_id,
-      type: 1,
-      is_active: user.is_active,
-      created_at: user.created_at,
-      updated_at: user.updated_at,
-    }))
-    setFilteredUsers(convertedUsers)
-  }, [users])
-
-  // Cargar servicios al montar el componente
-  useEffect(() => {
-    const fetchServices = async () => {
-      if (!organizationId) return
-
-      setLoadingServices(true)
-      try {
-        const { data, error } = await supabase
-          .from("services")
-          .select("*")
-          .eq("organization_id", organizationId)
-          .eq("active", true)
-          .order("name")
-
-        if (error) throw error
-        setServices(data || [])
-      } catch (error) {
-        console.error("Error al cargar servicios:", error)
-      } finally {
-        setLoadingServices(false)
-      }
-    }
-
-    fetchServices()
-  }, [organizationId])
-
-  // Filtrar usuarios según el servicio seleccionado
-  useEffect(() => {
-    const filterUsersByService = async () => {
-      if (!formData.service_id || !organizationId) {
-        const convertedUsers: SupabaseUser[] = users.map((user) => ({
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          organization_id: user.organization_id,
-          type: 1,
-          is_active: user.is_active,
-          created_at: user.created_at,
-          updated_at: user.updated_at,
-        }))
-        setFilteredUsers(convertedUsers)
-        return
-      }
-
-      setLoadingFilteredUsers(true)
-      try {
-        const { data, error } = await supabase
-          .from("user_services")
-          .select(`
-            user_id,
-            users!inner (
-              id,
-              name,
-              email,
-              role,
-              organization_id,
-              type
-            )
-          `)
-          .eq("service_id", formData.service_id)
-
-        if (error) throw error
-
-        const serviceUsers: SupabaseUser[] = []
-        if (data) {
-          for (const item of data) {
-            if (item.users && typeof item.users === "object" && !Array.isArray(item.users)) {
-              const user = item.users as any
-              if (user.organization_id === organizationId && user.type === 1) {
-                serviceUsers.push({
-                  id: user.id,
-                  name: user.name,
-                  email: user.email,
-                  role: user.role,
-                  organization_id: user.organization_id,
-                  type: user.type,
-                })
-              }
-            }
-          }
-        }
-
-        setFilteredUsers(serviceUsers)
-
-        if (
-          formData.profesionalId &&
-          !serviceUsers.find((user) => Number.parseInt(user.id.slice(-8), 16) === formData.profesionalId)
-        ) {
-          setFormData((prev) => ({ ...prev, profesionalId: 0 }))
-        }
-      } catch (error) {
-        console.error("Error al filtrar usuarios por servicio:", error)
-        const convertedUsers: SupabaseUser[] = users.map((user) => ({
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          organization_id: user.organization_id,
-          type: 1,
-          is_active: user.is_active,
-          created_at: user.created_at,
-          updated_at: user.updated_at,
-        }))
-        setFilteredUsers(convertedUsers)
-      } finally {
-        setLoadingFilteredUsers(false)
-      }
-    }
-
-    filterUsersByService()
-  }, [formData.service_id, users, organizationId, formData.profesionalId])
-
-  // Inicializar consultas disponibles
-  useEffect(() => {
-    setAvailableConsultations(consultations)
-  }, [consultations])
-
-  // Función optimizada para verificar consultas disponibles
-  const checkAvailableConsultations = useCallback(
-    async (hora: string, duracion: number) => {
-      if (!hora || !duracion || !organizationId || consultations.length === 0) {
-        return
-      }
-
-      const checkParams = `${hora}-${duracion}-${fecha.toISOString().split("T")[0]}`
-
-      if (isCheckingRef.current || lastCheckParamsRef.current === checkParams) {
-        return
-      }
-
-      isCheckingRef.current = true
-      lastCheckParamsRef.current = checkParams
-      setCheckingConsultations(true)
-
-      try {
-        const endTime = calcularHoraFin(hora, duracion)
-        const dateString = fecha.toISOString().split("T")[0]
-        const available = await getAvailableConsultations(dateString, hora, endTime, citaExistente?.id?.toString())
-        setAvailableConsultations(available)
-
-        if (
-          formData.consultationId &&
-          formData.consultationId !== "none" &&
-          !available.find((c) => c.id === formData.consultationId)
-        ) {
-          setFormData((prev) => ({ ...prev, consultationId: "none" }))
-        }
-      } catch (error) {
-        console.error("Error al verificar disponibilidad de consultas")
-        setAvailableConsultations(consultations)
-      } finally {
-        setCheckingConsultations(false)
-        isCheckingRef.current = false
-      }
-    },
-    [
-      organizationId,
-      consultations,
-      calcularHoraFin,
-      getAvailableConsultations,
-      fecha,
-      citaExistente?.id,
-      formData.consultationId,
-    ],
-  )
-
-  // Verificar consultas con debounce
-  useEffect(() => {
-    if (!organizationId || consultations.length === 0) {
-      return
-    }
-
-    const shouldCheck =
-      formData.consultationId !== "none" || (citaExistente?.consultationId && citaExistente.consultationId !== "")
-
-    if (!shouldCheck) {
-      setAvailableConsultations(consultations)
-      setCheckingConsultations(false)
-      return
-    }
-
-    const timeoutId = setTimeout(() => {
-      checkAvailableConsultations(formData.hora, formData.duracion)
-    }, 800)
-
-    return () => clearTimeout(timeoutId)
-  }, [
-    formData.hora,
-    formData.duracion,
-    formData.consultationId,
-    organizationId,
-    consultations,
-    checkAvailableConsultations,
-    citaExistente?.consultationId,
-  ])
-
-  // Manejar cambios de hora y duración
-  const handleHoraChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const nuevaHora = e.target.value
-    setFormData((prev) => ({ ...prev, hora: nuevaHora }))
-    lastCheckParamsRef.current = ""
-  }, [])
-
-  const handleDuracionChange = useCallback((value: string) => {
-    const nuevaDuracion = Number.parseInt(value)
-    setFormData((prev) => ({ ...prev, duracion: nuevaDuracion }))
-    lastCheckParamsRef.current = ""
-  }, [])
-
-  // Manejar cambio de servicio
   const handleServiceChange = useCallback(
     (value: string) => {
       if (value === "none") {
@@ -549,9 +433,7 @@ export function AppointmentFormModal({
     (e: React.FormEvent) => {
       e.preventDefault()
 
-      // Validaciones
       const newErrors: { [key: string]: string } = {}
-
       if (!formData.telefonoPaciente.trim()) {
         newErrors.telefono = "El teléfono es obligatorio"
       } else if (!isValidPhoneNumber(formData.telefonoPaciente)) {
@@ -574,22 +456,23 @@ export function AppointmentFormModal({
       const nuevaCita: Partial<Cita> = {
         ...formData,
         telefonoPaciente: normalizePhoneNumber(formData.telefonoPaciente),
-        fecha,
+        fecha: formData.fecha,
         horaFin: calcularHoraFin(formData.hora, formData.duracion),
         horaInicio: formData.hora,
         id: citaExistente?.id || Date.now(),
         estado: formData.estado,
         consultationId:
           formData.consultationId === "none" || !formData.consultationId ? undefined : formData.consultationId,
+        // IMPORTANTE: Preservar el profesionalId del slot clickeado si no se ha cambiado
+        profesionalId: formData.profesionalId || profesionalId,
       }
 
       onSubmit(nuevaCita)
       onClose()
     },
-    [formData, clienteEncontrado, calcularHoraFin, fecha, citaExistente?.id, onSubmit, onClose],
+    [formData, clienteEncontrado, calcularHoraFin, citaExistente?.id, onSubmit, onClose, profesionalId],
   )
 
-  // Mostrar mensaje si no hay organizationId
   if (!organizationId) {
     return (
       <Dialog open onOpenChange={onClose}>
@@ -619,7 +502,7 @@ export function AppointmentFormModal({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 px-1">
-          {/* Campo de búsqueda mejorado */}
+          {/* Campo de búsqueda */}
           <div className="space-y-2">
             <Label htmlFor="searchTerm" className="flex items-center gap-2 text-sm font-medium">
               <Search className="h-4 w-4" />
@@ -634,7 +517,9 @@ export function AppointmentFormModal({
                 onFocus={() => searchTerm && searchClients(searchTerm)}
                 placeholder="Buscar por teléfono (3+ dígitos), nombre o apellido..."
                 required
-                className={`w-full ${errors.telefono ? "border-red-500" : ""} ${clienteEncontrado ? "border-green-500" : ""}`}
+                className={`w-full ${errors.telefono ? "border-red-500" : ""} ${
+                  clienteEncontrado ? "border-green-500" : ""
+                }`}
               />
               {searchingClients && (
                 <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 animate-spin text-gray-400" />
@@ -716,6 +601,7 @@ export function AppointmentFormModal({
               />
               {errors.nombre && <p className="text-sm text-red-600">{errors.nombre}</p>}
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="apellidosPaciente" className="text-sm font-medium">
                 Apellidos
@@ -751,11 +637,11 @@ export function AppointmentFormModal({
             <Label htmlFor="service" className="flex items-center gap-2 text-sm font-medium">
               <Briefcase className="h-4 w-4" />
               Servicio (opcional)
-              {loadingServices && <Loader2 className="h-3 w-3 animate-spin" />}
+              {servicesLoading && <Loader2 className="h-3 w-3 animate-spin" />}
             </Label>
-            <Select value={formData.service_id} onValueChange={handleServiceChange} disabled={loadingServices}>
+            <Select value={formData.service_id} onValueChange={handleServiceChange} disabled={servicesLoading}>
               <SelectTrigger className="w-full">
-                <SelectValue placeholder={loadingServices ? "Cargando servicios..." : "Selecciona un servicio"} />
+                <SelectValue placeholder={servicesLoading ? "Cargando servicios..." : "Selecciona un servicio"} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Sin servicio específico</SelectItem>
@@ -780,26 +666,53 @@ export function AppointmentFormModal({
             )}
           </div>
 
-          {/* Horario */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Fecha y Horario */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="hora" className="text-sm font-medium">
-                Hora
+              <Label htmlFor="fecha" className="flex items-center gap-2 text-sm font-medium">
+                <Calendar className="h-4 w-4" />
+                Fecha *
+              </Label>
+              <Input
+                id="fecha"
+                type="date"
+                value={
+                  (formData.fecha instanceof Date ? formData.fecha : new Date(formData.fecha))
+                    .toISOString()
+                    .split("T")[0]
+                }
+                onChange={(e) => {
+                  const nuevaFecha = new Date(e.target.value + "T00:00:00")
+                  setFormData((prev) => ({ ...prev, fecha: nuevaFecha }))
+                }}
+                required
+                className="w-full"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="hora" className="flex items-center gap-2 text-sm font-medium">
+                <Clock className="h-4 w-4" />
+                Hora *
               </Label>
               <Input
                 id="hora"
                 type="time"
                 value={formData.hora}
-                onChange={handleHoraChange}
+                onChange={(e) => setFormData((prev) => ({ ...prev, hora: e.target.value }))}
                 required
                 className="w-full"
               />
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="duracion" className="text-sm font-medium">
                 Duración (min)
               </Label>
-              <Select value={formData.duracion.toString()} onValueChange={handleDuracionChange}>
+              <Select
+                value={formData.duracion.toString()}
+                onValueChange={(value) => setFormData((prev) => ({ ...prev, duracion: Number.parseInt(value) }))}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
@@ -814,12 +727,47 @@ export function AppointmentFormModal({
             </div>
           </div>
 
+          {/* Advertencia de conflictos */}
+          {conflicts.length > 0 && (
+            <Alert className="border-red-200 bg-red-50">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription className="text-red-800">
+                <strong>⚠️ Conflicto de horario detectado</strong>
+                <br />
+                <span className="text-sm">
+                  Ya existe{conflicts.length > 1 ? "n" : ""} {conflicts.length} cita
+                  {conflicts.length > 1 ? "s" : ""} en este horario:
+                </span>
+                <div className="mt-2 space-y-1">
+                  {conflicts.map((apt) => (
+                    <div key={apt.id} className="text-sm bg-red-100 p-2 rounded border-l-4 border-red-400">
+                      <div className="font-medium">{apt.client_name}</div>
+                      <div className="text-xs text-red-700">
+                        {apt.start_time} - {apt.end_time} • {apt.professional_name} • Estado: {apt.status}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-2 text-sm">
+                  <strong>Puedes continuar si es necesario, pero considera cambiar el horario.</strong>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {conflictsLoading && (
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Verificando disponibilidad...
+            </div>
+          )}
+
           {/* Consulta */}
           <div className="space-y-2">
             <Label htmlFor="consultation" className="flex items-center gap-2 text-sm font-medium">
               <MapPin className="h-4 w-4" />
               Consulta (opcional)
-              {checkingConsultations && <Loader2 className="h-3 w-3 animate-spin" />}
+              {consultationsLoading && <Loader2 className="h-3 w-3 animate-spin" />}
             </Label>
             {consultations.length > 0 ? (
               <>
@@ -851,7 +799,21 @@ export function AppointmentFormModal({
                 {!consultationsLoading && availableConsultations.length === 0 && consultations.length > 0 && (
                   <p className="text-sm text-amber-600">No hay consultas disponibles en este horario</p>
                 )}
+                {!consultationsLoading &&
+                  availableConsultations.length > 0 &&
+                  availableConsultations.length < consultations.length && (
+                    <p className="text-sm text-blue-600">
+                      {availableConsultations.length} de {consultations.length} consultas disponibles
+                    </p>
+                  )}
               </>
+            ) : consultationsLoading ? (
+              <div className="p-3 bg-gray-50 rounded-md border-2 border-dashed border-gray-200">
+                <div className="flex items-center justify-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <p className="text-sm text-gray-600">Cargando consultas...</p>
+                </div>
+              </div>
             ) : (
               <div className="p-3 bg-gray-50 rounded-md border-2 border-dashed border-gray-200">
                 <p className="text-sm text-gray-600 text-center">No hay consultas configuradas en tu organización</p>
@@ -866,17 +828,13 @@ export function AppointmentFormModal({
           <div className="space-y-2">
             <Label htmlFor="profesional" className="flex items-center gap-2 text-sm font-medium">
               Profesional
-              {loadingFilteredUsers && <Loader2 className="h-3 w-3 animate-spin" />}
             </Label>
             <Select
               value={formData.profesionalId.toString()}
               onValueChange={(value) => setFormData({ ...formData, profesionalId: Number.parseInt(value) })}
-              disabled={loadingFilteredUsers}
             >
               <SelectTrigger className="w-full">
-                <SelectValue
-                  placeholder={loadingFilteredUsers ? "Filtrando profesionales..." : "Selecciona un profesional"}
-                />
+                <SelectValue placeholder="Selecciona un profesional" />
               </SelectTrigger>
               <SelectContent>
                 {filteredUsers.map((user) => (
@@ -889,7 +847,7 @@ export function AppointmentFormModal({
                 ))}
               </SelectContent>
             </Select>
-            {formData.service_id && filteredUsers.length === 0 && !loadingFilteredUsers && (
+            {formData.service_id && filteredUsers.length === 0 && (
               <p className="text-sm text-amber-600">No hay profesionales asignados a este servicio</p>
             )}
             {formData.service_id && filteredUsers.length > 0 && (
@@ -948,6 +906,7 @@ export function AppointmentFormModal({
             <p>• Busca por teléfono (3+ dígitos), nombre o apellido para encontrar clientes existentes</p>
             <p>• Selecciona un servicio para filtrar profesionales específicos</p>
             <p>• Las consultas son opcionales - puedes crear citas sin asignar consulta</p>
+            <p>• El sistema verificará automáticamente conflictos de horario</p>
           </div>
 
           {/* Botones */}
@@ -955,7 +914,7 @@ export function AppointmentFormModal({
             <Button type="button" variant="outline" onClick={onClose}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={searchingClients || checkingConsultations || consultationsLoading}>
+            <Button type="submit" disabled={searchingClients || consultationsLoading || conflictsLoading}>
               {citaExistente ? "Actualizar" : "Crear"} Cita
             </Button>
           </div>
