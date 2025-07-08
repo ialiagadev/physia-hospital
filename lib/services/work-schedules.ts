@@ -8,7 +8,7 @@ export class WorkScheduleService {
       .from("work_schedules")
       .select(`
         *,
-        work_schedule_breaks:work_schedule_breaks(*)
+        work_schedule_breaks(*)
       `)
       .eq("user_id", userId)
       .order("day_of_week")
@@ -19,13 +19,26 @@ export class WorkScheduleService {
     }
 
     // Procesar los datos para incluir los descansos ordenados
-    const processedSchedules: WorkSchedule[] = (schedules || []).map((schedule) => ({
-      ...schedule,
-      buffer_time_minutes: schedule.buffer_time_minutes || 5, // Default 5 minutos
-      breaks: (schedule.work_schedule_breaks || [])
-        .filter((breakItem: any) => breakItem.is_active)
-        .sort((a: any, b: any) => a.sort_order - b.sort_order),
-    }))
+    const processedSchedules: WorkSchedule[] = (schedules || []).map((schedule) => {
+      return {
+        ...schedule,
+        buffer_time_minutes: schedule.buffer_time_minutes || 5, // Default 5 minutos
+        breaks: (schedule.work_schedule_breaks || [])
+          .filter((breakItem: any) => breakItem.is_active !== false) // Incluir activos y null
+          .sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0))
+          .map((breakItem: any) => ({
+            id: breakItem.id,
+            work_schedule_id: breakItem.work_schedule_id,
+            break_name: breakItem.break_name || "Descanso",
+            start_time: breakItem.start_time,
+            end_time: breakItem.end_time,
+            is_active: breakItem.is_active !== false,
+            sort_order: breakItem.sort_order || 0,
+            created_at: breakItem.created_at,
+            updated_at: breakItem.updated_at,
+          })),
+      }
+    })
 
     return processedSchedules
   }
@@ -270,7 +283,6 @@ export class WorkScheduleService {
     for (const schedule of daySchedules) {
       const startMinutes = this.timeToMinutes(schedule.start_time)
       const endMinutes = this.timeToMinutes(schedule.end_time)
-      const bufferMinutes = schedule.buffer_time_minutes
 
       // Generar slots considerando descansos
       for (let minutes = startMinutes; minutes + slotDuration <= endMinutes; minutes += slotDuration) {

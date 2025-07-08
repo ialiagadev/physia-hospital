@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Calendar, Clock, Plus, Edit } from "lucide-react"
+import { Calendar, Clock, Plus, Edit } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -17,6 +17,7 @@ import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { ScheduleConfigModal } from "./schedule-config-modal"
 import { useWorkSchedules } from "@/hooks/use-work-schedules"
+import { useAuth } from "@/app/contexts/auth-context"
 import { UserService } from "@/lib/services/users"
 import { toast } from "sonner"
 
@@ -65,6 +66,10 @@ export function ProfesionalesView({
   users = [],
   onRefreshUsers,
 }: ProfesionalesViewProps) {
+  // NUEVO: Obtener organizationId del contexto de autenticación
+  const { userProfile } = useAuth()
+  const organizationId = userProfile?.organization_id?.toString()
+
   // Filtrar solo usuarios de tipo 1 (profesionales)
   const professionalUsers = users.filter((user) => user.type === 1)
 
@@ -84,11 +89,11 @@ export function ProfesionalesView({
     especialidad: "",
     color: "#3B82F6",
   })
-
   const [showScheduleModal, setShowScheduleModal] = useState(false)
   const [selectedUserForSchedule, setSelectedUserForSchedule] = useState<User | null>(null)
 
-  const { saveSchedules } = useWorkSchedules(selectedUserForSchedule?.id)
+  // CORREGIDO: Usar organizationId en lugar de userId específico
+  const { saveSchedules, refetch } = useWorkSchedules(organizationId)
 
   // Obtener estadísticas de un profesional
   const getEstadisticasProfesional = (profesionalId: number) => {
@@ -193,6 +198,7 @@ export function ProfesionalesView({
       }
       onAddProfesional(newProfesional)
     }
+
     setShowAddModal(false)
     setEditForm({ nombre: "", especialidad: "", color: "#3B82F6" })
   }
@@ -226,14 +232,22 @@ export function ProfesionalesView({
     setShowScheduleModal(true)
   }
 
+  // CORREGIDO: Función handleSaveSchedules con parámetros correctos
   const handleSaveSchedules = async (schedules: any[]) => {
+    if (!selectedUserForSchedule) {
+      toast.error("No hay usuario seleccionado")
+      return
+    }
+
     try {
-      await saveSchedules(schedules)
+      // CORREGIDO: Pasar userId y schedules como parámetros separados
+      await saveSchedules(selectedUserForSchedule.id, schedules)
       toast.success("Horarios guardados correctamente")
       setShowScheduleModal(false)
       setSelectedUserForSchedule(null)
 
-      // Refrescar usuarios para mostrar los nuevos horarios
+      // Refrescar datos
+      await refetch()
       if (onRefreshUsers) {
         onRefreshUsers()
       }

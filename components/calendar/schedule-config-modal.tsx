@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
 import { toast } from "sonner"
 import type { User, WorkSchedule, WorkScheduleBreak } from "@/types/calendar"
+import { useWorkSchedules } from "@/hooks/use-work-schedules"
 
 interface ScheduleConfigModalProps {
   isOpen: boolean
@@ -63,13 +64,18 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
   const [activeTab, setActiveTab] = useState("weekly")
   const [isLoading, setIsLoading] = useState(false)
 
-  // Inicializar horarios desde el usuario
+  // Use the hook to get fresh data
+  const { schedules: freshSchedules, loading: schedulesLoading } = useWorkSchedules(user.id)
+
+  // Inicializar horarios desde el hook (datos frescos) o desde el usuario
   useEffect(() => {
-    if (user.work_schedules && user.work_schedules.length > 0) {
-      setSchedules(
-        user.work_schedules
-          .filter((schedule) => schedule.day_of_week !== null)
-          .map((schedule) => ({
+    const sourceSchedules = freshSchedules.length > 0 ? freshSchedules : user.work_schedules
+
+    if (sourceSchedules && sourceSchedules.length > 0) {
+      const processedSchedules = sourceSchedules
+        .filter((schedule) => schedule.day_of_week !== null)
+        .map((schedule) => {
+          return {
             id: schedule.id,
             day_of_week: schedule.day_of_week as number,
             start_time: schedule.start_time,
@@ -79,8 +85,9 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
             break_start: schedule.break_start || undefined,
             break_end: schedule.break_end || undefined,
             breaks: schedule.breaks || [],
-          })),
-      )
+          }
+        })
+      setSchedules(processedSchedules)
     } else {
       // Crear horario por defecto para días laborables
       const defaultSchedules = [1, 2, 3, 4, 5].map((day) => ({
@@ -93,7 +100,7 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
       }))
       setSchedules(defaultSchedules)
     }
-  }, [user])
+  }, [user, freshSchedules])
 
   const addScheduleSlot = () => {
     setSchedules([...schedules, { ...DEFAULT_SCHEDULE }])
@@ -235,7 +242,17 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
         is_exception: false,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        breaks: schedule.breaks,
+        breaks: schedule.breaks.map((breakItem, index) => ({
+          id: breakItem.id || `temp-${Date.now()}-${index}`,
+          work_schedule_id: schedule.id || "",
+          break_name: breakItem.break_name || `Descanso ${index + 1}`,
+          start_time: breakItem.start_time,
+          end_time: breakItem.end_time,
+          is_active: breakItem.is_active ?? true,
+          sort_order: breakItem.sort_order ?? index,
+          created_at: breakItem.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })),
       }))
 
       await onSave(workSchedules)
@@ -243,7 +260,6 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
       onClose()
     } catch (error) {
       toast.error("Error al guardar horarios")
-      console.error(error)
     } finally {
       setIsLoading(false)
     }
@@ -258,7 +274,6 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
       const end = schedule.end_time.split(":").map(Number)
       const startMinutes = start[0] * 60 + start[1]
       const endMinutes = end[0] * 60 + end[1]
-
       let dayMinutes = endMinutes - startMinutes
 
       // Restar todos los descansos activos
@@ -277,7 +292,6 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
 
     const hours = Math.floor(totalMinutes / 60)
     const minutes = totalMinutes % 60
-
     return `${hours}h ${minutes > 0 ? `${minutes}m` : ""} semanales`
   }
 
@@ -334,7 +348,6 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
                           <Switch checked={isActive} onCheckedChange={() => toggleDayActive(day.value)} />
                         </div>
                       </CardHeader>
-
                       {isActive && schedule && scheduleIndex >= 0 && (
                         <CardContent className="space-y-4">
                           {/* Horario principal */}

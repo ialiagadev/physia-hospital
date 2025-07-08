@@ -18,6 +18,8 @@ import type { Cita, Profesional, IntervaloTiempo } from "@/types/calendar"
 import type { User } from "@/types/calendar"
 import { toast } from "sonner"
 import { format } from "date-fns"
+import type { WorkSchedule } from "@/types/calendar"
+import type { JSX } from "react" // Import JSX type
 
 interface HorarioViewDynamicProps {
   date: Date
@@ -34,14 +36,14 @@ interface HorarioViewDynamicProps {
   vacationRequests?: any[]
   isUserOnVacationDate?: (userId: string, date: Date | string) => boolean
   getUserVacationOnDate?: (userId: string, date: Date | string) => any
+  // NUEVO: Horarios de trabajo
+  workSchedules?: WorkSchedule[]
 }
 
 const getColorProfesional = (profesional: Profesional) => {
-  // Usar el color de la base de datos directamente
   const color = profesional.color || "#3B82F6"
-  // Convertir color hex a clases de Tailwind dinámicamente
   return {
-    backgroundColor: `${color}20`, // 20% opacity
+    backgroundColor: `${color}20`,
     borderColor: color,
     color: color,
   }
@@ -64,25 +66,39 @@ const extraerTituloProfesional = (nombre: string | null | undefined) => {
   if (!nombre) {
     return { titulo: "", nombre: "Usuario sin nombre" }
   }
-
   const match = nombre.match(/^(Dr\.|Dra\.) (.+)$/)
   if (match) {
     return { titulo: match[1], nombre: match[2] }
   }
-
   return { titulo: "", nombre: nombre }
 }
 
-// Función para normalizar el formato de tiempo (eliminar segundos si existen)
 const normalizeTimeFormat = (time: string): string => {
   if (!time) return "00:00"
-  // Si el tiempo tiene segundos (HH:MM:SS), eliminarlos
   if (time.includes(":") && time.split(":").length === 3) {
     const [hours, minutes] = time.split(":")
     return `${hours}:${minutes}`
   }
-  // Si ya está en formato HH:MM, devolverlo tal como está
   return time
+}
+
+// NUEVA FUNCIÓN: Obtener horarios de trabajo de un usuario para un día específico
+const getUserWorkSchedulesForDay = (userId: string, dayOfWeek: number, workSchedules: WorkSchedule[]) => {
+  return workSchedules.filter(
+    (schedule) => schedule.user_id === userId && schedule.day_of_week === dayOfWeek && schedule.is_active,
+  )
+}
+
+// NUEVA FUNCIÓN: Verificar si un tiempo está en algún descanso
+const isTimeInBreak = (timeInMinutes: number, workSchedules: WorkSchedule[]) => {
+  return workSchedules.some((schedule) => {
+    return schedule.breaks?.some((breakItem) => {
+      if (!breakItem.is_active) return false
+      const breakStart = timeToMinutes(breakItem.start_time)
+      const breakEnd = timeToMinutes(breakItem.end_time)
+      return timeInMinutes >= breakStart && timeInMinutes < breakEnd
+    })
+  })
 }
 
 export function HorarioViewDynamic({
@@ -99,6 +115,7 @@ export function HorarioViewDynamic({
   vacationRequests = [],
   isUserOnVacationDate = () => false,
   getUserVacationOnDate = () => null,
+  workSchedules = [], // NUEVO
 }: HorarioViewDynamicProps) {
   const [draggedCita, setDraggedCita] = useState<Cita | null>(null)
   const [dragOverProfesional, setDragOverProfesional] = useState<number | null>(null)
@@ -112,13 +129,9 @@ export function HorarioViewDynamic({
   const [previewHora, setPreviewHora] = useState<string | null>(null)
   const [previewPosition, setPreviewPosition] = useState({ x: 0, y: 0 })
 
-  // Obtener día de la semana (0 = domingo, 1 = lunes, etc.)
   const dayOfWeek = date.getDay()
-
-  // Filtrar solo usuarios profesionales (type = 1)
   const professionalUsers = users.filter((user) => user.type === 1)
 
-  // Filtrar profesionales que tengan un usuario correspondiente de tipo 1
   const filteredProfesionales = profesionales.filter((profesional) => {
     const correspondingUser = professionalUsers.find(
       (user) => Number.parseInt(user.id.slice(-8), 16) === profesional.id,
@@ -126,42 +139,31 @@ export function HorarioViewDynamic({
     return correspondingUser !== undefined
   })
 
-  // Aplicar filtro de selección sobre los profesionales ya filtrados por tipo
   const profesionalesFiltrados =
     profesionalSeleccionado === "todos"
       ? filteredProfesionales
       : filteredProfesionales.filter((prof) => prof.id === profesionalSeleccionado)
 
-  // Obtener usuarios correspondientes (solo profesionales)
   const usuariosActivos = professionalUsers.filter((user) =>
     profesionalesFiltrados.some((prof) => Number.parseInt(user.id.slice(-8), 16) === prof.id),
   )
 
-  // Generar slots de tiempo basados en los horarios de los usuarios
   const timeSlots = generateTimeSlots(usuariosActivos, dayOfWeek, intervaloTiempo)
-
-  // Obtener rango de tiempo para el calendario
   const { start: startMinutes, end: endMinutes } = getCalendarTimeRange(usuariosActivos, dayOfWeek)
   const duracionDia = endMinutes - startMinutes
 
   // Funciones de vacaciones
   const isProfessionalOnVacation = (profesionalId: number | string) => {
     if (!isUserOnVacationDate) return false
-
-    // Encontrar el UUID del usuario correspondiente al profesional
     const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
     if (!user) return false
-
     return isUserOnVacationDate(user.id, date)
   }
 
   const getProfessionalVacationInfo = (profesionalId: number | string) => {
     if (!getUserVacationOnDate) return null
-
-    // Encontrar el UUID del usuario correspondiente al profesional
     const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
     if (!user) return null
-
     return getUserVacationOnDate(user.id, date)
   }
 
@@ -218,7 +220,7 @@ export function HorarioViewDynamic({
     return minutesToTime(minutosAjustados)
   }
 
-  // Validar si se puede crear cita en una hora específica
+  // FUNCIÓN MEJORADA: Validar si se puede crear cita en una hora específica
   const puedeCrearCitaEnHora = (profesionalId: number, hora: string): boolean => {
     // Verificar vacaciones primero
     if (isProfessionalOnVacation(profesionalId)) {
@@ -231,7 +233,20 @@ export function HorarioViewDynamic({
     const normalizedTime = normalizeTimeFormat(hora)
     const timeInMinutes = timeToMinutes(normalizedTime)
 
-    return isUserWorkingAt(user, dayOfWeek, timeInMinutes)
+    // Verificar si está en horario de trabajo básico
+    if (!isUserWorkingAt(user, dayOfWeek, timeInMinutes)) {
+      return false
+    }
+
+    // CORREGIDO: Usar workSchedules prop en lugar de user.work_schedules
+    const userSchedules = getUserWorkSchedulesForDay(user.id, dayOfWeek, workSchedules)
+
+    // Verificar si está en algún descanso
+    if (isTimeInBreak(timeInMinutes, userSchedules)) {
+      return false
+    }
+
+    return true
   }
 
   // Handlers de drag & drop
@@ -244,24 +259,17 @@ export function HorarioViewDynamic({
   const handleDragOver = (e: React.DragEvent, profesionalId: number) => {
     e.preventDefault()
     if (!draggedCita) return
-
     setDragOverProfesional(profesionalId)
-
     const container = e.currentTarget as HTMLElement
     const rect = container.getBoundingClientRect()
     const y = e.clientY - rect.top
-
     const nuevaHora = calcularHoraDesdePosicion(y, rect.height)
-
     setPreviewHora(nuevaHora)
     setPreviewPosition({ x: 0, y: e.clientY })
 
-    // Mostrar indicador visual solo si puede crear cita en esa hora
     const indicadores = container.querySelectorAll(".drop-indicator")
     indicadores.forEach((ind) => ind.remove())
-
     const puedeCrear = puedeCrearCitaEnHora(profesionalId, nuevaHora)
-
     const indicador = document.createElement("div")
     indicador.className = `drop-indicator absolute w-full h-1 rounded-full z-50 pointer-events-none ${
       puedeCrear ? "bg-blue-400" : "bg-red-400"
@@ -273,24 +281,19 @@ export function HorarioViewDynamic({
   const handleDrop = async (e: React.DragEvent, profesionalId: number) => {
     e.preventDefault()
     if (!draggedCita) return
-
     const container = e.currentTarget as HTMLElement
     const rect = container.getBoundingClientRect()
     const y = e.clientY - rect.top
-
     const nuevaHora = calcularHoraDesdePosicion(y, rect.height)
 
-    // Limpiar indicadores
     const indicadores = container.querySelectorAll(".drop-indicator")
     indicadores.forEach((ind) => ind.remove())
 
-    // Validar si puede crear cita en esa hora
     if (!puedeCrearCitaEnHora(profesionalId, nuevaHora)) {
       const isOnVacation = isProfessionalOnVacation(profesionalId)
       const message = isOnVacation
         ? "No se puede mover la cita: el profesional está de vacaciones"
-        : "No se puede mover la cita fuera del horario de trabajo"
-
+        : "No se puede mover la cita: fuera del horario de trabajo o en período de descanso"
       toast.error(message)
       setDraggedCita(null)
       setDragOverProfesional(null)
@@ -305,14 +308,11 @@ export function HorarioViewDynamic({
         profesionalId: profesionalId,
         horaFin: calcularHoraFin(nuevaHora, draggedCita.duracion),
       }
-
-      // Llamar a la función de actualización y esperar a que termine
       await onUpdateCita(citaActualizada)
       setDraggedCita(null)
       setDragOverProfesional(null)
       setIsDragging(false)
     } catch (error) {
-      console.error("Error updating appointment:", error)
       toast.error("Error al mover la cita")
       setDraggedCita(null)
       setDragOverProfesional(null)
@@ -330,22 +330,17 @@ export function HorarioViewDynamic({
 
   const handleContainerClick = (e: React.MouseEvent, profesionalId: number) => {
     if (e.target !== e.currentTarget) return
-
     const container = e.currentTarget as HTMLElement
     const rect = container.getBoundingClientRect()
     const y = e.clientY - rect.top
-
     const hora = calcularHoraDesdePosicion(y, rect.height)
 
-    // Validar si puede crear cita en esa hora
     if (!puedeCrearCitaEnHora(profesionalId, hora)) {
       const isOnVacation = isProfessionalOnVacation(profesionalId)
       const vacationInfo = getProfessionalVacationInfo(profesionalId)
-
       const message = isOnVacation
         ? `No disponible: ${getVacationLabel(vacationInfo?.type) || "Ausencia"}`
-        : "No se puede crear cita fuera del horario de trabajo"
-
+        : "No se puede crear cita: fuera del horario de trabajo o en período de descanso"
       toast.error(message)
       return
     }
@@ -358,26 +353,29 @@ export function HorarioViewDynamic({
     setShowNewAppointmentModal(true)
   }
 
-  // Renderizar huecos libres para un profesional (solo en horario de trabajo y sin vacaciones)
-  const renderHuecosLibres = (profesionalId: number) => {
-    // No mostrar huecos si está de vacaciones
+  // FUNCIÓN MEJORADA: Renderizar huecos libres considerando descansos
+  const renderHuecosLibres = (profesionalId: number): JSX.Element[] => {
     if (isProfessionalOnVacation(profesionalId)) {
       return []
     }
 
     const citasProfesional = citas.filter((cita) => cita.profesionalId === profesionalId)
     const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
-
     if (!user) return []
 
     const workingHours = getWorkingHoursForDay(user, dayOfWeek)
-    const huecos = []
+    const userSchedules = getUserWorkSchedulesForDay(user.id, dayOfWeek, workSchedules)
+    const huecos: JSX.Element[] = []
 
     for (const hours of workingHours) {
-      // Generar slots dentro del horario de trabajo
       for (let minutos = hours.start; minutos < hours.end; minutos += intervaloTiempo) {
-        // Verificar si está en horario de descanso
+        // Verificar si está en horario de descanso (sistema antiguo de compatibilidad)
         if (hours.breakStart && hours.breakEnd && minutos >= hours.breakStart && minutos < hours.breakEnd) {
+          continue
+        }
+
+        // CORREGIDO: Verificar si está en algún descanso del nuevo sistema
+        if (isTimeInBreak(minutos, userSchedules)) {
           continue
         }
 
@@ -393,17 +391,99 @@ export function HorarioViewDynamic({
         })
 
         if (!ocupado) {
-          huecos.push({
-            inicio: horaInicio,
-            fin: horaFin,
-            posicionTop: calcularPosicionCita(horaInicio),
-            altura: calcularAlturaCita(intervaloTiempo),
-          })
+          huecos.push(
+            <div
+              key={`hueco-${horaInicio}`}
+              className="absolute rounded-md cursor-pointer border bg-white hover:brightness-95 transition-all"
+              style={{
+                top: `${calcularPosicionCita(horaInicio)}%`,
+                left: 0,
+                right: 0,
+                width: "100%",
+                height: `${calcularAlturaCita(intervaloTiempo)}%`,
+                backgroundImage: "radial-gradient(circle, #e5e7eb 1px, transparent 1px)",
+                backgroundSize: "8px 8px",
+                zIndex: 5,
+              }}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (puedeCrearCitaEnHora(profesionalId, horaInicio)) {
+                  setNewAppointmentData({
+                    fecha: date,
+                    hora: horaInicio,
+                    profesionalId: profesionalId,
+                  })
+                  setShowNewAppointmentModal(true)
+                } else {
+                  const isOnVacation = isProfessionalOnVacation(profesionalId)
+                  const message = isOnVacation
+                    ? "No se puede crear cita: el profesional está de vacaciones"
+                    : "No se puede crear cita: fuera del horario de trabajo o en período de descanso"
+                  toast.error(message)
+                }
+              }}
+            >
+              <div className="flex flex-col p-2">
+                <div className="flex items-center">
+                  <div className="w-4 h-4 rounded-full border border-gray-400 bg-white flex items-center justify-center text-xs mr-1">
+                    <span>+</span>
+                  </div>
+                  <div className="text-xs font-medium text-gray-700">
+                    {horaInicio} - {horaFin}
+                  </div>
+                </div>
+              </div>
+            </div>,
+          )
         }
       }
     }
 
     return huecos
+  }
+
+  // NUEVA FUNCIÓN: Renderizar períodos de descanso visualmente
+  const renderDescansos = (profesionalId: number): JSX.Element[] => {
+    const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
+    if (!user) return []
+
+    const userSchedules = getUserWorkSchedulesForDay(user.id, dayOfWeek, workSchedules)
+    const descansos: JSX.Element[] = []
+
+    userSchedules.forEach((schedule, scheduleIndex) => {
+      schedule.breaks?.forEach((breakItem, breakIndex) => {
+        if (!breakItem.is_active) return
+
+        const breakStart = timeToMinutes(breakItem.start_time)
+        const breakEnd = timeToMinutes(breakItem.end_time)
+        const posicionTop = ((breakStart - startMinutes) / duracionDia) * 100
+        const altura = ((breakEnd - breakStart) / duracionDia) * 100
+
+        descansos.push(
+          <div
+            key={`break-${scheduleIndex}-${breakIndex}`}
+            className="absolute rounded-md border-2 border-dashed border-orange-300 bg-orange-50 flex items-center justify-center"
+            style={{
+              top: `${posicionTop}%`,
+              left: 0,
+              right: 0,
+              width: "100%",
+              height: `${altura}%`,
+              zIndex: 3,
+            }}
+          >
+            <div className="text-center p-1">
+              <div className="text-xs font-medium text-orange-700">☕ {breakItem.break_name}</div>
+              <div className="text-xs text-orange-600">
+                {breakItem.start_time} - {breakItem.end_time}
+              </div>
+            </div>
+          </div>,
+        )
+      })
+    })
+
+    return descansos
   }
 
   if (timeSlots.length === 0) {
@@ -427,6 +507,7 @@ export function HorarioViewDynamic({
           const citasProfesional = citas.filter((cita) => cita.profesionalId === profesional.id)
           const { titulo, nombre } = extraerTituloProfesional(profesional?.name)
           const huecosLibres = renderHuecosLibres(profesional.id)
+          const descansos = renderDescansos(profesional.id) // NUEVO
 
           // Obtener usuario correspondiente
           const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesional.id)
@@ -513,62 +594,19 @@ export function HorarioViewDynamic({
                       />
                     ))}
 
+                    {/* NUEVO: Períodos de descanso */}
+                    {descansos}
+
                     {/* Huecos libres - solo en horario de trabajo y sin vacaciones */}
-                    {huecosLibres.map((hueco, index) => (
-                      <div
-                        key={`hueco-${index}`}
-                        className="absolute rounded-md cursor-pointer border bg-white hover:brightness-95 transition-all"
-                        style={{
-                          top: `${hueco.posicionTop}%`,
-                          left: 0,
-                          right: 0,
-                          width: "100%",
-                          height: `${hueco.altura}%`,
-                          backgroundImage: "radial-gradient(circle, #e5e7eb 1px, transparent 1px)",
-                          backgroundSize: "8px 8px",
-                          zIndex: 5,
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          // Validar nuevamente antes de abrir modal
-                          if (puedeCrearCitaEnHora(profesional.id, hueco.inicio)) {
-                            setNewAppointmentData({
-                              fecha: date,
-                              hora: hueco.inicio,
-                              profesionalId: profesional.id,
-                            })
-                            setShowNewAppointmentModal(true)
-                          } else {
-                            const isOnVacation = isProfessionalOnVacation(profesional.id)
-                            const message = isOnVacation
-                              ? "No se puede crear cita: el profesional está de vacaciones"
-                              : "No se puede crear cita fuera del horario de trabajo"
-                            toast.error(message)
-                          }
-                        }}
-                      >
-                        <div className="flex flex-col p-2">
-                          <div className="flex items-center">
-                            <div className="w-4 h-4 rounded-full border border-gray-400 bg-white flex items-center justify-center text-xs mr-1">
-                              <span>+</span>
-                            </div>
-                            <div className="text-xs font-medium text-gray-700">
-                              {hueco.inicio} - {hueco.fin}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                    {huecosLibres}
 
                     {/* Citas */}
                     <TooltipProvider>
                       {citasProfesional.map((cita, index) => {
-                        // Normalizar los tiempos de la cita
                         const normalizedStartTime = normalizeTimeFormat(cita.hora)
                         const normalizedEndTime = normalizeTimeFormat(
                           cita.horaFin || calcularHoraFin(cita.hora, cita.duracion),
                         )
-
                         const posicionTop = calcularPosicionCita(normalizedStartTime)
                         const altura = calcularAlturaCita(cita.duracion)
 

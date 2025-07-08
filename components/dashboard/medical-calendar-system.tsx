@@ -20,6 +20,7 @@ import { useClients } from "@/hooks/use-clients"
 import { useConsultations } from "@/hooks/use-consultations"
 import { useServices } from "@/hooks/use-services"
 import { useVacations } from "@/hooks/use-vacations"
+import { useWorkSchedules } from "@/hooks/use-work-schedules" // NUEVO
 import { useAuth } from "@/app/contexts/auth-context"
 import { supabase } from "@/lib/supabase"
 import { WaitingListView } from "../waiting-list/waiting-list-view"
@@ -65,8 +66,6 @@ const mapStatusToEstado = (status: string): EstadoCita => {
 
 const MedicalCalendarSystem: React.FC = () => {
   const { userProfile } = useAuth()
-
-  // Obtener organizationId del perfil del usuario
   const organizationId = userProfile?.organization_id ? Number(userProfile.organization_id) : undefined
 
   // Estados principales
@@ -108,6 +107,9 @@ const MedicalCalendarSystem: React.FC = () => {
     getUserVacation,
     getAvailableUsers,
   } = useVacations(organizationId)
+
+  // NUEVO: Hook de horarios de trabajo
+  const { schedules: allWorkSchedules, loading: schedulesLoading } = useWorkSchedules(organizationId?.toString())
 
   // Calcular rango de fechas para las citas
   const getDateRange = () => {
@@ -181,7 +183,6 @@ const MedicalCalendarSystem: React.FC = () => {
   // Función para obtener o crear tipo de cita por defecto
   const getDefaultAppointmentType = async (userId: string) => {
     try {
-      // Buscar tipo de cita existente
       const { data: existingType } = await supabase
         .from("appointment_types")
         .select("id")
@@ -193,7 +194,6 @@ const MedicalCalendarSystem: React.FC = () => {
         return existingType.id
       }
 
-      // Crear tipo de cita por defecto si no existe
       const { data: newType, error } = await supabase
         .from("appointment_types")
         .insert({
@@ -211,7 +211,6 @@ const MedicalCalendarSystem: React.FC = () => {
       if (error) throw error
       return newType.id
     } catch (error) {
-      console.error("Error getting/creating appointment type:", error)
       throw error
     }
   }
@@ -220,7 +219,6 @@ const MedicalCalendarSystem: React.FC = () => {
   const handleAddAppointment = async (appointmentData: any) => {
     try {
       if (!currentUser) {
-        console.error("Usuario no autenticado")
         return
       }
 
@@ -235,7 +233,6 @@ const MedicalCalendarSystem: React.FC = () => {
       if (existingClient) {
         clientId = existingClient.id
       } else {
-        // Crear nuevo cliente usando el hook
         const newClient = await createClient({
           name: `${appointmentData.nombrePaciente} ${appointmentData.apellidosPaciente || ""}`.trim(),
           phone: appointmentData.telefonoPaciente,
@@ -244,10 +241,8 @@ const MedicalCalendarSystem: React.FC = () => {
         clientId = newClient.id
       }
 
-      // Determinar el profesional - CORREGIDO
-      let professionalUuid = currentUser.id // Por defecto, el usuario actual
-
-      // Si viene profesionalId del appointmentData (del modal o del slot clickeado)
+      // Determinar el profesional
+      let professionalUuid = currentUser.id
       if (appointmentData.profesionalId) {
         const prof = users.find((u) => {
           const numericId = Number.parseInt(u.id.slice(-8), 16)
@@ -258,35 +253,20 @@ const MedicalCalendarSystem: React.FC = () => {
         }
       }
 
-      // Obtener o crear tipo de cita por defecto para el profesional
       const appointmentTypeId = await getDefaultAppointmentType(professionalUuid)
 
-      // Determinar la consulta (opcional) - CORREGIDO
       let consultationId = null
-
-      // Solo asignar consulta si se especificó una explícitamente (no "none")
       if (appointmentData.consultationId && appointmentData.consultationId !== "none") {
         consultationId = appointmentData.consultationId
       }
-      // NO buscar consulta automáticamente si no se especificó una
-
-      // Eliminar esta lógica automática:
-      // if (!consultationId && appointmentData.consultationId !== "none" && consultations.length > 0) {
-      //   const endTime = appointmentData.horaFin || calculateEndTime(appointmentData.hora, appointmentData.duracion)
-      //   consultationId = await getFirstAvailableConsultation(
-      //     format(appointmentData.fecha, "yyyy-MM-dd"),
-      //     appointmentData.hora,
-      //     endTime,
-      //   )
-      // }
 
       const newAppointment: AppointmentInsert = {
-        user_id: currentUser.id, // Usuario que crea la cita
+        user_id: currentUser.id,
         organization_id: currentUser.organization_id,
-        professional_id: professionalUuid, // Profesional asignado - CORREGIDO
+        professional_id: professionalUuid,
         client_id: clientId,
         appointment_type_id: appointmentTypeId,
-        consultation_id: consultationId, // Puede ser null
+        consultation_id: consultationId,
         date: format(appointmentData.fecha, "yyyy-MM-dd"),
         start_time: appointmentData.hora,
         end_time: appointmentData.horaFin || calculateEndTime(appointmentData.hora, appointmentData.duracion),
@@ -297,9 +277,8 @@ const MedicalCalendarSystem: React.FC = () => {
       }
 
       await createAppointment(newAppointment)
-      console.log("Cita creada correctamente para profesional:", professionalUuid)
     } catch (error) {
-      console.error("Error creating appointment:", error)
+      // Error handling
     }
   }
 
@@ -313,11 +292,10 @@ const MedicalCalendarSystem: React.FC = () => {
         status: appointment.status,
         notes: appointment.notes || undefined,
         professional_id: appointment.professional_id,
-        consultation_id: appointment.consultation_id, // Incluir consulta en la actualización
+        consultation_id: appointment.consultation_id,
       })
     } catch (error) {
-      console.error("Error updating appointment:", error)
-      throw error // Re-lanzar el error para que se maneje en el componente
+      throw error
     }
   }
 
@@ -327,7 +305,7 @@ const MedicalCalendarSystem: React.FC = () => {
       setSelectedAppointment(null)
       setShowDetailsModal(false)
     } catch (error) {
-      console.error("Error deleting appointment:", error)
+      // Error handling
     }
   }
 
@@ -338,27 +316,20 @@ const MedicalCalendarSystem: React.FC = () => {
 
   // Handler para citas en formato legacy
   const handleSelectLegacyAppointment = (cita: any) => {
-    // Buscar la cita original en el array de appointments
     const originalAppointment = appointments.find((apt) => {
-      // Convertir el ID numérico de vuelta a UUID parcial para comparar
       const numericId = Number.parseInt(apt.id.slice(-8), 16)
       return numericId === cita.id
     })
 
     if (originalAppointment) {
       handleSelectAppointment(originalAppointment)
-    } else {
-      console.error("No se pudo cargar los detalles de la cita")
     }
   }
 
   // Handler para actualizar citas en formato legacy
   const handleUpdateLegacyAppointment = async (cita: any) => {
-    // Buscar la cita original
     const originalAppointment = appointments.find((apt) => Number.parseInt(apt.id.slice(-8), 16) === cita.id)
-
     if (originalAppointment) {
-      // Crear el objeto actualizado
       const updatedAppointment = {
         ...originalAppointment,
         date: format(cita.fecha, "yyyy-MM-dd"),
@@ -369,10 +340,7 @@ const MedicalCalendarSystem: React.FC = () => {
           users.find((u) => Number.parseInt(u.id.slice(-8), 16) === cita.profesionalId)?.id ||
           originalAppointment.professional_id,
       }
-
       await handleUpdateAppointment(updatedAppointment)
-    } else {
-      console.error("No se pudo encontrar la cita para actualizar")
     }
   }
 
@@ -403,7 +371,6 @@ const MedicalCalendarSystem: React.FC = () => {
       month: "long",
       day: "numeric",
     }
-
     switch (vistaCalendario) {
       case "dia":
         return currentDate.toLocaleDateString("es-ES", options)
@@ -416,42 +383,40 @@ const MedicalCalendarSystem: React.FC = () => {
     }
   }
 
-  // Funciones helper para vacaciones - ahora usando el hook optimizado
+  // Funciones helper para vacaciones
   const isUserOnVacationDate = isUserOnVacationHook
   const getUserVacationOnDate = getUserVacation
 
   const convertAppointmentsToLegacyFormat = (appointments: AppointmentWithDetails[]) => {
     return appointments.map((apt) => ({
-      id: Number.parseInt(apt.id.slice(-8), 16), // Convertir UUID a número para compatibilidad
+      id: Number.parseInt(apt.id.slice(-8), 16),
       nombrePaciente: apt.client?.name?.split(" ")[0] || "Sin nombre",
       apellidosPaciente: apt.client?.name?.split(" ").slice(1).join(" ") || "",
       telefonoPaciente: apt.client?.phone || "",
       hora: apt.start_time,
-      horaInicio: apt.start_time, // Agregar horaInicio
+      horaInicio: apt.start_time,
       horaFin: apt.end_time,
       duracion: apt.duration,
       tipo: apt.appointment_type?.name || "Consulta",
       notas: apt.notes || "",
-      fecha: new Date(apt.date), // Asegurar que sea un objeto Date
-      profesionalId: Number.parseInt(apt.professional_id.slice(-8), 16), // Convertir UUID a número
+      fecha: new Date(apt.date),
+      profesionalId: Number.parseInt(apt.professional_id.slice(-8), 16),
       estado: mapStatusToEstado(apt.status),
-      consultationId: apt.consultation_id, // Incluir ID de consulta
-      consultation: apt.consultation, // Incluir datos completos de consulta
-      clienteId: apt.client_id, // Agregar clienteId
+      consultationId: apt.consultation_id,
+      consultation: apt.consultation,
+      clienteId: apt.client_id,
     }))
   }
 
   const convertUsersToLegacyFormat = (users: any[]) => {
-    // Filtrar solo usuarios tipo 1 (profesionales médicos)
     const medicalProfessionals = users.filter((user) => user.type === 1)
     return medicalProfessionals.map((user) => ({
-      id: Number.parseInt(user.id.slice(-8), 16), // Convertir UUID a número
+      id: Number.parseInt(user.id.slice(-8), 16),
       nombre: user.name || "",
       name: user.name || "",
       especialidad: user.settings?.specialty || "Medicina General",
-      // Usar el color de la base de datos o un color por defecto
       color: user.settings?.calendar_color || "#3B82F6",
-      type: user.type, // Incluir la propiedad type
+      type: user.type,
       settings: user.settings,
     }))
   }
@@ -464,7 +429,8 @@ const MedicalCalendarSystem: React.FC = () => {
     consultationsLoading ||
     clientsLoading ||
     servicesLoading ||
-    vacationLoading
+    vacationLoading ||
+    schedulesLoading // NUEVO
   ) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -582,7 +548,6 @@ const MedicalCalendarSystem: React.FC = () => {
                     <ProfesionalesLegend
                       profesionales={legacyUsers}
                       profesionalesSeleccionados={usuariosSeleccionados.map((id) => {
-                        // Safely convert UUID to number, with fallback
                         try {
                           return Number.parseInt(id.slice(-8), 16)
                         } catch {
@@ -668,6 +633,7 @@ const MedicalCalendarSystem: React.FC = () => {
                         }),
                       )}
                       users={users.filter((user) => usuariosSeleccionados.includes(user.id))}
+                      workSchedules={allWorkSchedules} // NUEVO: Pasar horarios de trabajo
                       onSelectCita={handleSelectLegacyAppointment}
                       profesionalSeleccionado="todos"
                       profesionalesSeleccionados={usuariosSeleccionados.map((id) => {
@@ -752,8 +718,6 @@ const MedicalCalendarSystem: React.FC = () => {
               <WaitingListView
                 organizationId={organizationId}
                 onScheduleAppointment={(entry) => {
-                  // Aquí podríamos abrir el modal de crear cita con los datos pre-rellenados
-                  console.log("Programar cita para:", entry)
                   setShowNewAppointmentModal(true)
                 }}
               />
