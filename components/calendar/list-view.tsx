@@ -23,25 +23,12 @@ const estadoLabels = {
   confirmada: "Confirmada",
   pendiente: "Pendiente",
   cancelada: "Cancelada",
-  completada: "Completada",
-  no_show: "No se presentó",
 }
 
 const estadoColors = {
   confirmada: "bg-green-100 text-green-800",
   pendiente: "bg-yellow-100 text-yellow-800",
   cancelada: "bg-red-100 text-red-800",
-  completada: "bg-blue-100 text-blue-800",
-  no_show: "bg-gray-100 text-gray-800",
-}
-
-const tipoLabels = {
-  Consulta: "Consulta",
-  Revisión: "Revisión",
-  Urgencia: "Urgencia",
-  Seguimiento: "Seguimiento",
-  "Cirugía menor": "Cirugía menor",
-  Vacunación: "Vacunación",
 }
 
 export function ListView({ citas, profesionales, onSelectCita, profesionalesSeleccionados }: ListViewProps) {
@@ -50,8 +37,7 @@ export function ListView({ citas, profesionales, onSelectCita, profesionalesSele
   const profs = profesionales ?? []
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedEstados, setSelectedEstados] = useState<string[]>(["confirmada", "pendiente"])
-  const [selectedTipos, setSelectedTipos] = useState<string[]>([])
-  const [sortBy, setSortBy] = useState<"fecha" | "paciente" | "profesional">("fecha")
+  const [sortBy, setSortBy] = useState<"paciente" | "profesional">("paciente")
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc")
 
   // Filtrar y ordenar citas
@@ -75,9 +61,6 @@ export function ListView({ citas, profesionales, onSelectCita, profesionalesSele
       // Filtro por estados
       if (selectedEstados.length > 0 && !selectedEstados.includes(cita.estado)) return false
 
-      // Filtro por tipos
-      if (selectedTipos.length > 0 && !selectedTipos.includes(cita.tipo)) return false
-
       return true
     })
 
@@ -86,14 +69,6 @@ export function ListView({ citas, profesionales, onSelectCita, profesionalesSele
       let comparison = 0
 
       switch (sortBy) {
-        case "fecha":
-          const dateCompare =
-            (typeof a.fecha === "string" ? new Date(a.fecha) : a.fecha).getTime() -
-            (typeof b.fecha === "string" ? new Date(b.fecha) : b.fecha).getTime()
-          if (comparison === 0) {
-            comparison = a.hora.localeCompare(b.hora)
-          }
-          break
         case "paciente":
           comparison = a.nombrePaciente.localeCompare(b.nombrePaciente)
           break
@@ -108,7 +83,7 @@ export function ListView({ citas, profesionales, onSelectCita, profesionalesSele
     })
 
     return filtered
-  }, [citas, selProfesionales, searchTerm, selectedEstados, selectedTipos, sortBy, sortOrder, profs])
+  }, [citas, selProfesionales, searchTerm, selectedEstados, sortBy, sortOrder, profs])
 
   // Agrupar citas por fecha
   const citasAgrupadas = useMemo(() => {
@@ -137,12 +112,23 @@ export function ListView({ citas, profesionales, onSelectCita, profesionalesSele
     return profs.find((p) => p.id === profesionalId)
   }
 
-  const handleEstadoToggle = (estado: string) => {
-    setSelectedEstados((prev) => (prev.includes(estado) ? prev.filter((e) => e !== estado) : [...prev, estado]))
+  const getEstadoInfo = (estado: string) => {
+    // Solo mostrar badge si el estado está en nuestros estados permitidos
+    if (estado in estadoLabels) {
+      return {
+        label: estadoLabels[estado as keyof typeof estadoLabels],
+        color: estadoColors[estado as keyof typeof estadoColors],
+      }
+    }
+    // Estado por defecto para estados no reconocidos
+    return {
+      label: "Desconocido",
+      color: "bg-gray-100 text-gray-800",
+    }
   }
 
-  const handleTipoToggle = (tipo: string) => {
-    setSelectedTipos((prev) => (prev.includes(tipo) ? prev.filter((t) => t !== tipo) : [...prev, tipo]))
+  const handleEstadoToggle = (estado: string) => {
+    setSelectedEstados((prev) => (prev.includes(estado) ? prev.filter((e) => e !== estado) : [...prev, estado]))
   }
 
   return (
@@ -179,36 +165,14 @@ export function ListView({ citas, profesionales, onSelectCita, profesionalesSele
             ))}
           </div>
 
-          {/* Filtro por tipo */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">Tipos:</span>
-            <Select
-              value={selectedTipos.length > 0 ? selectedTipos[0] : ""}
-              onValueChange={(value) => setSelectedTipos(value ? [value] : [])}
-            >
-              <SelectTrigger className="w-40">
-                <SelectValue placeholder="Todos los tipos" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos los tipos</SelectItem>
-                {Object.entries(tipoLabels).map(([tipo, label]) => (
-                  <SelectItem key={tipo} value={tipo}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
           {/* Ordenar */}
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium">Ordenar:</span>
-            <Select value={sortBy} onValueChange={(value: "fecha" | "paciente" | "profesional") => setSortBy(value)}>
+            <Select value={sortBy} onValueChange={(value: "paciente" | "profesional") => setSortBy(value)}>
               <SelectTrigger className="w-32">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="fecha">Fecha</SelectItem>
                 <SelectItem value="paciente">Paciente</SelectItem>
                 <SelectItem value="profesional">Profesional</SelectItem>
               </SelectContent>
@@ -254,7 +218,10 @@ export function ListView({ citas, profesionales, onSelectCita, profesionalesSele
                               <h4 className="font-semibold text-lg">
                                 {cita.nombrePaciente} {cita.apellidosPaciente}
                               </h4>
-                              <Badge className={estadoColors[cita.estado]}>{estadoLabels[cita.estado]}</Badge>
+                              {(() => {
+                                const estadoInfo = getEstadoInfo(cita.estado)
+                                return <Badge className={estadoInfo.color}>{estadoInfo.label}</Badge>
+                              })()}
                             </div>
 
                             {/* Línea 2: Información básica */}
@@ -311,7 +278,7 @@ export function ListView({ citas, profesionales, onSelectCita, profesionalesSele
               <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
               <h3 className="text-lg font-semibold mb-2">No se encontraron citas</h3>
               <p className="text-gray-500">
-                {searchTerm || selectedEstados.length > 0 || selectedTipos.length > 0
+                {searchTerm || selectedEstados.length > 0
                   ? "Intenta ajustar los filtros de búsqueda"
                   : "No hay citas programadas"}
               </p>
