@@ -11,9 +11,16 @@ interface SignaturePadProps {
   height?: number
   onSignatureChange: (signature: string | null) => void
   className?: string
+  disabled?: boolean
 }
 
-export function SignaturePad({ width = 400, height = 200, onSignatureChange, className }: SignaturePadProps) {
+export function SignaturePad({
+  width = 400,
+  height = 200,
+  onSignatureChange,
+  className,
+  disabled = false,
+}: SignaturePadProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isDrawing, setIsDrawing] = useState(false)
   const [hasSignature, setHasSignature] = useState(false)
@@ -41,6 +48,8 @@ export function SignaturePad({ width = 400, height = 200, onSignatureChange, cla
   }, [])
 
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if (disabled) return
+
     const canvas = canvasRef.current
     if (!canvas) return
 
@@ -69,7 +78,7 @@ export function SignaturePad({ width = 400, height = 200, onSignatureChange, cla
   }
 
   const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return
+    if (!isDrawing || disabled) return
 
     const canvas = canvasRef.current
     if (!canvas) return
@@ -113,6 +122,8 @@ export function SignaturePad({ width = 400, height = 200, onSignatureChange, cla
   }
 
   const clearSignature = () => {
+    if (disabled) return
+
     const canvas = canvasRef.current
     if (!canvas) return
 
@@ -146,7 +157,7 @@ export function SignaturePad({ width = 400, height = 200, onSignatureChange, cla
           onTouchStart={startDrawing}
           onTouchMove={draw}
           onTouchEnd={endDrawing}
-          className="touch-none cursor-crosshair"
+          className={`touch-none ${disabled ? "cursor-not-allowed opacity-50" : "cursor-crosshair"}`}
         />
         {!hasSignature && (
           <div className="absolute inset-0 flex items-center justify-center text-gray-400 pointer-events-none">
@@ -155,7 +166,7 @@ export function SignaturePad({ width = 400, height = 200, onSignatureChange, cla
         )}
       </div>
       <div className="mt-2">
-        <Button type="button" variant="outline" size="sm" onClick={clearSignature}>
+        <Button type="button" variant="outline" size="sm" onClick={clearSignature} disabled={disabled}>
           <Eraser className="h-4 w-4 mr-2" />
           Borrar firma
         </Button>

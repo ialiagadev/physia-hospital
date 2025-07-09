@@ -19,6 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Checkbox } from "@/components/ui/checkbox"
 import { getClinicalReportData, type ClinicalReportData } from "@/lib/actions/clinical-report-data"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { PatientConsentsSection } from "@/components/consent/patient-consents-section"
 import { PatientAppointmentsSection } from "@/components/patient-appointments-section"
 import {
   Dialog,
@@ -44,7 +45,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { CreditCard } from 'lucide-react'
 import { LoyaltyCardsSection } from "@/components/loyalty-cards-section"
-import { User, Phone, Mail, MapPin, Calendar, FileText, Edit, CalendarDays, FolderOpen, TrendingUp, Activity, Eye, Coffee, Shield, Brain, Heart, Stethoscope, Save, X, AlertTriangle, Pill, Users, Plus, Trash2, ChevronDown, ChevronUp, Utensils, Droplets, Zap } from 'lucide-react'
+import { User, Phone, Mail, MapPin, Calendar, FileText, Edit, CalendarDays, FolderOpen, TrendingUp, Activity, Eye, Coffee, Brain, Heart, Stethoscope, Save, X, AlertTriangle, Pill, Users, Plus, Trash2, ChevronDown, ChevronUp,Shield,Utensils, Droplets, Zap } from 'lucide-react'
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { useToast } from "@/hooks/use-toast"
@@ -1170,6 +1171,10 @@ const handleSubmit = async (e: React.FormEvent) => {
     <FolderOpen className="h-4 w-4" />
     Documentos
   </TabsTrigger>
+  <TabsTrigger value="consentimientos" className="flex items-center gap-2">
+  <Shield className="h-4 w-4" />
+  Consentimientos
+</TabsTrigger>
 </TabsList>
 
         {/* Pestaña Resumen */}
@@ -3469,6 +3474,15 @@ const handleSubmit = async (e: React.FormEvent) => {
             </CardContent>
           </Card>
         </TabsContent>
+        {/* Pestaña Consentimientos */}
+<TabsContent value="consentimientos" className="space-y-6">
+  <PatientConsentsSection 
+    clientId={parseInt(clientId)} 
+    clientName={formData.name}
+    clientEmail={formData.email}
+    clientPhone={formData.phone}
+  />
+</TabsContent>
       </Tabs>
 
       {/* Modal de Informe Clínico */}

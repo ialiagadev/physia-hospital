@@ -1,0 +1,98 @@
+export interface ConsentForm {
+    id: string
+    created_at: string
+    updated_at: string
+    organization_id: number
+    title: string
+    content: string
+    description: string | null
+    is_active: boolean
+    created_by: string | null
+    category: string
+    version: number
+  }
+  
+  export interface ConsentToken {
+    id: string
+    created_at: string
+    client_id: number
+    consent_form_id: string
+    token: string
+    expires_at: string
+    used_at: string | null
+    created_by: string
+    sent_via: "whatsapp" | "email" | "qr" | "manual" | null
+    recipient_info: {
+      email?: string
+      phone?: string
+      method?: string
+    } | null
+  }
+  
+  export interface PatientConsent {
+    id: string
+    created_at: string
+    client_id: number
+    consent_form_id: string
+    consent_token_id: string
+    signature_base64: string
+    patient_name: string
+    patient_tax_id: string
+    signed_at: string
+    ip_address: string | null
+    user_agent: string | null
+    browser_info: {
+      platform?: string
+      language?: string
+      screen?: string
+    } | null
+    identity_verified: boolean
+    is_valid: boolean
+  }
+  
+  export interface ConsentTokenWithDetails extends ConsentToken {
+    consent_forms: ConsentForm
+    clients: {
+      id: number
+      name: string
+      tax_id: string
+      email: string | null
+      phone: string | null
+    }
+    created_by_user: {
+      id: string
+      name: string | null
+      email: string | null
+    }
+  }
+  
+  export interface PatientConsentWithDetails extends PatientConsent {
+    consent_forms: ConsentForm
+    clients: {
+      id: number
+      name: string
+      tax_id: string
+    }
+    consent_tokens: ConsentToken
+  }
+  
+  // Para el formulario de creación de consentimiento
+  export interface CreateConsentTokenData {
+    client_id: number
+    consent_form_id: string
+    expires_in_days?: number // por defecto 7 días
+    sent_via?: "whatsapp" | "email" | "qr" | "manual"
+    recipient_info?: {
+      email?: string
+      phone?: string
+      method?: string
+    }
+  }
+  
+  // Para la validación en la página pública
+  export interface ConsentValidationData {
+    patient_name: string
+    patient_tax_id: string
+    signature_base64: string
+  }
+  
