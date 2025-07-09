@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
-import { Plus, Calendar, Filter, X, ChevronDown, FileText } from "lucide-react"
+import { Plus, Calendar, Filter, X, ChevronDown, FileText, Download } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Checkbox } from "@/components/ui/checkbox"
 import { useToast } from "@/hooks/use-toast"
@@ -53,6 +53,7 @@ export default function InvoicesPage() {
   const [dateFilters, setDateFilters] = useState<DateFilters>({})
   const [showFilters, setShowFilters] = useState(false)
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
+  const [isExportingCSV, setIsExportingCSV] = useState(false)
   const { toast } = useToast()
   const [generateModalOpen, setGenerateModalOpen] = useState(false)
   const [selectedDateString, setSelectedDateString] = useState<string>(new Date().toISOString().split("T")[0])
@@ -68,7 +69,6 @@ export default function InvoicesPage() {
 
   const loadInvoices = async () => {
     setLoading(true)
-
     try {
       let query = supabase
         .from("invoices")
@@ -144,7 +144,6 @@ export default function InvoicesPage() {
     if (selectedInvoices.size === 0) return
 
     setIsUpdatingStatus(true)
-
     try {
       const invoiceIds = Array.from(selectedInvoices)
 
@@ -173,7 +172,6 @@ export default function InvoicesPage() {
       setSelectedInvoices(new Set())
     } catch (error) {
       await loadInvoices()
-
       toast({
         title: "Error",
         description: "No se pudo actualizar el estado de las facturas",
@@ -201,6 +199,206 @@ export default function InvoicesPage() {
         }
       }
     })
+  }
+
+  const handleExportCSV = async () => {
+    if (selectedInvoices.size === 0) {
+      toast({
+        title: "Sin selección",
+        description: "Selecciona al menos una factura para exportar",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsExportingCSV(true)
+    try {
+      // Obtener datos completos de las facturas seleccionadas
+      const { data: fullInvoicesData, error } = await supabase
+        .from("invoices")
+        .select(`
+          *,
+          clients (
+            name,
+            tax_id,
+            address,
+            postal_code,
+            city,
+            province,
+            country,
+            email,
+            phone,
+            client_type
+          ),
+          organizations (
+            name
+          )
+        `)
+        .in("id", Array.from(selectedInvoices))
+        .order("invoice_number", { ascending: true })
+
+      if (error) throw error
+
+      if (!fullInvoicesData || fullInvoicesData.length === 0) {
+        throw new Error("No se encontraron datos para exportar")
+      }
+
+      // Obtener líneas de factura para las facturas seleccionadas
+      const { data: invoiceLines, error: linesError } = await supabase
+        .from("invoice_lines")
+        .select(`
+          *,
+          users!invoice_lines_professional_id_fkey (name)
+        `)
+        .in("invoice_id", Array.from(selectedInvoices))
+
+      if (linesError) {
+        console.error("Error al obtener líneas:", linesError)
+      }
+
+      // Crear el CSV
+      const csvData = generateCSVData(fullInvoicesData, invoiceLines || [])
+      downloadCSV(csvData, `facturas_${format(new Date(), "yyyy-MM-dd")}.csv`)
+
+      toast({
+        title: "Exportación completada",
+        description: `Se han exportado ${selectedInvoices.size} facturas a CSV`,
+      })
+    } catch (error) {
+      console.error("Error al exportar CSV:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo exportar el archivo CSV",
+        variant: "destructive",
+      })
+    } finally {
+      setIsExportingCSV(false)
+    }
+  }
+
+  const generateCSVData = (invoices: any[], lines: any[]) => {
+    // Encabezados del CSV
+    const headers = [
+      "Número Factura",
+      "Fecha Emisión",
+      "Tipo Factura",
+      "Estado",
+      "Cliente",
+      "CIF/NIF Cliente",
+      "Dirección Cliente",
+      "CP Cliente",
+      "Ciudad Cliente",
+      "Provincia Cliente",
+      "País Cliente",
+      "Email Cliente",
+      "Teléfono Cliente",
+      "Tipo Cliente",
+      "Organización",
+      "Base Imponible",
+      "IVA",
+      "IRPF",
+      "Retenciones",
+      "Total",
+      "Líneas de Factura",
+      "Profesionales",
+      "Notas",
+      "Fecha Creación",
+      "Fecha Vencimiento",
+    ]
+
+    // Crear mapa de líneas por factura
+    const linesByInvoice = lines.reduce((acc: Record<number, any[]>, line: any) => {
+      if (!acc[line.invoice_id]) {
+        acc[line.invoice_id] = []
+      }
+      acc[line.invoice_id].push(line)
+      return acc
+    }, {})
+
+    // Generar filas de datos
+    const rows = invoices.map((invoice) => {
+      const client = invoice.clients
+      const organization = invoice.organizations
+      const invoiceLines = linesByInvoice[invoice.id] || []
+
+      // Formatear líneas de factura
+      const linesText = invoiceLines
+        .map((line) => `${line.description} (${line.quantity}x${line.unit_price}€)`)
+        .join("; ")
+
+      // Formatear profesionales
+      const professionalsText = invoiceLines
+        .filter((line) => line.users?.name)
+        .map((line) => line.users.name)
+        .filter((name, index, arr) => arr.indexOf(name) === index) // Eliminar duplicados
+        .join("; ")
+
+      // Obtener etiqueta del estado
+      const statusLabel = statusOptions.find((opt) => opt.value === invoice.status)?.label || invoice.status
+
+      return [
+        invoice.invoice_number || "",
+        invoice.issue_date ? format(new Date(invoice.issue_date), "dd/MM/yyyy") : "",
+        invoice.invoice_type === "rectificative" ? "Rectificativa" : "Normal",
+        statusLabel,
+        client?.name || "",
+        client?.tax_id || "",
+        client?.address || "",
+        client?.postal_code || "",
+        client?.city || "",
+        client?.province || "",
+        client?.country || "",
+        client?.email || "",
+        client?.phone || "",
+        client?.client_type === "public" ? "Público" : "Privado",
+        organization?.name || "",
+        invoice.base_amount?.toFixed(2) || "0.00",
+        invoice.vat_amount?.toFixed(2) || "0.00",
+        invoice.irpf_amount?.toFixed(2) || "0.00",
+        invoice.retention_amount?.toFixed(2) || "0.00",
+        invoice.total_amount?.toFixed(2) || "0.00",
+        linesText,
+        professionalsText,
+        invoice.notes || "",
+        invoice.created_at ? format(new Date(invoice.created_at), "dd/MM/yyyy HH:mm") : "",
+        invoice.due_date ? format(new Date(invoice.due_date), "dd/MM/yyyy") : "",
+      ]
+    })
+
+    return [headers, ...rows]
+  }
+
+  const downloadCSV = (data: string[][], filename: string) => {
+    // Convertir datos a formato CSV con punto y coma como separador
+    const csvContent = data
+      .map((row) =>
+        row
+          .map((cell) => {
+            // Escapar comillas y envolver en comillas si contiene separadores
+            const cellStr = String(cell || "")
+            if (cellStr.includes('"') || cellStr.includes(";") || cellStr.includes("\n")) {
+              return `"${cellStr.replace(/"/g, '""')}"`
+            }
+            return cellStr
+          })
+          .join(";"),
+      )
+      .join("\n")
+
+    // Añadir BOM para UTF-8 (para que Excel lo abra correctamente)
+    const BOM = "\uFEFF"
+    const blob = new Blob([BOM + csvContent], { type: "text/csv;charset=utf-8;" })
+
+    // Crear enlace de descarga
+    const link = document.createElement("a")
+    const url = URL.createObjectURL(blob)
+    link.setAttribute("href", url)
+    link.setAttribute("download", filename)
+    link.style.visibility = "hidden"
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
   }
 
   const handleSelectInvoice = (invoiceId: number, checked: boolean) => {
@@ -390,7 +588,9 @@ export default function InvoicesPage() {
 
           // Información del cliente para las notas - igual que en nueva factura
           const clientInfoText = `Cliente: ${client.name}${client.tax_id ? `, CIF/NIF: ${client.tax_id}` : ""}${client.address ? `, Dirección: ${client.address}` : ""}${client.postal_code ? `, ${client.postal_code}` : ""} ${client.city || ""}${client.province ? `, ${client.province}` : ""}`
+
           const additionalNotes = `Factura generada automáticamente para citas del ${format(new Date(selectedDateString), "dd/MM/yyyy", { locale: es })}`
+
           const fullNotes = clientInfoText + `\n\nNotas adicionales: ${additionalNotes}`
 
           // Crear factura - estructura idéntica a nueva factura
@@ -457,7 +657,6 @@ export default function InvoicesPage() {
 
       // Actualizar lista de facturas
       await loadInvoices()
-
       setGenerationResults(results)
 
       toast({
@@ -489,6 +688,7 @@ export default function InvoicesPage() {
             )}
           </p>
         </div>
+
         <div className="flex gap-2">
           <Button
             variant="outline"
@@ -501,10 +701,12 @@ export default function InvoicesPage() {
               <span className="ml-1 text-xs bg-primary text-primary-foreground rounded-full px-1">•</span>
             )}
           </Button>
+
           <Button variant="outline" onClick={() => setGenerateModalOpen(true)} disabled={!userProfile?.organization_id}>
             <FileText className="mr-2 h-4 w-4" />
             Generar del día
           </Button>
+
           <Button asChild>
             <Link href="/dashboard/facturacion/invoices/new">
               <Plus className="mr-2 h-4 w-4" />
@@ -625,10 +827,16 @@ export default function InvoicesPage() {
                 {selectedInvoices.size !== 1 ? "s" : ""}
               </span>
               <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={isExportingCSV}>
+                  <Download className="mr-2 h-4 w-4" />
+                  {isExportingCSV ? "Exportando..." : "Exportar CSV"}
+                </Button>
+
                 <BulkDownloadButton
                   selectedInvoiceIds={Array.from(selectedInvoices)}
                   onDownloadComplete={handleInvoicesDownloaded}
                 />
+
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="sm" disabled={isUpdatingStatus}>
@@ -649,6 +857,7 @@ export default function InvoicesPage() {
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
+
                 <Button variant="ghost" size="sm" onClick={() => setSelectedInvoices(new Set())}>
                   Limpiar selección
                 </Button>
@@ -728,6 +937,7 @@ export default function InvoicesPage() {
           </TableBody>
         </Table>
       </div>
+
       <Dialog open={generateModalOpen} onOpenChange={setGenerateModalOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

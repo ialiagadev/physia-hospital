@@ -437,8 +437,7 @@ export default function NewInvoicePage() {
       `)
         .eq("organization_id", organizationId)
         .eq("invoice_type", "normal")
-        .order("issue_date", { ascending: false })
-
+        .order("created_at", { ascending: false })
       if (invoicesError) {
         console.error("Error fetching invoices:", invoicesError)
         throw new Error(`Error al obtener las facturas: ${invoicesError.message}`)
@@ -1568,65 +1567,62 @@ export default function NewInvoicePage() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor={`description-${line.id}`}>Descripción</Label>
-                        <Input
-                          id={`description-${line.id}`}
-                          value={line.description}
-                          onChange={(e) => handleLineChange(line.id, "description", e.target.value)}
-                          required
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor={`quantity-${line.id}`}>Cantidad</Label>
-                        <Input
-                          id={`quantity-${line.id}`}
-                          type="number"
-                          min="1"
-                          step="1"
-                          value={line.quantity}
-                          onChange={(e) =>
-                            handleLineChange(line.id, "quantity", Number.parseFloat(e.target.value) || 0)
-                          }
-                          required
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor={`unit_price-${line.id}`}>Precio Unitario (€)</Label>
-                        <Input
-                          id={`unit_price-${line.id}`}
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={line.unit_price}
-                          onChange={(e) =>
-                            handleLineChange(line.id, "unit_price", Number.parseFloat(e.target.value) || 0)
-                          }
-                          required
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor={`discount_percentage-${line.id}`} className="flex items-center gap-1">
-                          <Percent className="h-3 w-3" />
-                          Descuento (%)
-                        </Label>
-                        <Input
-                          id={`discount_percentage-${line.id}`}
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="0.01"
-                          value={line.discount_percentage}
-                          onChange={(e) =>
-                            handleLineChange(line.id, "discount_percentage", Number.parseFloat(e.target.value) || 0)
-                          }
-                        />
-                      </div>
-                    </div>
+                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor={`description-${line.id}`} className="block h-5">Descripción</Label>
+                  <Input
+                    id={`description-${line.id}`}
+                    value={line.description}
+                    onChange={(e) => handleLineChange(line.id, "description", e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor={`quantity-${line.id}`} className="block h-5">Cantidad</Label>
+                  <Input
+                    id={`quantity-${line.id}`}
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={line.quantity}
+                    onChange={(e) =>
+                      handleLineChange(line.id, "quantity", Number.parseFloat(e.target.value) || 0)
+                    }
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor={`unit_price-${line.id}`} className="block h-5">Precio Unitario (€)</Label>
+                  <Input
+                    id={`unit_price-${line.id}`}
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={line.unit_price}
+                    onChange={(e) =>
+                      handleLineChange(line.id, "unit_price", Number.parseFloat(e.target.value) || 0)
+                    }
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor={`discount_percentage-${line.id}`} className="flex items-center gap-1 h-5">
+                    <Percent className="h-3 w-3" />
+                    Descuento (%)
+                  </Label>
+                  <Input
+                    id={`discount_percentage-${line.id}`}
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={line.discount_percentage}
+                    onChange={(e) =>
+                      handleLineChange(line.id, "discount_percentage", Number.parseFloat(e.target.value) || 0)
+                    }
+                  />
+                </div>
+              </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                       <div className="space-y-2">
