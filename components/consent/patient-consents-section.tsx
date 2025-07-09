@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { FileText, Plus, Eye, Clock, CheckCircle, Shield, Download, LinkIcon } from "lucide-react"
+import { FileText, Plus, Eye, Clock, CheckCircle, Shield, Download, LinkIcon, FileDown } from "lucide-react"
 import { supabase } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { GenerateConsentModal } from "./generate-consent-modal"
@@ -44,12 +44,12 @@ export function PatientConsentsSection({
   const loadConsentsData = async () => {
     setIsLoading(true)
     try {
-      // Cargar consentimientos firmados
+      // Cargar consentimientos firmados con el contenido completo del formulario
       const { data: signedData, error: signedError } = await supabase
         .from("patient_consents")
         .select(`
           *,
-          consent_forms (id, title, category),
+          consent_forms (id, title, category, content),
           consent_tokens (created_by, sent_via)
         `)
         .eq("client_id", clientId)
@@ -116,15 +116,171 @@ export function PatientConsentsSection({
   }
 
   const copyConsentLink = async (token: string) => {
-    const link = `${window.location.origin}/consentimiento/${token}`
+    const link = `https://facturas-physia.vercel.app/consentimiento/${token}`
     try {
       await navigator.clipboard.writeText(link)
       toast({
-        title: "Enlace copiado",
-        description: "El enlace se ha copiado al portapapeles",
+        title: "¡Enlace copiado!",
+        description: "El enlace se ha copiado al portapapeles correctamente",
       })
     } catch (error) {
       console.error("Error copying link:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo copiar el enlace",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const downloadConsentDocument = async (consent: PatientConsentWithDetails) => {
+    try {
+      // Limpiar el contenido del formulario para eliminar campos duplicados
+      let cleanContent = consent.consent_forms.content || "<p>Contenido del formulario no disponible</p>"
+
+      // Remover líneas que contengan campos de datos del paciente duplicados
+      cleanContent = cleanContent
+        .replace(/Datos del paciente:[\s\S]*?Fecha:\s*_+/gi, "")
+        .replace(/Nombre:\s*_+[\s\S]*?DNI:\s*_+[\s\S]*?Fecha:\s*_+/gi, "")
+        .replace(/Paciente:\s*_+[\s\S]*?DNI:\s*_+[\s\S]*?Fecha:\s*_+/gi, "")
+        .trim()
+
+      // Crear un documento HTML completo con el consentimiento y la firma
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>Consentimiento Informado - ${consent.consent_forms.title}</title>
+          <style>
+            body { 
+              font-family: Arial, sans-serif; 
+              margin: 40px; 
+              line-height: 1.6; 
+              color: #333;
+            }
+            .header { 
+              text-align: center; 
+              margin-bottom: 30px; 
+              border-bottom: 2px solid #333; 
+              padding-bottom: 20px; 
+            }
+            .patient-info { 
+              background: #f5f5f5; 
+              padding: 15px; 
+              margin: 20px 0; 
+              border-radius: 5px; 
+            }
+            .content {
+              margin: 30px 0;
+              text-align: justify;
+            }
+            .signature-section { 
+              margin-top: 50px; 
+              border-top: 1px solid #ccc; 
+              padding-top: 30px; 
+            }
+            .signature-box { 
+              text-align: center; 
+              margin: 30px 0; 
+              border: 1px solid #ddd;
+              padding: 20px;
+              background: #fafafa;
+            }
+            .signature-img { 
+              max-width: 300px; 
+              border: 1px solid #ccc; 
+              padding: 10px; 
+              background: white;
+            }
+            .metadata { 
+              font-size: 12px; 
+              color: #666; 
+              margin-top: 30px; 
+              border-top: 1px solid #eee; 
+              padding-top: 15px; 
+            }
+            .info-grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 10px;
+              margin: 10px 0;
+            }
+            @media print {
+              body { margin: 20px; }
+              .signature-section { page-break-inside: avoid; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>${consent.consent_forms.title}</h1>
+            <p><strong>Documento de Consentimiento Informado</strong></p>
+            <p>Categoría: ${consent.consent_forms.category}</p>
+          </div>
+          
+          <div class="patient-info">
+            <h3>Información del Paciente</h3>
+            <div class="info-grid">
+              <div><strong>Nombre:</strong> ${consent.patient_name}</div>
+              <div><strong>DNI/NIE:</strong> ${consent.patient_tax_id}</div>
+              <div><strong>Fecha de firma:</strong> ${formatDate(consent.signed_at)}</div>
+              <div><strong>Estado:</strong> ${consent.is_valid ? "Válido" : "Inválido"}</div>
+            </div>
+          </div>
+          
+          <div class="content">
+            ${cleanContent}
+          </div>
+          
+          <div class="signature-section">
+            <h3>Firma Digital del Paciente</h3>
+            <div class="signature-box">
+              <img src="${consent.signature_base64}" alt="Firma del paciente" class="signature-img" />
+              <p><strong>${consent.patient_name}</strong></p>
+              <p>DNI/NIE: ${consent.patient_tax_id}</p>
+              <p>Firmado digitalmente el ${formatDate(consent.signed_at)}</p>
+            </div>
+          </div>
+          
+          <div class="metadata">
+            <h4>Información de Verificación Digital</h4>
+            <div class="info-grid">
+              <div><strong>ID del documento:</strong> ${consent.id}</div>
+              <div><strong>IP de firma:</strong> ${consent.ip_address || "No disponible"}</div>
+              <div><strong>Verificación de identidad:</strong> ${consent.identity_verified ? "Verificado" : "Pendiente"}</div>
+              <div><strong>Navegador:</strong> ${consent.user_agent ? consent.user_agent.substring(0, 50) + "..." : "No disponible"}</div>
+            </div>
+            <p style="margin-top: 20px; font-style: italic; text-align: center;">
+              Este documento ha sido firmado digitalmente y es válido según la normativa vigente.
+            </p>
+          </div>
+        </body>
+        </html>
+      `
+
+      // Crear y descargar el archivo HTML
+      const blob = new Blob([htmlContent], { type: "text/html;charset=utf-8" })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = `consentimiento_${consent.patient_name.replace(/\s+/g, "_")}_${format(new Date(consent.signed_at), "yyyy-MM-dd")}.html`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+
+      toast({
+        title: "Documento descargado",
+        description: "El consentimiento completo con firma se ha descargado correctamente",
+      })
+    } catch (error) {
+      console.error("Error downloading consent:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo descargar el documento completo",
+        variant: "destructive",
+      })
     }
   }
 
@@ -136,6 +292,11 @@ export function PatientConsentsSection({
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
+
+      toast({
+        title: "Firma descargada",
+        description: "La firma se ha descargado correctamente",
+      })
     } catch (error) {
       console.error("Error downloading signature:", error)
       toast({
@@ -248,8 +409,17 @@ export function PatientConsentsSection({
                               variant="outline"
                               size="sm"
                               onClick={() => setSelectedSignature(consent.signature_base64)}
+                              title="Ver firma"
                             >
                               <Eye className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => downloadConsentDocument(consent)}
+                              title="Descargar documento completo"
+                            >
+                              <FileDown className="w-4 h-4" />
                             </Button>
                             <Button
                               variant="outline"
@@ -261,6 +431,7 @@ export function PatientConsentsSection({
                                   format(new Date(consent.signed_at), "yyyy-MM-dd"),
                                 )
                               }
+                              title="Descargar solo firma"
                             >
                               <Download className="w-4 h-4" />
                             </Button>
@@ -301,7 +472,7 @@ export function PatientConsentsSection({
                       <TableHead>Expira</TableHead>
                       <TableHead>Enviado por</TableHead>
                       <TableHead>Estado</TableHead>
-                      <TableHead>Acciones</TableHead>
+                      <TableHead>Copiar enlace</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -330,8 +501,14 @@ export function PatientConsentsSection({
                         </TableCell>
                         <TableCell>{getPendingStatusBadge(token)}</TableCell>
                         <TableCell>
-                          <Button variant="outline" size="sm" onClick={() => copyConsentLink(token.token)}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => copyConsentLink(token.token)}
+                            className="flex items-center gap-2"
+                          >
                             <LinkIcon className="w-4 h-4" />
+                            Copiar enlace
                           </Button>
                         </TableCell>
                       </TableRow>

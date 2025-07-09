@@ -1167,10 +1167,7 @@ const handleSubmit = async (e: React.FormEvent) => {
     <CalendarDays className="h-4 w-4" />
     Citas
   </TabsTrigger>
-  <TabsTrigger value="documentos" className="flex items-center gap-2">
-    <FolderOpen className="h-4 w-4" />
-    Documentos
-  </TabsTrigger>
+ 
   <TabsTrigger value="consentimientos" className="flex items-center gap-2">
   <Shield className="h-4 w-4" />
   Consentimientos

@@ -27,6 +27,7 @@ import {
   HelpCircle,
   FileIcon as FileTemplate,
   CreditCard,
+  FileCheck,
 } from "lucide-react"
 
 interface MenuItem {
@@ -158,6 +159,13 @@ export function MainSidebar() {
       href: "/dashboard/templates",
       icon: FileTemplate,
       isActive: isInSection("templates"),
+    },
+    {
+      id: "consent-forms",
+      label: "Consentimientos",
+      href: "/dashboard/consent-forms",
+      icon: FileCheck,
+      isActive: isInSection("consent-forms"),
     },
     {
       id: "loyalty-cards",
