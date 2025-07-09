@@ -107,30 +107,40 @@ export function GenerateConsentModal({
     setError(null)
 
     try {
-      const response = await fetch("/api/consent/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      // Generar token único
+      const token = `${crypto.randomUUID()}-${Date.now()}`
+      const expiresAt = new Date()
+      expiresAt.setDate(expiresAt.getDate() + expiresInDays)
+
+      // Crear el token en la base de datos
+      const { data: tokenData, error: tokenError } = await supabase
+        .from("consent_tokens")
+        .insert({
           client_id: clientId,
           consent_form_id: selectedFormId,
-          expiration_days: expiresInDays,
-          delivery_method: sendMethod,
-        }),
-      })
+          token: token,
+          expires_at: expiresAt.toISOString(),
+          created_by: (await supabase.auth.getUser()).data.user?.id,
+          sent_via: sendMethod,
+          recipient_info: {
+            email: clientEmail,
+            phone: clientPhone,
+            method: sendMethod,
+          },
+        })
+        .select()
+        .single()
 
-      const result = await response.json()
+      if (tokenError) throw tokenError
 
-      if (!response.ok) {
-        throw new Error(result.error || "Error al generar el enlace")
-      }
-
-      setGeneratedLink(result.data.link)
+      const link = `${window.location.origin}/consentimiento/${token}`
+      setGeneratedLink(link)
 
       // Si se seleccionó envío automático, procesar
       if (sendMethod === "email" && clientEmail) {
-        await sendEmailWithLink(result.data.link)
+        await sendEmailWithLink(link)
       } else if (sendMethod === "whatsapp" && clientPhone) {
-        openWhatsAppWithLink(result.data.link)
+        openWhatsAppWithLink(link)
       }
 
       toast({
@@ -139,7 +149,7 @@ export function GenerateConsentModal({
       })
     } catch (err) {
       console.error("Error generating consent link:", err)
-      setError(err instanceof Error ? err.message : "Error al generar el enlace de consentimiento")
+      setError("Error al generar el enlace de consentimiento")
     } finally {
       setIsGenerating(false)
     }

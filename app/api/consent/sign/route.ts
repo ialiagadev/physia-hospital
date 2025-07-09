@@ -5,53 +5,48 @@ export async function POST(request: NextRequest) {
   try {
     const { token, patient_name, patient_tax_id, signature_base64 } = await request.json()
 
+    // Validaciones básicas
     if (!token || !patient_name || !patient_tax_id || !signature_base64) {
-      return NextResponse.json({ error: "Todos los campos son obligatorios" }, { status: 400 })
+      return NextResponse.json({ error: "Todos los campos son requeridos" }, { status: 400 })
     }
 
-    // Buscar el token y validar que esté activo
+    // Obtener información del cliente
+    const clientIP = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown"
+
+    const userAgent = request.headers.get("user-agent") || "unknown"
+
+    // Buscar el token
     const { data: tokenData, error: tokenError } = await supabase
       .from("consent_tokens")
       .select(`
         *,
-        consent_forms(*),
-        clients(id, name, tax_id)
+        clients (id, name, tax_id)
       `)
       .eq("token", token)
-      .eq("used_at", null)
       .single()
 
     if (tokenError || !tokenData) {
       return NextResponse.json({ error: "Token no válido" }, { status: 404 })
     }
 
-    // Verificar expiración
-    const now = new Date()
-    const expiresAt = new Date(tokenData.expires_at)
+    // Verificaciones de seguridad
+    if (tokenData.used_at) {
+      return NextResponse.json({ error: "Este consentimiento ya ha sido firmado" }, { status: 400 })
+    }
 
-    if (now > expiresAt) {
-      return NextResponse.json({ error: "El enlace ha expirado" }, { status: 410 })
+    if (new Date(tokenData.expires_at) < new Date()) {
+      return NextResponse.json({ error: "El enlace ha expirado" }, { status: 400 })
     }
 
     // Validar identidad del paciente
-    const client = tokenData.clients
-    const nameMatch = patient_name.toLowerCase().trim() === client.name.toLowerCase().trim()
-    const taxIdMatch = patient_tax_id.toUpperCase().trim() === (client.tax_id || "").toUpperCase().trim()
+    const nameMatch = patient_name.toLowerCase().trim() === tokenData.clients.name.toLowerCase().trim()
+    const taxIdMatch = patient_tax_id.toUpperCase().trim() === tokenData.clients.tax_id?.toUpperCase().trim()
 
     if (!nameMatch || !taxIdMatch) {
-      return NextResponse.json(
-        {
-          error: "Los datos introducidos no coinciden con los registros del paciente",
-        },
-        { status: 400 },
-      )
+      return NextResponse.json({ error: "Los datos no coinciden con los registros del paciente" }, { status: 400 })
     }
 
-    // Obtener información de la request
-    const clientIP = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown"
-    const userAgent = request.headers.get("user-agent") || "unknown"
-
-    // Guardar el consentimiento firmado
+    // Crear el consentimiento firmado
     const { data: consentData, error: consentError } = await supabase
       .from("patient_consents")
       .insert({
@@ -61,26 +56,33 @@ export async function POST(request: NextRequest) {
         signature_base64: signature_base64,
         patient_name: patient_name,
         patient_tax_id: patient_tax_id,
-        signed_at: now.toISOString(),
+        signed_at: new Date().toISOString(),
         ip_address: clientIP,
         user_agent: userAgent,
+        browser_info: {
+          platform: request.headers.get("sec-ch-ua-platform") || "unknown",
+          language: request.headers.get("accept-language")?.split(",")[0] || "unknown",
+        },
+        identity_verified: true,
+        is_valid: true,
       })
       .select()
       .single()
 
     if (consentError) {
-      console.error("Error saving consent:", consentError)
+      console.error("Error creating consent:", consentError)
       return NextResponse.json({ error: "Error al guardar el consentimiento" }, { status: 500 })
     }
 
     // Marcar el token como usado
     const { error: updateError } = await supabase
       .from("consent_tokens")
-      .update({ used_at: now.toISOString() })
+      .update({ used_at: new Date().toISOString() })
       .eq("id", tokenData.id)
 
     if (updateError) {
       console.error("Error updating token:", updateError)
+      // No devolvemos error aquí porque el consentimiento ya se guardó
     }
 
     return NextResponse.json({

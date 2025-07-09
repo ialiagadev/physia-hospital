@@ -167,19 +167,6 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
     )
   }
 
-  if (!tokenData?.client) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <Card className="w-full max-w-md">
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-blue-600 mb-4" />
-            <p className="text-gray-600">Cargando datos del paciente...</p>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
   if (!tokenData) return null
 
   const { token, consentForm, client } = tokenData
@@ -212,7 +199,7 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
             <h1 className="text-2xl font-bold text-gray-900">Consentimiento Informado</h1>
           </div>
           <p className="text-gray-600">
-            Paciente: <span className="font-medium">{tokenData?.client?.name || "Cargando..."}</span>
+            Paciente: <span className="font-medium">{client.name}</span>
           </p>
         </div>
 

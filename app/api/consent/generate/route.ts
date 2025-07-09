@@ -69,8 +69,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Error al crear el token" }, { status: 500 })
     }
 
-    // Generar el enlace con la URL de producción
-    const baseUrl = "https://facturas-physia.vercel.app"
+    // Generar el enlace dinámicamente según el entorno
+    const baseUrl =
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      (process.env.NODE_ENV === "development" ? "http://localhost:3000" : "https://facturas-physia.vercel.app")
     const link = `${baseUrl}/consentimiento/${token}`
 
     return NextResponse.json({

@@ -6,36 +6,37 @@ export async function POST(request: NextRequest) {
     const { token } = await request.json()
 
     if (!token) {
-      return NextResponse.json({ error: "Token requerido" }, { status: 400 })
+      return NextResponse.json({ error: "Token es requerido" }, { status: 400 })
     }
 
-    // Buscar el token en la base de datos
+    // Buscar el token con todos los datos relacionados
     const { data: tokenData, error: tokenError } = await supabase
       .from("consent_tokens")
       .select(`
         *,
-        consent_forms(*),
-        clients(id, name, tax_id)
+        consent_forms (*),
+        clients (id, name, tax_id)
       `)
       .eq("token", token)
-      .eq("used_at", null)
       .single()
 
     if (tokenError || !tokenData) {
-      return NextResponse.json({ error: "Token no válido o expirado" }, { status: 404 })
+      return NextResponse.json({ error: "Token no encontrado o inválido" }, { status: 404 })
+    }
+
+    // Verificar si el token ya fue usado
+    if (tokenData.used_at) {
+      return NextResponse.json({ error: "Este consentimiento ya ha sido firmado" }, { status: 400 })
     }
 
     // Verificar si el token ha expirado
-    const now = new Date()
-    const expiresAt = new Date(tokenData.expires_at)
-
-    if (now > expiresAt) {
-      return NextResponse.json({ error: "El enlace ha expirado" }, { status: 410 })
+    if (new Date(tokenData.expires_at) < new Date()) {
+      return NextResponse.json({ error: "El enlace ha expirado" }, { status: 400 })
     }
 
-    // Verificar si ya fue usado
-    if (tokenData.used_at) {
-      return NextResponse.json({ error: "Este enlace ya ha sido utilizado" }, { status: 410 })
+    // Verificar que el formulario de consentimiento esté activo
+    if (!tokenData.consent_forms.is_active) {
+      return NextResponse.json({ error: "Este formulario de consentimiento ya no está disponible" }, { status: 400 })
     }
 
     return NextResponse.json({
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error("Error validating token:", error)
+    console.error("Error validating consent token:", error)
     return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
   }
 }
