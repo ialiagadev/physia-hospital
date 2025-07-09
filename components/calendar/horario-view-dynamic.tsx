@@ -668,7 +668,7 @@ export function HorarioViewDynamic({
                       ? "bg-gray-100"
                       : "bg-gray-50"
                 }`}
-                style={{ height: "600px" }}
+                style={{ height: "1000px" }}
                 onDragOver={(e) => handleDragOver(e, profesional.id)}
                 onDrop={(e) => handleDrop(e, profesional.id)}
                 onClick={isWorkingToday && !isOnVacation ? (e) => handleContainerClick(e, profesional.id) : undefined}
