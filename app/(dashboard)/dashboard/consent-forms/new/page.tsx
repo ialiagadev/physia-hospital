@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Switch } from "@/components/ui/switch"
+import { RichTextEditor } from "@/components/ui/rich-text-editor"
 import { supabase } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { Breadcrumbs } from "@/components/breadcrumbs"
@@ -28,51 +29,47 @@ const PREDEFINED_CATEGORIES = [
   "pediatria",
 ]
 
-const TEMPLATE_CONTENT = `<div class="consent-document">
-  <h2>CONSENTIMIENTO INFORMADO</h2>
-  
-  <h3>1. INFORMACIÓN SOBRE EL TRATAMIENTO</h3>
-  <p>Descripción del tratamiento que se va a realizar...</p>
-  
-  <h3>2. BENEFICIOS ESPERADOS</h3>
-  <ul>
-    <li>Beneficio 1</li>
-    <li>Beneficio 2</li>
-    <li>Beneficio 3</li>
-  </ul>
-  
-  <h3>3. RIESGOS Y EFECTOS SECUNDARIOS</h3>
-  <p>Como en cualquier tratamiento médico, pueden existir algunos riesgos:</p>
-  <ul>
-    <li>Riesgo 1</li>
-    <li>Riesgo 2</li>
-    <li>Riesgo 3</li>
-  </ul>
-  
-  <h3>4. CONSENTIMIENTO</h3>
-  <p>He sido informado/a sobre:</p>
-  <ul>
-    <li>La naturaleza del tratamiento propuesto</li>
-    <li>Los beneficios esperados</li>
-    <li>Los riesgos y efectos secundarios posibles</li>
-    <li>Las alternativas de tratamiento disponibles</li>
-  </ul>
-  
-  <p><strong>DECLARO que:</strong></p>
-  <ul>
-    <li>He leído y comprendido toda la información proporcionada</li>
-    <li>He tenido la oportunidad de hacer preguntas</li>
-    <li>Todas mis dudas han sido resueltas satisfactoriamente</li>
-    <li>Consiento voluntariamente al tratamiento propuesto</li>
-  </ul>
-  
-  <div class="signature-section" style="margin-top: 40px;">
-    <p><strong>Fecha:</strong> _______________</p>
-    <p><strong>Paciente:</strong> _______________</p>
-    <p><strong>DNI:</strong> _______________</p>
-    <p><strong>Firma del paciente:</strong></p>
-  </div>
-</div>`
+const TEMPLATE_CONTENT = `<h2>CONSENTIMIENTO INFORMADO</h2>
+
+<h3>1. INFORMACIÓN SOBRE EL TRATAMIENTO</h3>
+<p>Descripción del tratamiento que se va a realizar...</p>
+
+<h3>2. BENEFICIOS ESPERADOS</h3>
+<ul>
+  <li>Beneficio 1</li>
+  <li>Beneficio 2</li>
+  <li>Beneficio 3</li>
+</ul>
+
+<h3>3. RIESGOS Y EFECTOS SECUNDARIOS</h3>
+<p>Como en cualquier tratamiento médico, pueden existir algunos riesgos:</p>
+<ul>
+  <li>Riesgo 1</li>
+  <li>Riesgo 2</li>
+  <li>Riesgo 3</li>
+</ul>
+
+<h3>4. CONSENTIMIENTO</h3>
+<p>He sido informado/a sobre:</p>
+<ul>
+  <li>La naturaleza del tratamiento propuesto</li>
+  <li>Los beneficios esperados</li>
+  <li>Los riesgos y efectos secundarios posibles</li>
+  <li>Las alternativas de tratamiento disponibles</li>
+</ul>
+
+<p><strong>DECLARO que:</strong></p>
+<ul>
+  <li>He leído y comprendido toda la información proporcionada</li>
+  <li>He tenido la oportunidad de hacer preguntas</li>
+  <li>Todas mis dudas han sido resueltas satisfactoriamente</li>
+  <li>Consiento voluntariamente al tratamiento propuesto</li>
+</ul>
+
+<p style="margin-top: 40px;"><strong>Fecha:</strong> _______________</p>
+<p><strong>Paciente:</strong> _______________</p>
+<p><strong>DNI:</strong> _______________</p>
+<p><strong>Firma del paciente:</strong></p>`
 
 export default function NewConsentFormPage() {
   const router = useRouter()
@@ -135,7 +132,7 @@ export default function NewConsentFormPage() {
     const newErrors = {
       title: !formData.title.trim(),
       category: !formData.category,
-      content: !formData.content.trim(),
+      content: !formData.content.trim() || formData.content === "<div><br></div>" || formData.content === "<br>",
       organization_id: !formData.organization_id,
     }
 
@@ -303,24 +300,28 @@ export default function NewConsentFormPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Contenido del Formulario</CardTitle>
-                <CardDescription>Edita el contenido HTML del formulario de consentimiento</CardDescription>
+                <CardDescription>
+                  Edita el contenido del formulario usando el editor visual. Puedes formatear texto, crear listas y
+                  estructurar el documento.
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div>
                   <Label htmlFor="content">
-                    Contenido HTML <span className="text-red-500">*</span>
+                    Contenido del Formulario <span className="text-red-500">*</span>
                   </Label>
-                  <Textarea
-                    id="content"
-                    value={formData.content}
-                    onChange={(e) => handleChange("content", e.target.value)}
-                    placeholder="Contenido HTML del formulario"
-                    rows={20}
-                    className={`font-mono text-sm ${errors.content ? "border-red-500" : ""}`}
-                  />
+                  <div className="mt-2">
+                    <RichTextEditor
+                      value={formData.content}
+                      onChange={(value) => handleChange("content", value)}
+                      placeholder="Escribe el contenido del formulario de consentimiento..."
+                      error={errors.content}
+                    />
+                  </div>
                   {errors.content && <p className="text-sm text-red-500 mt-1">El contenido es obligatorio</p>}
                   <p className="text-sm text-gray-500 mt-2">
-                    Puedes usar HTML básico para formatear el documento. La sección de firma se añadirá automáticamente.
+                    Usa los botones de la barra de herramientas para formatear el texto. Los campos de firma se añadirán
+                    automáticamente al final.
                   </p>
                 </div>
               </CardContent>
@@ -338,7 +339,10 @@ export default function NewConsentFormPage() {
               </CardHeader>
               <CardContent>
                 <div className="border rounded-lg p-6 bg-white max-h-96 overflow-y-auto">
-                  <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: formData.content }} />
+                  <div
+                    className="prose max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-li:text-gray-700 prose-strong:text-gray-900"
+                    dangerouslySetInnerHTML={{ __html: formData.content }}
+                  />
                 </div>
               </CardContent>
             </Card>

@@ -9,12 +9,24 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Switch } from "@/components/ui/switch"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { supabase } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { FileText, Plus, Edit, Eye, Trash2, Search, Copy, RefreshCw } from "lucide-react"
 import type { ConsentForm } from "@/types/consent"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
+import { EditConsentFormModal } from "@/components/consent/edit-consent-form-modal"
 
 export default function ConsentFormsPage() {
   const router = useRouter()
@@ -26,6 +38,8 @@ export default function ConsentFormsPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all")
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [previewForm, setPreviewForm] = useState<ConsentForm | null>(null)
+  const [editFormId, setEditFormId] = useState<string | null>(null)
+  const [deleteFormId, setDeleteFormId] = useState<string | null>(null)
   const [categories, setCategories] = useState<string[]>([])
 
   // Cargar formularios
@@ -105,17 +119,16 @@ export default function ConsentFormsPage() {
     }
   }
 
-  const deleteForm = async (formId: string) => {
-    if (!confirm("¿Estás seguro de que quieres eliminar este formulario? Esta acción no se puede deshacer.")) {
-      return
-    }
+  const confirmDeleteForm = async () => {
+    if (!deleteFormId) return
 
     try {
-      const { error } = await supabase.from("consent_forms").delete().eq("id", formId)
+      const { error } = await supabase.from("consent_forms").delete().eq("id", deleteFormId)
 
       if (error) throw error
 
-      setForms(forms.filter((form) => form.id !== formId))
+      setForms(forms.filter((form) => form.id !== deleteFormId))
+      setDeleteFormId(null)
 
       toast({
         title: "Formulario eliminado",
@@ -165,6 +178,10 @@ export default function ConsentFormsPage() {
     return format(new Date(dateString), "dd/MM/yyyy HH:mm", { locale: es })
   }
 
+  const handleEditSuccess = () => {
+    loadForms() // Recargar la lista después de editar
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -177,216 +194,282 @@ export default function ConsentFormsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Formularios de Consentimiento</h1>
-          <p className="text-muted-foreground mt-1">Gestiona las plantillas de consentimiento informado</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={loadForms}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Actualizar
-          </Button>
-          <Button onClick={() => router.push("/dashboard/consent-forms/new")}>
-            <Plus className="mr-2 h-4 w-4" />
-            Nuevo Formulario
-          </Button>
-        </div>
-      </div>
-
-      {/* Filtros */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Filtros</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="text-sm font-medium mb-2 block">Buscar</label>
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
-                <Input
-                  type="text"
-                  placeholder="Buscar por título o descripción"
-                  className="pl-8"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium mb-2 block">Categoría</label>
-              <select
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
-              >
-                <option value="all">Todas las categorías</option>
-                {categories.map((category) => (
-                  <option key={category} value={category}>
-                    {category.charAt(0).toUpperCase() + category.slice(1)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium mb-2 block">Estado</label>
-              <select
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-              >
-                <option value="all">Todos los estados</option>
-                <option value="active">Activos</option>
-                <option value="inactive">Inactivos</option>
-              </select>
-            </div>
+    <TooltipProvider>
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Formularios de Consentimiento</h1>
+            <p className="text-muted-foreground mt-1">Gestiona las plantillas de consentimiento informado</p>
           </div>
-        </CardContent>
-      </Card>
+          <div className="flex gap-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" onClick={loadForms}>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Actualizar
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Recargar la lista de formularios</p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button onClick={() => router.push("/dashboard/consent-forms/new")}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Nuevo Formulario
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Crear un nuevo formulario de consentimiento</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
 
-      {/* Lista de formularios */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Formularios ({filteredForms.length})</CardTitle>
-          <CardDescription>Lista de plantillas de consentimiento informado</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {filteredForms.length === 0 ? (
-            <div className="text-center py-12">
-              <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No hay formularios</h3>
-              <p className="text-gray-500 mb-4">
-                {forms.length === 0
-                  ? "Aún no has creado ningún formulario de consentimiento."
-                  : "No se encontraron formularios con los filtros seleccionados."}
-              </p>
-              <Button onClick={() => router.push("/dashboard/consent-forms/new")}>
-                <Plus className="mr-2 h-4 w-4" />
-                Crear primer formulario
-              </Button>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Título</TableHead>
-                    <TableHead>Categoría</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead>Versión</TableHead>
-                    <TableHead>Creado</TableHead>
-                    <TableHead>Actualizado</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredForms.map((form) => (
-                    <TableRow key={form.id}>
-                      <TableCell>
-                        <div>
-                          <div className="font-medium">{form.title}</div>
-                          {form.description && (
-                            <div className="text-sm text-gray-500 mt-1">
-                              {form.description.length > 60
-                                ? `${form.description.substring(0, 60)}...`
-                                : form.description}
-                            </div>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{form.category}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Switch
-                            checked={form.is_active}
-                            onCheckedChange={() => toggleFormStatus(form.id, form.is_active)}
-                          />
-                          <span className="text-sm">{form.is_active ? "Activo" : "Inactivo"}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">v{form.version}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-sm">{formatDate(form.created_at)}</span>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-sm">{formatDate(form.updated_at)}</span>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => setPreviewForm(form)}>
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => router.push(`/dashboard/consent-forms/${form.id}/edit`)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => duplicateForm(form)}>
-                            <Copy className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => deleteForm(form.id)}
-                            className="text-red-500 hover:text-red-700"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
+        {/* Filtros */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Filtros</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="text-sm font-medium mb-2 block">Buscar</label>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
+                  <Input
+                    type="text"
+                    placeholder="Buscar por título o descripción"
+                    className="pl-8"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium mb-2 block">Categoría</label>
+                <select
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value)}
+                >
+                  <option value="all">Todas las categorías</option>
+                  {categories.map((category) => (
+                    <option key={category} value={category}>
+                      {category.charAt(0).toUpperCase() + category.slice(1)}
+                    </option>
                   ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Modal de previsualización */}
-      <Dialog open={!!previewForm} onOpenChange={() => setPreviewForm(null)}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Previsualización: {previewForm?.title}
-            </DialogTitle>
-          </DialogHeader>
-          {previewForm && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <strong>Categoría:</strong> {previewForm.category}
-                </div>
-                <div>
-                  <strong>Versión:</strong> v{previewForm.version}
-                </div>
-                <div>
-                  <strong>Estado:</strong> {previewForm.is_active ? "Activo" : "Inactivo"}
-                </div>
-                <div>
-                  <strong>Creado:</strong> {formatDate(previewForm.created_at)}
-                </div>
+                </select>
               </div>
 
-              <div className="border rounded-lg p-6 bg-white">
-                <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: previewForm.content }} />
+              <div>
+                <label className="text-sm font-medium mb-2 block">Estado</label>
+                <select
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                >
+                  <option value="all">Todos los estados</option>
+                  <option value="active">Activos</option>
+                  <option value="inactive">Inactivos</option>
+                </select>
               </div>
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
-    </div>
+          </CardContent>
+        </Card>
+
+        {/* Lista de formularios */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Formularios ({filteredForms.length})</CardTitle>
+            <CardDescription>Lista de plantillas de consentimiento informado</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {filteredForms.length === 0 ? (
+              <div className="text-center py-12">
+                <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No hay formularios</h3>
+                <p className="text-gray-500 mb-4">
+                  {forms.length === 0
+                    ? "Aún no has creado ningún formulario de consentimiento."
+                    : "No se encontraron formularios con los filtros seleccionados."}
+                </p>
+                <Button onClick={() => router.push("/dashboard/consent-forms/new")}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Crear primer formulario
+                </Button>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Título</TableHead>
+                      <TableHead>Categoría</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead>Creado</TableHead>
+                      <TableHead>Actualizado</TableHead>
+                      <TableHead className="text-right">Acciones</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredForms.map((form) => (
+                      <TableRow key={form.id}>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">{form.title}</div>
+                            {form.description && (
+                              <div className="text-sm text-gray-500 mt-1">
+                                {form.description.length > 60
+                                  ? `${form.description.substring(0, 60)}...`
+                                  : form.description}
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{form.category}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Switch
+                              checked={form.is_active}
+                              onCheckedChange={() => toggleFormStatus(form.id, form.is_active)}
+                            />
+                            <span className="text-sm">{form.is_active ? "Activo" : "Inactivo"}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-sm">{formatDate(form.created_at)}</span>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-sm">{formatDate(form.updated_at)}</span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button variant="ghost" size="sm" onClick={() => setPreviewForm(form)}>
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Ver previsualización</p>
+                              </TooltipContent>
+                            </Tooltip>
+
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button variant="ghost" size="sm" onClick={() => setEditFormId(form.id)}>
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Editar formulario</p>
+                              </TooltipContent>
+                            </Tooltip>
+
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button variant="ghost" size="sm" onClick={() => duplicateForm(form)}>
+                                  <Copy className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Duplicar formulario</p>
+                              </TooltipContent>
+                            </Tooltip>
+
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setDeleteFormId(form.id)}
+                                  className="text-red-500 hover:text-red-700"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Eliminar formulario</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Modal de edición */}
+        <EditConsentFormModal
+          isOpen={!!editFormId}
+          onClose={() => setEditFormId(null)}
+          formId={editFormId}
+          onSuccess={handleEditSuccess}
+        />
+
+        {/* Modal de previsualización */}
+        <Dialog open={!!previewForm} onOpenChange={() => setPreviewForm(null)}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Previsualización: {previewForm?.title}
+              </DialogTitle>
+            </DialogHeader>
+            {previewForm && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <strong>Categoría:</strong> {previewForm.category}
+                  </div>
+                  <div>
+                    <strong>Estado:</strong> {previewForm.is_active ? "Activo" : "Inactivo"}
+                  </div>
+                  <div>
+                    <strong>Creado:</strong> {formatDate(previewForm.created_at)}
+                  </div>
+                  <div>
+                    <strong>Actualizado:</strong> {formatDate(previewForm.updated_at)}
+                  </div>
+                </div>
+
+                <div className="border rounded-lg p-6 bg-white">
+                  <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: previewForm.content }} />
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Dialog de confirmación de eliminación */}
+        <AlertDialog open={!!deleteFormId} onOpenChange={() => setDeleteFormId(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Eliminar formulario?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Esta acción no se puede deshacer. El formulario será eliminado permanentemente y no podrá ser
+                recuperado.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmDeleteForm} className="bg-red-600 hover:bg-red-700">
+                Eliminar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    </TooltipProvider>
   )
 }
