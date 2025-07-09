@@ -38,7 +38,6 @@ interface DateFilters {
 }
 
 const statusOptions = [
-  { value: "draft", label: "Borrador", color: "bg-yellow-100 text-yellow-800" },
   { value: "sent", label: "Enviada", color: "bg-blue-100 text-blue-800" },
   { value: "paid", label: "Pagada", color: "bg-green-100 text-green-800" },
   { value: "cancelled", label: "Cancelada", color: "bg-red-100 text-red-800" },
@@ -183,22 +182,7 @@ export default function InvoicesPage() {
   }
 
   const handleInvoicesDownloaded = (invoiceIds: number[]) => {
-    setInvoices((currentInvoices) =>
-      currentInvoices.map((invoice) =>
-        invoiceIds.includes(invoice.id) && invoice.status === "draft" ? { ...invoice, status: "sent" } : invoice,
-      ),
-    )
-
-    invoiceIds.forEach(async (id) => {
-      const invoice = invoices.find((inv) => inv.id === id)
-      if (invoice?.status === "draft") {
-        try {
-          await supabase.from("invoices").update({ status: "sent" }).eq("id", id)
-        } catch (error) {
-          // Error handled silently
-        }
-      }
-    })
+    // Ya no es necesario cambiar el estado porque las facturas se crean directamente como "sent"
   }
 
   const handleExportCSV = async () => {
@@ -602,7 +586,7 @@ export default function InvoicesPage() {
               client_id: Number.parseInt(clientId),
               issue_date: dateStr,
               invoice_type: "normal",
-              status: "draft",
+              status: "sent",
               base_amount: baseAmount,
               vat_amount: vatAmount,
               irpf_amount: 0,

@@ -127,8 +127,7 @@ export default function InvoiceDetailPage() {
 
   const getStatusText = (status: string) => {
     switch (status) {
-      case "draft":
-        return "Borrador"
+      
       case "issued":
         return "Emitida"
       case "paid":

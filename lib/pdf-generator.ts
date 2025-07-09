@@ -717,8 +717,7 @@ function calculateColumnWidths(data: string[][], totalWidth: number): number[] {
  */
 function getStatusText(status: string): string {
   switch (status) {
-    case "draft":
-      return "Borrador"
+    
     case "issued":
       return "Emitida"
     case "paid":
