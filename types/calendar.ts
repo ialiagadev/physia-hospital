@@ -315,13 +315,11 @@ export interface User {
   email: string
   role: "admin" | "professional" | "staff"
   organization_id: number
-  is_active: boolean
   type: number // AÑADIDO: 1 = profesional, 2 = otro tipo
   avatar_url?: string | null
   is_physia_admin?: boolean
   prompt?: string | null
-  created_at: string
-  updated_at: string
+  
   work_schedules?: WorkSchedule[]
   settings?: ProfessionalSettings
 }

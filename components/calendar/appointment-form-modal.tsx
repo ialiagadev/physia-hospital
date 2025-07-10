@@ -74,9 +74,9 @@ export function AppointmentFormModal({
 
   // Hooks centralizados
   const { clients } = useClients(organizationId)
-  const { users } = useUsers(organizationId)
+  const { users, getUsersByService } = useUsers(organizationId)
   const { consultations, loading: consultationsLoading, getAvailableConsultations } = useConsultations(organizationId)
-  const { services, loading: servicesLoading, getServiceUsers } = useServices(organizationId)
+  const { services, loading: servicesLoading } = useServices(organizationId)
   const { getAvailableUsers } = useVacations(organizationId)
   const { conflicts, loading: conflictsLoading, checkConflicts } = useAppointmentConflicts(organizationId)
 
@@ -106,7 +106,7 @@ export function AppointmentFormModal({
     return `${nuevasHoras.toString().padStart(2, "0")}:${nuevosMinutos.toString().padStart(2, "0")}`
   }, [])
 
-  // 🆕 Estado del formulario con service_id como número o null
+  // Estado del formulario con service_id como número o null
   const [formData, setFormData] = useState({
     telefonoPaciente: citaExistente?.telefonoPaciente || waitingListEntry?.phone || "",
     nombrePaciente: citaExistente?.nombrePaciente || waitingListEntry?.client_name?.split(" ")[0] || "",
@@ -120,7 +120,6 @@ export function AppointmentFormModal({
     estado: citaExistente?.estado || ("pendiente" as EstadoCita),
     consultationId:
       citaExistente?.consultationId && citaExistente.consultationId !== "" ? citaExistente.consultationId : "none",
-    // 🆕 Guardar como número o null, no como string
     service_id: citaExistente?.service_id
       ? Number(citaExistente.service_id)
       : waitingListEntry?.service_id
@@ -197,31 +196,17 @@ export function AppointmentFormModal({
     citaExistente?.id,
   ])
 
-  // 🆕 Filtrar usuarios con service_id como número
+  // Filtrar usuarios - CORREGIDO y SIN console.log
   const updateFilteredUsers = useCallback(async () => {
-    console.log("🔍 DEBUG updateFilteredUsers - INICIO")
-    console.log("📥 Estado actual:")
-    console.log("  - formData.service_id:", formData.service_id, typeof formData.service_id)
-    console.log("  - users.length:", users.length)
-    console.log("  - organizationId:", organizationId)
-
     let usersToFilter = users.filter((user) => user.type === 1) // Solo profesionales
-    console.log("👥 Profesionales iniciales:", usersToFilter.length)
 
-    // 🆕 Si hay servicio seleccionado (número), filtrar por servicio
+    // Si hay servicio seleccionado (número), filtrar por servicio
     if (formData.service_id !== null && typeof formData.service_id === "number") {
-      console.log("🎯 Filtrando por servicio:", formData.service_id)
-      usersToFilter = await getServiceUsers(formData.service_id, users)
-      console.log("👥 Profesionales después de filtrar por servicio:", usersToFilter.length)
-    } else {
-      console.log("ℹ️ Sin servicio seleccionado, mostrando todos los profesionales")
+      usersToFilter = await getUsersByService(formData.service_id)
     }
 
     // Filtrar por vacaciones
-    console.log("🏖️ Filtrando por vacaciones...")
-    const availableUsers = await getAvailableUsers(usersToFilter, formData.fecha)
-    console.log("👥 Profesionales disponibles (sin vacaciones):", availableUsers.length)
-
+    const availableUsers = getAvailableUsers(usersToFilter, formData.fecha)
     setFilteredUsers(availableUsers)
 
     // Si el profesional seleccionado ya no está disponible, resetear
@@ -229,17 +214,9 @@ export function AppointmentFormModal({
       formData.profesionalId &&
       !availableUsers.find((user) => Number.parseInt(user.id.slice(-8), 16) === formData.profesionalId)
     ) {
-      console.log("⚠️ Profesional seleccionado ya no disponible, reseteando")
       setFormData((prev) => ({ ...prev, profesionalId: 0 }))
     }
-
-    console.log("🎯 RESULTADO FINAL updateFilteredUsers:")
-    console.log("  - filteredUsers.length:", availableUsers.length)
-    console.log(
-      "  - filteredUsers:",
-      availableUsers.map((u) => ({ id: u.id, name: u.name })),
-    )
-  }, [formData.service_id, formData.fecha, formData.profesionalId, users, getServiceUsers, getAvailableUsers])
+  }, [formData.service_id, formData.fecha, formData.profesionalId, users, getUsersByService, getAvailableUsers])
 
   // Función para buscar clientes
   const searchClients = useCallback(
@@ -254,8 +231,8 @@ export function AppointmentFormModal({
       try {
         const matches: ClientMatch[] = []
         const termLower = term.toLowerCase().trim()
-
         const phoneDigits = term.replace(/\D/g, "")
+
         if (phoneDigits.length >= 3) {
           const { data: phoneMatches, error: phoneError } = await supabase
             .from("clients")
@@ -326,7 +303,6 @@ export function AppointmentFormModal({
     if (consultationCheckTimeoutRef.current) {
       clearTimeout(consultationCheckTimeoutRef.current)
     }
-
     consultationCheckTimeoutRef.current = setTimeout(() => {
       checkConsultationAvailability()
     }, 300)
@@ -343,7 +319,6 @@ export function AppointmentFormModal({
     if (conflictCheckTimeoutRef.current) {
       clearTimeout(conflictCheckTimeoutRef.current)
     }
-
     conflictCheckTimeoutRef.current = setTimeout(() => {
       checkAppointmentConflicts()
     }, 500)
@@ -387,6 +362,7 @@ export function AppointmentFormModal({
     setClienteEncontrado(client)
     setTelefonoValidado(true)
     setShowMatches(false)
+
     const nombreCompleto = client.name.split(" ")
     const nombre = nombreCompleto[0] || ""
     const apellidos = nombreCompleto.slice(1).join(" ") || ""
@@ -397,6 +373,7 @@ export function AppointmentFormModal({
       nombrePaciente: nombre,
       apellidosPaciente: apellidos,
     }))
+
     setSearchTerm(`${client.name} - ${client.phone}`)
     setTelefonoFormateado(formatPhoneNumber(client.phone || ""))
   }, [])
@@ -405,7 +382,6 @@ export function AppointmentFormModal({
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const value = e.target.value
       setSearchTerm(value)
-
       setClienteEncontrado(null)
       setTelefonoValidado(false)
       setTelefonoFormateado("")
@@ -443,31 +419,23 @@ export function AppointmentFormModal({
     setTimeout(() => setShowMatches(false), 200)
   }, [clienteEncontrado, searchTerm])
 
-  // 🆕 Handler corregido para manejar service_id como número o null
+  // Handler para manejar service_id como número o null - SIN console.log
   const handleServiceChange = useCallback(
     (value: string) => {
-      console.log("🔍 DEBUG handleServiceChange - INICIO")
-      console.log("📥 Valor seleccionado:", value)
-
       if (value === "none") {
-        console.log("❌ Servicio deseleccionado")
         setFormData((prev) => ({
           ...prev,
-          service_id: null, // 🆕 null en lugar de string vacío
+          service_id: null,
         }))
         return
       }
 
       const selectedService = services.find((s) => s.id.toString() === value)
-      console.log("🎯 Servicio encontrado:", selectedService)
-
       setFormData((prev) => ({
         ...prev,
-        service_id: Number(value), // 🆕 Convertir a número
+        service_id: Number(value),
         duracion: selectedService ? selectedService.duration : prev.duracion,
       }))
-
-      console.log("✅ FormData actualizado con service_id:", Number(value))
     },
     [services],
   )
@@ -477,6 +445,7 @@ export function AppointmentFormModal({
       e.preventDefault()
 
       const newErrors: { [key: string]: string } = {}
+
       if (!formData.telefonoPaciente.trim()) {
         newErrors.telefono = "El teléfono es obligatorio"
       } else if (!isValidPhoneNumber(formData.telefonoPaciente)) {
@@ -823,8 +792,8 @@ export function AppointmentFormModal({
                 <strong>⚠️ Conflicto de horario detectado</strong>
                 <br />
                 <span className="text-sm">
-                  Ya existe{conflicts.length > 1 ? "n" : ""} {conflicts.length} cita
-                  {conflicts.length > 1 ? "s" : ""} en este horario:
+                  Ya existe{conflicts.length > 1 ? "n" : ""} {conflicts.length} cita{conflicts.length > 1 ? "s" : ""} en
+                  este horario:
                 </span>
                 <div className="mt-2 space-y-1">
                   {conflicts.map((apt) => (

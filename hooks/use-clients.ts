@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { supabase } from "@/lib/supabase/client"
 import type { Client, ClientInsert, ClientUpdate } from "@/types/calendar"
 
@@ -21,18 +21,16 @@ export function useClients(organizationId?: number): UseClientsReturn {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchClients = async () => {
+  const fetchClients = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
 
       if (!organizationId) {
-        console.log("No organizationId provided, skipping clients fetch")
         setClients([])
+        setLoading(false)
         return
       }
-
-      console.log("Fetching clients for organization:", organizationId)
 
       const { data, error: fetchError } = await supabase
         .from("clients")
@@ -45,7 +43,6 @@ export function useClients(organizationId?: number): UseClientsReturn {
         setError(fetchError.message)
         setClients([])
       } else {
-        console.log("Clients fetched successfully:", data?.length || 0, "clients")
         setClients(data || [])
         setError(null)
       }
@@ -56,7 +53,7 @@ export function useClients(organizationId?: number): UseClientsReturn {
     } finally {
       setLoading(false)
     }
-  }
+  }, [organizationId])
 
   useEffect(() => {
     if (organizationId) {
@@ -65,52 +62,53 @@ export function useClients(organizationId?: number): UseClientsReturn {
       setLoading(false)
       setClients([])
     }
-  }, [organizationId])
+  }, [fetchClients])
 
-  const searchClients = (query: string): Client[] => {
-    if (!query.trim()) return clients
+  const searchClients = useCallback(
+    (query: string): Client[] => {
+      if (!query.trim()) return clients
+      const searchTerm = query.toLowerCase().trim()
+      return clients.filter(
+        (client) =>
+          client.name.toLowerCase().includes(searchTerm) ||
+          client.phone?.toLowerCase().includes(searchTerm) ||
+          client.email?.toLowerCase().includes(searchTerm),
+      )
+    },
+    [clients],
+  )
 
-    const searchTerm = query.toLowerCase().trim()
-    return clients.filter(
-      (client) =>
-        client.name.toLowerCase().includes(searchTerm) ||
-        client.phone?.toLowerCase().includes(searchTerm) ||
-        client.email?.toLowerCase().includes(searchTerm),
-    )
-  }
+  const searchClientsServer = useCallback(
+    async (query: string): Promise<Client[]> => {
+      try {
+        if (!query.trim() || !organizationId) {
+          return []
+        }
 
-  const searchClientsServer = async (query: string): Promise<Client[]> => {
-    try {
-      if (!query.trim() || !organizationId) {
-        return []
+        const searchTerm = `%${query.trim()}%`
+        const { data, error } = await supabase
+          .from("clients")
+          .select("*")
+          .eq("organization_id", organizationId)
+          .or(`name.ilike.${searchTerm},phone.ilike.${searchTerm},email.ilike.${searchTerm}`)
+          .order("name", { ascending: true })
+          .limit(50)
+
+        if (error) {
+          console.error("Error searching clients:", error)
+          throw error
+        }
+
+        return data || []
+      } catch (err) {
+        console.error("Error in searchClientsServer:", err)
+        throw err
       }
+    },
+    [organizationId],
+  )
 
-      console.log("Searching clients on server for:", query)
-
-      const searchTerm = `%${query.trim()}%`
-
-      const { data, error } = await supabase
-        .from("clients")
-        .select("*")
-        .eq("organization_id", organizationId)
-        .or(`name.ilike.${searchTerm},phone.ilike.${searchTerm},email.ilike.${searchTerm}`)
-        .order("name", { ascending: true })
-        .limit(50) // Limitar resultados para mejor rendimiento
-
-      if (error) {
-        console.error("Error searching clients:", error)
-        throw error
-      }
-
-      console.log("Server search results:", data?.length || 0, "clients found")
-      return data || []
-    } catch (err) {
-      console.error("Error in searchClientsServer:", err)
-      throw err
-    }
-  }
-
-  const createClient = async (clientData: ClientInsert): Promise<Client> => {
+  const createClient = useCallback(async (clientData: ClientInsert): Promise<Client> => {
     try {
       const { data, error: insertError } = await supabase.from("clients").insert(clientData).select().single()
 
@@ -124,9 +122,9 @@ export function useClients(organizationId?: number): UseClientsReturn {
       console.error("Error creating client:", err)
       throw err
     }
-  }
+  }, [])
 
-  const updateClient = async (id: number, clientData: ClientUpdate): Promise<Client> => {
+  const updateClient = useCallback(async (id: number, clientData: ClientUpdate): Promise<Client> => {
     try {
       const { data, error: updateError } = await supabase
         .from("clients")
@@ -145,9 +143,9 @@ export function useClients(organizationId?: number): UseClientsReturn {
       console.error("Error updating client:", err)
       throw err
     }
-  }
+  }, [])
 
-  const deleteClient = async (id: number): Promise<void> => {
+  const deleteClient = useCallback(async (id: number): Promise<void> => {
     try {
       const { error: deleteError } = await supabase.from("clients").delete().eq("id", id)
 
@@ -160,11 +158,11 @@ export function useClients(organizationId?: number): UseClientsReturn {
       console.error("Error deleting client:", err)
       throw err
     }
-  }
+  }, [])
 
-  const refreshClients = async (): Promise<void> => {
+  const refreshClients = useCallback(async (): Promise<void> => {
     await fetchClients()
-  }
+  }, [fetchClients])
 
   return {
     clients,
