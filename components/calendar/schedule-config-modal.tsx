@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Clock, Plus, Trash2, Save, Coffee, Utensils, Timer } from "lucide-react"
+import { Clock, Plus, Trash2, Save, Coffee, Utensils } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -28,7 +28,6 @@ interface ScheduleSlot {
   start_time: string
   end_time: string
   is_active: boolean
-  buffer_time_minutes: number
   breaks: WorkScheduleBreak[]
 }
 
@@ -53,7 +52,6 @@ const DEFAULT_SCHEDULE: ScheduleSlot = {
   start_time: "09:00",
   end_time: "17:00",
   is_active: true,
-  buffer_time_minutes: 5,
   breaks: [],
 }
 
@@ -62,46 +60,8 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
   const [activeTab, setActiveTab] = useState("weekly")
   const [isLoading, setIsLoading] = useState(false)
 
-  // CORREGIDO: Usar el hook correctamente
   const { getUserSchedules, loading: schedulesLoading } = useWorkSchedules(user.organization_id?.toString())
 
-  // CORREGIDO: useEffect con dependencias estables
-  useEffect(() => {
-    if (!isOpen) return // Solo ejecutar cuando el modal esté abierto
-
-    // Obtener horarios del usuario desde el hook
-    const userSchedules = getUserSchedules(user.id)
-
-    if (userSchedules && userSchedules.length > 0) {
-      // Convertir WorkSchedule[] a ScheduleSlot[]
-      const processedSchedules = userSchedules
-        .filter((schedule) => schedule.day_of_week !== null)
-        .map((schedule) => ({
-          id: schedule.id,
-          day_of_week: schedule.day_of_week as number,
-          start_time: schedule.start_time,
-          end_time: schedule.end_time,
-          is_active: schedule.is_active,
-          buffer_time_minutes: schedule.buffer_time_minutes || 5,
-          breaks: schedule.breaks || [],
-        }))
-
-      setSchedules(processedSchedules)
-    } else {
-      // Crear horario por defecto para días laborables
-      const defaultSchedules = [1, 2, 3, 4, 5].map((day) => ({
-        day_of_week: day,
-        start_time: "09:00",
-        end_time: "17:00",
-        is_active: true,
-        buffer_time_minutes: 5,
-        breaks: [],
-      }))
-      setSchedules(defaultSchedules)
-    }
-  }, [user.id, isOpen]) // ← CORREGIDO: Solo depende de user.id e isOpen
-
-  // NUEVO: useEffect separado para actualizar cuando cambien los datos del hook
   useEffect(() => {
     if (!isOpen) return
 
@@ -115,11 +75,36 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
           start_time: schedule.start_time,
           end_time: schedule.end_time,
           is_active: schedule.is_active,
-          buffer_time_minutes: schedule.buffer_time_minutes || 5,
+          breaks: schedule.breaks || [],
+        }))
+      setSchedules(processedSchedules)
+    } else {
+      const defaultSchedules = [1, 2, 3, 4, 5].map((day) => ({
+        day_of_week: day,
+        start_time: "09:00",
+        end_time: "17:00",
+        is_active: true,
+        breaks: [],
+      }))
+      setSchedules(defaultSchedules)
+    }
+  }, [user.id, isOpen])
+
+  useEffect(() => {
+    if (!isOpen) return
+    const userSchedules = getUserSchedules(user.id)
+    if (userSchedules && userSchedules.length > 0) {
+      const processedSchedules = userSchedules
+        .filter((schedule) => schedule.day_of_week !== null)
+        .map((schedule) => ({
+          id: schedule.id,
+          day_of_week: schedule.day_of_week as number,
+          start_time: schedule.start_time,
+          end_time: schedule.end_time,
+          is_active: schedule.is_active,
           breaks: schedule.breaks || [],
         }))
 
-      // Solo actualizar si hay cambios reales
       setSchedules((prevSchedules) => {
         const hasChanges = JSON.stringify(prevSchedules) !== JSON.stringify(processedSchedules)
         return hasChanges ? processedSchedules : prevSchedules
@@ -142,7 +127,6 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
 
   const toggleDayActive = (dayOfWeek: number) => {
     const existingIndex = schedules.findIndex((s) => s.day_of_week === dayOfWeek)
-
     if (existingIndex >= 0) {
       updateScheduleSlot(existingIndex, "is_active", !schedules[existingIndex].is_active)
     } else {
@@ -153,7 +137,6 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
           start_time: "09:00",
           end_time: "17:00",
           is_active: true,
-          buffer_time_minutes: 5,
           breaks: [],
         },
       ])
@@ -164,7 +147,6 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
     return schedules.find((s) => s.day_of_week === dayOfWeek)
   }
 
-  // Funciones para manejar descansos
   const addBreakToSchedule = (scheduleIndex: number, preset?: (typeof BREAK_PRESETS)[0]) => {
     const newBreak: WorkScheduleBreak = {
       id: `temp-${Date.now()}`,
@@ -186,12 +168,9 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
   const removeBreakFromSchedule = (scheduleIndex: number, breakIndex: number) => {
     const updatedSchedules = [...schedules]
     updatedSchedules[scheduleIndex].breaks.splice(breakIndex, 1)
-
-    // Reordenar sort_order
     updatedSchedules[scheduleIndex].breaks.forEach((breakItem, index) => {
       breakItem.sort_order = index
     })
-
     setSchedules(updatedSchedules)
   }
 
@@ -211,17 +190,14 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
 
   const applyToAllDays = () => {
     if (schedules.length === 0) return
-
     const template = schedules[0]
     const newSchedules = DAYS_OF_WEEK.map((day) => ({
       day_of_week: day.value,
       start_time: template.start_time,
       end_time: template.end_time,
       is_active: true,
-      buffer_time_minutes: template.buffer_time_minutes,
       breaks: [...template.breaks.map((b) => ({ ...b, id: `temp-${Date.now()}-${Math.random()}` }))],
     }))
-
     setSchedules(newSchedules)
     toast.success("Horario aplicado a todos los días")
   }
@@ -229,7 +205,6 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
   const handleSave = async () => {
     setIsLoading(true)
     try {
-      // Validar horarios
       const validSchedules = schedules.filter((s) => s.is_active && s.start_time && s.end_time)
 
       for (const schedule of validSchedules) {
@@ -238,14 +213,11 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
           return
         }
 
-        // Validar descansos
         for (const breakItem of schedule.breaks) {
           if (breakItem.start_time >= breakItem.end_time) {
             toast.error(`Descanso inválido en ${DAYS_OF_WEEK.find((d) => d.value === schedule.day_of_week)?.label}`)
             return
           }
-
-          // Verificar que el descanso esté dentro del horario de trabajo
           if (breakItem.start_time < schedule.start_time || breakItem.end_time > schedule.end_time) {
             toast.error(`El descanso "${breakItem.break_name}" está fuera del horario de trabajo`)
             return
@@ -253,7 +225,6 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
         }
       }
 
-      // Convertir ScheduleSlot[] a WorkSchedule[]
       const workSchedules: WorkSchedule[] = validSchedules.map((schedule) => ({
         id: schedule.id || "",
         user_id: user.id,
@@ -261,7 +232,7 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
         start_time: schedule.start_time,
         end_time: schedule.end_time,
         is_active: schedule.is_active,
-        buffer_time_minutes: schedule.buffer_time_minutes,
+        buffer_time_minutes: 0,
         date_exception: null,
         is_exception: false,
         created_at: new Date().toISOString(),
@@ -300,7 +271,6 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
       const endMinutes = end[0] * 60 + end[1]
       let dayMinutes = endMinutes - startMinutes
 
-      // Restar todos los descansos activos
       schedule.breaks.forEach((breakItem) => {
         if (breakItem.is_active) {
           const breakStart = breakItem.start_time.split(":").map(Number)
@@ -310,7 +280,6 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
           dayMinutes -= breakEndMinutes - breakStartMinutes
         }
       })
-
       return total + Math.max(0, dayMinutes)
     }, 0)
 
@@ -372,7 +341,6 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
                           <Switch checked={isActive} onCheckedChange={() => toggleDayActive(day.value)} />
                         </div>
                       </CardHeader>
-
                       {isActive && schedule && scheduleIndex >= 0 && (
                         <CardContent className="space-y-4">
                           {/* Horario principal */}
@@ -395,31 +363,6 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
                                 className="text-sm"
                               />
                             </div>
-                          </div>
-
-                          {/* Buffer time */}
-                          <div>
-                            <Label className="text-xs flex items-center gap-1">
-                              <Timer className="h-3 w-3" />
-                              Tiempo entre citas (min)
-                            </Label>
-                            <Select
-                              value={schedule.buffer_time_minutes.toString()}
-                              onValueChange={(value) =>
-                                updateScheduleSlot(scheduleIndex, "buffer_time_minutes", Number.parseInt(value))
-                              }
-                            >
-                              <SelectTrigger className="text-sm">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="0">Sin buffer</SelectItem>
-                                <SelectItem value="5">5 minutos</SelectItem>
-                                <SelectItem value="10">10 minutos</SelectItem>
-                                <SelectItem value="15">15 minutos</SelectItem>
-                                <SelectItem value="30">30 minutos</SelectItem>
-                              </SelectContent>
-                            </Select>
                           </div>
 
                           <Separator />
@@ -452,7 +395,6 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
                                 </Button>
                               </div>
                             </div>
-
                             {schedule.breaks.length === 0 ? (
                               <p className="text-xs text-gray-500 text-center py-2">Sin descansos</p>
                             ) : (
@@ -523,7 +465,7 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
                     <CardContent className="p-4">
                       <div className="space-y-4">
                         {/* Configuración básica */}
-                        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                           <div>
                             <Label>Día</Label>
                             <Select
@@ -544,7 +486,6 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
                               </SelectContent>
                             </Select>
                           </div>
-
                           <div>
                             <Label>Inicio</Label>
                             <Input
@@ -553,7 +494,6 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
                               onChange={(e) => updateScheduleSlot(index, "start_time", e.target.value)}
                             />
                           </div>
-
                           <div>
                             <Label>Fin</Label>
                             <Input
@@ -562,28 +502,6 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
                               onChange={(e) => updateScheduleSlot(index, "end_time", e.target.value)}
                             />
                           </div>
-
-                          <div>
-                            <Label>Buffer (min)</Label>
-                            <Select
-                              value={schedule.buffer_time_minutes.toString()}
-                              onValueChange={(value) =>
-                                updateScheduleSlot(index, "buffer_time_minutes", Number.parseInt(value))
-                              }
-                            >
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="0">Sin buffer</SelectItem>
-                                <SelectItem value="5">5 min</SelectItem>
-                                <SelectItem value="10">10 min</SelectItem>
-                                <SelectItem value="15">15 min</SelectItem>
-                                <SelectItem value="30">30 min</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-
                           <div className="flex items-center gap-2">
                             <div className="flex items-center space-x-2">
                               <Switch
@@ -631,7 +549,6 @@ export function ScheduleConfigModal({ isOpen, onClose, user, onSave }: ScheduleC
                               </Button>
                             </div>
                           </div>
-
                           {schedule.breaks.length === 0 ? (
                             <div className="text-center py-4 text-gray-500 border-2 border-dashed rounded">
                               Sin descansos configurados
