@@ -12,6 +12,7 @@ export interface GroupActivity {
   date: string
   start_time: string
   end_time: string
+  service_id: number | null // 🆕 Añadido
   professional_id: string
   consultation_id: string | null
   max_participants: number
@@ -193,10 +194,11 @@ export function useGroupActivities(organizationId?: number, users: any[] = []) {
       const professional = users.find((user) => user.id === data.professional_id)
 
       const newActivity: GroupActivity = {
-        ...data,
-        professional: professional ? { id: professional.id, name: professional.name } : undefined,
-        consultation: Array.isArray(data.consultations) ? data.consultations[0] : data.consultations,
-        participants: [],
+          ...data,
+          professional: professional ? { id: professional.id, name: professional.name } : undefined,
+          consultation: Array.isArray(data.consultations) ? data.consultations[0] : data.consultations,
+          participants: [],
+          service_id: null
       }
 
       setActivities((prev) => [...prev, newActivity])

@@ -270,10 +270,7 @@ export function ProfesionalesView({
             <h2 className="text-2xl font-bold">Gestión de Profesionales</h2>
             <p className="text-sm text-muted-foreground">No hay profesionales disponibles</p>
           </div>
-          <Button onClick={() => setShowAddModal(true)} className="gap-2">
-            <Plus className="h-4 w-4" />
-            Añadir Profesional
-          </Button>
+        
         </div>
 
         <div className="flex flex-col items-center justify-center h-64 text-center">
