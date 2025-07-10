@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { FileText, Plus, Eye, Clock, CheckCircle, Shield, Download, LinkIcon, FileDown } from "lucide-react"
+import { FileText, Plus, Eye, Clock, CheckCircle, Shield, Download, LinkIcon, FileDown, Mail } from "lucide-react"
 import { supabase } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { GenerateConsentModal } from "./generate-consent-modal"
@@ -34,6 +34,7 @@ export function PatientConsentsSection({
   const [pendingTokens, setPendingTokens] = useState<ConsentTokenWithDetails[]>([])
   const [showGenerateModal, setShowGenerateModal] = useState(false)
   const [selectedSignature, setSelectedSignature] = useState<string | null>(null)
+  const [selectedConsent, setSelectedConsent] = useState<PatientConsentWithDetails | null>(null)
   const [activeTab, setActiveTab] = useState("signed")
 
   // Cargar datos
@@ -102,6 +103,29 @@ export function PatientConsentsSection({
       )
     }
     return <Badge variant="secondary">Pendiente verificación</Badge>
+  }
+
+  const getAcceptanceBadges = (consent: PatientConsentWithDetails) => {
+    return (
+      <div className="flex flex-wrap gap-1">
+        {consent.document_read_understood && (
+          <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700">
+            Leído
+          </Badge>
+        )}
+        {consent.terms_accepted && (
+          <Badge variant="outline" className="text-xs bg-green-50 text-green-700">
+            Aceptado
+          </Badge>
+        )}
+        {consent.marketing_notifications_accepted && (
+          <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700">
+            <Mail className="w-3 h-3 mr-1" />
+            Marketing
+          </Badge>
+        )}
+      </div>
+    )
   }
 
   const getPendingStatusBadge = (token: ConsentTokenWithDetails) => {
@@ -193,6 +217,22 @@ export function PatientConsentsSection({
               padding: 10px; 
               background: white;
             }
+            .acceptance-section {
+              background: #f9f9f9;
+              padding: 20px;
+              margin: 20px 0;
+              border-left: 4px solid #4CAF50;
+            }
+            .acceptance-item {
+              margin: 10px 0;
+              display: flex;
+              align-items: center;
+            }
+            .acceptance-item .check {
+              color: #4CAF50;
+              font-weight: bold;
+              margin-right: 10px;
+            }
             .metadata { 
               font-size: 12px; 
               color: #666; 
@@ -233,6 +273,35 @@ export function PatientConsentsSection({
             ${cleanContent}
           </div>
           
+          <div class="acceptance-section">
+            <h3>Registro de Aceptaciones</h3>
+            <div class="acceptance-item">
+              <span class="check">${consent.document_read_understood ? "✓" : "✗"}</span>
+              <span>He leído y entendido el documento completo</span>
+              ${consent.document_read_at ? `<span style="margin-left: auto; font-size: 11px; color: #666;">${formatDate(consent.document_read_at)}</span>` : ""}
+            </div>
+            <div class="acceptance-item">
+              <span class="check">${consent.terms_accepted ? "✓" : "✗"}</span>
+              <span>Acepto los términos y condiciones del tratamiento</span>
+              ${consent.terms_accepted_at ? `<span style="margin-left: auto; font-size: 11px; color: #666;">${formatDate(consent.terms_accepted_at)}</span>` : ""}
+            </div>
+            <div class="acceptance-item">
+              <span class="check">${consent.marketing_notifications_accepted ? "✓" : "✗"}</span>
+              <span>Acepto recibir comunicaciones de marketing</span>
+              ${consent.marketing_accepted_at ? `<span style="margin-left: auto; font-size: 11px; color: #666;">${formatDate(consent.marketing_accepted_at)}</span>` : ""}
+            </div>
+            ${
+              consent.acceptance_text_version
+                ? `
+              <div style="margin-top: 15px; padding: 10px; background: white; border-radius: 3px; font-size: 12px;">
+                <strong>Texto de aceptación registrado:</strong><br>
+                <em>${consent.acceptance_text_version}</em>
+              </div>
+            `
+                : ""
+            }
+          </div>
+          
           <div class="signature-section">
             <h3>Firma Digital del Paciente</h3>
             <div class="signature-box">
@@ -253,6 +322,7 @@ export function PatientConsentsSection({
             </div>
             <p style="margin-top: 20px; font-style: italic; text-align: center;">
               Este documento ha sido firmado digitalmente y es válido según la normativa vigente.
+              Todas las aceptaciones han sido registradas con timestamp para auditoría.
             </p>
           </div>
         </body>
@@ -272,7 +342,7 @@ export function PatientConsentsSection({
 
       toast({
         title: "Documento descargado",
-        description: "El consentimiento completo con firma se ha descargado correctamente",
+        description: "El consentimiento completo con firma y registro de aceptaciones se ha descargado correctamente",
       })
     } catch (error) {
       console.error("Error downloading consent:", error)
@@ -378,6 +448,7 @@ export function PatientConsentsSection({
                       <TableHead>Documento</TableHead>
                       <TableHead>Fecha de firma</TableHead>
                       <TableHead>Estado</TableHead>
+                      <TableHead>Aceptaciones</TableHead>
                       <TableHead>IP</TableHead>
                       <TableHead>Acciones</TableHead>
                     </TableRow>
@@ -400,6 +471,7 @@ export function PatientConsentsSection({
                           </div>
                         </TableCell>
                         <TableCell>{getStatusBadge(consent)}</TableCell>
+                        <TableCell>{getAcceptanceBadges(consent)}</TableCell>
                         <TableCell>
                           <span className="text-xs text-gray-500">{consent.ip_address}</span>
                         </TableCell>
@@ -412,6 +484,14 @@ export function PatientConsentsSection({
                               title="Ver firma"
                             >
                               <Eye className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setSelectedConsent(consent)}
+                              title="Ver detalles completos"
+                            >
+                              <FileText className="w-4 h-4" />
                             </Button>
                             <Button
                               variant="outline"
@@ -547,6 +627,115 @@ export function PatientConsentsSection({
                 alt="Firma digital"
                 className="max-w-full h-auto border rounded-lg"
               />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal para ver detalles completos del consentimiento */}
+      <Dialog open={!!selectedConsent} onOpenChange={() => setSelectedConsent(null)}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Detalles del consentimiento</DialogTitle>
+          </DialogHeader>
+          {selectedConsent && (
+            <div className="space-y-6">
+              {/* Información básica */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <h4 className="font-medium text-sm text-gray-500">Documento</h4>
+                  <p className="font-medium">{selectedConsent.consent_forms.title}</p>
+                  <Badge variant="outline" className="text-xs mt-1">
+                    {selectedConsent.consent_forms.category}
+                  </Badge>
+                </div>
+                <div>
+                  <h4 className="font-medium text-sm text-gray-500">Paciente</h4>
+                  <p className="font-medium">{selectedConsent.patient_name}</p>
+                  <p className="text-sm text-gray-600">{selectedConsent.patient_tax_id}</p>
+                </div>
+              </div>
+
+              {/* Registro de aceptaciones */}
+              <div>
+                <h4 className="font-medium text-sm text-gray-500 mb-3">Registro de aceptaciones</h4>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle
+                        className={`w-4 h-4 ${selectedConsent.document_read_understood ? "text-green-600" : "text-gray-400"}`}
+                      />
+                      <span className="text-sm">Documento leído y entendido</span>
+                    </div>
+                    {selectedConsent.document_read_at && (
+                      <span className="text-xs text-gray-500">{formatDate(selectedConsent.document_read_at)}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle
+                        className={`w-4 h-4 ${selectedConsent.terms_accepted ? "text-green-600" : "text-gray-400"}`}
+                      />
+                      <span className="text-sm">Términos aceptados</span>
+                    </div>
+                    {selectedConsent.terms_accepted_at && (
+                      <span className="text-xs text-gray-500">{formatDate(selectedConsent.terms_accepted_at)}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                    <div className="flex items-center gap-2">
+                      <Mail
+                        className={`w-4 h-4 ${selectedConsent.marketing_notifications_accepted ? "text-purple-600" : "text-gray-400"}`}
+                      />
+                      <span className="text-sm">Marketing aceptado</span>
+                    </div>
+                    {selectedConsent.marketing_accepted_at && (
+                      <span className="text-xs text-gray-500">{formatDate(selectedConsent.marketing_accepted_at)}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Texto de aceptación */}
+              {selectedConsent.acceptance_text_version && (
+                <div>
+                  <h4 className="font-medium text-sm text-gray-500 mb-2">Texto de aceptación registrado</h4>
+                  <div className="p-3 bg-gray-50 rounded text-sm">
+                    <pre className="whitespace-pre-wrap font-sans">{selectedConsent.acceptance_text_version}</pre>
+                  </div>
+                </div>
+              )}
+
+              {/* Firma */}
+              <div>
+                <h4 className="font-medium text-sm text-gray-500 mb-2">Firma digital</h4>
+                <div className="flex justify-center p-4 bg-gray-50 rounded">
+                  <img
+                    src={selectedConsent.signature_base64 || "/placeholder.svg"}
+                    alt="Firma digital"
+                    className="max-w-xs h-auto border rounded"
+                  />
+                </div>
+              </div>
+
+              {/* Metadatos técnicos */}
+              <div>
+                <h4 className="font-medium text-sm text-gray-500 mb-2">Información técnica</h4>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-500">Fecha de firma:</span>
+                    <p>{formatDate(selectedConsent.signed_at)}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Dirección IP:</span>
+                    <p>{selectedConsent.ip_address || "No disponible"}</p>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-gray-500">Navegador:</span>
+                    <p className="text-xs">{selectedConsent.user_agent || "No disponible"}</p>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </DialogContent>

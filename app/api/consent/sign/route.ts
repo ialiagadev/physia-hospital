@@ -3,16 +3,35 @@ import { supabase } from "@/lib/supabase/client"
 
 export async function POST(request: NextRequest) {
   try {
-    const { token, patient_name, patient_tax_id, signature_base64 } = await request.json()
+    const {
+      token,
+      patient_name,
+      patient_tax_id,
+      signature_base64,
+      terms_accepted,
+      terms_accepted_at,
+      document_read_understood,
+      document_read_at,
+      marketing_notifications_accepted,
+      marketing_accepted_at,
+      acceptance_text_version,
+    } = await request.json()
 
     // Validaciones básicas
     if (!token || !patient_name || !patient_tax_id || !signature_base64) {
       return NextResponse.json({ error: "Todos los campos son requeridos" }, { status: 400 })
     }
 
+    // Validar campos de aceptación obligatorios
+    if (!terms_accepted || !document_read_understood) {
+      return NextResponse.json(
+        { error: "Debe aceptar los términos y confirmar que ha leído el documento" },
+        { status: 400 },
+      )
+    }
+
     // Obtener información del cliente
     const clientIP = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown"
-
     const userAgent = request.headers.get("user-agent") || "unknown"
 
     // Buscar el token
@@ -46,7 +65,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Los datos no coinciden con los registros del paciente" }, { status: 400 })
     }
 
-    // Crear el consentimiento firmado
+    // Crear el consentimiento firmado con todos los nuevos campos
     const { data: consentData, error: consentError } = await supabase
       .from("patient_consents")
       .insert({
@@ -65,6 +84,14 @@ export async function POST(request: NextRequest) {
         },
         identity_verified: true,
         is_valid: true,
+        // Nuevos campos de aceptación
+        terms_accepted: terms_accepted,
+        terms_accepted_at: terms_accepted_at,
+        document_read_understood: document_read_understood,
+        document_read_at: document_read_at,
+        marketing_notifications_accepted: marketing_notifications_accepted || false,
+        marketing_accepted_at: marketing_accepted_at,
+        acceptance_text_version: acceptance_text_version,
       })
       .select()
       .single()
@@ -90,6 +117,7 @@ export async function POST(request: NextRequest) {
       data: {
         consent_id: consentData.id,
         signed_at: consentData.signed_at,
+        marketing_accepted: consentData.marketing_notifications_accepted,
       },
     })
   } catch (error) {

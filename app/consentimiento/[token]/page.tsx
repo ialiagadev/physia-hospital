@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Checkbox } from "@/components/ui/checkbox"
 import { SignaturePad } from "@/components/signature-pad"
 import { Loader2, CheckCircle, AlertTriangle, FileText, Shield, Clock } from "lucide-react"
 import type { ConsentForm, ConsentToken } from "@/types/consent"
@@ -33,7 +34,14 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
   const [patientName, setPatientName] = useState("")
   const [patientTaxId, setPatientTaxId] = useState("")
   const [signature, setSignature] = useState<string | null>(null)
-  const [acceptTerms, setAcceptTerms] = useState(false)
+
+  // Nuevos checkboxes con timestamps
+  const [documentReadUnderstood, setDocumentReadUnderstood] = useState(false)
+  const [documentReadAt, setDocumentReadAt] = useState<Date | null>(null)
+  const [termsAccepted, setTermsAccepted] = useState(false)
+  const [termsAcceptedAt, setTermsAcceptedAt] = useState<Date | null>(null)
+  const [marketingAccepted, setMarketingAccepted] = useState(false)
+  const [marketingAcceptedAt, setMarketingAcceptedAt] = useState<Date | null>(null)
 
   // Cargar datos del token
   useEffect(() => {
@@ -62,6 +70,22 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
     loadTokenData()
   }, [params.token])
 
+  // Manejar cambios en checkboxes con timestamp
+  const handleDocumentReadChange = (checked: boolean) => {
+    setDocumentReadUnderstood(checked)
+    setDocumentReadAt(checked ? new Date() : null)
+  }
+
+  const handleTermsAcceptedChange = (checked: boolean) => {
+    setTermsAccepted(checked)
+    setTermsAcceptedAt(checked ? new Date() : null)
+  }
+
+  const handleMarketingChange = (checked: boolean) => {
+    setMarketingAccepted(checked)
+    setMarketingAcceptedAt(checked ? new Date() : null)
+  }
+
   const handleSign = async () => {
     if (!tokenData || !signature) return
 
@@ -76,7 +100,12 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
       return
     }
 
-    if (!acceptTerms) {
+    if (!documentReadUnderstood) {
+      setError("Debe confirmar que ha leído y entendido el documento")
+      return
+    }
+
+    if (!termsAccepted) {
       setError("Debe aceptar los términos para continuar")
       return
     }
@@ -94,6 +123,13 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
     setError(null)
 
     try {
+      // Texto de aceptación que vio el usuario
+      const acceptanceText = `
+        He leído y entendido el contenido de este consentimiento informado.
+        Acepto el tratamiento propuesto y confirmo que toda la información proporcionada es correcta.
+        ${marketingAccepted ? "Acepto recibir comunicaciones de marketing y promocionales." : "No deseo recibir comunicaciones de marketing."}
+      `.trim()
+
       const response = await fetch("/api/consent/sign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -102,6 +138,14 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
           patient_name: patientName,
           patient_tax_id: patientTaxId,
           signature_base64: signature,
+          // Nuevos campos de aceptación
+          terms_accepted: termsAccepted,
+          terms_accepted_at: termsAcceptedAt?.toISOString(),
+          document_read_understood: documentReadUnderstood,
+          document_read_at: documentReadAt?.toISOString(),
+          marketing_notifications_accepted: marketingAccepted,
+          marketing_accepted_at: marketingAcceptedAt?.toISOString(),
+          acceptance_text_version: acceptanceText,
         }),
       })
 
@@ -189,6 +233,8 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
     )
   }
 
+  const canSign = signature && patientName && patientTaxId && documentReadUnderstood && termsAccepted
+
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4">
       <div className="max-w-4xl mx-auto">
@@ -264,29 +310,73 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
                 <p className="text-xs text-gray-500 mt-1">Firme en el recuadro superior usando su dedo o ratón</p>
               </div>
 
-              {/* Aceptación */}
-              <div className="flex items-start space-x-2">
-                <input
-                  type="checkbox"
-                  id="acceptTerms"
-                  checked={acceptTerms}
-                  onChange={(e) => setAcceptTerms(e.target.checked)}
-                  disabled={isSigning}
-                  className="mt-1"
-                />
-                <Label htmlFor="acceptTerms" className="text-sm leading-5">
-                  He leído y entendido el contenido de este consentimiento informado. Acepto el tratamiento propuesto y
-                  confirmo que toda la información proporcionada es correcta.
-                </Label>
+              {/* Checkboxes de aceptación - SEPARADOS */}
+              <div className="space-y-4 border-t pt-4">
+                <h3 className="text-sm font-medium text-gray-900 mb-3">Confirmaciones requeridas:</h3>
+
+                {/* Checkbox 1: Lectura y comprensión */}
+                <div className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
+                  <Checkbox
+                    id="documentRead"
+                    checked={documentReadUnderstood}
+                    onCheckedChange={handleDocumentReadChange}
+                    disabled={isSigning}
+                    className="mt-0.5"
+                  />
+                  <div className="flex-1">
+                    <Label htmlFor="documentRead" className="text-sm font-medium text-gray-900 cursor-pointer block">
+                      He leído y entendido completamente el contenido
+                    </Label>
+                    <p className="text-xs text-gray-600 mt-1">
+                      Confirmo que he leído todo el documento y comprendo su contenido
+                    </p>
+                  </div>
+                </div>
+
+                {/* Checkbox 2: Aceptación de términos */}
+                <div className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
+                  <Checkbox
+                    id="acceptTerms"
+                    checked={termsAccepted}
+                    onCheckedChange={handleTermsAcceptedChange}
+                    disabled={isSigning}
+                    className="mt-0.5"
+                  />
+                  <div className="flex-1">
+                    <Label htmlFor="acceptTerms" className="text-sm font-medium text-gray-900 cursor-pointer block">
+                      Acepto el tratamiento propuesto
+                    </Label>
+                    <p className="text-xs text-gray-600 mt-1">
+                      Confirmo que acepto el tratamiento y que toda la información es correcta
+                    </p>
+                  </div>
+                </div>
+
+                {/* Checkbox 3: Marketing (opcional) */}
+                <div className="flex items-start space-x-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <Checkbox
+                    id="marketingConsent"
+                    checked={marketingAccepted}
+                    onCheckedChange={handleMarketingChange}
+                    disabled={isSigning}
+                    className="mt-0.5"
+                  />
+                  <div className="flex-1">
+                    <Label
+                      htmlFor="marketingConsent"
+                      className="text-sm font-medium text-blue-900 cursor-pointer block"
+                    >
+                      Comunicaciones promocionales (opcional)
+                    </Label>
+                    <p className="text-xs text-blue-700 mt-1">
+                      Acepto recibir información sobre ofertas, promociones y novedades por email o SMS
+                    </p>
+                  </div>
+                </div>
               </div>
 
               {/* Botón de firma */}
-              <Button
-                onClick={handleSign}
-                disabled={!signature || !patientName || !patientTaxId || !acceptTerms || isSigning}
-                className="w-full"
-                size="lg"
-              >
+              <Button onClick={handleSign} disabled={!canSign || isSigning} className="w-full" size="lg">
                 {isSigning ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />

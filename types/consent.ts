@@ -48,6 +48,14 @@ export interface ConsentForm {
     } | null
     identity_verified: boolean
     is_valid: boolean
+    // Nuevos campos de aceptación
+    terms_accepted: boolean
+    terms_accepted_at: string | null
+    document_read_understood: boolean
+    document_read_at: string | null
+    marketing_notifications_accepted: boolean
+    marketing_accepted_at: string | null
+    acceptance_text_version: string | null
   }
   
   export interface ConsentTokenWithDetails extends ConsentToken {
@@ -94,5 +102,8 @@ export interface ConsentForm {
     patient_name: string
     patient_tax_id: string
     signature_base64: string
+    terms_accepted: boolean
+    document_read_understood: boolean
+    marketing_notifications_accepted: boolean
   }
   
