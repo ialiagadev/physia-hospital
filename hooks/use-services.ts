@@ -169,48 +169,49 @@ export function useServices(organizationId?: number) {
     [organizationId],
   )
 
-  // Obtener usuarios asignados a un servicio
+  // 🆕 FUNCIÓN SIMPLIFICADA - Una sola consulta con JOIN
   const getServiceUsers = useCallback(
-    async (serviceId: string, users: any[]) => {
+    async (serviceId: number, users: any[]) => {
+      console.log("🔍 getServiceUsers - serviceId:", serviceId)
+
       if (!organizationId || !serviceId) {
-        return users.filter((user) => user.type === 1) // Solo profesionales
+        return []
       }
 
       try {
+        // Consulta directa con JOIN para obtener usuarios asignados al servicio
         const { data, error } = await supabase
           .from("user_services")
           .select(`
-          user_id,
-          users!inner (
-            id,
-            name,
-            email,
-            role,
-            organization_id,
-            type
-          )
-        `)
+            user_id,
+            users!inner (
+              id,
+              name,
+              email,
+              role,
+              organization_id,
+              type
+            )
+          `)
           .eq("service_id", serviceId)
+          .eq("users.organization_id", organizationId)
+          .eq("users.type", 1) // Solo profesionales
+
+        console.log("📊 Resultado consulta:", { error, count: data?.length || 0 })
 
         if (error) {
-          return users.filter((user) => user.type === 1)
+          console.error("❌ Error en consulta:", error)
+          return []
         }
 
-        const serviceUsers: any[] = []
-        if (data) {
-          for (const item of data) {
-            if (item.users && typeof item.users === "object" && !Array.isArray(item.users)) {
-              const user = item.users as any
-              if (user.organization_id === organizationId && user.type === 1) {
-                serviceUsers.push(user)
-              }
-            }
-          }
-        }
+        // Transformar los datos al formato esperado
+        const serviceUsers = data?.map((item) => item.users) || []
 
+        console.log("📤 Profesionales encontrados:", serviceUsers.length)
         return serviceUsers
       } catch (err) {
-        return users.filter((user) => user.type === 1)
+        console.error("💥 Error en getServiceUsers:", err)
+        return []
       }
     },
     [organizationId],

@@ -11,7 +11,7 @@ export interface AppointmentUpdate {
   client_id?: number
   appointment_type_id?: number
   consultation_id?: string
-  service_id?: string | null
+  service_id?: number | null // 🆕 Cambiado de string | null a number | null
 }
 
 export interface Database {
@@ -73,7 +73,7 @@ export interface Database {
           created_at: string
           updated_at: string
           created_by: string
-          service_id: string | null
+          service_id: number | null // 🆕 Cambiado de string | null a number | null
         }
         Insert: {
           id?: string
@@ -92,7 +92,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
           created_by: string
-          service_id?: string | null
+          service_id?: number | null // 🆕 Cambiado de string | null a number | null
         }
         Update: {
           id?: string
@@ -111,7 +111,7 @@ export interface Database {
           created_at?: string
           updated_at?: string
           created_by?: string
-          service_id?: string | null
+          service_id?: number | null // 🆕 Cambiado de string | null a number | null
         }
       }
       services: {
@@ -190,7 +190,6 @@ export interface Appointment {
 }
 
 // Agregar estos tipos al final de tu archivo de tipos:
-
 // Tipos para actividades grupales
 export interface GroupActivity {
   id: string
@@ -255,7 +254,7 @@ export interface Cita {
   tipoId?: string
   emoticonos?: string[] // Cambiado de number[] a string[] para almacenar emojis
   citaRecurrenteId?: string
-  service_id?: string | null
+  service_id?: number | null // 🆕 Cambiado de string | null a number | null
   consultation?: Consultation // Incluir datos completos de consulta
   // NUEVOS CAMPOS PARA ACTIVIDADES GRUPALES
   isGroupActivity?: boolean
@@ -421,7 +420,7 @@ export interface AppointmentWithDetails {
   created_at: string
   updated_at: string
   created_by: string
-  service_id: string | null
+  service_id: number | null // 🆕 Cambiado de string | null a number | null
   // Relaciones
   client: Client
   professional: User
@@ -445,7 +444,7 @@ export interface AppointmentInsert {
   status?: "confirmed" | "pending" | "cancelled" | "completed" | "no_show"
   notes?: string | null
   created_by: string
-  service_id?: string | null
+  service_id?: number | null // 🆕 Cambiado de string | null a number | null
 }
 
 // Tipo para servicios
@@ -570,6 +569,7 @@ export interface AppointmentFormModalProps {
   profesionalId?: number
   position?: { x: number; y: number }
   citaExistente?: Cita
+  waitingListEntry?: any
   onClose: () => void
   onSubmit: (cita: Partial<Cita>) => void
 }

@@ -2,7 +2,6 @@
 
 import type React from "react"
 import { useState, useEffect } from "react"
-import { format } from "date-fns"
 import {
   Dialog,
   DialogContent,
@@ -16,13 +15,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Calendar } from "@/components/ui/calendar"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { CalendarIcon } from 'lucide-react'
 import { cn } from "@/lib/utils"
 import { useConsultations } from "@/hooks/use-consultations"
 import type { GroupActivity } from "@/hooks/use-group-activities"
-import { es } from "date-fns/locale"
 
 interface GroupActivityFormModalProps {
   isOpen: boolean
@@ -57,7 +52,7 @@ export function GroupActivityFormModal({
   const [formData, setFormData] = useState({
     name: "",
     description: "",
-    date: new Date(),
+    date: new Date().toISOString().split("T")[0], // Format: YYYY-MM-DD
     start_time: "09:00",
     end_time: "10:00",
     professional_id: "",
@@ -67,7 +62,6 @@ export function GroupActivityFormModal({
   })
 
   const [loading, setLoading] = useState(false)
-  const [showCalendar, setShowCalendar] = useState(false)
 
   // Initialize form data when editing
   useEffect(() => {
@@ -75,7 +69,7 @@ export function GroupActivityFormModal({
       setFormData({
         name: activity.name,
         description: activity.description || "",
-        date: new Date(activity.date),
+        date: new Date(activity.date).toISOString().split("T")[0], // Convert to YYYY-MM-DD format
         start_time: activity.start_time,
         end_time: activity.end_time,
         professional_id: activity.professional_id,
@@ -101,7 +95,12 @@ export function GroupActivityFormModal({
 
     try {
       setLoading(true)
-      await onSubmit(formData)
+      // Convert date string back to Date object for submission
+      const submitData = {
+        ...formData,
+        date: new Date(formData.date),
+      }
+      await onSubmit(submitData)
       onClose()
     } catch (error) {
       console.error("Error submitting form:", error)
@@ -167,37 +166,17 @@ export function GroupActivityFormModal({
             />
           </div>
 
-          {/* Date */}
+          {/* Date - Now using a simple date input */}
           <div className="space-y-2">
-            <Label>Fecha *</Label>
-            <Popover open={showCalendar} onOpenChange={setShowCalendar}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className={cn(
-                    "w-full justify-start text-left font-normal",
-                    !formData.date && "text-muted-foreground",
-                  )}
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {formData.date ? format(formData.date, "PPP", { locale: es }) : "Seleccionar fecha"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  selected={formData.date}
-                  onSelect={(date) => {
-                    if (date) {
-                      setFormData((prev) => ({ ...prev, date }))
-                      setShowCalendar(false)
-                    }
-                  }}
-                  disabled={(date) => date < new Date()}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
+            <Label htmlFor="date">Fecha *</Label>
+            <Input
+              id="date"
+              type="date"
+              value={formData.date}
+              onChange={(e) => setFormData((prev) => ({ ...prev, date: e.target.value }))}
+              min={new Date().toISOString().split("T")[0]} // Prevent selecting past dates
+              required
+            />
           </div>
 
           {/* Time */}

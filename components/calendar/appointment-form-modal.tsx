@@ -22,6 +22,7 @@ import {
   Calendar,
   Clock,
   AlertCircle,
+  ClipboardList,
 } from "lucide-react"
 import { useClients } from "@/hooks/use-clients"
 import { useUsers } from "@/hooks/use-users"
@@ -40,6 +41,7 @@ interface AppointmentFormModalProps {
   profesionalId?: number
   position?: { x: number; y: number }
   citaExistente?: Cita
+  waitingListEntry?: any
   onClose: () => void
   onSubmit: (cita: Partial<Cita>) => void
 }
@@ -63,6 +65,7 @@ export function AppointmentFormModal({
   profesionalId,
   position,
   citaExistente,
+  waitingListEntry,
   onClose,
   onSubmit,
 }: AppointmentFormModalProps) {
@@ -103,19 +106,26 @@ export function AppointmentFormModal({
     return `${nuevasHoras.toString().padStart(2, "0")}:${nuevosMinutos.toString().padStart(2, "0")}`
   }, [])
 
+  // 🆕 Estado del formulario con service_id como número o null
   const [formData, setFormData] = useState({
-    telefonoPaciente: citaExistente?.telefonoPaciente || "",
-    nombrePaciente: citaExistente?.nombrePaciente || "",
-    apellidosPaciente: citaExistente?.apellidosPaciente || "",
+    telefonoPaciente: citaExistente?.telefonoPaciente || waitingListEntry?.phone || "",
+    nombrePaciente: citaExistente?.nombrePaciente || waitingListEntry?.client_name?.split(" ")[0] || "",
+    apellidosPaciente:
+      citaExistente?.apellidosPaciente || waitingListEntry?.client_name?.split(" ").slice(1).join(" ") || "",
     fecha: citaExistente?.fecha instanceof Date ? citaExistente.fecha : new Date(citaExistente?.fecha || fecha),
     hora: citaExistente?.hora || hora,
-    duracion: citaExistente?.duracion || 45,
-    notas: citaExistente?.notas || "",
-    profesionalId: citaExistente?.profesionalId || profesionalId || 1,
+    duracion: citaExistente?.duracion || waitingListEntry?.estimated_duration || 45,
+    notas: citaExistente?.notas || waitingListEntry?.notes || "",
+    profesionalId: citaExistente?.profesionalId || profesionalId || waitingListEntry?.preferred_professional_id || 1,
     estado: citaExistente?.estado || ("pendiente" as EstadoCita),
     consultationId:
       citaExistente?.consultationId && citaExistente.consultationId !== "" ? citaExistente.consultationId : "none",
-    service_id: citaExistente?.service_id || "",
+    // 🆕 Guardar como número o null, no como string
+    service_id: citaExistente?.service_id
+      ? Number(citaExistente.service_id)
+      : waitingListEntry?.service_id
+        ? Number(waitingListEntry.service_id)
+        : (null as number | null),
   })
 
   // Verificar consultas disponibles
@@ -139,7 +149,6 @@ export function AppointmentFormModal({
 
       setAvailableConsultations(available)
 
-      // Si la consulta seleccionada ya no está disponible, resetear
       if (
         formData.consultationId &&
         formData.consultationId !== "none" &&
@@ -188,17 +197,31 @@ export function AppointmentFormModal({
     citaExistente?.id,
   ])
 
-  // Filtrar usuarios por servicio y vacaciones
+  // 🆕 Filtrar usuarios con service_id como número
   const updateFilteredUsers = useCallback(async () => {
-    let usersToFilter = users.filter((user) => user.type === 1) // Solo profesionales
+    console.log("🔍 DEBUG updateFilteredUsers - INICIO")
+    console.log("📥 Estado actual:")
+    console.log("  - formData.service_id:", formData.service_id, typeof formData.service_id)
+    console.log("  - users.length:", users.length)
+    console.log("  - organizationId:", organizationId)
 
-    // Si hay servicio seleccionado, filtrar por servicio
-    if (formData.service_id) {
+    let usersToFilter = users.filter((user) => user.type === 1) // Solo profesionales
+    console.log("👥 Profesionales iniciales:", usersToFilter.length)
+
+    // 🆕 Si hay servicio seleccionado (número), filtrar por servicio
+    if (formData.service_id !== null && typeof formData.service_id === "number") {
+      console.log("🎯 Filtrando por servicio:", formData.service_id)
       usersToFilter = await getServiceUsers(formData.service_id, users)
+      console.log("👥 Profesionales después de filtrar por servicio:", usersToFilter.length)
+    } else {
+      console.log("ℹ️ Sin servicio seleccionado, mostrando todos los profesionales")
     }
 
     // Filtrar por vacaciones
+    console.log("🏖️ Filtrando por vacaciones...")
     const availableUsers = await getAvailableUsers(usersToFilter, formData.fecha)
+    console.log("👥 Profesionales disponibles (sin vacaciones):", availableUsers.length)
+
     setFilteredUsers(availableUsers)
 
     // Si el profesional seleccionado ya no está disponible, resetear
@@ -206,11 +229,19 @@ export function AppointmentFormModal({
       formData.profesionalId &&
       !availableUsers.find((user) => Number.parseInt(user.id.slice(-8), 16) === formData.profesionalId)
     ) {
+      console.log("⚠️ Profesional seleccionado ya no disponible, reseteando")
       setFormData((prev) => ({ ...prev, profesionalId: 0 }))
     }
+
+    console.log("🎯 RESULTADO FINAL updateFilteredUsers:")
+    console.log("  - filteredUsers.length:", availableUsers.length)
+    console.log(
+      "  - filteredUsers:",
+      availableUsers.map((u) => ({ id: u.id, name: u.name })),
+    )
   }, [formData.service_id, formData.fecha, formData.profesionalId, users, getServiceUsers, getAvailableUsers])
 
-  // Función para buscar clientes (sin cambios)
+  // Función para buscar clientes
   const searchClients = useCallback(
     async (term: string) => {
       if (!term || term.length < 1) {
@@ -329,15 +360,18 @@ export function AppointmentFormModal({
     updateFilteredUsers()
   }, [updateFilteredUsers])
 
-  // Inicializar búsqueda con datos existentes
+  // Inicializar búsqueda con datos existentes o de lista de espera
   useEffect(() => {
     if (citaExistente) {
       const searchValue =
         citaExistente.telefonoPaciente ||
         `${citaExistente.nombrePaciente} ${citaExistente.apellidosPaciente || ""}`.trim()
       setSearchTerm(searchValue)
+    } else if (waitingListEntry) {
+      const searchValue = waitingListEntry.phone || waitingListEntry.client_name || ""
+      setSearchTerm(searchValue)
     }
-  }, [citaExistente])
+  }, [citaExistente, waitingListEntry])
 
   // Limpiar timeouts
   useEffect(() => {
@@ -348,7 +382,7 @@ export function AppointmentFormModal({
     }
   }, [])
 
-  // Handlers (simplificados, manteniendo la lógica esencial)
+  // Handlers
   const selectClient = useCallback((client: ClientMatch) => {
     setClienteEncontrado(client)
     setTelefonoValidado(true)
@@ -409,22 +443,31 @@ export function AppointmentFormModal({
     setTimeout(() => setShowMatches(false), 200)
   }, [clienteEncontrado, searchTerm])
 
+  // 🆕 Handler corregido para manejar service_id como número o null
   const handleServiceChange = useCallback(
     (value: string) => {
+      console.log("🔍 DEBUG handleServiceChange - INICIO")
+      console.log("📥 Valor seleccionado:", value)
+
       if (value === "none") {
+        console.log("❌ Servicio deseleccionado")
         setFormData((prev) => ({
           ...prev,
-          service_id: "",
+          service_id: null, // 🆕 null en lugar de string vacío
         }))
         return
       }
 
       const selectedService = services.find((s) => s.id.toString() === value)
+      console.log("🎯 Servicio encontrado:", selectedService)
+
       setFormData((prev) => ({
         ...prev,
-        service_id: value,
+        service_id: Number(value), // 🆕 Convertir a número
         duracion: selectedService ? selectedService.duration : prev.duracion,
       }))
+
+      console.log("✅ FormData actualizado con service_id:", Number(value))
     },
     [services],
   )
@@ -463,7 +506,6 @@ export function AppointmentFormModal({
         estado: formData.estado,
         consultationId:
           formData.consultationId === "none" || !formData.consultationId ? undefined : formData.consultationId,
-        // IMPORTANTE: Preservar el profesionalId del slot clickeado si no se ha cambiado
         profesionalId: formData.profesionalId || profesionalId,
       }
 
@@ -496,12 +538,54 @@ export function AppointmentFormModal({
       <DialogContent className="w-full max-w-2xl max-h-[95vh] overflow-y-auto overflow-x-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg">
-            {citaExistente ? "Editar Cita" : "Nueva Cita"}
+            {citaExistente ? "Editar Cita" : waitingListEntry ? "Programar desde Lista de Espera" : "Nueva Cita"}
             {clienteEncontrado && <CheckCircle className="h-4 w-4 text-green-600" />}
           </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 px-1">
+          {/* Indicador de lista de espera */}
+          {waitingListEntry && (
+            <Alert className="border-blue-200 bg-blue-50">
+              <ClipboardList className="h-4 w-4" />
+              <AlertDescription className="text-blue-800">
+                <strong>📋 Programando desde Lista de Espera</strong>
+                <br />
+                <div className="text-sm mt-2 space-y-1">
+                  <div>
+                    <strong>Cliente:</strong> {waitingListEntry.client_name}
+                  </div>
+                  {waitingListEntry.phone && (
+                    <div>
+                      <strong>Teléfono:</strong> {waitingListEntry.phone}
+                    </div>
+                  )}
+                  {waitingListEntry.service_name && (
+                    <div>
+                      <strong>Servicio:</strong> {waitingListEntry.service_name}
+                    </div>
+                  )}
+                  {waitingListEntry.estimated_duration && (
+                    <div>
+                      <strong>Duración estimada:</strong> {waitingListEntry.estimated_duration} min
+                    </div>
+                  )}
+                  {waitingListEntry.notes && (
+                    <div>
+                      <strong>Notas:</strong> {waitingListEntry.notes}
+                    </div>
+                  )}
+                </div>
+                <div className="text-sm mt-2 text-blue-700">
+                  Los datos se han pre-rellenado automáticamente. Puedes modificarlos si es necesario.
+                </div>
+                <div className="text-sm mt-1 text-blue-600 font-medium">
+                  ✅ Al crear la cita, se eliminará automáticamente de la lista de espera.
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
           {/* Campo de búsqueda */}
           <div className="space-y-2">
             <Label htmlFor="searchTerm" className="flex items-center gap-2 text-sm font-medium">
@@ -574,7 +658,7 @@ export function AppointmentFormModal({
           )}
 
           {/* Advertencia si es cliente nuevo */}
-          {!clienteEncontrado && searchTerm && !searchingClients && (
+          {!clienteEncontrado && searchTerm && !searchingClients && !waitingListEntry && (
             <Alert className="border-blue-200 bg-blue-50">
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription className="text-blue-800">
@@ -639,7 +723,11 @@ export function AppointmentFormModal({
               Servicio (opcional)
               {servicesLoading && <Loader2 className="h-3 w-3 animate-spin" />}
             </Label>
-            <Select value={formData.service_id} onValueChange={handleServiceChange} disabled={servicesLoading}>
+            <Select
+              value={formData.service_id ? formData.service_id.toString() : "none"}
+              onValueChange={handleServiceChange}
+              disabled={servicesLoading}
+            >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder={servicesLoading ? "Cargando servicios..." : "Selecciona un servicio"} />
               </SelectTrigger>
@@ -907,6 +995,12 @@ export function AppointmentFormModal({
             <p>• Selecciona un servicio para filtrar profesionales específicos</p>
             <p>• Las consultas son opcionales - puedes crear citas sin asignar consulta</p>
             <p>• El sistema verificará automáticamente conflictos de horario</p>
+            {waitingListEntry && (
+              <p className="text-blue-600">• Los datos de la lista de espera se han pre-rellenado automáticamente</p>
+            )}
+            {waitingListEntry && (
+              <p className="text-green-600">• Al crear la cita, se eliminará automáticamente de la lista de espera</p>
+            )}
           </div>
 
           {/* Botones */}

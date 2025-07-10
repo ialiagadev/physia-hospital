@@ -90,6 +90,23 @@ const MedicalCalendarSystem: React.FC = () => {
   const [showGroupActivityDetails, setShowGroupActivityDetails] = useState(false)
   const [selectedGroupActivity, setSelectedGroupActivity] = useState<any>(null)
 
+  // 🆕 Estado para datos de lista de espera
+  const [waitingListEntry, setWaitingListEntry] = useState<any>(null)
+
+  // 🆕 Función para eliminar entrada de lista de espera
+  const removeFromWaitingList = async (entryId: string) => {
+    try {
+      const { error } = await supabase.from("waiting_list").delete().eq("id", entryId)
+
+      if (error) throw error
+
+      toast.success("Entrada eliminada de la lista de espera")
+    } catch (error) {
+      console.error("Error removing from waiting list:", error)
+      toast.error("Error al eliminar de la lista de espera")
+    }
+  }
+
   // Hooks de datos optimizados
   const { users, currentUser, loading: usersLoading, refetch: refetchUsers } = useUsers(organizationId)
   const { clients, loading: clientsLoading, error: clientsError, createClient } = useClients(organizationId)
@@ -273,6 +290,7 @@ const MedicalCalendarSystem: React.FC = () => {
       }
 
       const appointmentTypeId = await getDefaultAppointmentType(professionalUuid)
+
       let consultationId = null
       if (appointmentData.consultationId && appointmentData.consultationId !== "none") {
         consultationId = appointmentData.consultationId
@@ -295,8 +313,16 @@ const MedicalCalendarSystem: React.FC = () => {
       }
 
       await createAppointment(newAppointment)
+
+      // 🆕 Si viene de lista de espera, eliminarla después de crear la cita
+      if (waitingListEntry?.id) {
+        await removeFromWaitingList(waitingListEntry.id)
+      }
+
+      toast.success("Cita creada correctamente")
     } catch (error) {
-      // Error handling
+      console.error("Error creating appointment:", error)
+      toast.error("Error al crear la cita")
     }
   }
 
@@ -353,6 +379,7 @@ const MedicalCalendarSystem: React.FC = () => {
       const numericId = Number.parseInt(apt.id.slice(-8), 16)
       return numericId === cita.id
     })
+
     if (originalAppointment) {
       handleSelectAppointment(originalAppointment)
     }
@@ -383,7 +410,6 @@ const MedicalCalendarSystem: React.FC = () => {
       // Refrescar datos después de añadir
       await refetchGroupActivities()
       toast.success("Participante añadido correctamente")
-
       // ✅ CERRAR MODAL AUTOMÁTICAMENTE
       setShowGroupActivityDetails(false)
       setSelectedGroupActivity(null)
@@ -400,7 +426,6 @@ const MedicalCalendarSystem: React.FC = () => {
       // Refrescar datos después de eliminar
       await refetchGroupActivities()
       toast.success("Participante eliminado correctamente")
-
       // ✅ CERRAR MODAL AUTOMÁTICAMENTE
       setShowGroupActivityDetails(false)
       setSelectedGroupActivity(null)
@@ -431,7 +456,6 @@ const MedicalCalendarSystem: React.FC = () => {
       // Refrescar datos después de eliminar
       await refetchGroupActivities()
       toast.success("Actividad eliminada correctamente")
-
       // ✅ CERRAR MODAL AUTOMÁTICAMENTE
       setShowGroupActivityDetails(false)
       setSelectedGroupActivity(null)
@@ -860,6 +884,8 @@ const MedicalCalendarSystem: React.FC = () => {
               <WaitingListView
                 organizationId={organizationId}
                 onScheduleAppointment={(entry) => {
+                  // 🆕 Guardar datos de lista de espera y abrir modal
+                  setWaitingListEntry(entry)
                   setShowNewAppointmentModal(true)
                 }}
               />
@@ -926,7 +952,11 @@ const MedicalCalendarSystem: React.FC = () => {
         <AppointmentFormModal
           fecha={new Date()}
           hora="09:00"
-          onClose={() => setShowNewAppointmentModal(false)}
+          waitingListEntry={waitingListEntry} // 🆕 Pasar datos de lista de espera
+          onClose={() => {
+            setShowNewAppointmentModal(false)
+            setWaitingListEntry(null) // 🆕 Limpiar datos al cerrar
+          }}
           onSubmit={handleAddAppointment}
         />
       )}
