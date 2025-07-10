@@ -16,7 +16,7 @@ import { format } from "date-fns"
 import { es } from "date-fns/locale"
 
 interface PatientConsentsSectionProps {
-  clientId: number
+  clientId: string | number
   clientName: string
   clientEmail?: string | null
   clientPhone?: string | null
@@ -53,7 +53,7 @@ export function PatientConsentsSection({
           consent_forms (id, title, category, content),
           consent_tokens (created_by, sent_via)
         `)
-        .eq("client_id", clientId)
+        .eq("client_id", String(clientId))
         .order("signed_at", { ascending: false })
 
       if (signedError) throw signedError
@@ -66,7 +66,7 @@ export function PatientConsentsSection({
           consent_forms (id, title, category),
           clients (id, name, tax_id, email, phone)
         `)
-        .eq("client_id", clientId)
+        .eq("client_id", String(clientId))
         .is("used_at", null)
         .gt("expires_at", new Date().toISOString())
         .order("created_at", { ascending: false })
@@ -610,8 +610,6 @@ export function PatientConsentsSection({
         }}
         clientId={clientId}
         clientName={clientName}
-        clientEmail={clientEmail}
-        clientPhone={clientPhone}
       />
 
       {/* Modal para ver firma */}

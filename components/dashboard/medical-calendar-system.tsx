@@ -14,6 +14,7 @@ import { ListView } from "@/components/calendar/list-view"
 import { ProfesionalesView } from "@/components/calendar/profesionales-view"
 import { ConsultationsView } from "@/components/calendar/consultations-view"
 import { ServicesView } from "@/components/services/services-view"
+import { GroupActivityDetailsModal } from "@/components/group-activities/group-activity-details-modal"
 import { useUsers } from "@/hooks/use-users"
 import { useAppointments } from "@/hooks/use-appointments"
 import { useClients } from "@/hooks/use-clients"
@@ -36,6 +37,9 @@ import { WeekView } from "@/components/calendar/week-view"
 import { MonthView } from "@/components/calendar/month-view"
 import { HorarioViewDynamic } from "@/components/calendar/horario-view-dynamic"
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select"
+import { GroupActivitiesView } from "@/components/group-activities/group-activities-view"
+import { useGroupActivities } from "@/hooks/use-group-activities"
+import { toast } from "sonner"
 
 // Define TabPrincipal locally to include new tabs
 type TabPrincipal = "calendario" | "lista-espera" | "actividades-grupales" | "usuarios" | "consultas" | "servicios"
@@ -82,6 +86,10 @@ const MedicalCalendarSystem: React.FC = () => {
   const [usuariosSeleccionados, setUsuariosSeleccionados] = useState<string[]>([])
   const [showSearch, setShowSearch] = useState(false)
 
+  // Estados para actividades grupales
+  const [showGroupActivityDetails, setShowGroupActivityDetails] = useState(false)
+  const [selectedGroupActivity, setSelectedGroupActivity] = useState<any>(null)
+
   // Hooks de datos optimizados
   const { users, currentUser, loading: usersLoading, refetch: refetchUsers } = useUsers(organizationId)
   const { clients, loading: clientsLoading, error: clientsError, createClient } = useClients(organizationId)
@@ -110,6 +118,17 @@ const MedicalCalendarSystem: React.FC = () => {
 
   // Hook de horarios de trabajo
   const { schedules: allWorkSchedules, loading: schedulesLoading } = useWorkSchedules(organizationId?.toString())
+
+  // Hook de actividades grupales
+  const {
+    activities: groupActivities,
+    loading: groupActivitiesLoading,
+    updateActivity: updateGroupActivity,
+    deleteActivity: deleteGroupActivity,
+    addParticipant: addGroupActivityParticipant,
+    removeParticipant: removeGroupActivityParticipant,
+    refetch: refetchGroupActivities, // ✅ AÑADIDO
+  } = useGroupActivities(organizationId, users)
 
   // Calcular rango de fechas para las citas
   const getDateRange = () => {
@@ -313,8 +332,23 @@ const MedicalCalendarSystem: React.FC = () => {
     setShowDetailsModal(true)
   }
 
-  // Handler para citas en formato legacy
+  // Handler para actividades grupales
+  const handleSelectGroupActivity = (cita: any) => {
+    if (cita.isGroupActivity && cita.groupActivityData) {
+      setSelectedGroupActivity(cita.groupActivityData)
+      setShowGroupActivityDetails(true)
+    }
+  }
+
+  // Handler para citas en formato legacy - ACTUALIZADO
   const handleSelectLegacyAppointment = (cita: any) => {
+    // Si es actividad grupal, usar el handler específico
+    if (cita.isGroupActivity) {
+      handleSelectGroupActivity(cita)
+      return
+    }
+
+    // Para citas normales, mantener la lógica existente
     const originalAppointment = appointments.find((apt) => {
       const numericId = Number.parseInt(apt.id.slice(-8), 16)
       return numericId === cita.id
@@ -339,6 +373,72 @@ const MedicalCalendarSystem: React.FC = () => {
           originalAppointment.professional_id,
       }
       await handleUpdateAppointment(updatedAppointment)
+    }
+  }
+
+  // ✅ HANDLERS MEJORADOS PARA ACTIVIDADES GRUPALES
+  const handleAddGroupActivityParticipant = async (activityId: string, clientId: number, notes?: string) => {
+    try {
+      await addGroupActivityParticipant(activityId, clientId, notes)
+      // Refrescar datos después de añadir
+      await refetchGroupActivities()
+      toast.success("Participante añadido correctamente")
+
+      // ✅ CERRAR MODAL AUTOMÁTICAMENTE
+      setShowGroupActivityDetails(false)
+      setSelectedGroupActivity(null)
+    } catch (error) {
+      console.error("Error adding participant:", error)
+      toast.error("Error al añadir participante")
+      throw error
+    }
+  }
+
+  const handleRemoveGroupActivityParticipant = async (participantId: string) => {
+    try {
+      await removeGroupActivityParticipant(participantId)
+      // Refrescar datos después de eliminar
+      await refetchGroupActivities()
+      toast.success("Participante eliminado correctamente")
+
+      // ✅ CERRAR MODAL AUTOMÁTICAMENTE
+      setShowGroupActivityDetails(false)
+      setSelectedGroupActivity(null)
+    } catch (error) {
+      console.error("Error removing participant:", error)
+      toast.error("Error al eliminar participante")
+      throw error
+    }
+  }
+
+  // También actualizar el handler de actualización para que refresque:
+  const handleUpdateGroupActivity = async (id: string, updates: any) => {
+    try {
+      await updateGroupActivity(id, updates)
+      // Refrescar datos después de actualizar
+      await refetchGroupActivities()
+      toast.success("Actividad actualizada correctamente")
+    } catch (error) {
+      console.error("Error updating group activity:", error)
+      toast.error("Error al actualizar la actividad")
+      throw error
+    }
+  }
+
+  const handleDeleteGroupActivity = async (id: string) => {
+    try {
+      await deleteGroupActivity(id)
+      // Refrescar datos después de eliminar
+      await refetchGroupActivities()
+      toast.success("Actividad eliminada correctamente")
+
+      // ✅ CERRAR MODAL AUTOMÁTICAMENTE
+      setShowGroupActivityDetails(false)
+      setSelectedGroupActivity(null)
+    } catch (error) {
+      console.error("Error deleting group activity:", error)
+      toast.error("Error al eliminar la actividad")
+      throw error
     }
   }
 
@@ -419,7 +519,50 @@ const MedicalCalendarSystem: React.FC = () => {
     }))
   }
 
+  const convertGroupActivitiesToLegacyFormat = (activities: any[]) => {
+    return activities.map((activity) => ({
+      id: `group_${activity.id}`,
+      nombrePaciente: `👥 ${activity.name}`,
+      apellidosPaciente: `(${activity.current_participants}/${activity.max_participants})`,
+      telefonoPaciente: activity.professional?.name || "Sin asignar",
+      hora: activity.start_time,
+      horaInicio: activity.start_time,
+      horaFin: activity.end_time,
+      duracion: calculateDurationFromTimes(activity.start_time, activity.end_time),
+      tipo: "Actividad Grupal",
+      notas: activity.description || "",
+      fecha: new Date(activity.date),
+      profesionalId: users.find((u) => u.id === activity.professional_id)
+        ? Number.parseInt(users.find((u) => u.id === activity.professional_id)!.id.slice(-8), 16)
+        : 0,
+      estado:
+        activity.status === "active" ? "confirmada" : activity.status === "completed" ? "completada" : "cancelada",
+      consultationId: activity.consultation_id,
+      consultation: activity.consultation,
+      isGroupActivity: true,
+      groupActivityData: activity,
+    }))
+  }
+
+  // Helper function to calculate duration from times
+  const calculateDurationFromTimes = (startTime: string, endTime: string): number => {
+    const [startHours, startMinutes] = startTime.split(":").map(Number)
+    const [endHours, endMinutes] = endTime.split(":").map(Number)
+    const startTotalMinutes = startHours * 60 + startMinutes
+    const endTotalMinutes = endHours * 60 + endMinutes
+    return endTotalMinutes - startTotalMinutes
+  }
+
   // Mostrar loading si no tenemos organizationId o si los datos están cargando
+  const [legacyGroupActivities, setLegacyGroupActivities] = useState<any[]>([])
+  const [combinedAppointments, setCombinedAppointments] = useState<any[]>([])
+
+  useEffect(() => {
+    const legacyGroupActivitiesData = convertGroupActivitiesToLegacyFormat(groupActivities)
+    setLegacyGroupActivities(legacyGroupActivitiesData)
+    setCombinedAppointments([...convertAppointmentsToLegacyFormat(appointments), ...legacyGroupActivitiesData])
+  }, [appointments, groupActivities])
+
   if (
     !organizationId ||
     usersLoading ||
@@ -428,7 +571,8 @@ const MedicalCalendarSystem: React.FC = () => {
     clientsLoading ||
     servicesLoading ||
     vacationLoading ||
-    schedulesLoading
+    schedulesLoading ||
+    groupActivitiesLoading
   ) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -456,7 +600,6 @@ const MedicalCalendarSystem: React.FC = () => {
     )
   }
 
-  const legacyAppointments = convertAppointmentsToLegacyFormat(appointments)
   const legacyUsers = convertUsersToLegacyFormat(users)
 
   return (
@@ -548,7 +691,7 @@ const MedicalCalendarSystem: React.FC = () => {
                     {showSearch && (
                       <div className="absolute top-full left-0 mt-1 w-64 z-50">
                         <CalendarSearch
-                          citas={legacyAppointments}
+                          citas={combinedAppointments}
                           onSelectCita={handleSelectLegacyAppointment}
                           placeholder="Buscar citas..."
                         />
@@ -618,7 +761,7 @@ const MedicalCalendarSystem: React.FC = () => {
                   {vistaCalendario === "dia" && (
                     <HorarioViewDynamic
                       date={currentDate}
-                      citas={legacyAppointments.filter((cita) => {
+                      citas={combinedAppointments.filter((cita) => {
                         const citaDate = new Date(cita.fecha)
                         return citaDate.toDateString() === currentDate.toDateString()
                       })}
@@ -653,7 +796,7 @@ const MedicalCalendarSystem: React.FC = () => {
                   {vistaCalendario === "semana" && (
                     <WeekView
                       date={currentDate}
-                      citas={legacyAppointments}
+                      citas={combinedAppointments}
                       profesionales={legacyUsers}
                       onSelectCita={handleSelectLegacyAppointment}
                       profesionalesSeleccionados={usuariosSeleccionados.map((id) => {
@@ -674,7 +817,7 @@ const MedicalCalendarSystem: React.FC = () => {
                   {vistaCalendario === "mes" && (
                     <MonthView
                       date={currentDate}
-                      citas={legacyAppointments}
+                      citas={combinedAppointments}
                       profesionales={legacyUsers}
                       onSelectCita={handleSelectLegacyAppointment}
                       profesionalesSeleccionados={usuariosSeleccionados.map((id) => {
@@ -695,7 +838,7 @@ const MedicalCalendarSystem: React.FC = () => {
               )}
               {subVistaCalendario === "lista" && (
                 <ListView
-                  citas={legacyAppointments}
+                  citas={combinedAppointments}
                   profesionales={legacyUsers}
                   onSelectCita={handleSelectLegacyAppointment}
                   profesionalesSeleccionados={usuariosSeleccionados.map((id) => {
@@ -729,6 +872,9 @@ const MedicalCalendarSystem: React.FC = () => {
             <div className="px-4 py-3 border-b">
               <h2 className="text-xl font-medium">Actividades grupales</h2>
             </div>
+            <div className="flex-1 overflow-auto">
+              <GroupActivitiesView organizationId={organizationId} users={users} />
+            </div>
           </div>
         )}
 
@@ -740,7 +886,7 @@ const MedicalCalendarSystem: React.FC = () => {
             <div className="flex-1 overflow-auto">
               <ProfesionalesView
                 profesionales={legacyUsers}
-                citas={legacyAppointments}
+                citas={convertAppointmentsToLegacyFormat(appointments)}
                 users={users}
                 onSelectCita={handleSelectLegacyAppointment}
                 onRefreshUsers={refetchUsers}
@@ -795,6 +941,24 @@ const MedicalCalendarSystem: React.FC = () => {
           appointment={selectedAppointment}
           onUpdate={handleUpdateAppointment}
           onDelete={handleDeleteAppointment}
+        />
+      )}
+
+      {/* Modal de detalles de actividad grupal - ✅ ACTUALIZADO CON HANDLERS MEJORADOS */}
+      {showGroupActivityDetails && selectedGroupActivity && (
+        <GroupActivityDetailsModal
+          isOpen={showGroupActivityDetails}
+          onClose={() => {
+            setShowGroupActivityDetails(false)
+            setSelectedGroupActivity(null)
+          }}
+          activity={selectedGroupActivity}
+          onUpdate={handleUpdateGroupActivity} // ✅ HANDLER MEJORADO
+          onDelete={handleDeleteGroupActivity} // ✅ HANDLER MEJORADO
+          onAddParticipant={handleAddGroupActivityParticipant} // ✅ HANDLER MEJORADO
+          onRemoveParticipant={handleRemoveGroupActivityParticipant} // ✅ HANDLER MEJORADO
+          organizationId={organizationId}
+          users={users}
         />
       )}
     </div>

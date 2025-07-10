@@ -2,149 +2,185 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent } from "@/components/ui/card"
-import { Copy, Mail, MessageCircle, User, Calendar, Clock, AlertCircle } from "lucide-react"
 import { supabase } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
+import { useAuth } from "@/app/contexts/auth-context"
+import { FileText, Link, Copy, AlertCircle, Building2 } from "lucide-react"
 import type { ConsentForm } from "@/types/consent"
 
 interface GenerateConsentModalProps {
   isOpen: boolean
   onClose: () => void
-  clientId: number
-  clientName: string
-  clientEmail?: string | null
-  clientPhone?: string | null
+  clientId?: string | number
+  clientName?: string
 }
 
-export function GenerateConsentModal({
-  isOpen,
-  onClose,
-  clientId,
-  clientName,
-  clientEmail,
-  clientPhone,
-}: GenerateConsentModalProps) {
+export function GenerateConsentModal({ isOpen, onClose, clientId, clientName }: GenerateConsentModalProps) {
   const { toast } = useToast()
-  const [consentForms, setConsentForms] = useState<ConsentForm[]>([])
-  const [selectedFormId, setSelectedFormId] = useState<string>("")
-  const [expiresInDays, setExpiresInDays] = useState(7)
-  const [sendMethod, setSendMethod] = useState<"manual" | "email" | "whatsapp">("manual")
+  const { userProfile } = useAuth()
+  const [loading, setLoading] = useState(false)
+  const [forms, setForms] = useState<ConsentForm[]>([])
+  const [loadingForms, setLoadingForms] = useState(false)
   const [generatedLink, setGeneratedLink] = useState<string>("")
-  const [isGenerating, setIsGenerating] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [organizationName, setOrganizationName] = useState<string>("")
 
-  // Cargar formularios de consentimiento disponibles
+  const [formData, setFormData] = useState({
+    consent_form_id: "",
+    patient_name: clientName || "",
+    patient_email: "",
+    notes: "",
+  })
+
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && userProfile?.organization_id) {
       loadConsentForms()
+      loadOrganizationName()
+      setFormData((prev) => ({ ...prev, patient_name: clientName || "" }))
     }
-  }, [isOpen])
+  }, [isOpen, userProfile, clientName])
 
-  const loadConsentForms = async () => {
-    setIsLoading(true)
+  const loadOrganizationName = async () => {
+    if (!userProfile?.organization_id) return
+
     try {
-      const { data, error } = await supabase.from("consent_forms").select("*").eq("is_active", true).order("title")
+      const { data, error } = await supabase
+        .from("organizations")
+        .select("name")
+        .eq("id", userProfile.organization_id)
+        .single()
 
       if (error) throw error
-      setConsentForms(data || [])
-    } catch (err) {
-      console.error("Error loading consent forms:", err)
-      setError("Error al cargar los formularios de consentimiento")
-    } finally {
-      setIsLoading(false)
+      setOrganizationName(data?.name || "")
+    } catch (error) {
+      console.error("Error loading organization name:", error)
     }
+  }
+
+  const loadConsentForms = async () => {
+    if (!userProfile?.organization_id) return
+
+    setLoadingForms(true)
+    try {
+      // Solo cargar formularios de la organización del usuario que estén activos
+      const { data, error } = await supabase
+        .from("consent_forms")
+        .select("*")
+        .eq("organization_id", userProfile.organization_id)
+        .eq("is_active", true)
+        .order("title")
+
+      if (error) throw error
+
+      setForms(data || [])
+    } catch (error) {
+      console.error("Error loading consent forms:", error)
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar los formularios de consentimiento",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingForms(false)
+    }
+  }
+
+  const validateFormAccess = (formId: string): boolean => {
+    if (!userProfile?.organization_id) return false
+    const form = forms.find((f) => f.id === formId)
+    return form ? form.organization_id === userProfile.organization_id : false
   }
 
   const generateConsentLink = async () => {
-    if (!selectedFormId) {
-      setError("Debe seleccionar un formulario de consentimiento")
+    if (!userProfile?.organization_id) {
+      toast({
+        title: "Error de organización",
+        description: "No se pudo identificar tu organización",
+        variant: "destructive",
+      })
       return
     }
 
-    setIsGenerating(true)
-    setError(null)
+    if (!formData.consent_form_id || !formData.patient_name.trim()) {
+      toast({
+        title: "Campos requeridos",
+        description: "Por favor selecciona un formulario e ingresa el nombre del paciente",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!validateFormAccess(formData.consent_form_id)) {
+      toast({
+        title: "Error de permisos",
+        description: "No tienes permisos para usar este formulario",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setLoading(true)
 
     try {
       // Generar token único
-      const token = `${crypto.randomUUID()}-${Date.now()}`
-      const expiresAt = new Date()
-      expiresAt.setDate(expiresAt.getDate() + expiresInDays)
+      const token = crypto.randomUUID()
 
-      // Crear el token en la base de datos
-      const { data: tokenData, error: tokenError } = await supabase
-        .from("consent_tokens")
-        .insert({
-          client_id: clientId,
-          consent_form_id: selectedFormId,
-          token: token,
-          expires_at: expiresAt.toISOString(),
-          created_by: (await supabase.auth.getUser()).data.user?.id,
-          sent_via: sendMethod,
-          recipient_info: {
-            email: clientEmail,
-            phone: clientPhone,
-            method: sendMethod,
-          },
-        })
-        .select()
-        .single()
+      // Crear registro en la base de datos
+      const { error } = await supabase.from("patient_consents").insert({
+        organization_id: userProfile.organization_id,
+        consent_form_id: formData.consent_form_id,
+        patient_name: formData.patient_name.trim(),
+        patient_email: formData.patient_email.trim() || null,
+        client_id: clientId ? String(clientId) : null,
+        token,
+        status: "pending",
+        notes: formData.notes.trim() || null,
+        created_by: userProfile.id,
+      })
 
-      if (tokenError) throw tokenError
+      if (error) throw error
 
-      // Generar enlace usando el dominio de producción
-      const link = `https://facturas-physia.vercel.app/consentimiento/${token}`
+      // Generar enlace
+      const baseUrl = window.location.origin
+      const link = `${baseUrl}/consentimiento/${token}`
       setGeneratedLink(link)
-/*
-      // Si se seleccionó envío automático, procesar
-      if (sendMethod === "email" && clientEmail) {
-        await sendEmailWithLink(link)
-      } else if (sendMethod === "whatsapp" && clientPhone) {
-        openWhatsAppWithLink(link)
-      }*/
 
       toast({
         title: "Enlace generado",
-        description: "El enlace de consentimiento se ha creado correctamente",
+        description: "El enlace de consentimiento se ha generado correctamente",
       })
-    } catch (err) {
-      console.error("Error generating consent link:", err)
-      setError("Error al generar el enlace de consentimiento")
+    } catch (error) {
+      console.error("Error generating consent link:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo generar el enlace de consentimiento",
+        variant: "destructive",
+      })
     } finally {
-      setIsGenerating(false)
+      setLoading(false)
     }
   }
-/*
-  const sendEmailWithLink = async (link: string) => {
-    // Aquí implementarías el envío de email
-    // Por ahora solo mostramos un mensaje
-    toast({
-      title: "Email programado",
-      description: "El enlace se enviará por email (funcionalidad pendiente)",
-    })
-  }
 
-  const openWhatsAppWithLink = (link: string) => {
-    const message = `Hola ${clientName}, necesitamos que firmes este consentimiento informado: ${link}`
-    const whatsappUrl = `https://wa.me/${clientPhone?.replace(/\D/g, "")}?text=${encodeURIComponent(message)}`
-    window.open(whatsappUrl, "_blank")
-  }*/
-
-  const copyToClipboard = async (text: string) => {
+  const copyToClipboard = async () => {
     try {
-      await navigator.clipboard.writeText(text)
+      await navigator.clipboard.writeText(generatedLink)
       toast({
         title: "Enlace copiado",
         description: "El enlace se ha copiado al portapapeles",
       })
     } catch (error) {
-      console.error("Error copying to clipboard:", error)
       toast({
         title: "Error",
         description: "No se pudo copiar el enlace",
@@ -153,62 +189,67 @@ export function GenerateConsentModal({
     }
   }
 
-  const resetForm = () => {
-    setSelectedFormId("")
-    setExpiresInDays(7)
-    setSendMethod("manual")
-    setGeneratedLink("")
-    setError(null)
-  }
-
   const handleClose = () => {
-    resetForm()
+    setGeneratedLink("")
+    setFormData({
+      consent_form_id: "",
+      patient_name: clientName || "",
+      patient_email: "",
+      notes: "",
+    })
     onClose()
   }
 
-  const selectedForm = consentForms.find((form) => form.id === selectedFormId)
+  const selectedForm = forms.find((f) => f.id === formData.consent_form_id)
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <User className="h-5 w-5" />
-            Generar Consentimiento para {clientName}
+            <FileText className="h-5 w-5" />
+            Generar Enlace de Consentimiento
           </DialogTitle>
+          <DialogDescription>
+            Crea un enlace personalizado para que el paciente firme el consentimiento informado
+          </DialogDescription>
+          {organizationName && (
+            <div className="flex items-center gap-2 mt-2">
+              <Building2 className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">{organizationName}</span>
+            </div>
+          )}
         </DialogHeader>
 
-        <div className="space-y-6">
-          {/* Información del cliente */}
-          <Card>
-            <CardContent className="pt-4">
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="font-medium">Email:</span> {clientEmail || "No disponible"}
+        {!generatedLink ? (
+          <div className="space-y-4">
+            {/* Selección de formulario */}
+            <div className="space-y-2">
+              <Label>
+                Formulario de Consentimiento <span className="text-red-500">*</span>
+              </Label>
+              {loadingForms ? (
+                <div className="flex items-center gap-2 p-3 border rounded-md">
+                  <div className="w-4 h-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+                  <span className="text-sm">Cargando formularios...</span>
                 </div>
-                <div>
-                  <span className="font-medium">Teléfono:</span> {clientPhone || "No disponible"}
+              ) : forms.length === 0 ? (
+                <div className="flex items-center gap-2 p-3 border rounded-md bg-yellow-50">
+                  <AlertCircle className="h-4 w-4 text-yellow-600" />
+                  <span className="text-sm text-yellow-700">
+                    No hay formularios activos disponibles en tu organización
+                  </span>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="w-6 h-6 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
-              <span className="ml-2">Cargando formularios...</span>
-            </div>
-          ) : (
-            <>
-              {/* Selección de formulario */}
-              <div className="space-y-2">
-                <Label htmlFor="consent-form">Formulario de Consentimiento</Label>
-                <Select value={selectedFormId} onValueChange={setSelectedFormId}>
+              ) : (
+                <Select
+                  value={formData.consent_form_id}
+                  onValueChange={(value) => setFormData({ ...formData, consent_form_id: value })}
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar formulario..." />
+                    <SelectValue placeholder="Selecciona un formulario" />
                   </SelectTrigger>
                   <SelectContent>
-                    {consentForms.map((form) => (
+                    {forms.map((form) => (
                       <SelectItem key={form.id} value={form.id}>
                         <div className="flex items-center gap-2">
                           <span>{form.title}</span>
@@ -220,108 +261,132 @@ export function GenerateConsentModal({
                     ))}
                   </SelectContent>
                 </Select>
-                {selectedForm && <p className="text-sm text-gray-500">{selectedForm.description}</p>}
-              </div>
-
-              {/* Configuración de expiración */}
-              <div className="space-y-2">
-                <Label htmlFor="expires-days">Días hasta expiración</Label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    id="expires-days"
-                    type="number"
-                    min="1"
-                    max="30"
-                    value={expiresInDays}
-                    onChange={(e) => setExpiresInDays(Number.parseInt(e.target.value) || 7)}
-                    className="w-20"
-                  />
-                  <Calendar className="h-4 w-4 text-gray-400" />
-                  <span className="text-sm text-gray-500">
-                    Expirará el {new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000).toLocaleDateString("es-ES")}
-                  </span>
-                </div>
-              </div>
-
-              {/* Método de envío */}
-              <div className="space-y-2">
-                <Label>Método de envío</Label>
-                <div className="grid grid-cols-3 gap-2">
-                  <Button
-                    variant={sendMethod === "manual" ? "default" : "outline"}
-                    onClick={() => setSendMethod("manual")}
-                    className="flex items-center gap-2"
-                  >
-                    <Copy className="h-4 w-4" />
-                    Manual
-                  </Button>
-                  
-                
-                </div>
-                {sendMethod === "email" && !clientEmail && (
-                  <p className="text-sm text-amber-600 flex items-center gap-1">
-                    <AlertCircle className="h-4 w-4" />
-                    El cliente no tiene email registrado
-                  </p>
-                )}
-                {sendMethod === "whatsapp" && !clientPhone && (
-                  <p className="text-sm text-amber-600 flex items-center gap-1">
-                    <AlertCircle className="h-4 w-4" />
-                    El cliente no tiene teléfono registrado
-                  </p>
-                )}
-              </div>
-
-              {/* Error */}
-              {error && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-                  <p className="text-sm text-red-600 flex items-center gap-2">
-                    <AlertCircle className="h-4 w-4" />
-                    {error}
-                  </p>
-                </div>
               )}
+            </div>
 
-              {/* Enlace generado */}
-              {generatedLink && (
-                <Card>
-                  <CardContent className="pt-4">
-                    <div className="space-y-3">
-                      <Label>Enlace generado</Label>
-                      <div className="flex gap-2">
-                        <Input value={generatedLink} readOnly className="font-mono text-sm" />
-                        <Button variant="outline" size="sm" onClick={() => copyToClipboard(generatedLink)}>
-                          <Copy className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <p className="text-sm text-gray-500 flex items-center gap-1">
-                        <Clock className="h-4 w-4" />
-                        Este enlace expirará en {expiresInDays} días
-                      </p>
+            {/* Información del formulario seleccionado */}
+            {selectedForm && (
+              <div className="p-3 bg-blue-50 rounded-md">
+                <div className="flex items-start gap-2">
+                  <FileText className="h-4 w-4 text-blue-600 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-blue-900">{selectedForm.title}</p>
+                    {selectedForm.description && (
+                      <p className="text-xs text-blue-700 mt-1">{selectedForm.description}</p>
+                    )}
+                    <div className="flex items-center gap-2 mt-2">
+                      <Badge variant="outline" className="text-xs">
+                        {selectedForm.category}
+                      </Badge>
                     </div>
-                  </CardContent>
-                </Card>
-              )}
+                  </div>
+                </div>
+              </div>
+            )}
 
-              {/* Botones de acción */}
-              <div className="flex justify-end gap-3 pt-4 border-t">
-                <Button variant="outline" onClick={handleClose}>
-                  Cerrar
-                </Button>
-                <Button onClick={generateConsentLink} disabled={!selectedFormId || isGenerating}>
-                  {isGenerating ? (
-                    <>
-                      <div className="w-4 h-4 mr-2 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                      Generando...
-                    </>
-                  ) : (
-                    "Generar enlace"
-                  )}
+            {/* Datos del paciente */}
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="patient_name">
+                  Nombre del Paciente <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="patient_name"
+                  placeholder="Nombre completo del paciente"
+                  value={formData.patient_name}
+                  onChange={(e) => setFormData({ ...formData, patient_name: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="patient_email">Email del Paciente (opcional)</Label>
+                <Input
+                  id="patient_email"
+                  type="email"
+                  placeholder="email@ejemplo.com"
+                  value={formData.patient_email}
+                  onChange={(e) => setFormData({ ...formData, patient_email: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="notes">Notas (opcional)</Label>
+                <Textarea
+                  id="notes"
+                  placeholder="Notas adicionales sobre el consentimiento"
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  rows={3}
+                />
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="p-4 bg-green-50 rounded-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <Link className="h-5 w-5 text-green-600" />
+                <span className="font-medium text-green-900">Enlace generado correctamente</span>
+              </div>
+              <p className="text-sm text-green-700 mb-3">
+                Comparte este enlace con el paciente para que pueda firmar el consentimiento
+              </p>
+              <div className="flex items-center gap-2">
+                <Input value={generatedLink} readOnly className="font-mono text-sm" />
+                <Button size="sm" onClick={copyToClipboard}>
+                  <Copy className="h-4 w-4" />
                 </Button>
               </div>
+            </div>
+
+            <div className="text-sm text-gray-600">
+              <p className="font-medium mb-1">Información del consentimiento:</p>
+              <ul className="space-y-1">
+                <li>
+                  • <strong>Paciente:</strong> {formData.patient_name}
+                </li>
+                <li>
+                  • <strong>Formulario:</strong> {selectedForm?.title}
+                </li>
+                {formData.patient_email && (
+                  <li>
+                    • <strong>Email:</strong> {formData.patient_email}
+                  </li>
+                )}
+                {formData.notes && (
+                  <li>
+                    • <strong>Notas:</strong> {formData.notes}
+                  </li>
+                )}
+              </ul>
+            </div>
+          </div>
+        )}
+
+        <DialogFooter>
+          {!generatedLink ? (
+            <>
+              <Button variant="outline" onClick={handleClose}>
+                Cancelar
+              </Button>
+              <Button onClick={generateConsentLink} disabled={loading || forms.length === 0}>
+                {loading ? (
+                  <>
+                    <div className="w-4 h-4 mr-2 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    Generando...
+                  </>
+                ) : (
+                  <>
+                    <Link className="h-4 w-4 mr-2" />
+                    Generar Enlace
+                  </>
+                )}
+              </Button>
             </>
+          ) : (
+            <Button onClick={handleClose}>Cerrar</Button>
           )}
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

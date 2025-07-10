@@ -22,7 +22,8 @@ import {
 } from "@/components/ui/alert-dialog"
 import { supabase } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
-import { FileText, Plus, Edit, Eye, Trash2, Search, Copy, RefreshCw } from "lucide-react"
+import { useAuth } from "@/app/contexts/auth-context"
+import { FileText, Plus, Edit, Eye, Trash2, Search, Copy, RefreshCw, Building2, AlertCircle } from "lucide-react"
 import type { ConsentForm } from "@/types/consent"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
@@ -31,6 +32,7 @@ import { EditConsentFormModal } from "@/components/consent/edit-consent-form-mod
 export default function ConsentFormsPage() {
   const router = useRouter()
   const { toast } = useToast()
+  const { userProfile, isLoading: authLoading } = useAuth()
   const [loading, setLoading] = useState(true)
   const [forms, setForms] = useState<ConsentForm[]>([])
   const [filteredForms, setFilteredForms] = useState<ConsentForm[]>([])
@@ -41,11 +43,15 @@ export default function ConsentFormsPage() {
   const [editFormId, setEditFormId] = useState<string | null>(null)
   const [deleteFormId, setDeleteFormId] = useState<string | null>(null)
   const [categories, setCategories] = useState<string[]>([])
+  const [organizationName, setOrganizationName] = useState<string>("")
 
-  // Cargar formularios
+  // Cargar formularios cuando el usuario esté disponible
   useEffect(() => {
-    loadForms()
-  }, [])
+    if (!authLoading && userProfile?.organization_id) {
+      loadForms()
+      loadOrganizationName()
+    }
+  }, [userProfile, authLoading])
 
   // Aplicar filtros
   useEffect(() => {
@@ -73,16 +79,40 @@ export default function ConsentFormsPage() {
     setFilteredForms(filtered)
   }, [forms, searchTerm, categoryFilter, statusFilter])
 
+  const loadOrganizationName = async () => {
+    if (!userProfile?.organization_id) return
+
+    try {
+      const { data, error } = await supabase
+        .from("organizations")
+        .select("name")
+        .eq("id", userProfile.organization_id)
+        .single()
+
+      if (error) throw error
+      setOrganizationName(data?.name || "")
+    } catch (error) {
+      console.error("Error loading organization name:", error)
+    }
+  }
+
   const loadForms = async () => {
+    if (!userProfile?.organization_id) return
+
     setLoading(true)
     try {
-      const { data, error } = await supabase.from("consent_forms").select("*").order("created_at", { ascending: false })
+      // Filtrar solo por la organización del usuario
+      const { data, error } = await supabase
+        .from("consent_forms")
+        .select("*")
+        .eq("organization_id", userProfile.organization_id)
+        .order("created_at", { ascending: false })
 
       if (error) throw error
 
       setForms(data || [])
 
-      // Extraer categorías únicas
+      // Extraer categorías únicas de los formularios de esta organización
       const uniqueCategories = Array.from(new Set((data || []).map((form) => form.category)))
       setCategories(uniqueCategories)
     } catch (error) {
@@ -97,9 +127,28 @@ export default function ConsentFormsPage() {
     }
   }
 
+  const validateOrganizationAccess = (form: ConsentForm): boolean => {
+    if (!userProfile?.organization_id) return false
+    return form.organization_id === userProfile.organization_id
+  }
+
   const toggleFormStatus = async (formId: string, currentStatus: boolean) => {
+    const form = forms.find((f) => f.id === formId)
+    if (!form || !validateOrganizationAccess(form)) {
+      toast({
+        title: "Error de permisos",
+        description: "No tienes permisos para modificar este formulario",
+        variant: "destructive",
+      })
+      return
+    }
+
     try {
-      const { error } = await supabase.from("consent_forms").update({ is_active: !currentStatus }).eq("id", formId)
+      const { error } = await supabase
+        .from("consent_forms")
+        .update({ is_active: !currentStatus })
+        .eq("id", formId)
+        .eq("organization_id", userProfile!.organization_id) // Doble verificación
 
       if (error) throw error
 
@@ -120,10 +169,25 @@ export default function ConsentFormsPage() {
   }
 
   const confirmDeleteForm = async () => {
-    if (!deleteFormId) return
+    if (!deleteFormId || !userProfile?.organization_id) return
+
+    const form = forms.find((f) => f.id === deleteFormId)
+    if (!form || !validateOrganizationAccess(form)) {
+      toast({
+        title: "Error de permisos",
+        description: "No tienes permisos para eliminar este formulario",
+        variant: "destructive",
+      })
+      setDeleteFormId(null)
+      return
+    }
 
     try {
-      const { error } = await supabase.from("consent_forms").delete().eq("id", deleteFormId)
+      const { error } = await supabase
+        .from("consent_forms")
+        .delete()
+        .eq("id", deleteFormId)
+        .eq("organization_id", userProfile.organization_id) // Doble verificación
 
       if (error) throw error
 
@@ -145,15 +209,24 @@ export default function ConsentFormsPage() {
   }
 
   const duplicateForm = async (form: ConsentForm) => {
+    if (!validateOrganizationAccess(form) || !userProfile?.organization_id) {
+      toast({
+        title: "Error de permisos",
+        description: "No tienes permisos para duplicar este formulario",
+        variant: "destructive",
+      })
+      return
+    }
+
     try {
       const { error } = await supabase.from("consent_forms").insert({
-        organization_id: form.organization_id,
+        organization_id: userProfile.organization_id, // Usar la organización del usuario
         title: `${form.title} (Copia)`,
         content: form.content,
         description: form.description,
         category: form.category,
         is_active: false,
-        created_by: (await supabase.auth.getUser()).data.user?.id,
+        created_by: userProfile.id,
       })
 
       if (error) throw error
@@ -174,12 +247,50 @@ export default function ConsentFormsPage() {
     }
   }
 
+  const handleEditForm = (formId: string) => {
+    const form = forms.find((f) => f.id === formId)
+    if (!form || !validateOrganizationAccess(form)) {
+      toast({
+        title: "Error de permisos",
+        description: "No tienes permisos para editar este formulario",
+        variant: "destructive",
+      })
+      return
+    }
+    setEditFormId(formId)
+  }
+
   const formatDate = (dateString: string) => {
     return format(new Date(dateString), "dd/MM/yyyy HH:mm", { locale: es })
   }
 
   const handleEditSuccess = () => {
     loadForms() // Recargar la lista después de editar
+  }
+
+  // Mostrar loading mientras se carga la autenticación
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="w-8 h-8 mx-auto mb-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+          <p className="text-gray-500">Cargando usuario...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Mostrar error si no hay usuario o organización
+  if (!userProfile?.organization_id) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold mb-2">Sin organización</h2>
+          <p className="text-gray-500">No tienes acceso a ninguna organización</p>
+        </div>
+      </div>
+    )
   }
 
   if (loading) {
@@ -200,7 +311,10 @@ export default function ConsentFormsPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Formularios de Consentimiento</h1>
-            <p className="text-muted-foreground mt-1">Gestiona las plantillas de consentimiento informado</p>
+            <div className="flex items-center gap-2 mt-1">
+              <Building2 className="h-4 w-4 text-muted-foreground" />
+              <p className="text-muted-foreground">{organizationName || "Cargando organización..."}</p>
+            </div>
           </div>
           <div className="flex gap-2">
             <Tooltip>
@@ -285,7 +399,7 @@ export default function ConsentFormsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Formularios ({filteredForms.length})</CardTitle>
-            <CardDescription>Lista de plantillas de consentimiento informado</CardDescription>
+            <CardDescription>Lista de plantillas de consentimiento informado de tu organización</CardDescription>
           </CardHeader>
           <CardContent>
             {filteredForms.length === 0 ? (
@@ -294,7 +408,7 @@ export default function ConsentFormsPage() {
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No hay formularios</h3>
                 <p className="text-gray-500 mb-4">
                   {forms.length === 0
-                    ? "Aún no has creado ningún formulario de consentimiento."
+                    ? `Aún no has creado ningún formulario de consentimiento para ${organizationName}.`
                     : "No se encontraron formularios con los filtros seleccionados."}
                 </p>
                 <Button onClick={() => router.push("/dashboard/consent-forms/new")}>
@@ -363,7 +477,7 @@ export default function ConsentFormsPage() {
 
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => setEditFormId(form.id)}>
+                                <Button variant="ghost" size="sm" onClick={() => handleEditForm(form.id)}>
                                   <Edit className="h-4 w-4" />
                                 </Button>
                               </TooltipTrigger>

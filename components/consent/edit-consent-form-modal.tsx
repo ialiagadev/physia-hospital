@@ -7,25 +7,31 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Switch } from "@/components/ui/switch"
-import { RichTextEditor } from "@/components/ui/rich-text-editor"
 import { supabase } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
-import { FileText, Save, Eye, Loader2 } from "lucide-react"
-import type { ConsentForm } from "@/types/consent"
+import { useAuth } from "@/app/contexts/auth-context"
+import { Save, FileText, Building2, AlertCircle } from "lucide-react"
+import { RichTextEditor } from "@/components/ui/rich-text-editor"
 
-const PREDEFINED_CATEGORIES = [
-  "general",
-  "fisioterapia",
-  "odontologia",
-  "psicologia",
-  "medicina",
-  "cirugia",
-  "estetica",
-  "pediatria",
+const CONSENT_CATEGORIES = [
+  { value: "general", label: "General" },
+  { value: "cirugia", label: "Cirugía" },
+  { value: "anestesia", label: "Anestesia" },
+  { value: "tratamiento", label: "Tratamiento" },
+  { value: "diagnostico", label: "Diagnóstico" },
+  { value: "investigacion", label: "Investigación" },
+  { value: "datos", label: "Protección de Datos" },
+  { value: "otros", label: "Otros" },
 ]
 
 interface EditConsentFormModalProps {
@@ -37,11 +43,11 @@ interface EditConsentFormModalProps {
 
 export function EditConsentFormModal({ isOpen, onClose, formId, onSuccess }: EditConsentFormModalProps) {
   const { toast } = useToast()
-  const [isLoading, setIsLoading] = useState(false)
-  const [isSaving, setIsSaving] = useState(false)
-  const [organizations, setOrganizations] = useState<any[]>([])
-  const [activeTab, setActiveTab] = useState("form")
-  const [originalForm, setOriginalForm] = useState<ConsentForm | null>(null)
+  const { userProfile } = useAuth()
+  const [loading, setLoading] = useState(false)
+  const [loadingForm, setLoadingForm] = useState(false)
+  const [organizationName, setOrganizationName] = useState<string>("")
+  const [hasAccess, setHasAccess] = useState(true)
 
   const [formData, setFormData] = useState({
     title: "",
@@ -49,138 +55,126 @@ export function EditConsentFormModal({ isOpen, onClose, formId, onSuccess }: Edi
     category: "",
     content: "",
     is_active: true,
-    organization_id: "",
   })
 
-  const [errors, setErrors] = useState({
-    title: false,
-    category: false,
-    content: false,
-    organization_id: false,
-  })
-
-  // Cargar datos cuando se abre el modal
   useEffect(() => {
-    if (isOpen && formId) {
-      loadData()
+    if (isOpen && formId && userProfile?.organization_id) {
+      loadForm()
+      loadOrganizationName()
     }
-  }, [isOpen, formId])
+  }, [isOpen, formId, userProfile])
 
-  // Reset form when modal closes
-  useEffect(() => {
-    if (!isOpen) {
-      setActiveTab("form")
-      setFormData({
-        title: "",
-        description: "",
-        category: "",
-        content: "",
-        is_active: true,
-        organization_id: "",
-      })
-      setErrors({
-        title: false,
-        category: false,
-        content: false,
-        organization_id: false,
-      })
-      setOriginalForm(null)
-    }
-  }, [isOpen])
+  const loadOrganizationName = async () => {
+    if (!userProfile?.organization_id) return
 
-  const loadData = async () => {
-    if (!formId) return
-
-    setIsLoading(true)
     try {
-      // Cargar organizaciones
-      const { data: orgsData, error: orgsError } = await supabase.from("organizations").select("id, name").order("name")
+      const { data, error } = await supabase
+        .from("organizations")
+        .select("name")
+        .eq("id", userProfile.organization_id)
+        .single()
 
-      if (orgsError) throw orgsError
-      setOrganizations(orgsData || [])
+      if (error) throw error
+      setOrganizationName(data?.name || "")
+    } catch (error) {
+      console.error("Error loading organization name:", error)
+    }
+  }
 
-      // Cargar formulario
-      const { data: formData, error: formError } = await supabase
+  const loadForm = async () => {
+    if (!formId || !userProfile?.organization_id) return
+
+    setLoadingForm(true)
+    setHasAccess(true)
+
+    try {
+      // Cargar el formulario verificando que pertenece a la organización del usuario
+      const { data, error } = await supabase
         .from("consent_forms")
         .select("*")
         .eq("id", formId)
+        .eq("organization_id", userProfile.organization_id)
         .single()
 
-      if (formError) throw formError
-      if (!formData) throw new Error("Formulario no encontrado")
+      if (error) {
+        if (error.code === "PGRST116") {
+          // No se encontró el registro o no pertenece a la organización
+          setHasAccess(false)
+          toast({
+            title: "Sin permisos",
+            description: "No tienes permisos para editar este formulario",
+            variant: "destructive",
+          })
+          return
+        }
+        throw error
+      }
 
-      setOriginalForm(formData)
       setFormData({
-        title: formData.title,
-        description: formData.description || "",
-        category: formData.category,
-        content: formData.content,
-        is_active: formData.is_active,
-        organization_id: formData.organization_id.toString(),
+        title: data.title,
+        description: data.description || "",
+        category: data.category,
+        content: data.content,
+        is_active: data.is_active,
       })
     } catch (error) {
-      console.error("Error loading data:", error)
+      console.error("Error loading consent form:", error)
       toast({
         title: "Error",
         description: "No se pudo cargar el formulario",
         variant: "destructive",
       })
-      onClose()
     } finally {
-      setIsLoading(false)
+      setLoadingForm(false)
     }
-  }
-
-  const handleChange = (field: string, value: string | boolean) => {
-    setFormData((prev) => ({ ...prev, [field]: value }))
-
-    // Limpiar error si el campo se llena
-    if (errors[field as keyof typeof errors] && value) {
-      setErrors((prev) => ({ ...prev, [field]: false }))
-    }
-  }
-
-  const validateForm = () => {
-    const newErrors = {
-      title: !formData.title.trim(),
-      category: !formData.category,
-      content: !formData.content.trim() || formData.content === "<div><br></div>" || formData.content === "<br>",
-      organization_id: !formData.organization_id,
-    }
-
-    setErrors(newErrors)
-    return !Object.values(newErrors).some(Boolean)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!validateForm()) {
+    if (!formId || !userProfile?.organization_id) {
       toast({
-        title: "Error de validación",
-        description: "Por favor, completa todos los campos requeridos",
+        title: "Error",
+        description: "No se pudo identificar el formulario o tu organización",
         variant: "destructive",
       })
       return
     }
 
-    if (!formId) return
+    if (!hasAccess) {
+      toast({
+        title: "Sin permisos",
+        description: "No tienes permisos para editar este formulario",
+        variant: "destructive",
+      })
+      return
+    }
 
-    setIsSaving(true)
+    if (!formData.title.trim() || !formData.category || !formData.content.trim()) {
+      toast({
+        title: "Campos requeridos",
+        description: "Por favor completa todos los campos obligatorios",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setLoading(true)
 
     try {
+      // Actualizar solo si pertenece a la organización del usuario
       const { error } = await supabase
         .from("consent_forms")
         .update({
-          title: formData.title,
-          description: formData.description || null,
+          title: formData.title.trim(),
+          description: formData.description.trim() || null,
           category: formData.category,
           content: formData.content,
           is_active: formData.is_active,
-          organization_id: Number.parseInt(formData.organization_id),
           updated_at: new Date().toISOString(),
         })
         .eq("id", formId)
+        .eq("organization_id", userProfile.organization_id) // Doble verificación
 
       if (error) throw error
 
@@ -195,183 +189,166 @@ export function EditConsentFormModal({ isOpen, onClose, formId, onSuccess }: Edi
       console.error("Error updating consent form:", error)
       toast({
         title: "Error",
-        description: "No se pudo actualizar el formulario",
+        description: "No se pudieron guardar los cambios",
         variant: "destructive",
       })
     } finally {
-      setIsSaving(false)
+      setLoading(false)
     }
   }
 
+  const handleClose = () => {
+    setFormData({
+      title: "",
+      description: "",
+      category: "",
+      content: "",
+      is_active: true,
+    })
+    setHasAccess(true)
+    onClose()
+  }
+
+  if (!userProfile?.organization_id) {
+    return null
+  }
+
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+    <Dialog open={isOpen} onOpenChange={handleClose}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5" />
             Editar Formulario de Consentimiento
-            {originalForm && (
-              <span className="text-sm font-normal text-gray-500">
-                - {originalForm.title} (v{originalForm.version})
-              </span>
-            )}
           </DialogTitle>
+          <DialogDescription>Modifica los datos del formulario de consentimiento</DialogDescription>
+          {organizationName && (
+            <div className="flex items-center gap-2 mt-2">
+              <Building2 className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">{organizationName}</span>
+            </div>
+          )}
         </DialogHeader>
 
-        {isLoading ? (
-          <div className="flex items-center justify-center py-12">
+        {loadingForm ? (
+          <div className="flex items-center justify-center py-8">
             <div className="text-center">
-              <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
+              <div className="w-8 h-8 mx-auto mb-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
               <p className="text-gray-500">Cargando formulario...</p>
             </div>
           </div>
+        ) : !hasAccess ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="text-center">
+              <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2">Sin permisos</h3>
+              <p className="text-gray-500">No tienes permisos para editar este formulario</p>
+            </div>
+          </div>
         ) : (
-          <form onSubmit={handleSubmit} className="flex-1 overflow-hidden flex flex-col">
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="form">Información Básica</TabsTrigger>
-                <TabsTrigger value="content">Contenido</TabsTrigger>
-                <TabsTrigger value="preview">Previsualización</TabsTrigger>
-              </TabsList>
-
-              <div className="flex-1 overflow-y-auto">
-                <TabsContent value="form" className="space-y-4 mt-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="organization">
-                        Organización <span className="text-red-500">*</span>
-                      </Label>
-                      <Select
-                        value={formData.organization_id}
-                        onValueChange={(value) => handleChange("organization_id", value)}
-                      >
-                        <SelectTrigger className={errors.organization_id ? "border-red-500" : ""}>
-                          <SelectValue placeholder="Selecciona una organización" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {organizations.map((org) => (
-                            <SelectItem key={org.id} value={org.id.toString()}>
-                              {org.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {errors.organization_id && (
-                        <p className="text-sm text-red-500 mt-1">Selecciona una organización</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <Label htmlFor="category">
-                        Categoría <span className="text-red-500">*</span>
-                      </Label>
-                      <Select value={formData.category} onValueChange={(value) => handleChange("category", value)}>
-                        <SelectTrigger className={errors.category ? "border-red-500" : ""}>
-                          <SelectValue placeholder="Selecciona una categoría" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {PREDEFINED_CATEGORIES.map((category) => (
-                            <SelectItem key={category} value={category}>
-                              {category.charAt(0).toUpperCase() + category.slice(1)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {errors.category && <p className="text-sm text-red-500 mt-1">Selecciona una categoría</p>}
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="title">
-                      Título <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      id="title"
-                      value={formData.title}
-                      onChange={(e) => handleChange("title", e.target.value)}
-                      placeholder="Ej: Consentimiento Informado para Fisioterapia"
-                      className={errors.title ? "border-red-500" : ""}
-                    />
-                    {errors.title && <p className="text-sm text-red-500 mt-1">El título es obligatorio</p>}
-                  </div>
-
-                  <div>
-                    <Label htmlFor="description">Descripción</Label>
-                    <Textarea
-                      id="description"
-                      value={formData.description}
-                      onChange={(e) => handleChange("description", e.target.value)}
-                      placeholder="Descripción breve del formulario (opcional)"
-                      rows={3}
-                    />
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      id="is_active"
-                      checked={formData.is_active}
-                      onCheckedChange={(checked) => handleChange("is_active", checked)}
-                    />
-                    <Label htmlFor="is_active">Formulario activo</Label>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="content" className="space-y-4 mt-4">
-                  <div>
-                    <Label htmlFor="content">
-                      Contenido del Formulario <span className="text-red-500">*</span>
-                    </Label>
-                    <div className="mt-2">
-                      <RichTextEditor
-                        value={formData.content}
-                        onChange={(value) => handleChange("content", value)}
-                        placeholder="Escribe el contenido del formulario de consentimiento..."
-                        error={errors.content}
-                      />
-                    </div>
-                    {errors.content && <p className="text-sm text-red-500 mt-1">El contenido es obligatorio</p>}
-                    <p className="text-sm text-gray-500 mt-2">
-                      Usa los botones de la barra de herramientas para formatear el texto. Los campos de firma se
-                      añadirán automáticamente al final.
-                    </p>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="preview" className="space-y-4 mt-4">
-                  <div>
-                    <Label className="flex items-center gap-2 mb-2">
-                      <Eye className="h-4 w-4" />
-                      Previsualización
-                    </Label>
-                    <div className="border rounded-lg p-6 bg-white max-h-80 overflow-y-auto">
-                      <div
-                        className="prose max-w-none prose-headings:text-gray-900 prose-p:text-gray-700 prose-li:text-gray-700 prose-strong:text-gray-900"
-                        dangerouslySetInnerHTML={{ __html: formData.content }}
-                      />
-                    </div>
-                  </div>
-                </TabsContent>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Información básica */}
+            <div className="space-y-4">
+              {/* Título */}
+              <div className="space-y-2">
+                <Label htmlFor="edit-title">
+                  Título <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="edit-title"
+                  placeholder="Ej: Consentimiento para Cirugía General"
+                  value={formData.title}
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  required
+                />
               </div>
-            </Tabs>
 
-            <div className="flex justify-end gap-3 pt-4 border-t mt-4">
-              <Button type="button" variant="outline" onClick={onClose}>
+              {/* Descripción */}
+              <div className="space-y-2">
+                <Label htmlFor="edit-description">Descripción</Label>
+                <Textarea
+                  id="edit-description"
+                  placeholder="Descripción opcional del formulario"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  rows={3}
+                />
+              </div>
+
+              {/* Categoría */}
+              <div className="space-y-2">
+                <Label>
+                  Categoría <span className="text-red-500">*</span>
+                </Label>
+                <Select
+                  value={formData.category}
+                  onValueChange={(value) => setFormData({ ...formData, category: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona una categoría" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CONSENT_CATEGORIES.map((category) => (
+                      <SelectItem key={category.value} value={category.value}>
+                        {category.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Estado activo */}
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label>Estado del formulario</Label>
+                  <p className="text-sm text-gray-500">
+                    Los formularios activos pueden ser utilizados para generar consentimientos
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={formData.is_active}
+                    onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
+                  />
+                  <span className="text-sm">{formData.is_active ? "Activo" : "Inactivo"}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Contenido del formulario */}
+            <div className="space-y-2">
+              <Label>
+                Contenido <span className="text-red-500">*</span>
+              </Label>
+              <RichTextEditor
+                value={formData.content}
+                onChange={(value) => setFormData({ ...formData, content: value })}
+                placeholder="Escribe aquí el contenido del formulario de consentimiento..."
+              />
+              <p className="text-xs text-gray-500">
+                Puedes incluir variables como {"{paciente_nombre}"}, {"{fecha}"}, {"{profesional_nombre}"} que se
+                reemplazarán automáticamente.
+              </p>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={handleClose}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={isSaving}>
-                {isSaving ? (
+              <Button type="submit" disabled={loading}>
+                {loading ? (
                   <>
                     <div className="w-4 h-4 mr-2 animate-spin rounded-full border-2 border-white border-t-transparent" />
                     Guardando...
                   </>
                 ) : (
-                  <div className="flex items-center">
-                    <Save className="w-4 h-4 mr-2" />
+                  <>
+                    <Save className="h-4 w-4 mr-2" />
                     Guardar Cambios
-                  </div>
+                  </>
                 )}
               </Button>
-            </div>
+            </DialogFooter>
           </form>
         )}
       </DialogContent>
