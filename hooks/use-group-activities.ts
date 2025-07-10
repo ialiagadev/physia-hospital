@@ -57,6 +57,8 @@ export interface GroupActivityInsert {
   consultation_id?: string
   max_participants: number
   color?: string
+  service_id: number | null // 🆕 Añadido
+
 }
 
 export interface GroupActivityUpdate {

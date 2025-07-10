@@ -18,6 +18,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils"
 import { useConsultations } from "@/hooks/use-consultations"
 import type { GroupActivity } from "@/hooks/use-group-activities"
+import { useServices } from "@/hooks/use-services"
+import { useUsers } from "@/hooks/use-users"
 
 interface GroupActivityFormModalProps {
   isOpen: boolean
@@ -48,11 +50,13 @@ export function GroupActivityFormModal({
   users,
 }: GroupActivityFormModalProps) {
   const { consultations } = useConsultations(organizationId)
+  const { services, loading: servicesLoading } = useServices(organizationId)
+  const { getUsersByService } = useUsers(organizationId)
 
   const [formData, setFormData] = useState({
-    name: "",
+    service_id: "",
     description: "",
-    date: new Date().toISOString().split("T")[0], // Format: YYYY-MM-DD
+    date: new Date().toISOString().split("T")[0],
     start_time: "09:00",
     end_time: "10:00",
     professional_id: "",
@@ -61,15 +65,16 @@ export function GroupActivityFormModal({
     color: "#3B82F6",
   })
 
+  const [filteredProfessionals, setFilteredProfessionals] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
 
   // Initialize form data when editing
   useEffect(() => {
     if (activity) {
       setFormData({
-        name: activity.name,
+        service_id: activity.service_id?.toString() || "",
         description: activity.description || "",
-        date: new Date(activity.date).toISOString().split("T")[0], // Convert to YYYY-MM-DD format
+        date: new Date(activity.date).toISOString().split("T")[0],
         start_time: activity.start_time,
         end_time: activity.end_time,
         professional_id: activity.professional_id,
@@ -80,11 +85,26 @@ export function GroupActivityFormModal({
     }
   }, [activity])
 
+  useEffect(() => {
+    const updateProfessionals = async () => {
+      if (formData.service_id) {
+        const serviceUsers = await getUsersByService(Number(formData.service_id))
+        setFilteredProfessionals(serviceUsers)
+      } else {
+        // Si no hay servicio seleccionado, mostrar todos los profesionales
+        const allProfessionals = users.filter((user) => user.type === 1)
+        setFilteredProfessionals(allProfessionals)
+      }
+    }
+
+    updateProfessionals()
+  }, [formData.service_id, getUsersByService, users])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!formData.name.trim()) {
-      alert("El nombre es requerido")
+    if (!formData.service_id) {
+      alert("Debe seleccionar un servicio")
       return
     }
 
@@ -95,9 +115,12 @@ export function GroupActivityFormModal({
 
     try {
       setLoading(true)
-      // Convert date string back to Date object for submission
+      const selectedService = services.find((s) => s.id.toString() === formData.service_id)
+
       const submitData = {
         ...formData,
+        name: selectedService?.name || "Actividad Grupal",
+        service_id: Number(formData.service_id),
         date: new Date(formData.date),
       }
       await onSubmit(submitData)
@@ -142,16 +165,34 @@ export function GroupActivityFormModal({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Name */}
+          {/* Service Selection */}
           <div className="space-y-2">
-            <Label htmlFor="name">Nombre de la actividad *</Label>
-            <Input
-              id="name"
-              value={formData.name}
-              onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
-              placeholder="Ej: Terapia grupal de ansiedad"
-              required
-            />
+            <Label htmlFor="service">Servicio *</Label>
+            <Select
+              value={formData.service_id}
+              onValueChange={(value) => {
+                setFormData((prev) => ({
+                  ...prev,
+                  service_id: value,
+                  professional_id: "", // Reset professional when service changes
+                }))
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar servicio" />
+              </SelectTrigger>
+              <SelectContent>
+                {services.map((service) => (
+                  <SelectItem key={service.id} value={service.id.toString()}>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: service.color }} />
+                      <span>{service.name}</span>
+                      <span className="text-xs text-gray-500">({service.duration}min)</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Description */}
@@ -209,18 +250,31 @@ export function GroupActivityFormModal({
             <Select
               value={formData.professional_id}
               onValueChange={(value) => setFormData((prev) => ({ ...prev, professional_id: value }))}
+              disabled={filteredProfessionals.length === 0}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Seleccionar profesional" />
+                <SelectValue
+                  placeholder={
+                    filteredProfessionals.length === 0 ? "No hay profesionales disponibles" : "Seleccionar profesional"
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
-                {professionals.map((professional) => (
+                {filteredProfessionals.map((professional) => (
                   <SelectItem key={professional.id} value={professional.id}>
                     {professional.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {formData.service_id && filteredProfessionals.length === 0 && (
+              <p className="text-sm text-amber-600">No hay profesionales asignados a este servicio</p>
+            )}
+            {formData.service_id && filteredProfessionals.length > 0 && (
+              <p className="text-sm text-blue-600">
+                {filteredProfessionals.length} profesional(es) disponible(s) para este servicio
+              </p>
+            )}
           </div>
 
           {/* Consultation */}

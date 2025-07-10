@@ -50,6 +50,7 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
         consultation_id: activityData.consultation_id || undefined,
         max_participants: activityData.max_participants,
         color: activityData.color || "#3B82F6",
+        service_id: activityData.service_id || undefined, // 🆕 Añadir service_id
       })
       setShowCreateModal(false)
     } catch (err) {

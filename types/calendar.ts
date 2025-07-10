@@ -189,7 +189,6 @@ export interface Appointment {
   notes?: string
 }
 
-// Agregar estos tipos al final de tu archivo de tipos:
 // Tipos para actividades grupales
 export interface GroupActivity {
   id: string
@@ -201,6 +200,7 @@ export interface GroupActivity {
   end_time: string
   professional_id: string
   consultation_id: string | null
+  service_id: number | null // 🆕 AÑADIDO
   max_participants: number
   current_participants: number
   status: "active" | "completed" | "cancelled"
@@ -214,6 +214,11 @@ export interface GroupActivity {
   consultation?: {
     id: string
     name: string
+  }
+  service?: { // 🆕 AÑADIDO
+    id: number
+    name: string
+    color: string
   }
   participants?: GroupActivityParticipant[]
 }
@@ -231,6 +236,48 @@ export interface GroupActivityParticipant {
     phone: string | null
     email: string | null
   }
+}
+
+// 🆕 INTERFACES AÑADIDAS PARA ACTIVIDADES GRUPALES
+export interface GroupActivityInsert {
+  organization_id: number
+  name: string
+  description?: string | null
+  date: string
+  start_time: string
+  end_time: string
+  professional_id: string
+  consultation_id?: string | null
+  service_id?: number | null
+  max_participants: number
+  color?: string
+}
+
+export interface GroupActivityUpdate {
+  name?: string
+  description?: string | null
+  date?: string
+  start_time?: string
+  end_time?: string
+  professional_id?: string
+  consultation_id?: string | null
+  service_id?: number | null
+  max_participants?: number
+  status?: "active" | "completed" | "cancelled"
+  color?: string
+}
+
+export interface GroupActivityFormData {
+  name: string
+  description: string
+  date: Date
+  start_time: string
+  end_time: string
+  professional_id: string
+  consultation_id: string
+  service_id: number | null
+  max_participants: number
+  color: string
 }
 
 // Actualizar el tipo Cita para incluir actividades grupales
@@ -319,7 +366,6 @@ export interface User {
   avatar_url?: string | null
   is_physia_admin?: boolean
   prompt?: string | null
-  
   work_schedules?: WorkSchedule[]
   settings?: ProfessionalSettings
 }
