@@ -1,23 +1,17 @@
 "use client"
 
 import {
-  add,
   eachDayOfInterval,
   endOfMonth,
   format,
   isSameDay,
   isSameMonth,
   isToday,
-  parse,
   startOfToday,
   startOfMonth,
   startOfWeek,
   endOfWeek,
 } from "date-fns"
-import { es } from "date-fns/locale"
-import { useState } from "react"
-import { ChevronLeft, ChevronRight } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 
 function classNames(...classes: any[]) {
@@ -50,8 +44,7 @@ export function MonthView({
   getUserVacationOnDate = () => null,
 }: MonthViewProps) {
   const today = startOfToday()
-  const [currentMonth, setCurrentMonth] = useState(format(date, "MMMM yyyy", { locale: es }))
-  const firstDayCurrentMonth = parse(currentMonth, "MMMM yyyy", new Date(), { locale: es })
+  const firstDayCurrentMonth = date
 
   const monthStart = startOfMonth(firstDayCurrentMonth)
   const monthEnd = endOfMonth(firstDayCurrentMonth)
@@ -62,16 +55,6 @@ export function MonthView({
     start: calendarStart,
     end: calendarEnd,
   })
-
-  function previousMonth() {
-    const firstDayPrevMonth = add(firstDayCurrentMonth, { months: -1 })
-    setCurrentMonth(format(firstDayPrevMonth, "MMMM yyyy", { locale: es }))
-  }
-
-  function nextMonth() {
-    const firstDayNextMonth = add(firstDayCurrentMonth, { months: 1 })
-    setCurrentMonth(format(firstDayNextMonth, "MMMM yyyy", { locale: es }))
-  }
 
   const getVacationIcon = (type: string) => {
     switch (type) {
@@ -88,21 +71,6 @@ export function MonthView({
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header del mes */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-900 capitalize">
-          {format(firstDayCurrentMonth, "MMMM yyyy", { locale: es })}
-        </h2>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={previousMonth}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Button variant="outline" size="sm" onClick={nextMonth}>
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
       {/* Días de la semana */}
       <div className="grid grid-cols-7 border-b border-gray-200 bg-gray-50">
         {["L", "M", "X", "J", "V", "S", "D"].map((day, index) => (

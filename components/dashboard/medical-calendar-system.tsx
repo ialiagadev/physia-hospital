@@ -4,7 +4,7 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns"
 import { Button } from "@/components/ui/button"
-import { ChevronLeft, ChevronRight, Plus, Search, Clock } from "lucide-react"
+import { ChevronLeft, ChevronRight, Plus, Search, CalendarIcon, Clock } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CalendarSearch } from "@/components/calendar/calendar-search"
 import { ProfesionalesLegend } from "@/components/calendar/profesionales-legend"
@@ -40,6 +40,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/u
 import { GroupActivitiesView } from "@/components/group-activities/group-activities-view"
 import { useGroupActivities } from "@/hooks/use-group-activities"
 import { toast } from "sonner"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar } from "@/components/ui/calendar"
 
 // Define TabPrincipal locally to include new tabs
 type TabPrincipal = "calendario" | "lista-espera" | "actividades-grupales" | "usuarios" | "consultas" | "servicios"
@@ -773,9 +775,28 @@ const MedicalCalendarSystem: React.FC = () => {
               </div>
             </div>
 
-            {/* Título de fecha único */}
+            {/* Título de fecha único - AHORA CLICKEABLE */}
             <div className="px-4 py-3 border-b">
-              <h2 className="text-xl font-medium capitalize">{getDateTitle()}</h2>
+              <Popover>
+                <PopoverTrigger asChild>
+                <Button variant="ghost" className="flex items-center gap-2 text-xl font-medium capitalize hover:bg-muted/50 p-0 h-auto">
+                  <CalendarIcon className="h-5 w-5" />
+                  {getDateTitle()}
+                </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={currentDate}
+                    onSelect={(date) => {
+                      if (date) {
+                        setCurrentDate(date)
+                      }
+                    }}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
 
             {/* Vista del calendario */}

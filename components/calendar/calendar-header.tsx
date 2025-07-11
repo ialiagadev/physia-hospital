@@ -6,6 +6,8 @@ import { es } from "date-fns/locale"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { CalendarView } from "@/types/calendar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar } from "@/components/ui/calendar"
 
 interface CalendarHeaderProps {
   currentDate: Date
@@ -76,7 +78,25 @@ export function CalendarHeader({
           </Button>
         </div>
 
-        <h1 className="text-xl font-semibold capitalize">{getDateTitle()}</h1>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="ghost" className="text-xl font-semibold capitalize hover:bg-muted/50">
+              {getDateTitle()}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+            <Calendar
+              mode="single"
+              selected={currentDate}
+              onSelect={(date) => {
+                if (date) {
+                  onDateChange(date)
+                }
+              }}
+              initialFocus
+            />
+          </PopoverContent>
+        </Popover>
       </div>
 
       <div className="flex items-center gap-2">
