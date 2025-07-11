@@ -42,10 +42,27 @@ export function useAppointments(
 
   const createAppointment = async (appointment: AppointmentInsert) => {
     try {
+      // 🆕 Log para debug de campos de recurrencia
+      if (appointment.is_recurring) {
+        console.log("Creating recurring appointment with data:", {
+          is_recurring: appointment.is_recurring,
+          recurrence_type: appointment.recurrence_type,
+          recurrence_interval: appointment.recurrence_interval,
+          recurrence_end_date: appointment.recurrence_end_date,
+        })
+      }
+
       await AppointmentService.createAppointment(appointment)
       await fetchAppointments()
-      toast.success("Cita creada correctamente")
+
+      // 🆕 Mensaje diferente para citas recurrentes
+      if (appointment.is_recurring) {
+        toast.success("Serie de citas recurrentes creada correctamente")
+      } else {
+        toast.success("Cita creada correctamente")
+      }
     } catch (err) {
+      console.error("Error creating appointment:", err)
       toast.error("Error al crear la cita")
       throw err
     }

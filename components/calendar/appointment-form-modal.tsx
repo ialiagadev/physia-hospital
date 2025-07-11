@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Loader2,
   Phone,
@@ -19,10 +20,11 @@ import {
   Info,
   Briefcase,
   Search,
-  Calendar,
+  CalendarIcon,
   Clock,
   AlertCircle,
   ClipboardList,
+  Repeat,
 } from "lucide-react"
 import { useClients } from "@/hooks/use-clients"
 import { useUsers } from "@/hooks/use-users"
@@ -33,7 +35,9 @@ import { useAppointmentConflicts } from "@/hooks/use-appointment-conflicts"
 import { useAuth } from "@/app/contexts/auth-context"
 import { normalizePhoneNumber, formatPhoneNumber, isValidPhoneNumber } from "@/utils/phone-utils"
 import { supabase } from "@/lib/supabase/client"
-import type { Cita, EstadoCita } from "@/types/calendar"
+import { RecurrenceService } from "@/lib/services/recurrence-service"
+import type { Cita, EstadoCita, RecurrenceConfig, RecurrencePreview } from "@/types/calendar"
+import { format, addMonths } from "date-fns"
 
 interface AppointmentFormModalProps {
   fecha: Date
@@ -92,6 +96,10 @@ export function AppointmentFormModal({
   const [errors, setErrors] = useState<{ [key: string]: string }>({})
   const [telefonoFormateado, setTelefonoFormateado] = useState("")
 
+  // 🆕 Estados para recurrencia
+  const [recurrencePreview, setRecurrencePreview] = useState<RecurrencePreview | null>(null)
+  const [showRecurrencePreview, setShowRecurrencePreview] = useState(false)
+
   // Refs para timeouts
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
   const conflictCheckTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
@@ -125,7 +133,42 @@ export function AppointmentFormModal({
       : waitingListEntry?.service_id
         ? Number(waitingListEntry.service_id)
         : (null as number | null),
+    // 🆕 CAMPOS PARA RECURRENCIA
+    isRecurring: citaExistente?.isRecurring || false,
+    recurrenceType: citaExistente?.recurrenceType || "weekly",
+    recurrenceInterval: citaExistente?.recurrenceInterval || 1,
+    recurrenceEndDate: citaExistente?.recurrenceEndDate || addMonths(fecha, 3),
   })
+
+  // 🆕 Efecto para generar preview de recurrencia
+  useEffect(() => {
+    if (formData.isRecurring && formData.recurrenceType && formData.recurrenceEndDate) {
+      try {
+        const config: RecurrenceConfig = {
+          type: formData.recurrenceType as "weekly" | "monthly",
+          interval: formData.recurrenceInterval,
+          endDate: formData.recurrenceEndDate,
+        }
+
+        const preview = RecurrenceService.generatePreview(
+          formData.fecha instanceof Date ? formData.fecha : new Date(formData.fecha),
+          config,
+        )
+        setRecurrencePreview(preview)
+      } catch (error) {
+        console.error("Error generating recurrence preview:", error)
+        setRecurrencePreview(null)
+      }
+    } else {
+      setRecurrencePreview(null)
+    }
+  }, [
+    formData.isRecurring,
+    formData.recurrenceType,
+    formData.recurrenceInterval,
+    formData.recurrenceEndDate,
+    formData.fecha,
+  ])
 
   // Verificar consultas disponibles
   const checkConsultationAvailability = useCallback(async () => {
@@ -440,6 +483,11 @@ export function AppointmentFormModal({
     [services],
   )
 
+  // 🆕 Manejar cambio de recurrencia
+  const handleRecurrenceChange = useCallback((field: string, value: any) => {
+    setFormData((prev) => ({ ...prev, [field]: value }))
+  }, [])
+
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault()
@@ -460,6 +508,29 @@ export function AppointmentFormModal({
         newErrors.telefono = "Debes proporcionar un teléfono válido"
       }
 
+      // 🆕 Validaciones de recurrencia
+      if (formData.isRecurring) {
+        if (!formData.recurrenceEndDate) {
+          newErrors.recurrenceEndDate = "Debes seleccionar una fecha de finalización"
+        }
+
+        if (formData.recurrenceInterval < 1 || formData.recurrenceInterval > 12) {
+          newErrors.recurrenceInterval = "El intervalo debe estar entre 1 y 12"
+        }
+
+        // Validar usando el servicio de recurrencia
+        const config: RecurrenceConfig = {
+          type: formData.recurrenceType as "weekly" | "monthly",
+          interval: formData.recurrenceInterval,
+          endDate: formData.recurrenceEndDate,
+        }
+
+        const validationErrors = RecurrenceService.validateRecurrenceConfig(config)
+        if (validationErrors.length > 0) {
+          newErrors.recurrence = validationErrors.join(", ")
+        }
+      }
+
       if (Object.keys(newErrors).length > 0) {
         setErrors(newErrors)
         return
@@ -476,6 +547,11 @@ export function AppointmentFormModal({
         consultationId:
           formData.consultationId === "none" || !formData.consultationId ? undefined : formData.consultationId,
         profesionalId: formData.profesionalId || profesionalId,
+        // 🆕 Campos de recurrencia
+        isRecurring: formData.isRecurring,
+        recurrenceType: formData.isRecurring ? formData.recurrenceType : undefined,
+        recurrenceInterval: formData.isRecurring ? formData.recurrenceInterval : undefined,
+        recurrenceEndDate: formData.isRecurring ? formData.recurrenceEndDate : undefined,
       }
 
       onSubmit(nuevaCita)
@@ -509,6 +585,7 @@ export function AppointmentFormModal({
           <DialogTitle className="flex items-center gap-2 text-lg">
             {citaExistente ? "Editar Cita" : waitingListEntry ? "Programar desde Lista de Espera" : "Nueva Cita"}
             {clienteEncontrado && <CheckCircle className="h-4 w-4 text-green-600" />}
+            {formData.isRecurring && <Repeat className="h-4 w-4 text-blue-600" />}
           </DialogTitle>
         </DialogHeader>
 
@@ -570,9 +647,7 @@ export function AppointmentFormModal({
                 onFocus={() => searchTerm && searchClients(searchTerm)}
                 placeholder="Buscar por teléfono (3+ dígitos), nombre o apellido..."
                 required
-                className={`w-full ${errors.telefono ? "border-red-500" : ""} ${
-                  clienteEncontrado ? "border-green-500" : ""
-                }`}
+                className={`w-full ${errors.telefono ? "border-red-500" : ""} ${clienteEncontrado ? "border-green-500" : ""}`}
               />
               {searchingClients && (
                 <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 animate-spin text-gray-400" />
@@ -727,7 +802,7 @@ export function AppointmentFormModal({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label htmlFor="fecha" className="flex items-center gap-2 text-sm font-medium">
-                <Calendar className="h-4 w-4" />
+                <CalendarIcon className="h-4 w-4" />
                 Fecha *
               </Label>
               <Input
@@ -782,6 +857,163 @@ export function AppointmentFormModal({
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          {/* 🆕 SECCIÓN DE RECURRENCIA */}
+          <div className="border-t pt-4">
+            <div className="flex items-center space-x-2 mb-4">
+              <Checkbox
+                id="isRecurring"
+                checked={formData.isRecurring}
+                onCheckedChange={(checked) => handleRecurrenceChange("isRecurring", checked)}
+              />
+              <Label htmlFor="isRecurring" className="flex items-center gap-2">
+                <Repeat className="h-4 w-4" />
+                Repetir esta cita
+              </Label>
+            </div>
+
+            {formData.isRecurring && (
+              <div className="space-y-4 bg-blue-50 p-4 rounded-lg">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="recurrenceType">Frecuencia</Label>
+                    <Select
+                      value={formData.recurrenceType}
+                      onValueChange={(value) => handleRecurrenceChange("recurrenceType", value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="weekly">Semanal</SelectItem>
+                        <SelectItem value="monthly">Mensual</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="recurrenceInterval">
+                      Cada {formData.recurrenceType === "weekly" ? "semanas" : "meses"}
+                    </Label>
+                    <Select
+                      value={formData.recurrenceInterval.toString()}
+                      onValueChange={(value) => handleRecurrenceChange("recurrenceInterval", Number.parseInt(value))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[1, 2, 3, 4, 6, 8, 12].map((interval) => (
+                          <SelectItem key={interval} value={interval.toString()}>
+                            {interval}{" "}
+                            {formData.recurrenceType === "weekly"
+                              ? interval === 1
+                                ? "semana"
+                                : "semanas"
+                              : interval === 1
+                                ? "mes"
+                                : "meses"}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div>
+                  <Label htmlFor="recurrenceEndDate">Hasta el</Label>
+                  <Input
+                    id="recurrenceEndDate"
+                    type="date"
+                    value={
+                      formData.recurrenceEndDate
+                        ? (formData.recurrenceEndDate instanceof Date
+                            ? formData.recurrenceEndDate
+                            : new Date(formData.recurrenceEndDate)
+                          )
+                            .toISOString()
+                            .split("T")[0]
+                        : ""
+                    }
+                    onChange={(e) => {
+                      const date = e.target.value ? new Date(e.target.value + "T00:00:00") : null
+                      handleRecurrenceChange("recurrenceEndDate", date)
+                    }}
+                    min={
+                      (formData.fecha instanceof Date ? formData.fecha : new Date(formData.fecha))
+                        .toISOString()
+                        .split("T")[0]
+                    }
+                    className={`w-full ${errors.recurrenceEndDate ? "border-red-500" : ""}`}
+                    required={formData.isRecurring}
+                  />
+                  {errors.recurrenceEndDate && <p className="text-sm text-red-600 mt-1">{errors.recurrenceEndDate}</p>}
+                </div>
+
+                {/* Preview de recurrencia */}
+                {recurrencePreview && (
+                  <div className="bg-white p-3 rounded border">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-medium text-sm">Vista previa</h4>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowRecurrencePreview(!showRecurrencePreview)}
+                      >
+                        {showRecurrencePreview ? "Ocultar" : "Ver fechas"}
+                      </Button>
+                    </div>
+
+                    <p className="text-sm text-gray-600 mb-2">
+                      Se crearán <strong>{recurrencePreview.count}</strong> citas hasta el{" "}
+                      <strong>{format(formData.recurrenceEndDate, "dd/MM/yyyy")}</strong>
+                    </p>
+
+                    {recurrencePreview.conflicts.length > 0 && (
+                      <Alert className="mb-2">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertDescription className="text-sm">
+                          ⚠️ {recurrencePreview.conflicts.length} fechas pueden tener conflictos
+                        </AlertDescription>
+                      </Alert>
+                    )}
+
+                    {showRecurrencePreview && (
+                      <div className="max-h-32 overflow-y-auto">
+                        <div className="grid grid-cols-3 gap-1 text-xs">
+                          {recurrencePreview.dates.slice(0, 12).map((date, index) => (
+                            <div
+                              key={index}
+                              className={`p-1 rounded text-center ${
+                                recurrencePreview.conflicts.some((conflict) => conflict.getTime() === date.getTime())
+                                  ? "bg-red-100 text-red-700"
+                                  : "bg-gray-100"
+                              }`}
+                            >
+                              {format(date, "dd/MM")}
+                            </div>
+                          ))}
+                          {recurrencePreview.dates.length > 12 && (
+                            <div className="p-1 text-center text-gray-500">
+                              +{recurrencePreview.dates.length - 12} más
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {errors.recurrence && (
+                  <Alert className="border-red-200 bg-red-50">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription className="text-red-800">{errors.recurrence}</AlertDescription>
+                  </Alert>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Advertencia de conflictos */}
@@ -964,6 +1196,7 @@ export function AppointmentFormModal({
             <p>• Selecciona un servicio para filtrar profesionales específicos</p>
             <p>• Las consultas son opcionales - puedes crear citas sin asignar consulta</p>
             <p>• El sistema verificará automáticamente conflictos de horario</p>
+            {formData.isRecurring && <p>• Las citas recurrentes se crean todas de una vez</p>}
             {waitingListEntry && (
               <p className="text-blue-600">• Los datos de la lista de espera se han pre-rellenado automáticamente</p>
             )}
@@ -978,7 +1211,8 @@ export function AppointmentFormModal({
               Cancelar
             </Button>
             <Button type="submit" disabled={searchingClients || consultationsLoading || conflictsLoading}>
-              {citaExistente ? "Actualizar" : "Crear"} Cita
+              {citaExistente ? "Actualizar" : "Crear"}
+              {formData.isRecurring && recurrencePreview ? ` (${recurrencePreview.count} citas)` : " Cita"}
             </Button>
           </div>
         </form>

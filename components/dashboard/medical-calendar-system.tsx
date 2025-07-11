@@ -4,7 +4,7 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns"
 import { Button } from "@/components/ui/button"
-import { ChevronLeft, ChevronRight, Plus, Search, CalendarIcon, Clock } from "lucide-react"
+import { ChevronLeft, ChevronRight, Plus, Search, Clock } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CalendarSearch } from "@/components/calendar/calendar-search"
 import { ProfesionalesLegend } from "@/components/calendar/profesionales-legend"
@@ -312,8 +312,18 @@ const MedicalCalendarSystem: React.FC = () => {
         status: mapEstadoToStatus(appointmentData.estado) || "confirmed",
         notes: appointmentData.notas || undefined,
         created_by: currentUser.id,
+        // 🆕 Campos de recurrencia
+        is_recurring: appointmentData.isRecurring || false,
+        recurrence_type: appointmentData.isRecurring ? appointmentData.recurrenceType || "weekly" : null,
+        recurrence_interval: appointmentData.isRecurring ? appointmentData.recurrenceInterval || 1 : null,
+        recurrence_end_date:
+          appointmentData.isRecurring && appointmentData.recurrenceEndDate
+            ? format(appointmentData.recurrenceEndDate, "yyyy-MM-dd")
+            : null,
+        parent_appointment_id: appointmentData.parentAppointmentId || null,
       }
 
+      // ✅ CORREGIDO: Solo pasar el objeto AppointmentInsert
       await createAppointment(newAppointment)
 
       // 🆕 Si viene de lista de espera, eliminarla después de crear la cita
@@ -779,10 +789,9 @@ const MedicalCalendarSystem: React.FC = () => {
             <div className="px-4 py-3 border-b">
               <Popover>
                 <PopoverTrigger asChild>
-                <Button variant="ghost" className="flex items-center gap-2 text-xl font-medium capitalize hover:bg-muted/50 p-0 h-auto">
-                  <CalendarIcon className="h-5 w-5" />
-                  {getDateTitle()}
-                </Button>
+                  <Button variant="ghost" className="text-xl font-medium capitalize hover:bg-muted/50 p-0 h-auto">
+                    {getDateTitle()}
+                  </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
                   <Calendar

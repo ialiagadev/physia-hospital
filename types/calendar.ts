@@ -12,6 +12,25 @@ export interface AppointmentUpdate {
   appointment_type_id?: number
   consultation_id?: string
   service_id?: number | null // 🆕 Cambiado de string | null a number | null
+  // 🆕 CAMPOS DE RECURRENCIA
+  is_recurring?: boolean
+  recurrence_type?: "weekly" | "monthly" | null
+  recurrence_interval?: number | null
+  recurrence_end_date?: string | null
+  parent_appointment_id?: string | null
+}
+
+// 🆕 TIPOS PARA RECURRENCIA
+export interface RecurrenceConfig {
+  type: "weekly" | "monthly"
+  interval: number // cada cuánto (1, 2, 3...)
+  endDate: Date
+}
+
+export interface RecurrencePreview {
+  dates: Date[]
+  count: number
+  conflicts: Date[]
 }
 
 export interface Database {
@@ -74,6 +93,12 @@ export interface Database {
           updated_at: string
           created_by: string
           service_id: number | null // 🆕 Cambiado de string | null a number | null
+          // 🆕 CAMPOS DE RECURRENCIA
+          is_recurring: boolean
+          recurrence_type: "weekly" | "monthly" | null
+          recurrence_interval: number | null
+          recurrence_end_date: string | null
+          parent_appointment_id: string | null
         }
         Insert: {
           id?: string
@@ -93,6 +118,12 @@ export interface Database {
           updated_at?: string
           created_by: string
           service_id?: number | null // 🆕 Cambiado de string | null a number | null
+          // 🆕 CAMPOS DE RECURRENCIA
+          is_recurring?: boolean
+          recurrence_type?: "weekly" | "monthly" | null
+          recurrence_interval?: number | null
+          recurrence_end_date?: string | null
+          parent_appointment_id?: string | null
         }
         Update: {
           id?: string
@@ -112,6 +143,12 @@ export interface Database {
           updated_at?: string
           created_by?: string
           service_id?: number | null // 🆕 Cambiado de string | null a number | null
+          // 🆕 CAMPOS DE RECURRENCIA
+          is_recurring?: boolean
+          recurrence_type?: "weekly" | "monthly" | null
+          recurrence_interval?: number | null
+          recurrence_end_date?: string | null
+          parent_appointment_id?: string | null
         }
       }
       services: {
@@ -307,6 +344,12 @@ export interface Cita {
   // NUEVOS CAMPOS PARA ACTIVIDADES GRUPALES
   isGroupActivity?: boolean
   groupActivityData?: GroupActivity
+  // 🆕 CAMPOS DE RECURRENCIA
+  isRecurring?: boolean
+  recurrenceType?: "weekly" | "monthly"
+  recurrenceInterval?: number
+  recurrenceEndDate?: Date
+  parentAppointmentId?: string
 }
 
 // NUEVO: Tipo para múltiples descansos
@@ -469,6 +512,12 @@ export interface AppointmentWithDetails {
   // 🆕 NUEVOS CAMPOS DEL HISTORIAL MÉDICO
   motivo_consulta?: string | null
   diagnostico?: string | null
+  // 🆕 CAMPOS DE RECURRENCIA
+  is_recurring: boolean
+  recurrence_type: "weekly" | "monthly" | null
+  recurrence_interval: number | null
+  recurrence_end_date: string | null
+  parent_appointment_id: string | null
   // Relaciones
   client: Client
   professional: User
@@ -493,6 +542,12 @@ export interface AppointmentInsert {
   notes?: string | null
   created_by: string
   service_id?: number | null // 🆕 Cambiado de string | null a number | null
+  // 🆕 CAMPOS DE RECURRENCIA
+  is_recurring?: boolean
+  recurrence_type?: "weekly" | "monthly" | null
+  recurrence_interval?: number | null
+  recurrence_end_date?: string | null
+  parent_appointment_id?: string | null
 }
 
 // Tipo para servicios
