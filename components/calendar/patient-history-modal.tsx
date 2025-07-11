@@ -617,9 +617,7 @@ export function PatientHistoryModal({ client, isOpen, onClose, isEmbedded = fals
                                 {format(new Date(history.created_at), "d MMM", { locale: es })}
                               </Badge>
                               <div className="flex items-center gap-2">
-                                {history.profesional_nombre && (
-                                  <span className="text-xs text-purple-600">{history.profesional_nombre}</span>
-                                )}
+                               
                                 {expandedHistories.has(history.id) ? (
                                   <ChevronUp className="h-4 w-4 text-purple-600" />
                                 ) : (

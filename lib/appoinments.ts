@@ -30,6 +30,9 @@ interface AppointmentData {
     id: string
     name: string
   } | null
+  // Nuevos campos del historial médico
+  motivo_consulta?: string | null
+  diagnostico?: string | null
 }
 
 interface AppointmentResponse {
@@ -104,7 +107,6 @@ export async function getTomorrowAppointments(
     await debugAppointments(organizationId)
 
     // Consulta paso a paso para debuggear
-
     // 1. Ver todas las citas de la fecha sin filtros
     const { data: allDateAppointments, error: dateError } = await supabase
       .from("appointments")
@@ -122,7 +124,7 @@ export async function getTomorrowAppointments(
 
     console.log("2. Citas para", tomorrowDate, "en org", organizationId, ":", orgAppointments)
 
-    // 3. Consulta completa
+    // 3. Consulta completa con historial médico
     let query = supabase
       .from("appointments")
       .select(`
@@ -154,13 +156,15 @@ export async function getTomorrowAppointments(
         appointment_types!appointments_appointment_type_id_fkey (
           id,
           name
+        ),
+        medical_histories!inner(
+          motivo_consulta,
+          diagnostico
         )
       `)
       .eq("organization_id", organizationId)
       .eq("date", tomorrowDate)
-
-    // Comentar temporalmente el filtro de status para ver si es el problema
-    // .in("status", ["confirmed", "pending"])
+      .eq("medical_histories.is_active", true)
 
     if (professionalId) {
       query = query.eq("professional_id", professionalId)
@@ -196,6 +200,9 @@ export async function getTomorrowAppointments(
       clients: appointment.clients,
       professional: appointment.professional,
       appointment_types: appointment.appointment_types,
+      // Nuevos campos del historial médico
+      motivo_consulta: appointment.medical_histories?.[0]?.motivo_consulta || null,
+      diagnostico: appointment.medical_histories?.[0]?.diagnostico || null,
     }))
 
     return {
@@ -254,12 +261,15 @@ export async function getAppointmentsByDate(
         appointment_types!appointments_appointment_type_id_fkey (
           id,
           name
+        ),
+        medical_histories!left(
+          motivo_consulta,
+          diagnostico
         )
       `)
       .eq("organization_id", organizationId)
       .eq("date", date)
-    // Comentar temporalmente el filtro de status
-    // .in("status", ["confirmed", "pending"])
+      .eq("medical_histories.is_active", true)
 
     if (professionalId) {
       query = query.eq("professional_id", professionalId)
@@ -295,6 +305,9 @@ export async function getAppointmentsByDate(
       clients: appointment.clients,
       professional: appointment.professional,
       appointment_types: appointment.appointment_types,
+      // Nuevos campos del historial médico - obtener el más reciente
+      motivo_consulta: appointment.medical_histories?.[0]?.motivo_consulta || null,
+      diagnostico: appointment.medical_histories?.[0]?.diagnostico || null,
     }))
 
     return {

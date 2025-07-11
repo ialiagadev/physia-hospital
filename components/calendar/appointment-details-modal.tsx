@@ -48,12 +48,65 @@ export function AppointmentDetailsModal({
     setIsEditing(false)
   }, [appointment])
 
+  // Funciones helper para manejar tiempos
+  const timeToMinutes = (time: string): number => {
+    const [hours, minutes] = time.split(":").map(Number)
+    return hours * 60 + minutes
+  }
+
+  const minutesToTime = (minutes: number): string => {
+    const hours = Math.floor(minutes / 60)
+    const mins = minutes % 60
+    return `${hours.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}`
+  }
+
+  const calculateEndTime = (startTime: string, duration: number): string => {
+    const startMinutes = timeToMinutes(startTime)
+    const endMinutes = startMinutes + duration
+    return minutesToTime(endMinutes)
+  }
+
+  const calculateDuration = (startTime: string, endTime: string): number => {
+    const startMinutes = timeToMinutes(startTime)
+    const endMinutes = timeToMinutes(endTime)
+    return Math.max(0, endMinutes - startMinutes)
+  }
+
+  // Handlers para sincronizar tiempos
+  const handleStartTimeChange = (newStartTime: string) => {
+    const newEndTime = calculateEndTime(newStartTime, editedAppointment.duration)
+    setEditedAppointment({
+      ...editedAppointment,
+      start_time: newStartTime,
+      end_time: newEndTime,
+    })
+  }
+
+  const handleEndTimeChange = (newEndTime: string) => {
+    const newDuration = calculateDuration(editedAppointment.start_time, newEndTime)
+    setEditedAppointment({
+      ...editedAppointment,
+      end_time: newEndTime,
+      duration: newDuration,
+    })
+  }
+
+  const handleDurationChange = (newDuration: number) => {
+    const newEndTime = calculateEndTime(editedAppointment.start_time, newDuration)
+    setEditedAppointment({
+      ...editedAppointment,
+      duration: newDuration,
+      end_time: newEndTime,
+    })
+  }
+
   const handleSave = async () => {
     setIsSaving(true)
     try {
       await onUpdate(editedAppointment)
       setIsEditing(false)
       console.log("Cita actualizada correctamente")
+      onClose()
     } catch (error) {
       console.error("Error al actualizar la cita:", error)
     } finally {
@@ -245,12 +298,7 @@ export function AppointmentDetailsModal({
                         <Input
                           type="time"
                           value={editedAppointment.start_time}
-                          onChange={(e) =>
-                            setEditedAppointment({
-                              ...editedAppointment,
-                              start_time: e.target.value,
-                            })
-                          }
+                          onChange={(e) => handleStartTimeChange(e.target.value)}
                           className="h-8 text-sm w-20"
                           onClick={(e) => e.stopPropagation()}
                         />
@@ -258,12 +306,7 @@ export function AppointmentDetailsModal({
                         <Input
                           type="time"
                           value={editedAppointment.end_time}
-                          onChange={(e) =>
-                            setEditedAppointment({
-                              ...editedAppointment,
-                              end_time: e.target.value,
-                            })
-                          }
+                          onChange={(e) => handleEndTimeChange(e.target.value)}
                           className="h-8 text-sm w-20"
                           onClick={(e) => e.stopPropagation()}
                         />
@@ -273,12 +316,7 @@ export function AppointmentDetailsModal({
                         <Input
                           type="number"
                           value={editedAppointment.duration}
-                          onChange={(e) =>
-                            setEditedAppointment({
-                              ...editedAppointment,
-                              duration: Number.parseInt(e.target.value) || 30,
-                            })
-                          }
+                          onChange={(e) => handleDurationChange(Number.parseInt(e.target.value) || 30)}
                           className="h-8 text-sm w-16"
                           min="15"
                           step="15"
@@ -326,12 +364,27 @@ export function AppointmentDetailsModal({
                       <Badge className={getStatusColor(appointment.status)}>{getStatusLabel(appointment.status)}</Badge>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-gray-700">Tipo:</span>
-                    <span className="text-sm text-gray-900">
-                      {appointment.appointment_type?.name || "Consulta General"}
-                    </span>
-                  </div>
+
+                  {/* MOTIVO DE CONSULTA - Solo mostrar si existe */}
+                  {appointment.motivo_consulta && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-gray-700">Motivo:</span>
+                      <span className="text-sm text-gray-900 max-w-48 truncate" title={appointment.motivo_consulta}>
+                        {appointment.motivo_consulta}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* DIAGNÓSTICO - Solo mostrar si existe */}
+                  {appointment.diagnostico && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-gray-700">Diagnóstico:</span>
+                      <span className="text-sm text-gray-900 max-w-48 truncate" title={appointment.diagnostico}>
+                        {appointment.diagnostico}
+                      </span>
+                    </div>
+                  )}
+
                   {/* CONSULTA - Solo mostrar si realmente hay una consulta válida seleccionada */}
                   {hasValidConsultation() && (
                     <div className="flex items-center gap-2">

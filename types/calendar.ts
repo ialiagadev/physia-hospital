@@ -215,7 +215,8 @@ export interface GroupActivity {
     id: string
     name: string
   }
-  service?: { // 🆕 AÑADIDO
+  service?: {
+    // 🆕 AÑADIDO
     id: number
     name: string
     color: string
@@ -465,6 +466,9 @@ export interface AppointmentWithDetails {
   updated_at: string
   created_by: string
   service_id: number | null // 🆕 Cambiado de string | null a number | null
+  // 🆕 NUEVOS CAMPOS DEL HISTORIAL MÉDICO
+  motivo_consulta?: string | null
+  diagnostico?: string | null
   // Relaciones
   client: Client
   professional: User
