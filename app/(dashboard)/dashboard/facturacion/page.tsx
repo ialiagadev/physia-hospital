@@ -3,8 +3,7 @@
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase/client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Building2, FileText, Users, CreditCard } from "lucide-react"
-import { OrganizationSelector } from "@/components/organization-selector"
+import { FileText, Users, CreditCard } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { TrendIndicator } from "@/components/ui/trend-indicator"
@@ -12,7 +11,6 @@ import { useCountAnimation } from "@/hooks/use-count-animation"
 import { useAuth } from "@/app/contexts/auth-context"
 
 interface DashboardStats {
-  organizations: number
   clients: number
   invoices: number
   totalRevenue: number
@@ -33,10 +31,31 @@ interface TrendData {
   periodRevenue: number
 }
 
+interface RecentInvoice {
+  id: string
+  invoice_number: string
+  issue_date: string
+  total_amount: number
+  status: string
+  clients: { name: string }[] | null
+}
+
+interface RecentClient {
+  id: string
+  name: string
+  tax_id: string
+  client_type: string
+  created_at: string
+}
+
+interface InvoiceData {
+  total_amount: number | null
+  client_id: string | null
+}
+
 export default function DashboardPage() {
   const { userProfile } = useAuth()
   const [stats, setStats] = useState<DashboardStats>({
-    organizations: 0,
     clients: 0,
     invoices: 0,
     totalRevenue: 0,
@@ -51,9 +70,8 @@ export default function DashboardPage() {
     averageTicket: 0,
     periodRevenue: 0,
   })
-  const [recentInvoices, setRecentInvoices] = useState<any[]>([])
-  const [recentClients, setRecentClients] = useState<any[]>([])
-  const [selectedOrgId, setSelectedOrgId] = useState("all")
+  const [recentInvoices, setRecentInvoices] = useState<RecentInvoice[]>([])
+  const [recentClients, setRecentClients] = useState<RecentClient[]>([])
   const [loading, setLoading] = useState(true)
   const { toast } = useToast()
 
@@ -167,11 +185,9 @@ export default function DashboardPage() {
         .lte("issue_date", endDate.toISOString().split("T")[0])
         .in("status", ["sent", "paid"]) // Solo facturas válidas
 
-      // Filtrar por organización si no es admin de Physia
-      if (!userProfile?.is_physia_admin && userProfile?.organization_id) {
+      // Filtrar por organización del usuario
+      if (userProfile?.organization_id) {
         invoicesQuery = invoicesQuery.eq("organization_id", userProfile.organization_id)
-      } else if (selectedOrgId !== "all") {
-        invoicesQuery = invoicesQuery.eq("organization_id", selectedOrgId)
       }
 
       const { data: invoices, error: invoicesError } = await invoicesQuery
@@ -224,90 +240,109 @@ export default function DashboardPage() {
     if (!loading) {
       loadPeriodRevenue()
     }
-  }, [selectedPeriod, selectedOrgId, loading, userProfile])
+  }, [selectedPeriod, loading, userProfile])
 
   useEffect(() => {
     async function loadDashboardData() {
       setLoading(true)
       try {
-        // Obtener estadísticas básicas con consultas optimizadas
-        const queries = []
-
-        // 1. Organizaciones (solo para admins de Physia)
-        if (userProfile?.is_physia_admin) {
-          queries.push(supabase.from("organizations").select("id", { count: "exact", head: true }))
+        // OPTIMIZACIÓN: Crear funciones que devuelven Promises reales
+        const getClientsCount = async () => {
+          let clientsQuery = supabase.from("clients").select("id", { count: "exact", head: true })
+          if (userProfile?.organization_id) {
+            clientsQuery = clientsQuery.eq("organization_id", userProfile.organization_id)
+          }
+          return await clientsQuery
         }
 
-        // 2. Clientes con filtro por organización
-        let clientsQuery = supabase.from("clients").select("id", { count: "exact", head: true })
-
-        if (!userProfile?.is_physia_admin && userProfile?.organization_id) {
-          clientsQuery = clientsQuery.eq("organization_id", userProfile.organization_id)
-        } else if (selectedOrgId !== "all") {
-          clientsQuery = clientsQuery.eq("organization_id", selectedOrgId)
+        const getInvoicesData = async () => {
+          let invoicesQuery = supabase.from("invoices").select("total_amount, client_id").in("status", ["sent", "paid"])
+          if (userProfile?.organization_id) {
+            invoicesQuery = invoicesQuery.eq("organization_id", userProfile.organization_id)
+          }
+          return await invoicesQuery
         }
-        queries.push(clientsQuery)
 
-        // 3. Facturas con agregaciones
-        let invoicesQuery = supabase.from("invoices").select("total_amount, client_id").in("status", ["sent", "paid"]) // Solo facturas válidas
+        const getRecentInvoices = async () => {
+          let recentInvoicesQuery = supabase
+            .from("invoices")
+            .select(`
+            id,
+            invoice_number,
+            issue_date,
+            total_amount,
+            status,
+            clients (name)
+          `)
+            .order("created_at", { ascending: false })
+            .limit(5)
 
-        if (!userProfile?.is_physia_admin && userProfile?.organization_id) {
-          invoicesQuery = invoicesQuery.eq("organization_id", userProfile.organization_id)
-        } else if (selectedOrgId !== "all") {
-          invoicesQuery = invoicesQuery.eq("organization_id", selectedOrgId)
+          if (userProfile?.organization_id) {
+            recentInvoicesQuery = recentInvoicesQuery.eq("organization_id", userProfile.organization_id)
+          }
+          return await recentInvoicesQuery
         }
-        queries.push(invoicesQuery)
 
-        // Ejecutar consultas en paralelo
-        const results = await Promise.all(queries)
+        const getRecentClients = async () => {
+          let recentClientsQuery = supabase
+            .from("clients")
+            .select("id, name, tax_id, client_type, created_at")
+            .order("created_at", { ascending: false })
+            .limit(5)
 
-        let organizationsCount = 0
-        let clientsCount = 0
-        let invoicesData = []
-
-        if (userProfile?.is_physia_admin) {
-          organizationsCount = results[0]?.count || 0
-          clientsCount = results[1]?.count || 0
-          invoicesData = results[2]?.data || []
-        } else {
-          clientsCount = results[0]?.count || 0
-          invoicesData = results[1]?.data || []
+          if (userProfile?.organization_id) {
+            recentClientsQuery = recentClientsQuery.eq("organization_id", userProfile.organization_id)
+          }
+          return await recentClientsQuery
         }
+
+        // Calcular fechas para estadísticas
+        const currentMonth = new Date()
+        const currentMonthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1)
+        const currentMonthEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0)
+
+        const previousMonth = new Date()
+        previousMonth.setMonth(previousMonth.getMonth() - 1)
+        const previousMonthStart = new Date(previousMonth.getFullYear(), previousMonth.getMonth(), 1)
+        const previousMonthEnd = new Date(previousMonth.getFullYear(), previousMonth.getMonth() + 1, 0)
+
+        // EJECUTAR TODAS LAS CONSULTAS EN PARALELO
+        const [
+          clientsResult,
+          invoicesResult,
+          currentMonthStats,
+          previousMonthStats,
+          recentInvoicesResult,
+          recentClientsResult,
+        ] = await Promise.all([
+          getClientsCount(),
+          getInvoicesData(),
+          getPeriodStats(currentMonthStart, currentMonthEnd),
+          getPeriodStats(previousMonthStart, previousMonthEnd),
+          getRecentInvoices(),
+          getRecentClients(),
+        ])
+
+        // Procesar resultados
+        const clientsCount = clientsResult?.count || 0
+        const invoicesData = (invoicesResult?.data as InvoiceData[]) || []
+        const recentInvoicesData = (recentInvoicesResult?.data || []) as unknown as RecentInvoice[]
+        const recentClientsData = (recentClientsResult?.data as RecentClient[]) || []
 
         // Calcular métricas de facturas
-        const totalRevenue = invoicesData.reduce((sum: number, invoice: any) => sum + (invoice.total_amount || 0), 0)
+        const totalRevenue = invoicesData.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0)
         const invoicesCount = invoicesData.length
-
-        // Ticket medio: promedio del valor de las facturas (no por cliente)
         const averageTicket = invoicesCount > 0 ? totalRevenue / invoicesCount : 0
 
         // Actualizar estadísticas
         setStats({
-          organizations: organizationsCount,
           clients: clientsCount,
           invoices: invoicesCount,
           totalRevenue,
           averageTicket,
         })
 
-        // Calcular tendencias comparando con períodos anteriores
-        const currentMonth = new Date()
-        const previousMonth = new Date()
-        previousMonth.setMonth(previousMonth.getMonth() - 1)
-
-        // Obtener datos del mes anterior para comparar
-        const [currentMonthStats, previousMonthStats] = await Promise.all([
-          getPeriodStats(
-            new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1),
-            new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0),
-          ),
-          getPeriodStats(
-            new Date(previousMonth.getFullYear(), previousMonth.getMonth(), 1),
-            new Date(previousMonth.getFullYear(), previousMonth.getMonth() + 1, 0),
-          ),
-        ])
-
-        // Calcular tendencias reales
+        // Calcular tendencias reales usando los datos ya obtenidos
         setTrends({
           clients: calculateTrend(currentMonthStats.clients, previousMonthStats.clients),
           invoices: calculateTrend(currentMonthStats.invoices, previousMonthStats.invoices),
@@ -319,44 +354,9 @@ export default function DashboardPage() {
           periodRevenue: 0, // Se calculará en el otro useEffect
         })
 
-        // Obtener facturas recientes
-        let recentInvoicesQuery = supabase
-          .from("invoices")
-          .select(`
-            id,
-            invoice_number,
-            issue_date,
-            total_amount,
-            status,
-            clients (name)
-          `)
-          .order("created_at", { ascending: false })
-          .limit(5)
-
-        if (!userProfile?.is_physia_admin && userProfile?.organization_id) {
-          recentInvoicesQuery = recentInvoicesQuery.eq("organization_id", userProfile.organization_id)
-        } else if (selectedOrgId !== "all") {
-          recentInvoicesQuery = recentInvoicesQuery.eq("organization_id", selectedOrgId)
-        }
-
-        const { data: recentInvoicesData } = await recentInvoicesQuery
-        setRecentInvoices(recentInvoicesData || [])
-
-        // Obtener clientes recientes
-        let recentClientsQuery = supabase
-          .from("clients")
-          .select("id, name, tax_id, client_type, created_at")
-          .order("created_at", { ascending: false })
-          .limit(5)
-
-        if (!userProfile?.is_physia_admin && userProfile?.organization_id) {
-          recentClientsQuery = recentClientsQuery.eq("organization_id", userProfile.organization_id)
-        } else if (selectedOrgId !== "all") {
-          recentClientsQuery = recentClientsQuery.eq("organization_id", selectedOrgId)
-        }
-
-        const { data: recentClientsData } = await recentClientsQuery
-        setRecentClients(recentClientsData || [])
+        // Actualizar datos recientes
+        setRecentInvoices(recentInvoicesData)
+        setRecentClients(recentClientsData)
 
         setLoading(false)
       } catch (error) {
@@ -373,7 +373,7 @@ export default function DashboardPage() {
     if (userProfile) {
       loadDashboardData()
     }
-  }, [selectedOrgId, userProfile, toast])
+  }, [userProfile, toast])
 
   // Obtener el título y descripción del período para mostrar
   const getPeriodTitle = () => {
@@ -406,6 +406,14 @@ export default function DashboardPage() {
     }
   }
 
+  // Helper function to get client name from invoice
+  const getClientName = (invoice: RecentInvoice): string => {
+    if (invoice.clients && Array.isArray(invoice.clients) && invoice.clients.length > 0) {
+      return invoice.clients[0].name
+    }
+    return "Cliente desconocido"
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -434,26 +442,8 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Selector de organización - SOLO PARA ADMINS DE PHYSIA */}
-      {userProfile?.is_physia_admin && (
-        <OrganizationSelector selectedOrgId={selectedOrgId} onSelectOrganization={setSelectedOrgId} className="mb-6" />
-      )}
-
-      {/* Primera fila: Organizaciones, Clientes, Facturas */}
-      <div className="grid gap-4 md:grid-cols-3">
-        {userProfile?.is_physia_admin && (
-          <Card className="border-l-4 border-l-purple-500">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Organizaciones</CardTitle>
-              <Building2 className="h-4 w-4 text-purple-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.organizations}</div>
-              <p className="text-xs text-muted-foreground">Total de organizaciones</p>
-            </CardContent>
-          </Card>
-        )}
-
+      {/* Primera fila: Clientes, Facturas */}
+      <div className="grid gap-4 md:grid-cols-2">
         <Card className="border-l-4 border-l-indigo-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Clientes</CardTitle>
@@ -555,8 +545,7 @@ export default function DashboardPage() {
                     <div>
                       <p className="font-medium">{invoice.invoice_number}</p>
                       <p className="text-sm text-muted-foreground">
-                        {new Date(invoice.issue_date).toLocaleDateString()} -{" "}
-                        {invoice.clients?.name || "Cliente desconocido"}
+                        {new Date(invoice.issue_date).toLocaleDateString()} - {getClientName(invoice)}
                       </p>
                     </div>
                     <div className="font-medium">{formatCurrency(invoice.total_amount || 0)}</div>
