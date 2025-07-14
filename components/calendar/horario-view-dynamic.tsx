@@ -20,6 +20,7 @@ import { toast } from "sonner"
 import { format } from "date-fns"
 import type { WorkSchedule } from "@/types/calendar"
 import type { JSX } from "react"
+// ✅ CAMBIO: Importar el contexto en lugar del hook
 
 interface HorarioViewDynamicProps {
   date: Date
@@ -117,6 +118,8 @@ export function HorarioViewDynamic({
   getUserVacationOnDate = () => null,
   workSchedules = [], // SOLO SISTEMA NUEVO
 }: HorarioViewDynamicProps) {
+
+
   const [draggedCita, setDraggedCita] = useState<Cita | null>(null)
   const [dragOverProfesional, setDragOverProfesional] = useState<number | null>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -372,6 +375,7 @@ export function HorarioViewDynamic({
 
     const workingHours = getWorkingHoursForDay(user, dayOfWeek)
     const userSchedules = getUserWorkSchedulesForDay(user.id, dayOfWeek, workSchedules)
+
     const huecos: JSX.Element[] = []
 
     for (const hours of workingHours) {
@@ -379,7 +383,6 @@ export function HorarioViewDynamic({
       const schedule = userSchedules.find(
         (s) => timeToMinutes(s.start_time) <= hours.start && timeToMinutes(s.end_time) >= hours.end,
       )
-
       const descansos = schedule?.breaks?.filter((b) => b.is_active) || []
 
       // Crear segmentos de tiempo entre descansos

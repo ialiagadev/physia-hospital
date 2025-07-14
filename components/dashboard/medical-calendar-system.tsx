@@ -37,11 +37,12 @@ import { WeekView } from "@/components/calendar/week-view"
 import { MonthView } from "@/components/calendar/month-view"
 import { HorarioViewDynamic } from "@/components/calendar/horario-view-dynamic"
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select"
-import { GroupActivitiesView } from "@/components/group-activities/group-activities-view"
-import { useGroupActivities } from "@/hooks/use-group-activities"
+import { GroupActivitiesWrapper } from "../group-activities-wrapper"
 import { toast } from "sonner"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
+import { CalendarGroupActivitiesWrapper } from "../calendar/calendar-group-activities-wrapper"
+import { useGroupActivitiesContext } from "@/app/contexts/group-activities-context"
 
 // Define TabPrincipal locally to include new tabs
 type TabPrincipal = "calendario" | "lista-espera" | "actividades-grupales" | "usuarios" | "consultas" | "servicios"
@@ -99,9 +100,7 @@ const MedicalCalendarSystem: React.FC = () => {
   const removeFromWaitingList = async (entryId: string) => {
     try {
       const { error } = await supabase.from("waiting_list").delete().eq("id", entryId)
-
       if (error) throw error
-
       toast.success("Entrada eliminada de la lista de espera")
     } catch (error) {
       console.error("Error removing from waiting list:", error)
@@ -137,17 +136,6 @@ const MedicalCalendarSystem: React.FC = () => {
 
   // Hook de horarios de trabajo
   const { schedules: allWorkSchedules, loading: schedulesLoading } = useWorkSchedules(organizationId?.toString())
-
-  // Hook de actividades grupales
-  const {
-    activities: groupActivities,
-    loading: groupActivitiesLoading,
-    updateActivity: updateGroupActivity,
-    deleteActivity: deleteGroupActivity,
-    addParticipant: addGroupActivityParticipant,
-    removeParticipant: removeGroupActivityParticipant,
-    refetch: refetchGroupActivities, // ✅ AÑADIDO
-  } = useGroupActivities(organizationId, users)
 
   // Calcular rango de fechas para las citas
   const getDateRange = () => {
@@ -400,6 +388,7 @@ const MedicalCalendarSystem: React.FC = () => {
   // Handler para actualizar citas en formato legacy
   const handleUpdateLegacyAppointment = async (cita: any) => {
     const originalAppointment = appointments.find((apt) => Number.parseInt(apt.id.slice(-8), 16) === cita.id)
+
     if (originalAppointment) {
       const updatedAppointment = {
         ...originalAppointment,
@@ -411,70 +400,8 @@ const MedicalCalendarSystem: React.FC = () => {
           users.find((u) => Number.parseInt(u.id.slice(-8), 16) === cita.profesionalId)?.id ||
           originalAppointment.professional_id,
       }
+
       await handleUpdateAppointment(updatedAppointment)
-    }
-  }
-
-  // ✅ HANDLERS MEJORADOS PARA ACTIVIDADES GRUPALES
-  const handleAddGroupActivityParticipant = async (activityId: string, clientId: number, notes?: string) => {
-    try {
-      await addGroupActivityParticipant(activityId, clientId, notes)
-      // Refrescar datos después de añadir
-      await refetchGroupActivities()
-      toast.success("Participante añadido correctamente")
-      // ✅ CERRAR MODAL AUTOMÁTICAMENTE
-      setShowGroupActivityDetails(false)
-      setSelectedGroupActivity(null)
-    } catch (error) {
-      console.error("Error adding participant:", error)
-      toast.error("Error al añadir participante")
-      throw error
-    }
-  }
-
-  const handleRemoveGroupActivityParticipant = async (participantId: string) => {
-    try {
-      await removeGroupActivityParticipant(participantId)
-      // Refrescar datos después de eliminar
-      await refetchGroupActivities()
-      toast.success("Participante eliminado correctamente")
-      // ✅ CERRAR MODAL AUTOMÁTICAMENTE
-      setShowGroupActivityDetails(false)
-      setSelectedGroupActivity(null)
-    } catch (error) {
-      console.error("Error removing participant:", error)
-      toast.error("Error al eliminar participante")
-      throw error
-    }
-  }
-
-  // También actualizar el handler de actualización para que refresque:
-  const handleUpdateGroupActivity = async (id: string, updates: any) => {
-    try {
-      await updateGroupActivity(id, updates)
-      // Refrescar datos después de actualizar
-      await refetchGroupActivities()
-      toast.success("Actividad actualizada correctamente")
-    } catch (error) {
-      console.error("Error updating group activity:", error)
-      toast.error("Error al actualizar la actividad")
-      throw error
-    }
-  }
-
-  const handleDeleteGroupActivity = async (id: string) => {
-    try {
-      await deleteGroupActivity(id)
-      // Refrescar datos después de eliminar
-      await refetchGroupActivities()
-      toast.success("Actividad eliminada correctamente")
-      // ✅ CERRAR MODAL AUTOMÁTICAMENTE
-      setShowGroupActivityDetails(false)
-      setSelectedGroupActivity(null)
-    } catch (error) {
-      console.error("Error deleting group activity:", error)
-      toast.error("Error al eliminar la actividad")
-      throw error
     }
   }
 
@@ -505,6 +432,7 @@ const MedicalCalendarSystem: React.FC = () => {
       month: "long",
       day: "numeric",
     }
+
     switch (vistaCalendario) {
       case "dia":
         return currentDate.toLocaleDateString("es-ES", options)
@@ -521,6 +449,7 @@ const MedicalCalendarSystem: React.FC = () => {
   const isUserOnVacationDate = isUserOnVacationHook
   const getUserVacationOnDate = getUserVacation
 
+  // ✅ FUNCIONES DE CONVERSIÓN SIMPLIFICADAS PARA OTRAS VISTAS
   const convertAppointmentsToLegacyFormat = (appointments: AppointmentWithDetails[]) => {
     return appointments.map((apt) => ({
       id: Number.parseInt(apt.id.slice(-8), 16),
@@ -555,50 +484,92 @@ const MedicalCalendarSystem: React.FC = () => {
     }))
   }
 
-  const convertGroupActivitiesToLegacyFormat = (activities: any[]) => {
-    return activities.map((activity) => ({
-      id: `group_${activity.id}`,
-      nombrePaciente: `👥 ${activity.name}`,
-      apellidosPaciente: `(${activity.current_participants}/${activity.max_participants})`,
-      telefonoPaciente: activity.professional?.name || "Sin asignar",
-      hora: activity.start_time,
-      horaInicio: activity.start_time,
-      horaFin: activity.end_time,
-      duracion: calculateDurationFromTimes(activity.start_time, activity.end_time),
-      tipo: "Actividad Grupal",
-      notas: activity.description || "",
-      fecha: new Date(activity.date),
-      profesionalId: users.find((u) => u.id === activity.professional_id)
-        ? Number.parseInt(users.find((u) => u.id === activity.professional_id)!.id.slice(-8), 16)
-        : 0,
-      estado:
-        activity.status === "active" ? "confirmada" : activity.status === "completed" ? "completada" : "cancelada",
-      consultationId: activity.consultation_id,
-      consultation: activity.consultation,
-      isGroupActivity: true,
-      groupActivityData: activity,
-    }))
-  }
+  // ✅ COMPONENTE PARA HANDLERS DE ACTIVIDADES GRUPALES
+  function GroupActivityHandlers({ children }: { children: React.ReactNode }) {
+    const {
+      updateActivity: updateGroupActivity,
+      deleteActivity: deleteGroupActivity,
+      addParticipant: addGroupActivityParticipant,
+      removeParticipant: removeGroupActivityParticipant,
+    } = useGroupActivitiesContext()
 
-  // Helper function to calculate duration from times
-  const calculateDurationFromTimes = (startTime: string, endTime: string): number => {
-    const [startHours, startMinutes] = startTime.split(":").map(Number)
-    const [endHours, endMinutes] = endTime.split(":").map(Number)
-    const startTotalMinutes = startHours * 60 + startMinutes
-    const endTotalMinutes = endHours * 60 + endMinutes
-    return endTotalMinutes - startTotalMinutes
+    // ✅ HANDLERS MEJORADOS PARA ACTIVIDADES GRUPALES
+    const handleAddGroupActivityParticipant = async (activityId: string, clientId: number, notes?: string) => {
+      try {
+        await addGroupActivityParticipant(activityId, clientId, notes)
+        toast.success("Participante añadido correctamente")
+        setShowGroupActivityDetails(false)
+        setSelectedGroupActivity(null)
+      } catch (error) {
+        console.error("Error adding participant:", error)
+        toast.error("Error al añadir participante")
+        throw error
+      }
+    }
+
+    const handleRemoveGroupActivityParticipant = async (participantId: string) => {
+      try {
+        await removeGroupActivityParticipant(participantId)
+        toast.success("Participante eliminado correctamente")
+        setShowGroupActivityDetails(false)
+        setSelectedGroupActivity(null)
+      } catch (error) {
+        console.error("Error removing participant:", error)
+        toast.error("Error al eliminar participante")
+        throw error
+      }
+    }
+
+    const handleUpdateGroupActivity = async (id: string, updates: any) => {
+      try {
+        await updateGroupActivity(id, updates)
+        toast.success("Actividad actualizada correctamente")
+      } catch (error) {
+        console.error("Error updating group activity:", error)
+        toast.error("Error al actualizar la actividad")
+        throw error
+      }
+    }
+
+    const handleDeleteGroupActivity = async (id: string) => {
+      try {
+        await deleteGroupActivity(id)
+        toast.success("Actividad eliminada correctamente")
+        setShowGroupActivityDetails(false)
+        setSelectedGroupActivity(null)
+      } catch (error) {
+        console.error("Error deleting group activity:", error)
+        toast.error("Error al eliminar la actividad")
+        throw error
+      }
+    }
+
+    return (
+      <>
+        {children}
+        {/* Modal de detalles de actividad grupal */}
+        {showGroupActivityDetails && selectedGroupActivity && (
+          <GroupActivityDetailsModal
+            isOpen={showGroupActivityDetails}
+            onClose={() => {
+              setShowGroupActivityDetails(false)
+              setSelectedGroupActivity(null)
+            }}
+            activity={selectedGroupActivity}
+            onUpdate={handleUpdateGroupActivity}
+            onDelete={handleDeleteGroupActivity}
+            onAddParticipant={handleAddGroupActivityParticipant}
+            onRemoveParticipant={handleRemoveGroupActivityParticipant}
+            organizationId={organizationId!}
+            users={users}
+            services={services}
+          />
+        )}
+      </>
+    )
   }
 
   // Mostrar loading si no tenemos organizationId o si los datos están cargando
-  const [legacyGroupActivities, setLegacyGroupActivities] = useState<any[]>([])
-  const [combinedAppointments, setCombinedAppointments] = useState<any[]>([])
-
-  useEffect(() => {
-    const legacyGroupActivitiesData = convertGroupActivitiesToLegacyFormat(groupActivities)
-    setLegacyGroupActivities(legacyGroupActivitiesData)
-    setCombinedAppointments([...convertAppointmentsToLegacyFormat(appointments), ...legacyGroupActivitiesData])
-  }, [appointments, groupActivities])
-
   if (
     !organizationId ||
     usersLoading ||
@@ -607,8 +578,7 @@ const MedicalCalendarSystem: React.FC = () => {
     clientsLoading ||
     servicesLoading ||
     vacationLoading ||
-    schedulesLoading ||
-    groupActivitiesLoading
+    schedulesLoading
   ) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -670,242 +640,251 @@ const MedicalCalendarSystem: React.FC = () => {
       {/* Contenido principal */}
       <div className="flex-1 overflow-hidden">
         {tabPrincipal === "calendario" && (
-          <div className="h-full flex flex-col">
-            {/* Barra de herramientas reorganizada */}
-            <div className="border-b px-4 py-2">
-              <div className="flex items-center justify-between">
-                {/* Tabs de vista temporal y sub-vista JUNTAS */}
-                <div className="flex items-center gap-4">
-                  <Tabs value={vistaCalendario} onValueChange={(value) => setVistaCalendario(value as VistaCalendario)}>
-                    <TabsList>
-                      <TabsTrigger value="dia">Día</TabsTrigger>
-                      <TabsTrigger value="semana">Semana</TabsTrigger>
-                      <TabsTrigger value="mes">Mes</TabsTrigger>
-                    </TabsList>
-                  </Tabs>
+          <CalendarGroupActivitiesWrapper organizationId={organizationId} users={users} appointments={appointments}>
+            {({ combinedAppointments, legacyUsers: wrapperLegacyUsers }) => (
+              <GroupActivityHandlers>
+                <div className="h-full flex flex-col">
+                  {/* Barra de herramientas reorganizada */}
+                  <div className="border-b px-4 py-2">
+                    <div className="flex items-center justify-between">
+                      {/* Tabs de vista temporal y sub-vista JUNTAS */}
+                      <div className="flex items-center gap-4">
+                        <Tabs
+                          value={vistaCalendario}
+                          onValueChange={(value) => setVistaCalendario(value as VistaCalendario)}
+                        >
+                          <TabsList>
+                            <TabsTrigger value="dia">Día</TabsTrigger>
+                            <TabsTrigger value="semana">Semana</TabsTrigger>
+                            <TabsTrigger value="mes">Mes</TabsTrigger>
+                          </TabsList>
+                        </Tabs>
 
-                  {/* Separador visual */}
-                  <div className="w-px h-6 bg-border" />
+                        {/* Separador visual */}
+                        <div className="w-px h-6 bg-border" />
 
-                  <Tabs
-                    value={subVistaCalendario}
-                    onValueChange={(value) => setSubVistaCalendario(value as SubVistaCalendario)}
-                  >
-                    <TabsList>
-                      <TabsTrigger value="horario">Horario</TabsTrigger>
-                      <TabsTrigger value="lista">Lista</TabsTrigger>
-                    </TabsList>
-                  </Tabs>
-                </div>
-
-                {/* Controles de navegación y herramientas unificados */}
-                <div className="flex items-center gap-2">
-                  {/* Navegación: antes-hoy-después */}
-                  <Button variant="outline" size="sm" onClick={() => navigateDate("prev")}>
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={goToToday}>
-                    Hoy
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => navigateDate("next")}>
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-
-                  {/* Separador visual */}
-                  <div className="w-px h-6 bg-border mx-2" />
-
-                  {/* Lupa - Búsqueda */}
-                  <div className="relative">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowSearch(!showSearch)}
-                      className={showSearch ? "bg-muted" : ""}
-                    >
-                      <Search className="h-4 w-4" />
-                    </Button>
-                    {showSearch && (
-                      <div className="absolute top-full left-0 mt-1 w-64 z-50">
-                        <CalendarSearch
-                          citas={combinedAppointments}
-                          onSelectCita={handleSelectLegacyAppointment}
-                          placeholder="Buscar citas..."
-                        />
+                        <Tabs
+                          value={subVistaCalendario}
+                          onValueChange={(value) => setSubVistaCalendario(value as SubVistaCalendario)}
+                        >
+                          <TabsList>
+                            <TabsTrigger value="horario">Horario</TabsTrigger>
+                            <TabsTrigger value="lista">Lista</TabsTrigger>
+                          </TabsList>
+                        </Tabs>
                       </div>
+
+                      {/* Controles de navegación y herramientas unificados */}
+                      <div className="flex items-center gap-2">
+                        {/* Navegación: antes-hoy-después */}
+                        <Button variant="outline" size="sm" onClick={() => navigateDate("prev")}>
+                          <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={goToToday}>
+                          Hoy
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => navigateDate("next")}>
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+
+                        {/* Separador visual */}
+                        <div className="w-px h-6 bg-border mx-2" />
+
+                        {/* Lupa - Búsqueda */}
+                        <div className="relative">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setShowSearch(!showSearch)}
+                            className={showSearch ? "bg-muted" : ""}
+                          >
+                            <Search className="h-4 w-4" />
+                          </Button>
+                          {showSearch && (
+                            <div className="absolute top-full left-0 mt-1 w-64 z-50">
+                              <CalendarSearch
+                                citas={combinedAppointments}
+                                onSelectCita={handleSelectLegacyAppointment}
+                                placeholder="Buscar citas..."
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Profesionales - SOLO ICONO */}
+                        <div className="relative">
+                          <ProfesionalesLegend
+                            profesionales={wrapperLegacyUsers}
+                            profesionalesSeleccionados={usuariosSeleccionados.map((id) => {
+                              try {
+                                return Number.parseInt(id.slice(-8), 16)
+                              } catch {
+                                return 0
+                              }
+                            })}
+                            onToggleProfesional={(profesionalId) => {
+                              const userId = users.find((u) => {
+                                try {
+                                  return Number.parseInt(u.id.slice(-8), 16) === profesionalId
+                                } catch {
+                                  return false
+                                }
+                              })?.id
+                              if (userId) handleToggleUsuario(userId)
+                            }}
+                            onToggleAll={handleToggleAllUsuarios}
+                            iconOnly={true}
+                          />
+                        </div>
+
+                        {/* Tiempo - SOLO ICONO */}
+                        <Select
+                          value={intervaloTiempo.toString()}
+                          onValueChange={(value) => setIntervaloTiempo(Number(value) as IntervaloTiempo)}
+                        >
+                          <SelectTrigger className="w-10">
+                            <Clock className="h-16 w-16" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="15">15 min</SelectItem>
+                            <SelectItem value="30">30 min</SelectItem>
+                            <SelectItem value="45">45 min</SelectItem>
+                            <SelectItem value="60">60 min</SelectItem>
+                          </SelectContent>
+                        </Select>
+
+                        {/* Programar cita - "+" */}
+                        <Button onClick={() => setShowNewAppointmentModal(true)} size="sm">
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Título de fecha único - AHORA CLICKEABLE */}
+                  <div className="px-4 py-3 border-b">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="ghost" className="text-xl font-medium capitalize hover:bg-muted/50 p-0 h-auto">
+                          {getDateTitle()}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={currentDate}
+                          onSelect={(date) => {
+                            if (date) {
+                              setCurrentDate(date)
+                            }
+                          }}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+
+                  {/* Vista del calendario */}
+                  <div className="flex-1 overflow-auto">
+                    {subVistaCalendario === "horario" && (
+                      <>
+                        {vistaCalendario === "dia" && (
+                          <HorarioViewDynamic
+                            date={currentDate}
+                            citas={combinedAppointments.filter((cita) => {
+                              const citaDate = new Date(cita.fecha)
+                              return citaDate.toDateString() === currentDate.toDateString()
+                            })}
+                            profesionales={wrapperLegacyUsers.filter((user) =>
+                              usuariosSeleccionados.some((selectedId) => {
+                                try {
+                                  return Number.parseInt(selectedId.slice(-8), 16) === user.id
+                                } catch {
+                                  return false
+                                }
+                              }),
+                            )}
+                            users={users.filter((user) => usuariosSeleccionados.includes(user.id))}
+                            workSchedules={allWorkSchedules}
+                            onSelectCita={handleSelectLegacyAppointment}
+                            profesionalSeleccionado="todos"
+                            profesionalesSeleccionados={usuariosSeleccionados.map((id) => {
+                              try {
+                                return Number.parseInt(id.slice(-8), 16)
+                              } catch {
+                                return 0
+                              }
+                            })}
+                            intervaloTiempo={intervaloTiempo}
+                            onUpdateCita={handleUpdateLegacyAppointment}
+                            onAddCita={handleAddAppointment}
+                            vacationRequests={vacationRequests}
+                            isUserOnVacationDate={isUserOnVacationDate}
+                            getUserVacationOnDate={getUserVacationOnDate}
+                          />
+                        )}
+                        {vistaCalendario === "semana" && (
+                          <WeekView
+                            date={currentDate}
+                            citas={combinedAppointments}
+                            profesionales={wrapperLegacyUsers}
+                            onSelectCita={handleSelectLegacyAppointment}
+                            profesionalesSeleccionados={usuariosSeleccionados.map((id) => {
+                              try {
+                                return Number.parseInt(id.slice(-8), 16)
+                              } catch {
+                                return 0
+                              }
+                            })}
+                            intervaloTiempo={intervaloTiempo}
+                            onUpdateCita={handleUpdateLegacyAppointment}
+                            onAddCita={handleAddAppointment}
+                            vacationRequests={vacationRequests}
+                            isUserOnVacationDate={isUserOnVacationDate}
+                            getUserVacationOnDate={getUserVacationOnDate}
+                          />
+                        )}
+                        {vistaCalendario === "mes" && (
+                          <MonthView
+                            date={currentDate}
+                            citas={combinedAppointments}
+                            profesionales={wrapperLegacyUsers}
+                            onSelectCita={handleSelectLegacyAppointment}
+                            profesionalesSeleccionados={usuariosSeleccionados.map((id) => {
+                              try {
+                                return Number.parseInt(id.slice(-8), 16)
+                              } catch {
+                                return 0
+                              }
+                            })}
+                            onUpdateCita={handleUpdateLegacyAppointment}
+                            onAddCita={handleAddAppointment}
+                            vacationRequests={vacationRequests}
+                            isUserOnVacationDate={isUserOnVacationDate}
+                            getUserVacationOnDate={getUserVacationOnDate}
+                          />
+                        )}
+                      </>
+                    )}
+                    {subVistaCalendario === "lista" && (
+                      <ListView
+                        citas={combinedAppointments}
+                        profesionales={wrapperLegacyUsers}
+                        onSelectCita={handleSelectLegacyAppointment}
+                        profesionalesSeleccionados={usuariosSeleccionados.map((id) => {
+                          try {
+                            return Number.parseInt(id.slice(-8), 16)
+                          } catch {
+                            return 0
+                          }
+                        })}
+                      />
                     )}
                   </div>
-
-                  {/* Profesionales - SOLO ICONO */}
-                  <div className="relative">
-                    <ProfesionalesLegend
-                      profesionales={legacyUsers}
-                      profesionalesSeleccionados={usuariosSeleccionados.map((id) => {
-                        try {
-                          return Number.parseInt(id.slice(-8), 16)
-                        } catch {
-                          return 0
-                        }
-                      })}
-                      onToggleProfesional={(profesionalId) => {
-                        const userId = users.find((u) => {
-                          try {
-                            return Number.parseInt(u.id.slice(-8), 16) === profesionalId
-                          } catch {
-                            return false
-                          }
-                        })?.id
-                        if (userId) handleToggleUsuario(userId)
-                      }}
-                      onToggleAll={handleToggleAllUsuarios}
-                      iconOnly={true} // Nueva prop para mostrar solo icono
-                    />
-                  </div>
-
-                  {/* Tiempo - SOLO ICONO */}
-                  <Select
-                    value={intervaloTiempo.toString()}
-                    onValueChange={(value) => setIntervaloTiempo(Number(value) as IntervaloTiempo)}
-                  >
-                    <SelectTrigger className="w-10">
-                      <Clock className="h-16 w-16" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="15">15 min</SelectItem>
-                      <SelectItem value="30">30 min</SelectItem>
-                      <SelectItem value="45">45 min</SelectItem>
-                      <SelectItem value="60">60 min</SelectItem>
-                    </SelectContent>
-                  </Select>
-
-                  {/* Programar cita - "+" */}
-                  <Button onClick={() => setShowNewAppointmentModal(true)} size="sm">
-                    <Plus className="h-4 w-4" />
-                  </Button>
                 </div>
-              </div>
-            </div>
-
-            {/* Título de fecha único - AHORA CLICKEABLE */}
-            <div className="px-4 py-3 border-b">
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="ghost" className="text-xl font-medium capitalize hover:bg-muted/50 p-0 h-auto">
-                    {getDateTitle()}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={currentDate}
-                    onSelect={(date) => {
-                      if (date) {
-                        setCurrentDate(date)
-                      }
-                    }}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-
-            {/* Vista del calendario */}
-            <div className="flex-1 overflow-auto">
-              {subVistaCalendario === "horario" && (
-                <>
-                  {vistaCalendario === "dia" && (
-                    <HorarioViewDynamic
-                      date={currentDate}
-                      citas={combinedAppointments.filter((cita) => {
-                        const citaDate = new Date(cita.fecha)
-                        return citaDate.toDateString() === currentDate.toDateString()
-                      })}
-                      profesionales={legacyUsers.filter((user) =>
-                        usuariosSeleccionados.some((selectedId) => {
-                          try {
-                            return Number.parseInt(selectedId.slice(-8), 16) === user.id
-                          } catch {
-                            return false
-                          }
-                        }),
-                      )}
-                      users={users.filter((user) => usuariosSeleccionados.includes(user.id))}
-                      workSchedules={allWorkSchedules}
-                      onSelectCita={handleSelectLegacyAppointment}
-                      profesionalSeleccionado="todos"
-                      profesionalesSeleccionados={usuariosSeleccionados.map((id) => {
-                        try {
-                          return Number.parseInt(id.slice(-8), 16)
-                        } catch {
-                          return 0
-                        }
-                      })}
-                      intervaloTiempo={intervaloTiempo}
-                      onUpdateCita={handleUpdateLegacyAppointment}
-                      onAddCita={handleAddAppointment}
-                      vacationRequests={vacationRequests}
-                      isUserOnVacationDate={isUserOnVacationDate}
-                      getUserVacationOnDate={getUserVacationOnDate}
-                    />
-                  )}
-                  {vistaCalendario === "semana" && (
-                    <WeekView
-                      date={currentDate}
-                      citas={combinedAppointments}
-                      profesionales={legacyUsers}
-                      onSelectCita={handleSelectLegacyAppointment}
-                      profesionalesSeleccionados={usuariosSeleccionados.map((id) => {
-                        try {
-                          return Number.parseInt(id.slice(-8), 16)
-                        } catch {
-                          return 0
-                        }
-                      })}
-                      intervaloTiempo={intervaloTiempo}
-                      onUpdateCita={handleUpdateLegacyAppointment}
-                      onAddCita={handleAddAppointment}
-                      vacationRequests={vacationRequests}
-                      isUserOnVacationDate={isUserOnVacationDate}
-                      getUserVacationOnDate={getUserVacationOnDate}
-                    />
-                  )}
-                  {vistaCalendario === "mes" && (
-                    <MonthView
-                      date={currentDate}
-                      citas={combinedAppointments}
-                      profesionales={legacyUsers}
-                      onSelectCita={handleSelectLegacyAppointment}
-                      profesionalesSeleccionados={usuariosSeleccionados.map((id) => {
-                        try {
-                          return Number.parseInt(id.slice(-8), 16)
-                        } catch {
-                          return 0
-                        }
-                      })}
-                      onUpdateCita={handleUpdateLegacyAppointment}
-                      onAddCita={handleAddAppointment}
-                      vacationRequests={vacationRequests}
-                      isUserOnVacationDate={isUserOnVacationDate}
-                      getUserVacationOnDate={getUserVacationOnDate}
-                    />
-                  )}
-                </>
-              )}
-              {subVistaCalendario === "lista" && (
-                <ListView
-                  citas={combinedAppointments}
-                  profesionales={legacyUsers}
-                  onSelectCita={handleSelectLegacyAppointment}
-                  profesionalesSeleccionados={usuariosSeleccionados.map((id) => {
-                    try {
-                      return Number.parseInt(id.slice(-8), 16)
-                    } catch {
-                      return 0
-                    }
-                  })}
-                />
-              )}
-            </div>
-          </div>
+              </GroupActivityHandlers>
+            )}
+          </CalendarGroupActivitiesWrapper>
         )}
 
         {tabPrincipal === "lista-espera" && (
@@ -914,7 +893,6 @@ const MedicalCalendarSystem: React.FC = () => {
               <WaitingListView
                 organizationId={organizationId}
                 onScheduleAppointment={(entry) => {
-                  // 🆕 Guardar datos de lista de espera y abrir modal
                   setWaitingListEntry(entry)
                   setShowNewAppointmentModal(true)
                 }}
@@ -929,7 +907,7 @@ const MedicalCalendarSystem: React.FC = () => {
               <h2 className="text-xl font-medium">Actividades grupales</h2>
             </div>
             <div className="flex-1 overflow-auto">
-              <GroupActivitiesView organizationId={organizationId} users={users} />
+              <GroupActivitiesWrapper organizationId={organizationId} users={users} />
             </div>
           </div>
         )}
@@ -982,10 +960,10 @@ const MedicalCalendarSystem: React.FC = () => {
         <AppointmentFormModal
           fecha={new Date()}
           hora="09:00"
-          waitingListEntry={waitingListEntry} // 🆕 Pasar datos de lista de espera
+          waitingListEntry={waitingListEntry}
           onClose={() => {
             setShowNewAppointmentModal(false)
-            setWaitingListEntry(null) // 🆕 Limpiar datos al cerrar
+            setWaitingListEntry(null)
           }}
           onSubmit={handleAddAppointment}
         />
@@ -1001,24 +979,6 @@ const MedicalCalendarSystem: React.FC = () => {
           appointment={selectedAppointment}
           onUpdate={handleUpdateAppointment}
           onDelete={handleDeleteAppointment}
-        />
-      )}
-
-      {/* Modal de detalles de actividad grupal - ✅ ACTUALIZADO CON HANDLERS MEJORADOS */}
-      {showGroupActivityDetails && selectedGroupActivity && (
-        <GroupActivityDetailsModal
-          isOpen={showGroupActivityDetails}
-          onClose={() => {
-            setShowGroupActivityDetails(false)
-            setSelectedGroupActivity(null)
-          }}
-          activity={selectedGroupActivity}
-          onUpdate={handleUpdateGroupActivity} // ✅ HANDLER MEJORADO
-          onDelete={handleDeleteGroupActivity} // ✅ HANDLER MEJORADO
-          onAddParticipant={handleAddGroupActivityParticipant} // ✅ HANDLER MEJORADO
-          onRemoveParticipant={handleRemoveGroupActivityParticipant} // ✅ HANDLER MEJORADO
-          organizationId={organizationId}
-          users={users}
         />
       )}
     </div>

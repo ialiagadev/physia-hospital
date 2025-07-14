@@ -1,5 +1,10 @@
-import { addWeeks, addMonths, format, isBefore, isAfter } from "date-fns"
-import type { RecurrenceConfig, RecurrencePreview } from "@/types/calendar"
+import { addWeeks, addMonths, isAfter, isBefore } from "date-fns"
+
+export interface RecurrenceConfig {
+  type: "weekly" | "monthly"
+  interval: number
+  endDate: Date
+}
 
 export class RecurrenceService {
   /**
@@ -8,15 +13,13 @@ export class RecurrenceService {
   static generateRecurringDates(startDate: Date, config: RecurrenceConfig, maxInstances = 100): Date[] {
     const dates: Date[] = []
     let currentDate = new Date(startDate)
-    let instanceCount = 0
 
-    // Añadir la fecha inicial
-    // Añadir la fecha inicial ANTES del while
-dates.push(new Date(startDate))
-instanceCount++
+    // ✅ SIEMPRE incluir la fecha inicial
+    dates.push(new Date(currentDate))
 
-    while (instanceCount < maxInstances && isBefore(currentDate, config.endDate)) {
-      // Calcular siguiente fecha según el tipo de recurrencia
+    // ✅ GENERAR LAS FECHAS SIGUIENTES
+    while (dates.length < maxInstances) {
+      // Calcular la siguiente fecha según el tipo de recurrencia
       switch (config.type) {
         case "weekly":
           currentDate = addWeeks(currentDate, config.interval)
@@ -28,11 +31,14 @@ instanceCount++
           throw new Error(`Tipo de recurrencia no soportado: ${config.type}`)
       }
 
-      // Solo añadir si está dentro del rango
-      if (isBefore(currentDate, config.endDate) || currentDate.getTime() === config.endDate.getTime()) {
-        dates.push(new Date(currentDate))
-        instanceCount++
+      // ✅ VERIFICAR SI LA NUEVA FECHA ESTÁ DENTRO DEL RANGO
+      if (isAfter(currentDate, config.endDate)) {
+        // Si la fecha calculada es posterior a la fecha límite, parar
+        break
       }
+
+      // ✅ AÑADIR LA FECHA VÁLIDA
+      dates.push(new Date(currentDate))
     }
 
     return dates
@@ -50,8 +56,11 @@ instanceCount++
 
     // Detectar conflictos (fechas que ya tienen citas)
     const conflicts = dates.filter((date) => {
-      const dateStr = format(date, "yyyy-MM-dd")
-      return existingAppointments.some((apt) => format(new Date(apt.date), "yyyy-MM-dd") === dateStr)
+      const dateStr = date.toISOString().split("T")[0]
+      return existingAppointments.some((apt) => {
+        const aptDateStr = new Date(apt.date).toISOString().split("T")[0]
+        return aptDateStr === dateStr
+      })
     })
 
     return {
@@ -101,7 +110,7 @@ instanceCount++
    */
   static formatRecurrenceDescription(config: RecurrenceConfig): string {
     const { type, interval, endDate } = config
-    const endDateStr = format(endDate, "dd/MM/yyyy")
+    const endDateStr = endDate.toLocaleDateString("es-ES")
 
     switch (type) {
       case "weekly":
@@ -128,4 +137,10 @@ instanceCount++
     const dates = this.generateRecurringDates(startDate, config)
     return dates.length
   }
+}
+
+export interface RecurrencePreview {
+  dates: Date[]
+  count: number
+  conflicts: Date[]
 }

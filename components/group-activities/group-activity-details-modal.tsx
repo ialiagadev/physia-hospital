@@ -28,18 +28,19 @@ import { Calendar, Clock, Users, MapPin, Edit, Trash2, UserPlus, Phone, Mail, X,
 import { GroupActivityFormModal } from "./group-activity-form-modal"
 import { AddParticipantModal } from "./add-participant-modal"
 import { toast } from "sonner"
-import type { GroupActivity, GroupActivityUpdate } from "@/hooks/use-group-activities"
+import type { GroupActivity } from "@/app/contexts/group-activities-context"
 
 interface GroupActivityDetailsModalProps {
   isOpen: boolean
   onClose: () => void
   activity: GroupActivity
-  onUpdate: (id: string, updates: GroupActivityUpdate) => Promise<void>
+  onUpdate: (id: string, updates: any) => Promise<void>
   onDelete: (id: string) => Promise<void>
   onAddParticipant?: (activityId: string, clientId: number, notes?: string) => Promise<void>
   onRemoveParticipant?: (participantId: string) => Promise<void>
   organizationId: number
   users: any[]
+  services?: any[]
 }
 
 export function GroupActivityDetailsModal({
@@ -52,23 +53,41 @@ export function GroupActivityDetailsModal({
   onRemoveParticipant,
   organizationId,
   users,
+  services = [],
 }: GroupActivityDetailsModalProps) {
   const [showEditModal, setShowEditModal] = useState(false)
   const [showAddParticipantModal, setShowAddParticipantModal] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [participantToRemove, setParticipantToRemove] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
-  // ✅ SIMPLIFICADO - Solo estado local mínimo
+  // ✅ ESTADO SIMPLIFICADO - Solo para UI local
   const [currentActivity, setCurrentActivity] = useState<GroupActivity>(activity)
 
-  // Actualizar cuando cambie la actividad externa
+  // ✅ EFECTO SIMPLIFICADO - Solo actualiza cuando cambia la actividad externa
   useEffect(() => {
-    setCurrentActivity(activity)
+    if (activity && activity.id) {
+      setCurrentActivity(activity)
+    }
   }, [activity])
+
+  // ✅ FUNCIÓN DE CIERRE MEJORADA - Sin timeouts problemáticos
+  const handleClose = () => {
+    // Resetear todos los estados inmediatamente
+    setShowEditModal(false)
+    setShowAddParticipantModal(false)
+    setShowDeleteConfirm(false)
+    setParticipantToRemove(null)
+    setLoading(false)
+    setDeleting(false)
+    // Cerrar modal principal
+    onClose()
+  }
 
   const handleUpdateActivity = async (formData: any) => {
     try {
+      setLoading(true)
       const updates = {
         name: formData.name,
         description: formData.description,
@@ -82,43 +101,53 @@ export function GroupActivityDetailsModal({
       }
 
       await onUpdate(currentActivity.id, updates)
-      setShowEditModal(false)
-      toast.success("Actividad actualizada")
+      // ✅ YA NO NECESITA TOAST - EL CONTEXTO LO MANEJA
 
-      // ✅ CERRAR MODAL AUTOMÁTICAMENTE DESPUÉS DE EDITAR
-      onClose()
+      // ✅ CERRAR MODALES INMEDIATAMENTE
+      setShowEditModal(false)
+      handleClose()
     } catch (error) {
-      toast.error("Error al actualizar")
+      console.error("Error updating activity:", error)
       throw error
+    } finally {
+      setLoading(false)
     }
   }
 
+  // ✅ FUNCIÓN DE ELIMINACIÓN OPTIMIZADA
   const handleDelete = async () => {
+    if (!currentActivity?.id) {
+      toast.error("No se puede eliminar: ID de actividad no válido")
+      return
+    }
+
     try {
-      setLoading(true)
+      setDeleting(true)
+      // ✅ LLAMAR A LA FUNCIÓN DE ELIMINACIÓN (ya optimizada en el contexto)
       await onDelete(currentActivity.id)
-      toast.success("Actividad eliminada")
-      onClose()
-    } catch (error) {
-      toast.error("Error al eliminar")
-    } finally {
-      setLoading(false)
+      // ✅ YA NO NECESITA TOAST - EL CONTEXTO LO MANEJA
+
+      // ✅ CERRAR MODALES INMEDIATAMENTE
       setShowDeleteConfirm(false)
+      handleClose()
+    } catch (error) {
+      console.error("Error deleting activity:", error)
+    } finally {
+      setDeleting(false)
     }
   }
 
   const handleAddParticipant = async (clientId: number, notes?: string) => {
     if (!onAddParticipant) return
+
     try {
       setLoading(true)
       await onAddParticipant(currentActivity.id, clientId, notes)
+      // ✅ YA NO NECESITA TOAST - EL CONTEXTO LO MANEJA
       setShowAddParticipantModal(false)
-      toast.success("Participante añadido")
-
-      // ✅ CERRAR MODAL AUTOMÁTICAMENTE
-      onClose()
+      handleClose()
     } catch (error) {
-      toast.error("Error al añadir participante")
+      console.error("Error adding participant:", error)
       throw error
     } finally {
       setLoading(false)
@@ -127,16 +156,15 @@ export function GroupActivityDetailsModal({
 
   const handleRemoveParticipant = async (participantId: string) => {
     if (!onRemoveParticipant) return
+
     try {
       setLoading(true)
       await onRemoveParticipant(participantId)
+      // ✅ YA NO NECESITA TOAST - EL CONTEXTO LO MANEJA
       setParticipantToRemove(null)
-      toast.success("Participante eliminado")
-
-      // ✅ CERRAR MODAL AUTOMÁTICAMENTE
-      onClose()
+      handleClose()
     } catch (error) {
-      toast.error("Error al eliminar participante")
+      console.error("Error removing participant:", error)
     } finally {
       setLoading(false)
     }
@@ -148,6 +176,7 @@ export function GroupActivityDetailsModal({
       completed: { label: "Completada", variant: "secondary" as const },
       cancelled: { label: "Cancelada", variant: "destructive" as const },
     }
+
     const statusConfig = config[status as keyof typeof config] || config.active
     return <Badge variant={statusConfig.variant}>{statusConfig.label}</Badge>
   }
@@ -156,9 +185,18 @@ export function GroupActivityDetailsModal({
   const canAddMoreParticipants = currentActivity.current_participants < currentActivity.max_participants
   const currentParticipantIds = currentActivity.participants?.map((p) => p.client_id) || []
 
+  // ✅ VALIDACIÓN MEJORADA PARA EVITAR ERRORES
+  if (!currentActivity || !currentActivity.id) {
+    return null
+  }
+
   return (
     <>
-      <Dialog open={isOpen && !showEditModal && !showAddParticipantModal} onOpenChange={onClose}>
+      {/* ✅ MODAL PRINCIPAL - Condiciones simplificadas */}
+      <Dialog
+        open={isOpen && !showEditModal && !showAddParticipantModal && !showDeleteConfirm}
+        onOpenChange={handleClose}
+      >
         <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <div className="flex items-start justify-between">
@@ -186,6 +224,28 @@ export function GroupActivityDetailsModal({
                 </div>
               )}
 
+              {currentActivity.service_id && (
+                <div>
+                  <h4 className="text-sm font-medium mb-1 flex items-center gap-1">
+                    <div
+                      className="w-3 h-3 rounded-full"
+                      style={{
+                        backgroundColor: services.find((s) => s.id === currentActivity.service_id)?.color || "#3B82F6",
+                      }}
+                    />
+                    Servicio
+                  </h4>
+                  <p className="text-sm">
+                    {services.find((s) => s.id === currentActivity.service_id)?.name || "Servicio no encontrado"}
+                  </p>
+                  {services.find((s) => s.id === currentActivity.service_id)?.duration && (
+                    <p className="text-xs text-gray-500">
+                      Duración: {services.find((s) => s.id === currentActivity.service_id).duration} minutos
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <h4 className="text-sm font-medium mb-1 flex items-center gap-1">
@@ -194,6 +254,7 @@ export function GroupActivityDetailsModal({
                   </h4>
                   <p className="text-sm">{format(new Date(currentActivity.date), "dd/MM/yyyy", { locale: es })}</p>
                 </div>
+
                 <div>
                   <h4 className="text-sm font-medium mb-1 flex items-center gap-1">
                     <Clock className="h-3 w-3" />
@@ -207,7 +268,7 @@ export function GroupActivityDetailsModal({
 
               <div>
                 <h4 className="text-sm font-medium mb-1 flex items-center gap-1">
-                  <MapPin className="h-3 w-3" />
+                  <MapPin className="h-4 w-4" />
                   Profesional
                 </h4>
                 <p className="text-sm">{currentActivity.professional?.name || "Sin asignar"}</p>
@@ -227,7 +288,12 @@ export function GroupActivityDetailsModal({
                   Participantes ({currentActivity.current_participants}/{currentActivity.max_participants})
                 </h4>
                 {onAddParticipant && canAddMoreParticipants && (
-                  <Button size="sm" variant="outline" onClick={() => setShowAddParticipantModal(true)}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowAddParticipantModal(true)}
+                    disabled={loading || deleting}
+                  >
                     <UserPlus className="h-3 w-3 mr-1" />
                     Añadir
                   </Button>
@@ -290,7 +356,7 @@ export function GroupActivityDetailsModal({
                           {participant.status === "cancelled" && "Cancelado"}
                         </Badge>
 
-                        {/* ✅ CONFIRMACIÓN MEJORADA - Igual que ParticipantsModal */}
+                        {/* Confirmación de eliminación de participante */}
                         {onRemoveParticipant &&
                           (participantToRemove === participant.id ? (
                             <div className="flex items-center gap-1 bg-red-50 p-1 rounded border border-red-200">
@@ -300,7 +366,7 @@ export function GroupActivityDetailsModal({
                                 size="sm"
                                 variant="destructive"
                                 onClick={() => handleRemoveParticipant(participant.id)}
-                                disabled={loading}
+                                disabled={loading || deleting}
                                 className="h-6 px-2 text-xs"
                               >
                                 Sí
@@ -309,7 +375,7 @@ export function GroupActivityDetailsModal({
                                 size="sm"
                                 variant="outline"
                                 onClick={() => setParticipantToRemove(null)}
-                                disabled={loading}
+                                disabled={loading || deleting}
                                 className="h-6 px-2 text-xs"
                               >
                                 No
@@ -320,7 +386,7 @@ export function GroupActivityDetailsModal({
                               variant="ghost"
                               size="sm"
                               onClick={() => setParticipantToRemove(participant.id)}
-                              disabled={loading}
+                              disabled={loading || deleting}
                               className="text-red-600 hover:text-red-700 hover:bg-red-50 h-8 px-2"
                             >
                               <X className="h-4 w-4" />
@@ -335,7 +401,12 @@ export function GroupActivityDetailsModal({
                   <Users className="h-8 w-8 mx-auto mb-2 text-gray-400" />
                   <p className="text-sm">No hay participantes registrados</p>
                   {onAddParticipant && canAddMoreParticipants && (
-                    <Button size="sm" onClick={() => setShowAddParticipantModal(true)} className="mt-2">
+                    <Button
+                      size="sm"
+                      onClick={() => setShowAddParticipantModal(true)}
+                      className="mt-2"
+                      disabled={loading || deleting}
+                    >
                       <UserPlus className="h-4 w-4 mr-1" />
                       Añadir Primer Participante
                     </Button>
@@ -346,22 +417,22 @@ export function GroupActivityDetailsModal({
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={onClose}>
+            <Button variant="outline" onClick={handleClose} disabled={loading || deleting}>
               Cerrar
             </Button>
-            <Button variant="outline" onClick={() => setShowEditModal(true)}>
+            <Button variant="outline" onClick={() => setShowEditModal(true)} disabled={loading || deleting}>
               <Edit className="h-4 w-4 mr-1" />
               Editar
             </Button>
-            <Button variant="destructive" onClick={() => setShowDeleteConfirm(true)} disabled={loading}>
+            <Button variant="destructive" onClick={() => setShowDeleteConfirm(true)} disabled={loading || deleting}>
               <Trash2 className="h-4 w-4 mr-1" />
-              Eliminar
+              {deleting ? "Eliminando..." : "Eliminar"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Modales secundarios */}
+      {/* ✅ MODAL DE EDICIÓN */}
       {showEditModal && (
         <GroupActivityFormModal
           isOpen={showEditModal}
@@ -373,6 +444,7 @@ export function GroupActivityDetailsModal({
         />
       )}
 
+      {/* ✅ MODAL DE AÑADIR PARTICIPANTE */}
       {showAddParticipantModal && onAddParticipant && (
         <AddParticipantModal
           isOpen={showAddParticipantModal}
@@ -385,19 +457,37 @@ export function GroupActivityDetailsModal({
         />
       )}
 
-      {/* Confirmación de eliminación de actividad */}
+      {/* ✅ CONFIRMACIÓN DE ELIMINACIÓN DE ACTIVIDAD */}
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar actividad?</AlertDialogTitle>
+            <AlertDialogTitle>¿Eliminar actividad grupal?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción eliminará permanentemente "{currentActivity.name}" y todos sus participantes.
+              Esta acción eliminará permanentemente la actividad "{currentActivity.name}" y todos sus participantes
+              registrados.
+              <br />
+              <br />
+              <strong>Esta acción no se puede deshacer.</strong>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} disabled={loading} className="bg-red-600 hover:bg-red-700">
-              {loading ? "Eliminando..." : "Eliminar"}
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={deleting}
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+            >
+              {deleting ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Eliminando...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Eliminar Actividad
+                </>
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

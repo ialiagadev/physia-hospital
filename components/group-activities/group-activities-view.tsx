@@ -6,12 +6,12 @@ import { es } from "date-fns/locale"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Plus, Users, Building2, Edit } from "lucide-react"
-import { useGroupActivities, type GroupActivity } from "@/hooks/use-group-activities"
+import { useGroupActivitiesContext, type GroupActivity } from "@/app/contexts/group-activities-context"
 import { GroupActivityFormModal } from "./group-activity-form-modal"
 import { GroupActivityDetailsModal } from "./group-activity-details-modal"
 import { ParticipantsModal } from "./participants-modal"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { toast } from "sonner"
+import { useServices } from "@/hooks/use-services"
 
 interface GroupActivitiesViewProps {
   organizationId: number
@@ -19,6 +19,9 @@ interface GroupActivitiesViewProps {
 }
 
 export function GroupActivitiesView({ organizationId, users }: GroupActivitiesViewProps) {
+  const { services } = useServices(organizationId)
+
+  // ✅ USAR EL CONTEXTO EN LUGAR DEL HOOK DIRECTO
   const {
     activities,
     loading,
@@ -29,8 +32,7 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
     addParticipant,
     removeParticipant,
     updateParticipantStatus,
-    refetch,
-  } = useGroupActivities(organizationId, users)
+  } = useGroupActivitiesContext()
 
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
@@ -43,14 +45,15 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
         organization_id: organizationId,
         name: activityData.name,
         description: activityData.description,
-        date: format(activityData.date, "yyyy-MM-dd"),
+        date: typeof activityData.date === "string" ? activityData.date : format(activityData.date, "yyyy-MM-dd"),
         start_time: activityData.start_time,
         end_time: activityData.end_time,
         professional_id: activityData.professional_id,
         consultation_id: activityData.consultation_id || undefined,
         max_participants: activityData.max_participants,
         color: activityData.color || "#3B82F6",
-        service_id: activityData.service_id || undefined, // 🆕 Añadir service_id
+        service_id: activityData.service_id || undefined,
+        recurrence: activityData.recurrence || null,
       })
       setShowCreateModal(false)
     } catch (err) {
@@ -68,19 +71,15 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
     setShowParticipantsModal(true)
   }
 
-  // ✅ HANDLERS CON CIERRE AUTOMÁTICO DEL MODAL
+  // ✅ HANDLERS SIMPLIFICADOS - YA NO NECESITAN REFETCH
   const handleAddParticipant = async (activityId: string, clientId: number, notes?: string) => {
     try {
       await addParticipant(activityId, clientId, notes)
-      await refetch() // Refrescar datos
-      toast.success("Participante añadido correctamente")
-
-      // ✅ CERRAR MODAL AUTOMÁTICAMENTE
+      // ✅ NO NECESITA REFETCH - SE ACTUALIZA AUTOMÁTICAMENTE
       setShowParticipantsModal(false)
       setSelectedActivity(null)
     } catch (error) {
       console.error("Error adding participant:", error)
-      toast.error("Error al añadir participante")
       throw error
     }
   }
@@ -88,15 +87,11 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
   const handleRemoveParticipant = async (participantId: string) => {
     try {
       await removeParticipant(participantId)
-      await refetch() // Refrescar datos
-      toast.success("Participante eliminado correctamente")
-
-      // ✅ CERRAR MODAL AUTOMÁTICAMENTE
+      // ✅ NO NECESITA REFETCH - SE ACTUALIZA AUTOMÁTICAMENTE
       setShowParticipantsModal(false)
       setSelectedActivity(null)
     } catch (error) {
       console.error("Error removing participant:", error)
-      toast.error("Error al eliminar participante")
       throw error
     }
   }
@@ -107,15 +102,11 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
   ) => {
     try {
       await updateParticipantStatus(participantId, status)
-      await refetch() // Refrescar datos
-      toast.success("Estado actualizado correctamente")
-
-      // ✅ CERRAR MODAL AUTOMÁTICAMENTE
+      // ✅ NO NECESITA REFETCH - SE ACTUALIZA AUTOMÁTICAMENTE
       setShowParticipantsModal(false)
       setSelectedActivity(null)
     } catch (error) {
       console.error("Error updating participant status:", error)
-      toast.error("Error al actualizar estado")
       throw error
     }
   }
@@ -204,7 +195,6 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
             <TableBody>
               {activities.map((activity) => {
                 const participationStatus = getParticipationStatus(activity)
-
                 return (
                   <TableRow key={activity.id} className="hover:bg-gray-50">
                     <TableCell>
@@ -227,7 +217,6 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
                         </div>
                       </div>
                     </TableCell>
-
                     <TableCell>
                       <div className="text-sm">
                         <div className="font-medium">
@@ -238,13 +227,11 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
                         </div>
                       </div>
                     </TableCell>
-
                     <TableCell>
                       <div className="text-sm">
                         {activity.professional?.name || <span className="text-gray-400 italic">Sin asignar</span>}
                       </div>
                     </TableCell>
-
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Badge variant={participationStatus.variant} className="text-xs">
@@ -259,9 +246,7 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
                         <span className="text-xs text-gray-500">{participationStatus.percentage.toFixed(0)}%</span>
                       </div>
                     </TableCell>
-
                     <TableCell>{getStatusBadge(activity.status)}</TableCell>
-
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
                         <Button
@@ -315,6 +300,7 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
           onRemoveParticipant={handleRemoveParticipant}
           organizationId={organizationId}
           users={users}
+          services={services}
         />
       )}
 
