@@ -19,32 +19,19 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
   const { toast } = useToast()
   const [generating, setGenerating] = useState(false)
 
-  // ✅ LOGS DETALLADOS PARA DEBUGGEAR
-  console.log("=== INDIVIDUAL BILLING BUTTON DEBUG ===")
-  console.log("Appointment completo:", appointment)
-  console.log("appointment.service:", appointment.service)
-  console.log("appointment.service_id:", appointment.service_id)
-  console.log("appointment.services:", appointment.service)
-
-  // ✅ VERIFICAR SI FALTA SERVICIO - MEJORADO
   const hasService = appointment.service?.id && appointment.service?.price
   const hasServiceId = appointment.service_id
   const hasServices = appointment.service?.id && appointment.service?.price
-
-  console.log("hasService (appointment.service):", hasService)
-  console.log("hasServiceId (appointment.service_id):", hasServiceId)
-  console.log("hasServices (appointment.services):", hasServices)
 
   // Usar cualquiera de las dos formas de servicio
   const serviceData = appointment.service || appointment.service
   const finalHasService = serviceData?.id && serviceData?.price
 
-  console.log("serviceData final:", serviceData)
-  console.log("finalHasService:", finalHasService)
-
-  // ✅ VERIFICAR DATOS DEL CLIENTE
   const validateClientData = () => {
     const client = appointment.client
+    if (!client) {
+      return { isValid: false, missingFields: ["Cliente completo"] }
+    }
     const missingFields: string[] = []
 
     if (!client.name?.trim()) missingFields.push("Nombre")
@@ -62,7 +49,9 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
   const clientValidation = validateClientData()
 
   const generateInvoice = async () => {
-    if (!userProfile?.organization_id) return
+    if (!userProfile?.organization_id) {
+      return
+    }
 
     setGenerating(true)
 
@@ -94,7 +83,8 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
       const invoiceLines = [
         {
           id: crypto.randomUUID(),
-          description: `${serviceData!.name} - ${appointment.professional.name} (${appointment.start_time}-${appointment.end_time}) [${appointment.status}]`,
+          // ✅ DESCRIPCIÓN SIN ESTADO DE LA CITA
+          description: `${serviceData!.name} - ${appointment.professional?.name || "Sin profesional"} (${appointment.start_time}-${appointment.end_time})`,
           quantity: 1,
           unit_price: servicePrice,
           discount_percentage: 0,
@@ -146,9 +136,9 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
       const totalAmount = baseAmount + vatAmount - irpfAmount - retentionAmount
 
       // Preparar datos de la factura
-      const client = appointment.client
+      const client = appointment.client!
       const clientInfoText = `Cliente: ${client.name}, CIF/NIF: ${(client as any).tax_id}, Dirección: ${(client as any).address}, ${(client as any).postal_code} ${(client as any).city}, ${(client as any).province}`
-      const additionalNotes = `Factura generada para cita del ${format(new Date(appointment.date), "dd/MM/yyyy")} - ${appointment.start_time} (Estado: ${appointment.status})\nServicio: ${serviceData!.name} - ${servicePrice}€`
+      const additionalNotes = `Factura generada para cita del ${format(new Date(appointment.date), "dd/MM/yyyy")} - ${appointment.start_time}\nServicio: ${serviceData!.name} - ${servicePrice}€`
       const fullNotes = clientInfoText + "\n\n" + additionalNotes
 
       // Crear factura en la base de datos
@@ -297,7 +287,11 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
       <div className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded border border-red-200">
         <div className="flex items-center gap-1">
           <AlertTriangle className="h-3 w-3" />
-          <span>Necesita servicio asignado (ID: {appointment.service_id || "null"})</span>
+          <span>Sin servicio (ID: {appointment.service_id || "null"})</span>
+        </div>
+        <div className="text-xs mt-1">
+          service: {appointment.service ? "✅" : "❌"} | services: {appointment.service ? "✅" : "❌"} | service_id:{" "}
+          {appointment.service_id || "null"}
         </div>
       </div>
     )
@@ -325,6 +319,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
       className="gap-2 text-green-600 hover:text-green-700 hover:bg-green-50 bg-transparent"
     >
       {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+      {/* ✅ TEXTO DEL BOTÓN SIN PRECIO */}
       {generating ? "Generando..." : "Facturar"}
     </Button>
   )

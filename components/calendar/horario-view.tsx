@@ -3,14 +3,13 @@
 import React from "react"
 import { useState, useEffect } from "react"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { Button } from "@/components/ui/button"
 import { AppointmentFormModal } from "./appointment-form-modal"
 import { HoraPreviewTooltip } from "./hora-preview-tooltip"
 import { horaAMinutos, calcularHoraFin } from "@/utils/calendar-utils"
 import type { Cita, Profesional, IntervaloTiempo } from "@/types/calendar"
 import { toast } from "sonner"
 import { useVacationRequests } from "@/hooks/use-vacation-requests"
-import { Plane, AlertTriangle, Clock, User, FileText } from "lucide-react"
+import { Plane, AlertTriangle, Clock, User } from "lucide-react"
 
 interface HorarioViewProps {
   date: Date
@@ -94,7 +93,6 @@ const extraerTituloProfesional = (nombre: string | null | undefined) => {
   if (!nombre) {
     return { titulo: "", nombre: "Usuario sin nombre" }
   }
-
   const match = nombre.match(/^(Dr\.|Dra\.) (.+)$/)
   if (match) {
     return { titulo: match[1], nombre: match[2] }
@@ -134,24 +132,16 @@ export function HorarioView({
   const horaFin = 20 * 60 // 8:00 PM en minutos
   const duracionDia = horaFin - horaInicio
 
-  // Verificar si hay citas completadas en el día
-  const hasCompletedAppointments = () => {
-    return citas.some((cita) => cita.estado === "completada")
-  }
-
   // Cargar vacaciones de profesionales
   useEffect(() => {
     if (!requests || requests.length === 0) return
-
     const dateStr = date.toISOString().split("T")[0]
     const vacationsMap: Record<string, VacationRequest> = {}
-
     requests.forEach((request) => {
       if (request.status === "approved" && request.start_date <= dateStr && request.end_date >= dateStr) {
         vacationsMap[request.user_id] = request
       }
     })
-
     setProfessionalVacations(vacationsMap)
   }, [requests, date])
 
@@ -221,11 +211,9 @@ export function HorarioView({
     }
 
     setDragOverProfesional(profesionalId)
-
     const container = e.currentTarget as HTMLElement
     const rect = container.getBoundingClientRect()
     const y = e.clientY - rect.top
-
     const nuevaHora = calcularHoraDesdePosicion(y, rect.height)
     setPreviewHora(nuevaHora)
     setPreviewPosition({ x: 0, y: e.clientY })
@@ -233,7 +221,6 @@ export function HorarioView({
     // Mostrar indicador visual
     const indicadores = container.querySelectorAll(".drop-indicator")
     indicadores.forEach((ind) => ind.remove())
-
     const indicador = document.createElement("div")
     indicador.className = "drop-indicator absolute w-full h-1 bg-blue-400 rounded-full z-50 pointer-events-none"
     indicador.style.top = `${(y / rect.height) * 100}%`
@@ -253,10 +240,9 @@ export function HorarioView({
     const container = e.currentTarget as HTMLElement
     const rect = container.getBoundingClientRect()
     const y = e.clientY - rect.top
-
     const nuevaHora = calcularHoraDesdePosicion(y, rect.height)
 
-    //Actualizar la cita
+    // Actualizar la cita
     const citaActualizada = {
       ...draggedCita,
       profesionalId,
@@ -322,23 +308,6 @@ export function HorarioView({
   return (
     <TooltipProvider>
       <div className="flex flex-col h-full bg-white">
-        {/* Header con botón de facturación si hay citas completadas */}
-        {hasCompletedAppointments() && onOpenDailyBilling && (
-          <div className="border-b px-4 py-2 bg-green-50">
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-green-700">Hay citas completadas en este día que pueden ser facturadas</div>
-              <Button
-                onClick={onOpenDailyBilling}
-                size="sm"
-                className="bg-green-600 hover:bg-green-700 text-white gap-2"
-              >
-                <FileText className="h-4 w-4" />
-                Facturar Día
-              </Button>
-            </div>
-          </div>
-        )}
-
         {/* Contenido principal del calendario */}
         <div className="flex flex-1 overflow-hidden">
           {/* Columna de horas */}
@@ -391,9 +360,9 @@ export function HorarioView({
 
                   {/* Área de citas */}
                   <div
-                    className={`relative h-full ${
-                      isOnVacation ? "bg-red-50 opacity-60" : "bg-white"
-                    } ${dragOverProfesional === profesional.id ? "bg-blue-50" : ""}`}
+                    className={`relative h-full ${isOnVacation ? "bg-red-50 opacity-60" : "bg-white"} ${
+                      dragOverProfesional === profesional.id ? "bg-blue-50" : ""
+                    }`}
                     onDragOver={(e) => handleDragOver(e, profesional.id)}
                     onDrop={(e) => handleDrop(e, profesional.id)}
                     onDragLeave={handleDragLeave}

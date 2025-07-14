@@ -110,7 +110,6 @@ async function getOriginalInvoiceData(
     let clientData = undefined
     if (originalInvoice.clients) {
       const clientsData = originalInvoice.clients as any
-
       if (Array.isArray(clientsData) && clientsData.length > 0) {
         clientData = {
           name: clientsData[0]?.name || "Cliente no encontrado",
@@ -147,7 +146,6 @@ async function loadImageAsBase64(url: string): Promise<string | null> {
   try {
     const response = await fetch(url, { mode: "cors" })
     if (!response.ok) return null
-
     const blob = await response.blob()
     return new Promise((resolve) => {
       const reader = new FileReader()
@@ -196,7 +194,7 @@ function validateInvoiceLines(lines: InvoiceLine[]): InvoiceLine[] {
 }
 
 /**
- * Genera el PDF de la factura con diseño compacto como la imagen
+ * Genera el PDF de la factura con diseño compacto mejorado
  */
 export async function generatePdf(
   invoice: InvoiceData,
@@ -208,7 +206,7 @@ export async function generatePdf(
     const validatedInvoice = validateInvoiceData(invoice)
     const validatedLines = validateInvoiceLines(invoiceLines)
 
-    console.log("📄 Generando PDF compacto:", {
+    console.log("📄 Generando PDF compacto mejorado:", {
       invoice: validatedInvoice,
       lines: validatedLines,
       fileName,
@@ -223,14 +221,12 @@ export async function generatePdf(
     const isRectificative = validatedInvoice.invoice_type === "rectificativa"
     const isSimplified = validatedInvoice.invoice_type === "simplificada"
 
-    // === HEADER COMPACTO COMO LA IMAGEN ===
+    // === HEADER COMPACTO ===
     doc.setFontSize(16)
     doc.setFont("helvetica", "normal")
-
     let headerTitle = "Factura"
     if (isRectificative) headerTitle = "Factura Rectificativa"
     if (isSimplified) headerTitle = "Factura Simplificada"
-
     doc.text(headerTitle, 20, yPosition)
 
     // Nombre de la organización a la derecha
@@ -246,40 +242,32 @@ export async function generatePdf(
           if (logoUrl) {
             const logoBase64 = await loadImageAsBase64(logoUrl)
             if (logoBase64) {
-              // Crear una imagen temporal para obtener dimensiones reales
               const tempImg = new Image()
               tempImg.src = logoBase64
 
-              // Esperar a que la imagen cargue
               await new Promise((resolve) => {
                 tempImg.onload = resolve
                 tempImg.onerror = resolve
               })
 
-              // Calcular dimensiones manteniendo proporción (más pequeño para diseño compacto)
               const maxWidth = 30
               const maxHeight = 20
-
               let logoWidth = tempImg.width
               let logoHeight = tempImg.height
 
-              // Ajustar proporcionalmente si excede límites
               if (logoWidth > maxWidth) {
                 const ratio = maxWidth / logoWidth
                 logoWidth = maxWidth
                 logoHeight = logoHeight * ratio
               }
-
               if (logoHeight > maxHeight) {
                 const ratio = maxHeight / logoHeight
                 logoHeight = maxHeight
                 logoWidth = logoWidth * ratio
               }
 
-              // Posicionar logo en la esquina superior derecha, debajo del nombre de la empresa
               const logoX = 190 - logoWidth
               const logoY = yPosition + 5
-
               doc.addImage(logoBase64, "PNG", logoX, logoY, logoWidth, logoHeight)
             }
           }
@@ -294,11 +282,10 @@ export async function generatePdf(
     // === INFORMACIÓN DE FACTURA COMPACTA ===
     doc.setFontSize(9)
     doc.setFont("helvetica", "bold")
-
     doc.text("Número de factura", 20, yPosition)
     doc.text(validatedInvoice.invoice_number, 80, yPosition)
-
     yPosition += 5
+
     doc.text("Fecha de emisión", 20, yPosition)
     doc.text(
       new Date(validatedInvoice.issue_date).toLocaleDateString("es-ES", {
@@ -309,7 +296,6 @@ export async function generatePdf(
       80,
       yPosition,
     )
-
     yPosition += 15
 
     // === INFORMACIÓN DE EMPRESA Y CLIENTE EN DOS COLUMNAS ===
@@ -322,7 +308,6 @@ export async function generatePdf(
       doc.setFont("helvetica", "bold")
       doc.setFontSize(10)
       doc.text(validatedInvoice.organization.name.toUpperCase(), leftColumnX, yPosition)
-
       doc.setFont("helvetica", "normal")
       doc.setFontSize(9)
       yPosition += 5
@@ -347,7 +332,6 @@ export async function generatePdf(
       doc.setFont("helvetica", "bold")
       doc.setFontSize(9)
       doc.text("Facturar a", rightColumnX, clientY)
-
       doc.setFont("helvetica", "normal")
       doc.setFontSize(9)
       clientY += 5
@@ -362,7 +346,6 @@ export async function generatePdf(
       )
       clientY += 4
       doc.text(validatedInvoice.client_data.country, rightColumnX, clientY)
-
       if (validatedInvoice.client_data.phone) {
         clientY += 4
         doc.text(validatedInvoice.client_data.phone, rightColumnX, clientY)
@@ -388,7 +371,6 @@ export async function generatePdf(
         20,
         yPosition,
       )
-
       yPosition += 10
 
       if (validatedInvoice.original_invoice_number) {
@@ -453,114 +435,152 @@ export async function generatePdf(
       }
     }
 
-    // === TABLA DE SERVICIOS COMPACTA ===
+    // === TABLA DE SERVICIOS MEJORADA ===
     yPosition += 5
 
     // Headers de la tabla
     const tableHeaders = ["Descripción", "Cant.", "Precio unitario", "Impuesto", "Importe"]
-    const colWidths = [80, 15, 25, 25, 25]
     const colPositions = [20, 100, 115, 140, 165]
 
     doc.setFont("helvetica", "bold")
     doc.setFontSize(9)
-
     tableHeaders.forEach((header, index) => {
       doc.text(header, colPositions[index], yPosition)
     })
-
     yPosition += 6
 
     // Línea separadora
     doc.setDrawColor(0, 0, 0)
     doc.setLineWidth(0.3)
     doc.line(20, yPosition, 190, yPosition)
-    yPosition += 6
+    yPosition += 8
 
-    // Filas de datos
+    // ✅ FILAS DE DATOS MEJORADAS - SIN ESTADO DE CITA
     doc.setFont("helvetica", "normal")
     doc.setFontSize(9)
 
     validatedLines.forEach((line) => {
-      // Descripción
+      // Verificar si necesitamos nueva página
+      if (yPosition > 250) {
+        doc.addPage()
+        yPosition = 30
+
+        // Repetir headers en nueva página
+        doc.setFont("helvetica", "bold")
+        doc.setFontSize(9)
+        tableHeaders.forEach((header, index) => {
+          doc.text(header, colPositions[index], yPosition)
+        })
+        yPosition += 6
+        doc.line(20, yPosition, 190, yPosition)
+        yPosition += 8
+        doc.setFont("helvetica", "normal")
+      }
+
+      // ✅ DESCRIPCIÓN LIMPIA - SIN ESTADO
       let description = line.description
       if (line.discount_percentage && line.discount_percentage > 0) {
         description += ` (Desc. ${line.discount_percentage}%)`
       }
 
-      const descLines = doc.splitTextToSize(description, colWidths[0] - 5)
+      const descLines = doc.splitTextToSize(description, 75)
+      const lineHeight = Math.max(6, descLines.length * 4)
+
+      // Descripción
       doc.text(descLines, colPositions[0], yPosition)
 
-      // Cantidad
-      doc.text(line.quantity.toString(), colPositions[1], yPosition)
+      // Cantidad (centrada verticalmente)
+      const centerY = yPosition + (lineHeight - 4) / 2
+      doc.text(line.quantity.toString(), colPositions[1], centerY)
 
       // Precio unitario
-      doc.text(`${line.unit_price.toFixed(2)} €`, colPositions[2], yPosition)
+      doc.text(`${line.unit_price.toFixed(2)} €`, colPositions[2], centerY)
 
       // Impuesto
       let taxText = ""
-      if (line.vat_rate > 0) taxText += `${line.vat_rate} %`
+      if (line.vat_rate > 0) taxText += `${line.vat_rate}%`
       if (line.irpf_rate > 0) {
         if (taxText) taxText += ", "
         taxText += `${line.irpf_rate}% IRPF`
       }
-      doc.text(taxText || "0%", colPositions[3], yPosition)
+      doc.text(taxText || "0%", colPositions[3], centerY)
 
       // Importe
-      doc.text(`${line.line_amount.toFixed(2)} €`, colPositions[4], yPosition)
+      doc.text(`${line.line_amount.toFixed(2)} €`, colPositions[4], centerY)
 
-      yPosition += Math.max(6, descLines.length * 4 + 2)
+      yPosition += lineHeight + 2
     })
 
     yPosition += 10
 
-   // === TOTALES COMPACTOS ===
-const totalsX = 140
-doc.setFont("helvetica", "normal")
-doc.setFontSize(9)
+    // === TOTALES MEJORADOS SIN SOLAPAMIENTOS ===
+    const totalsX = 120
+    const amountX = 185
 
-// Subtotal
-doc.text("Subtotal", totalsX, yPosition)
-doc.text(`${validatedInvoice.base_amount.toFixed(2)} €`, 185, yPosition, { align: "right" })
-yPosition += 6
+    doc.setFont("helvetica", "normal")
+    doc.setFontSize(9)
 
-// Total sin impuestos
-doc.text("Total sin impuestos", totalsX, yPosition)
-doc.text(`${validatedInvoice.base_amount.toFixed(2)} €`, 185, yPosition, { align: "right" })
-yPosition += 6
+    // Subtotal
+    doc.text("Subtotal", totalsX, yPosition)
+    doc.text(`${validatedInvoice.base_amount.toFixed(2)} €`, amountX, yPosition, { align: "right" })
+    yPosition += 5
 
-// IVA
-if (validatedInvoice.vat_amount > 0) {
-  const vatRate = validatedLines.length > 0 ? validatedLines[0].vat_rate : 21
-  doc.text(`IVA - España (${vatRate} % en ${validatedInvoice.base_amount.toFixed(2)} €)`, totalsX, yPosition)
-  doc.text(`${validatedInvoice.vat_amount.toFixed(2)} €`, 185, yPosition, { align: "right" })
-  yPosition += 6
-}
+    // Total sin impuestos
+    doc.text("Total sin impuestos", totalsX, yPosition)
+    doc.text(`${validatedInvoice.base_amount.toFixed(2)} €`, amountX, yPosition, { align: "right" })
+    yPosition += 5
 
-// IRPF
-if (validatedInvoice.irpf_amount > 0) {
-  doc.text(`IRPF`, totalsX, yPosition)
-  doc.text(`-${validatedInvoice.irpf_amount.toFixed(2)} €`, 185, yPosition, { align: "right" })
-  yPosition += 6
-}
+    // ✅ IVA MEJORADO SIN SOLAPAMIENTOS
+    if (validatedInvoice.vat_amount > 0) {
+      const vatRate = validatedLines.length > 0 ? validatedLines[0].vat_rate : 21
 
-// Retención
-if (validatedInvoice.retention_amount > 0) {
-  doc.text(`Retención`, totalsX, yPosition)
-  doc.text(`-${validatedInvoice.retention_amount.toFixed(2)} €`, 185, yPosition, { align: "right" })
-  yPosition += 6
-}
+      // Línea principal del IVA
+      doc.text(`IVA - España (${vatRate}%)`, totalsX, yPosition)
+      doc.text(`${validatedInvoice.vat_amount.toFixed(2)} €`, amountX, yPosition, { align: "right" })
+      yPosition += 4
 
-// Total
-doc.setFont("helvetica", "bold")
-doc.setFontSize(10)
-doc.text("Total", totalsX, yPosition)
-doc.text(`${validatedInvoice.total_amount.toFixed(2)} €`, 185, yPosition, { align: "right" })
-yPosition += 8
+      // Línea secundaria con base imponible (más pequeña y en gris)
+      doc.setFontSize(8)
+      doc.setTextColor(100, 100, 100)
+      doc.text(`Base: ${validatedInvoice.base_amount.toFixed(2)} €`, totalsX + 5, yPosition)
+      doc.setTextColor(0, 0, 0)
+      doc.setFontSize(9)
+      yPosition += 6
+    }
 
-// Importe adeudado
-doc.text("Importe adeudado", totalsX, yPosition)
-doc.text(`${validatedInvoice.total_amount.toFixed(2)} €`, 185, yPosition, { align: "right" })
-yPosition += 20
+    // IRPF
+    if (validatedInvoice.irpf_amount > 0) {
+      doc.text(`IRPF`, totalsX, yPosition)
+      doc.text(`-${validatedInvoice.irpf_amount.toFixed(2)} €`, amountX, yPosition, { align: "right" })
+      yPosition += 5
+    }
+
+    // Retención
+    if (validatedInvoice.retention_amount > 0) {
+      doc.text(`Retención`, totalsX, yPosition)
+      doc.text(`-${validatedInvoice.retention_amount.toFixed(2)} €`, amountX, yPosition, { align: "right" })
+      yPosition += 5
+    }
+
+    // Línea separadora antes del total
+    yPosition += 2
+    doc.setLineWidth(0.5)
+    doc.line(totalsX, yPosition, amountX, yPosition)
+    yPosition += 6
+
+    // Total
+    doc.setFont("helvetica", "bold")
+    doc.setFontSize(11)
+    doc.text("Total", totalsX, yPosition)
+    doc.text(`${validatedInvoice.total_amount.toFixed(2)} €`, amountX, yPosition, { align: "right" })
+    yPosition += 8
+
+    // Importe adeudado
+    doc.setFont("helvetica", "bold")
+    doc.setFontSize(10)
+    doc.text("Importe adeudado", totalsX, yPosition)
+    doc.text(`${validatedInvoice.total_amount.toFixed(2)} €`, amountX, yPosition, { align: "right" })
+    yPosition += 20
 
     // === NOTAS COMPACTAS ===
     if (validatedInvoice.notes && validatedInvoice.notes.trim()) {
@@ -645,7 +665,7 @@ yPosition += 20
 
     // Generar el blob
     const pdfBlob = doc.output("blob")
-    console.log("✅ PDF compacto generado exitosamente")
+    console.log("✅ PDF compacto mejorado generado exitosamente")
 
     if (autoDownload) {
       doc.save(fileName)
@@ -717,7 +737,6 @@ function calculateColumnWidths(data: string[][], totalWidth: number): number[] {
  */
 function getStatusText(status: string): string {
   switch (status) {
-    
     case "issued":
       return "Emitida"
     case "paid":

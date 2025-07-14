@@ -68,7 +68,6 @@ interface BillingProgress {
   errors: string[]
   currentClient?: string
   zipProgress?: number
-  overallProgress?: number
 }
 
 interface GeneratedInvoice {
@@ -95,7 +94,7 @@ const STATUS_COLORS = {
   no_show: "bg-gray-100 text-gray-800",
 }
 
-// ✅ COMPONENTE DE PROGRESO MEJORADO CON PROGRESO GRADUAL
+// ✅ COMPONENTE DE PROGRESO MEJORADO
 function EnhancedProgressBar({ progress }: { progress: BillingProgress }) {
   const getPhaseIcon = () => {
     switch (progress.phase) {
@@ -154,40 +153,10 @@ function EnhancedProgressBar({ progress }: { progress: BillingProgress }) {
     }
   }
 
-  // ✅ CALCULAR PROGRESO GRADUAL BASADO EN FASES
-  const calculateOverallProgress = () => {
-    const phaseWeights = {
-      validating: 10, // 0-10%
-      generating: 60, // 10-70%
-      creating_pdfs: 20, // 70-90%
-      creating_zip: 10, // 90-100%
-      completed: 0,
-      error: 0,
-    }
-
-    let baseProgress = 0
-    const phases = Object.keys(phaseWeights) as Array<keyof typeof phaseWeights>
-    const currentPhaseIndex = phases.indexOf(progress.phase)
-
-    // Sumar progreso de fases completadas
-    for (let i = 0; i < currentPhaseIndex; i++) {
-      baseProgress += phaseWeights[phases[i]]
-    }
-
-    // Añadir progreso de la fase actual
-    if (progress.phase === "creating_zip" && progress.zipProgress !== undefined) {
-      baseProgress += (phaseWeights.creating_zip * progress.zipProgress) / 100
-    } else if (progress.phase !== "completed" && progress.phase !== "error") {
-      const phaseProgress = progress.total > 0 ? progress.current / progress.total : 0
-      baseProgress += phaseWeights[progress.phase] * phaseProgress
-    } else if (progress.phase === "completed") {
-      baseProgress = 100
-    }
-
-    return Math.min(Math.max(baseProgress, 0), 100)
-  }
-
-  const progressPercentage = calculateOverallProgress()
+  const progressPercentage =
+    progress.phase === "creating_zip" && progress.zipProgress
+      ? progress.zipProgress
+      : (progress.current / progress.total) * 100
 
   return (
     <Card className="mb-6 border-2 border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50">
@@ -214,7 +183,7 @@ function EnhancedProgressBar({ progress }: { progress: BillingProgress }) {
           <div className="relative">
             <Progress value={progressPercentage} className="h-3 bg-gray-200" />
             <div
-              className={`absolute top-0 left-0 h-3 rounded-full transition-all duration-1000 ease-out ${getPhaseColor()}`}
+              className={`absolute top-0 left-0 h-3 rounded-full transition-all duration-500 ${getPhaseColor()}`}
               style={{ width: `${progressPercentage}%` }}
             />
           </div>
@@ -235,7 +204,7 @@ function EnhancedProgressBar({ progress }: { progress: BillingProgress }) {
                   }`}
                 >
                   <div
-                    className={`w-2 h-2 rounded-full transition-all duration-500 ${
+                    className={`w-2 h-2 rounded-full ${
                       isActive ? "bg-blue-500 animate-pulse" : isCompleted ? "bg-green-500" : "bg-gray-300"
                     }`}
                   />
@@ -345,6 +314,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
 
     try {
       const dateStr = format(selectedDate, "yyyy-MM-dd")
+      console.log(`🔍 Cargando TODAS las citas para la fecha: ${dateStr}`)
 
       // ✅ OBTENER TODAS LAS CITAS DEL DÍA SIN FILTRAR POR ESTADO
       const { data: appointments, error } = await supabase
@@ -382,11 +352,23 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
         .order("client_id")
 
       if (error) {
+        console.error("❌ Error en la consulta:", error)
         throw error
       }
 
+      console.log(`📊 Total de citas encontradas: ${appointments?.length || 0}`)
+
+      // Log de estados encontrados
+      const statusCounts: Record<string, number> = {}
+      appointments?.forEach((apt: any) => {
+        const status = apt.status || "sin_estado"
+        statusCounts[status] = (statusCounts[status] || 0) + 1
+      })
+      console.log("📈 Estados de citas encontrados:", statusCounts)
+
       // ✅ USAR TODAS LAS CITAS SIN FILTRAR
       const allAppointments = appointments || []
+      console.log(`✅ Procesando TODAS las citas: ${allAppointments.length}`)
 
       // Agrupar por cliente y validar datos
       const clientsMap = new Map<number, ClientAppointmentData>()
@@ -444,7 +426,11 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
       // Seleccionar automáticamente clientes con datos completos
       const validClientIds = clientsArray.filter((client) => client.has_complete_data).map((client) => client.client_id)
       setSelectedClients(new Set(validClientIds))
+
+      console.log(`🎯 Procesados ${clientsArray.length} clientes con citas del día`)
+      console.log(`✅ ${validClientIds.length} clientes tienen datos completos para facturación`)
     } catch (error) {
+      console.error("❌ Error loading day appointments:", error)
       toast({
         title: "Error",
         description: "No se pudieron cargar las citas del día",
@@ -491,9 +477,6 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
       errors: [],
     })
 
-    // ✅ PAUSA PARA MOSTRAR LA FASE DE VALIDACIÓN
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-
     try {
       // Importar funciones necesarias
       const { generateUniqueInvoiceNumber } = await import("@/lib/invoice-utils")
@@ -515,12 +498,8 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
       setProgress((prev) => ({
         ...prev!,
         phase: "generating",
-        current: 0,
         message: "⚡ Iniciando generación de facturas...",
       }))
-
-      // ✅ PAUSA PARA MOSTRAR EL CAMBIO DE FASE
-      await new Promise((resolve) => setTimeout(resolve, 500))
 
       const errors: string[] = []
       let successCount = 0
@@ -547,7 +526,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           // Preparar líneas de factura
           const invoiceLines = clientData.appointments.map((apt) => ({
             id: crypto.randomUUID(),
-            description: `${apt.consultation_name} - ${apt.professional_name} (${apt.start_time}-${apt.end_time}) [${STATUS_LABELS[apt.status as keyof typeof STATUS_LABELS] || apt.status}]`,
+            description: `${apt.consultation_name} - ${apt.professional_name} (${apt.start_time}-${apt.end_time})`,
             quantity: 1,
             unit_price: apt.service_price || 50,
             discount_percentage: 0,
@@ -599,7 +578,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
 
           // Preparar notas de la factura
           const clientInfoText = `Cliente: ${clientData.client_name}, CIF/NIF: ${clientData.client_tax_id}, Dirección: ${clientData.client_address}, ${clientData.client_postal_code} ${clientData.client_city}, ${clientData.client_province}`
-          const additionalNotes = `Factura generada automáticamente para citas del ${format(selectedDate, "dd/MM/yyyy", { locale: es })}`
+          const additionalNotes = `Factura generada automáticamente para citas del ${format(selectedDate, "dd/MM/yyyy", { locale: es })} `
           const fullNotes = clientInfoText + "\n\n" + additionalNotes
 
           // Crear factura en la base de datos
@@ -656,56 +635,96 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
             console.error("Error updating organization:", updateOrgError)
           }
 
+          // ✅ FASE DE CREACIÓN DE PDFs
+          setProgress((prev) => ({
+            ...prev!,
+            phase: "creating_pdfs",
+            message: `📄 Generando PDF para ${clientData.client_name}...`,
+            currentClient: clientData.client_name,
+          }))
+
+          // Generar PDF
+          try {
+            const newInvoice = {
+              id: invoiceData.id,
+              invoice_number: invoiceNumberFormatted,
+              issue_date: format(selectedDate, "yyyy-MM-dd"),
+              invoice_type: "normal" as const,
+              status: "sent",
+              base_amount: baseAmount,
+              vat_amount: vatAmount,
+              irpf_amount: irpfAmount,
+              retention_amount: retentionAmount,
+              total_amount: totalAmount,
+              discount_amount: totalDiscountAmount,
+              notes: fullNotes,
+              signature: null,
+              organization: {
+                name: orgData.name,
+                tax_id: orgData.tax_id,
+                address: orgData.address,
+                postal_code: orgData.postal_code,
+                city: orgData.city,
+                province: orgData.province,
+                country: orgData.country,
+                email: orgData.email,
+                phone: orgData.phone,
+                invoice_prefix: orgData.invoice_prefix,
+                logo_url: orgData.logo_url,
+                logo_path: orgData.logo_path,
+              },
+              client_data: {
+                name: clientData.client_name,
+                tax_id: clientData.client_tax_id || "",
+                address: clientData.client_address || "",
+                postal_code: clientData.client_postal_code || "",
+                city: clientData.client_city || "",
+                province: clientData.client_province || "",
+                country: "España",
+                email: clientData.client_email || "",
+                phone: clientData.client_phone || "",
+                client_type: "private",
+              },
+            }
+
+            // Generar PDF pero no descargarlo automáticamente
+            const pdfBlob = await generatePdf(newInvoice, invoiceLines, `factura-${invoiceNumberFormatted}.pdf`, false)
+
+            if (pdfBlob && pdfBlob instanceof Blob) {
+              // Guardar para el ZIP
+              invoicesForZip.push({
+                invoiceNumber: invoiceNumberFormatted,
+                clientName: clientData.client_name,
+                amount: totalAmount,
+                pdfBlob: pdfBlob,
+                invoiceId: invoiceData.id,
+              })
+
+              // Guardar PDF en storage
+              try {
+                const pdfUrl = await savePdfToStorage(
+                  pdfBlob,
+                  `factura-${invoiceNumberFormatted}.pdf`,
+                  userProfile!.organization_id,
+                )
+
+                await supabase.from("invoices").update({ pdf_url: pdfUrl }).eq("id", invoiceData.id)
+              } catch (pdfError) {
+                console.error("Error saving PDF:", pdfError)
+              }
+            }
+          } catch (pdfError) {
+            console.error("Error generating PDF:", pdfError)
+          }
+
           successCount++
         } catch (error) {
+          console.error(`Error generating invoice for client ${clientData.client_name}:`, error)
           errors.push(`${clientData.client_name}: ${error instanceof Error ? error.message : "Error desconocido"}`)
         }
 
-        // ✅ PAUSA MÁS LARGA PARA VER EL PROGRESO
-        await new Promise((resolve) => setTimeout(resolve, 800))
-      }
-
-      // ✅ FASE DE CREACIÓN DE PDFs
-      setProgress((prev) => ({
-        ...prev!,
-        phase: "creating_pdfs",
-        current: 0,
-        total: selectedClientsArray.length,
-        message: "📄 Iniciando creación de PDFs...",
-      }))
-
-      await new Promise((resolve) => setTimeout(resolve, 500))
-
-      // Generar PDFs para las facturas exitosas
-      for (let i = 0; i < selectedClientsArray.length; i++) {
-        const clientId = selectedClientsArray[i]
-        const clientData = clientsData.find((c) => c.client_id === clientId)!
-
-        setProgress((prev) => ({
-          ...prev!,
-          current: i + 1,
-          message: `📄 Generando PDF para ${clientData.client_name}...`,
-          currentClient: clientData.client_name,
-        }))
-
-        try {
-          // Aquí iría la lógica de generación de PDF
-          // Por ahora simulamos con un delay
-          await new Promise((resolve) => setTimeout(resolve, 600))
-
-          // Simular creación de PDF blob
-          const mockPdfBlob = new Blob(["mock pdf content"], { type: "application/pdf" })
-
-          invoicesForZip.push({
-            invoiceNumber: `FAC-2025-${String(i + 1).padStart(3, "0")}`,
-            clientName: clientData.client_name,
-            amount: clientData.total_amount,
-            pdfBlob: mockPdfBlob,
-            invoiceId: `mock-id-${i}`,
-          })
-        } catch (error) {
-          console.error("Error generating PDF:", error)
-        }
+        // Pequeña pausa para no saturar
+        await new Promise((resolve) => setTimeout(resolve, 300))
       }
 
       // ✅ CREAR ZIP CON TODAS LAS FACTURAS CON PROGRESO ANIMADO
@@ -713,13 +732,9 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
         setProgress((prev) => ({
           ...prev!,
           phase: "creating_zip",
-          current: 0,
-          total: invoicesForZip.length,
           message: "📦 Empaquetando facturas en archivo ZIP...",
           zipProgress: 0,
         }))
-
-        await new Promise((resolve) => setTimeout(resolve, 500))
 
         const zip = new JSZip()
 
@@ -730,7 +745,6 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           // Actualizar progreso del ZIP
           setProgress((prev) => ({
             ...prev!,
-            current: i + 1,
             zipProgress: ((i + 1) / invoicesForZip.length) * 100,
             message: `📦 Añadiendo ${invoice.invoiceNumber} al ZIP... (${i + 1}/${invoicesForZip.length})`,
           }))
@@ -744,8 +758,8 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           const fileName = `${invoice.invoiceNumber}_${cleanClientName}.pdf`
           zip.file(fileName, invoice.pdfBlob)
 
-          // ✅ PAUSA PARA VER EL PROGRESO DEL ZIP
-          await new Promise((resolve) => setTimeout(resolve, 400))
+          // Pequeña pausa para mostrar el progreso
+          await new Promise((resolve) => setTimeout(resolve, 100))
         }
 
         // Generar el ZIP con progreso
@@ -754,8 +768,6 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           message: "🗜️ Comprimiendo archivo ZIP...",
           zipProgress: 95,
         }))
-
-        await new Promise((resolve) => setTimeout(resolve, 1000))
 
         const zipBlob = await zip.generateAsync({
           type: "blob",
@@ -772,8 +784,6 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           message: "💾 Descargando archivo ZIP...",
           zipProgress: 100,
         }))
-
-        await new Promise((resolve) => setTimeout(resolve, 500))
 
         // Descargar el ZIP
         const url = URL.createObjectURL(zipBlob)
@@ -812,6 +822,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
         })
       }
     } catch (error) {
+      console.error("Error in billing process:", error)
       setProgress({
         phase: "error",
         current: 0,
@@ -859,6 +870,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
         description: `Se descargó nuevamente el archivo con ${generatedInvoices.length} facturas`,
       })
     } catch (error) {
+      console.error("Error downloading ZIP:", error)
       toast({
         title: "❌ Error",
         description: "No se pudo descargar el archivo ZIP",
