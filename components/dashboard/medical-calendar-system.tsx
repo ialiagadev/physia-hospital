@@ -844,7 +844,6 @@ const MedicalCalendarSystem: React.FC = () => {
                             vacationRequests={vacationRequests}
                             isUserOnVacationDate={isUserOnVacationDate}
                             getUserVacationOnDate={getUserVacationOnDate}
-                            onOpenDailyBilling={() => setShowDailyBillingModal(true)}
                           />
                         )}
                         {vistaCalendario === "semana" && (

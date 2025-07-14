@@ -3,7 +3,6 @@
 import type React from "react"
 import { useState } from "react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Button } from "@/components/ui/button"
 import { AppointmentFormModal } from "./appointment-form-modal"
 import { HoraPreviewTooltip } from "./hora-preview-tooltip"
 import { calcularHoraFin } from "@/utils/calendar-utils"
@@ -17,12 +16,10 @@ import {
 } from "@/utils/schedule-utils"
 import type { Cita, Profesional, IntervaloTiempo } from "@/types/calendar"
 import type { User } from "@/types/calendar"
-import { isCompletedAppointment } from "@/types/citas"
 import { toast } from "sonner"
 import { format } from "date-fns"
 import type { WorkSchedule } from "@/types/calendar"
 import type { JSX } from "react"
-import { FileText } from "lucide-react"
 
 interface HorarioViewDynamicProps {
   date: Date
@@ -39,7 +36,6 @@ interface HorarioViewDynamicProps {
   isUserOnVacationDate?: (userId: string, date: Date | string) => boolean
   getUserVacationOnDate?: (userId: string, date: Date | string) => any
   workSchedules?: WorkSchedule[] // DATOS DEL SISTEMA NUEVO
-  onOpenDailyBilling?: () => void // Nueva prop para abrir facturación diaria
 }
 
 const getColorProfesional = (profesional: Profesional) => {
@@ -71,12 +67,10 @@ const extraerTituloProfesional = (nombre: string | null | undefined) => {
   if (!nombre) {
     return { titulo: "", nombre: "Usuario sin nombre" }
   }
-
   const match = nombre.match(/^(Dr\.|Dra\.) (.+)$/)
   if (match) {
     return { titulo: match[1], nombre: match[2] }
   }
-
   return { titulo: "", nombre: nombre }
 }
 
@@ -123,7 +117,6 @@ export function HorarioViewDynamic({
   isUserOnVacationDate = () => false,
   getUserVacationOnDate = () => null,
   workSchedules = [], // SOLO SISTEMA NUEVO
-  onOpenDailyBilling,
 }: HorarioViewDynamicProps) {
   const [draggedCita, setDraggedCita] = useState<Cita | null>(null)
   const [dragOverProfesional, setDragOverProfesional] = useState<number | null>(null)
@@ -159,11 +152,6 @@ export function HorarioViewDynamic({
   const timeSlots = generateTimeSlots(usuariosActivos, dayOfWeek, intervaloTiempo)
   const { start: startMinutes, end: endMinutes } = getCalendarTimeRange(usuariosActivos, dayOfWeek)
   const duracionDia = endMinutes - startMinutes
-
-  // Verificar si hay citas completadas en el día - USANDO LA FUNCIÓN DE UTILIDAD
-  const hasCompletedAppointments = () => {
-    return citas.some((cita) => isCompletedAppointment(cita.estado))
-  }
 
   // Funciones de vacaciones
   const isProfessionalOnVacation = (profesionalId: number | string) => {
@@ -326,7 +314,6 @@ export function HorarioViewDynamic({
         profesionalId: profesionalId,
         horaFin: calcularHoraFin(nuevaHora, draggedCita.duracion),
       }
-
       await onUpdateCita(citaActualizada)
       setDraggedCita(null)
       setDragOverProfesional(null)
@@ -385,7 +372,6 @@ export function HorarioViewDynamic({
 
     const workingHours = getWorkingHoursForDay(user, dayOfWeek)
     const userSchedules = getUserWorkSchedulesForDay(user.id, dayOfWeek, workSchedules)
-
     const huecos: JSX.Element[] = []
 
     for (const hours of workingHours) {
@@ -624,19 +610,6 @@ export function HorarioViewDynamic({
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header con botón de facturación si hay citas completadas */}
-      {hasCompletedAppointments() && onOpenDailyBilling && (
-        <div className="border-b px-4 py-2 bg-green-50">
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-green-700">Hay citas completadas en este día que pueden ser facturadas</div>
-            <Button onClick={onOpenDailyBilling} size="sm" className="bg-green-600 hover:bg-green-700 text-white gap-2">
-              <FileText className="h-4 w-4" />
-              Facturar Día
-            </Button>
-          </div>
-        </div>
-      )}
-
       {/* Contenido principal del calendario */}
       <div className="flex-1 overflow-hidden">
         <div className="space-y-4 p-4">
