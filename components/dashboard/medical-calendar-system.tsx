@@ -182,11 +182,10 @@ const MedicalCalendarSystem: React.FC = () => {
   )
 
   // Función para verificar si hay citas completadas en el día actual
-  const hasCompletedAppointmentsToday = () => {
+  const hasAppointmentsToday = () => {
     const today = format(currentDate, "yyyy-MM-dd")
-    return appointments.some((apt) => format(new Date(apt.date), "yyyy-MM-dd") === today && apt.status === "completed")
+    return appointments.some((apt) => format(new Date(apt.date), "yyyy-MM-dd") === today)
   }
-
   // Inicializar con todos los usuarios seleccionados
   useEffect(() => {
     if (users.length > 0) {
@@ -768,7 +767,7 @@ const MedicalCalendarSystem: React.FC = () => {
                         </Button>
 
                         {/* Botón Facturar Día - Solo en vista día y si hay citas completadas */}
-                        {vistaCalendario === "dia" && hasCompletedAppointmentsToday() && (
+                        {vistaCalendario === "dia" && hasAppointmentsToday() && (
                           <Button
                             onClick={() => setShowDailyBillingModal(true)}
                             size="sm"

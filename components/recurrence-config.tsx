@@ -1,7 +1,5 @@
 "use client"
 
-import type React from "react"
-
 import { useState, useEffect, useMemo } from "react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
@@ -11,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { CalendarDays, Clock, AlertTriangle } from "lucide-react"
-import { format, addDays, addWeeks, addMonths, isAfter, isValid, parse } from "date-fns"
+import { format, addDays, addWeeks, addMonths, isAfter, isValid } from "date-fns"
 import { es } from "date-fns/locale"
 
 // ✅ TIPOS CORREGIDOS
@@ -33,61 +31,6 @@ interface RecurrenceConfigComponentProps {
   description?: string
 }
 
-// ✅ FUNCIONES PARA LA MÁSCARA DE FECHA
-const formatDateMask = (value: string): string => {
-  // Quitar todo lo que no sean números
-  const numbers = value.replace(/\D/g, "")
-
-  // Aplicar formato DD/MM/YYYY progresivamente
-  if (numbers.length === 0) return ""
-  if (numbers.length <= 2) return numbers
-  if (numbers.length <= 4) return `${numbers.slice(0, 2)}/${numbers.slice(2)}`
-  if (numbers.length <= 8) return `${numbers.slice(0, 2)}/${numbers.slice(2, 4)}/${numbers.slice(4, 8)}`
-
-  // Limitar a 8 dígitos máximo
-  return `${numbers.slice(0, 2)}/${numbers.slice(2, 4)}/${numbers.slice(4, 8)}`
-}
-
-const parseDateFromMask = (maskedValue: string): Date | null => {
-  // Quitar las barras y obtener solo números
-  const numbers = maskedValue.replace(/\D/g, "")
-
-  // Necesitamos exactamente 8 dígitos para una fecha completa
-  if (numbers.length !== 8) return null
-
-  const day = numbers.slice(0, 2)
-  const month = numbers.slice(2, 4)
-  const year = numbers.slice(4, 8)
-
-  // Validar rangos básicos
-  const dayNum = Number.parseInt(day, 10)
-  const monthNum = Number.parseInt(month, 10)
-  const yearNum = Number.parseInt(year, 10)
-
-  if (dayNum < 1 || dayNum > 31) return null
-  if (monthNum < 1 || monthNum > 12) return null
-  if (yearNum < 1900 || yearNum > 2100) return null
-
-  // Crear fecha y validar que sea válida
-  try {
-    const date = parse(`${day}/${month}/${year}`, "dd/MM/yyyy", new Date())
-    return isValid(date) ? date : null
-  } catch {
-    return null
-  }
-}
-
-const formatDateForMask = (date: Date): string => {
-  if (!date || !isValid(date)) return ""
-  return format(date, "dd/MM/yyyy")
-}
-
-// ✅ FUNCIÓN PARA CONVERTIR FECHA A FORMATO INPUT DATE (YYYY-MM-DD)
-const formatDateForInput = (date: Date): string => {
-  if (!date || !isValid(date)) return ""
-  return format(date, "yyyy-MM-dd")
-}
-
 export function RecurrenceConfigComponent({
   isEnabled,
   onEnabledChange,
@@ -105,26 +48,12 @@ export function RecurrenceConfigComponent({
     count: 5,
   })
 
-  // Estado para el input de fecha con máscara
-  const [dateInputValue, setDateInputValue] = useState<string>("")
-
   // Sincronizar config local con prop externa solo cuando cambia externamente
   useEffect(() => {
     if (config && config.endDate && isValid(config.endDate) && JSON.stringify(config) !== JSON.stringify(localConfig)) {
       setLocalConfig(config)
-      setDateInputValue(formatDateForMask(config.endDate))
     }
   }, [config])
-
-  // Sincronizar el input de fecha cuando cambia localConfig.endDate
-  useEffect(() => {
-    if (localConfig.endDate && isValid(localConfig.endDate)) {
-      const formattedDate = formatDateForMask(localConfig.endDate)
-      if (formattedDate !== dateInputValue) {
-        setDateInputValue(formattedDate)
-      }
-    }
-  }, [localConfig.endDate])
 
   // Generar fechas de preview
   const previewDates = useMemo(() => {
@@ -183,45 +112,12 @@ export function RecurrenceConfigComponent({
     }
   }
 
-  // Manejar cambio en el input de fecha con máscara
-  const handleDateInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const inputValue = e.target.value
-    const maskedValue = formatDateMask(inputValue)
-
-    setDateInputValue(maskedValue)
-
-    // Intentar parsear la fecha si está completa
-    const parsedDate = parseDateFromMask(maskedValue)
-    if (parsedDate) {
-      // Validar que sea posterior a startDate
-      if (isAfter(parsedDate, startDate)) {
-        updateConfig({ endDate: parsedDate })
-      }
-    }
-  }
-
-  // ✅ MANEJAR CAMBIO EN EL INPUT DATE
-  const handleDatePickerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const dateValue = e.target.value // Formato YYYY-MM-DD
-    if (dateValue) {
-      const selectedDate = new Date(dateValue + "T00:00:00") // Evitar problemas de zona horaria
-      if (isValid(selectedDate) && isAfter(selectedDate, startDate)) {
-        updateConfig({ endDate: selectedDate })
-        setDateInputValue(formatDateForMask(selectedDate))
-      }
-    }
-  }
-
   const getFrequencyLabel = () => {
     if (localConfig.type === "weekly") {
       return localConfig.interval === 1 ? "semana" : `${localConfig.interval} semanas`
     }
     return localConfig.interval === 1 ? "mes" : `${localConfig.interval} meses`
   }
-
-  // Calcular fecha mínima para validación visual
-  const minDateFormatted = format(addDays(startDate, 1), "dd/MM/yyyy")
-  const minDateForInput = formatDateForInput(addDays(startDate, 1))
 
   return (
     <div className="space-y-4">
@@ -313,53 +209,22 @@ export function RecurrenceConfigComponent({
                   </Label>
                 </div>
                 {localConfig.endType === "date" && (
-                  <div className="ml-6 space-y-2">
-                    {/* Input con máscara + input date oculto con referencia */}
-                    <div className="flex gap-2">
-                      <div className="flex-1">
-                        <Input
-                          type="text"
-                          placeholder="DD/MM/YYYY"
-                          value={dateInputValue}
-                          onChange={handleDateInputChange}
-                          className="font-mono"
-                          maxLength={10}
-                        />
-                        <p className="text-xs text-muted-foreground mt-1">Escribe: ej. 15012024</p>
-                      </div>
-                      <div className="relative">
-                        {/* Input date oculto */}
-                        <input
-                          ref={(el) => {
-                            if (el) {
-                              // Guardar referencia para poder activarlo desde el icono
-                              ;(window as any).datePickerRef = el
-                            }
-                          }}
-                          type="date"
-                          value={formatDateForInput(localConfig.endDate)}
-                          onChange={handleDatePickerChange}
-                          min={minDateForInput}
-                          className="absolute opacity-0 pointer-events-none"
-                        />
-                        {/* Icono clickeable que activa el date picker */}
-                        <div
-                          className="w-10 h-10 border border-input rounded-md flex items-center justify-center bg-background hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors"
-                          onClick={() => {
-                            // Activar el input date oculto
-                            const dateInput = (window as any).datePickerRef
-                            if (dateInput) {
-                              dateInput.showPicker?.() || dateInput.focus()
-                            }
-                          }}
-                        >
-                          📅
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-1 text-center">Calendario</p>
-                      </div>
-                    </div>
-                    <p className="text-xs text-muted-foreground">Fecha mínima: {minDateFormatted}</p>
-                  </div>
+                  <Input
+                    type="date"
+                    value={
+                      localConfig.endDate && !isNaN(localConfig.endDate.getTime())
+                        ? format(localConfig.endDate, "yyyy-MM-dd")
+                        : ""
+                    }
+                    onChange={(e) => {
+                      const newDate = new Date(e.target.value)
+                      if (e.target.value && !isNaN(newDate.getTime())) {
+                        updateConfig({ endDate: newDate })
+                      }
+                    }}
+                    min={format(addDays(startDate, 1), "yyyy-MM-dd")}
+                    className="ml-6"
+                  />
                 )}
 
                 <div className="flex items-center space-x-2">

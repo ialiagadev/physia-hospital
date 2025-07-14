@@ -79,7 +79,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
       const invoiceLines = [
         {
           id: crypto.randomUUID(),
-          description: `${appointment.consultation.name} - ${appointment.professional.name} (${appointment.start_time}-${appointment.end_time})`,
+          description: `${appointment.consultation.name} - ${appointment.professional.name} (${appointment.start_time}-${appointment.end_time}) [${appointment.status}]`,
           quantity: 1,
           unit_price: servicePrice,
           discount_percentage: 0,
@@ -133,7 +133,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
       // Preparar datos de la factura con la misma estructura que new invoice
       const client = appointment.client
       const clientInfoText = `Cliente: ${client.name}, CIF/NIF: ${(client as any).tax_id}, Dirección: ${(client as any).address}, ${(client as any).postal_code} ${(client as any).city}, ${(client as any).province}`
-      const additionalNotes = `Factura generada para cita del ${format(new Date(appointment.date), "dd/MM/yyyy")} - ${appointment.start_time}`
+      const additionalNotes = `Factura generada para cita del ${format(new Date(appointment.date), "dd/MM/yyyy")} - ${appointment.start_time} (Estado: ${appointment.status})`
       const fullNotes = clientInfoText + "\n\n" + additionalNotes
 
       // Crear factura en la base de datos
@@ -279,11 +279,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
     }
   }
 
-  // Solo mostrar el botón si la cita está completada
-  if (appointment.status !== "completed") {
-    return null
-  }
-
+  // Mostrar el botón para TODAS las citas (sin filtrar por estado)
   return (
     <Button
       variant="outline"

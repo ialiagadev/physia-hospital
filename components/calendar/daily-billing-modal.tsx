@@ -37,6 +37,7 @@ interface ClientAppointmentData {
     consultation_name: string
     notes: string | null
     service_price?: number
+    status: string
   }>
   total_amount: number
   has_complete_data: boolean
@@ -54,12 +55,12 @@ interface BillingProgress {
 export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillingModalProps) {
   const { userProfile } = useAuth()
   const { toast } = useToast()
-
   const [clientsData, setClientsData] = useState<ClientAppointmentData[]>([])
   const [selectedClients, setSelectedClients] = useState<Set<number>>(new Set())
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [progress, setProgress] = useState<BillingProgress | null>(null)
+  const [debugInfo, setDebugInfo] = useState<string>("")
 
   // Cargar datos de citas del día
   useEffect(() => {
@@ -70,10 +71,13 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
 
   const loadDayAppointments = async () => {
     setLoading(true)
+    setDebugInfo("")
+
     try {
       const dateStr = format(selectedDate, "yyyy-MM-dd")
+      console.log(`🔍 Buscando TODAS las citas para la fecha: ${dateStr}`)
 
-      // Obtener citas completadas del día con datos del cliente
+      // Obtener TODAS las citas del día (sin filtrar por status)
       const { data: appointments, error } = await supabase
         .from("appointments")
         .select(`
@@ -81,6 +85,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           start_time,
           end_time,
           notes,
+          status,
           client_id,
           clients (
             id,
@@ -105,15 +110,49 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
         `)
         .eq("organization_id", userProfile!.organization_id)
         .eq("date", dateStr)
-        .eq("status", "completed")
         .order("client_id")
 
-      if (error) throw error
+      if (error) {
+        console.error("❌ Error en la consulta:", error)
+        throw error
+      }
+
+      console.log(`📊 Total de citas encontradas:`, appointments?.length || 0)
+
+      // Log de todos los estados encontrados
+      const statusCounts: Record<string, number> = {}
+      appointments?.forEach((apt: any) => {
+        const status = apt.status || "sin_estado"
+        statusCounts[status] = (statusCounts[status] || 0) + 1
+      })
+
+      console.log("📈 Estados de citas encontrados:", statusCounts)
+
+      // Usar TODAS las citas (sin filtrar por estado)
+      const allAppointments = appointments || []
+
+      console.log(`✅ Procesando todas las citas: ${allAppointments.length}`)
+
+      // Crear información de debug
+      let debugText = `Fecha: ${dateStr}\n`
+      debugText += `Total citas encontradas: ${appointments?.length || 0}\n`
+      debugText += `Citas a procesar: ${allAppointments.length}\n`
+      debugText += `Estados encontrados: ${Object.entries(statusCounts)
+        .map(([status, count]) => `${status}(${count})`)
+        .join(", ")}\n`
+
+      if (allAppointments.length === 0) {
+        debugText += `\n⚠️ No se encontraron citas para esta fecha.`
+      } else {
+        debugText += `\n✅ Se procesarán todas las citas independientemente de su estado.`
+      }
+
+      setDebugInfo(debugText)
 
       // Agrupar por cliente y validar datos
       const clientsMap = new Map<number, ClientAppointmentData>()
 
-      appointments?.forEach((apt: any) => {
+      allAppointments.forEach((apt: any) => {
         const client = apt.clients
         const clientId = client.id
 
@@ -153,9 +192,9 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           professional_name: apt.professional?.name || "Sin asignar",
           consultation_name: apt.consultation?.name || "Consulta general",
           notes: apt.notes,
-          service_price: servicePrice, // Declare the variable before using it
+          service_price: servicePrice,
+          status: apt.status,
         })
-
         clientData.total_amount += servicePrice
       })
 
@@ -165,8 +204,11 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
       // Seleccionar automáticamente clientes con datos completos
       const validClientIds = clientsArray.filter((client) => client.has_complete_data).map((client) => client.client_id)
       setSelectedClients(new Set(validClientIds))
+
+      console.log(`🎯 Procesados ${clientsArray.length} clientes con citas del día`)
     } catch (error) {
-      console.error("Error loading day appointments:", error)
+      console.error("❌ Error loading day appointments:", error)
+      setDebugInfo(`Error: ${error instanceof Error ? error.message : "Error desconocido"}`)
       toast({
         title: "Error",
         description: "No se pudieron cargar las citas del día",
@@ -260,7 +302,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           // Preparar líneas de factura con la misma estructura que new invoice
           const invoiceLines = clientData.appointments.map((apt, index) => ({
             id: crypto.randomUUID(),
-            description: `${apt.consultation_name} - ${apt.professional_name} (${apt.start_time}-${apt.end_time})`,
+            description: `${apt.consultation_name} - ${apt.professional_name} (${apt.start_time}-${apt.end_time}) [${apt.status}]`,
             quantity: 1,
             unit_price: apt.service_price || 50,
             discount_percentage: 0,
@@ -312,7 +354,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
 
           // Preparar datos de la factura con la misma estructura que new invoice
           const clientInfoText = `Cliente: ${clientData.client_name}, CIF/NIF: ${clientData.client_tax_id}, Dirección: ${clientData.client_address}, ${clientData.client_postal_code} ${clientData.client_city}, ${clientData.client_province}`
-          const additionalNotes = `Factura generada automáticamente para citas del ${format(selectedDate, "dd/MM/yyyy", { locale: es })}`
+          const additionalNotes = `Factura generada automáticamente para citas del ${format(selectedDate, "dd/MM/yyyy", { locale: es })} (incluye todas las citas independientemente del estado)`
           const fullNotes = clientInfoText + "\n\n" + additionalNotes
 
           // Crear factura en la base de datos
@@ -514,6 +556,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
                 <p className="text-sm text-gray-600">
                   {format(selectedDate, "EEEE, d 'de' MMMM 'de' yyyy", { locale: es })}
                 </p>
+                <p className="text-xs text-blue-600">Incluye todas las citas independientemente del estado</p>
               </div>
             </div>
             <Button variant="ghost" size="sm" onClick={onClose} className="text-gray-500 hover:text-gray-700">
@@ -534,8 +577,16 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           ) : clientsData.length === 0 ? (
             <div className="text-center py-12">
               <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No hay citas completadas</h3>
-              <p className="text-gray-600">No se encontraron citas completadas para este día.</p>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No hay citas</h3>
+              <p className="text-gray-600">No se encontraron citas para este día.</p>
+
+              {/* Debug Info */}
+              {debugInfo && (
+                <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-left">
+                  <h4 className="font-medium text-yellow-800 mb-2">🔍 Información de Debug:</h4>
+                  <pre className="text-xs text-yellow-700 whitespace-pre-wrap font-mono">{debugInfo}</pre>
+                </div>
+              )}
             </div>
           ) : (
             <>
@@ -641,7 +692,6 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
                           disabled={!client.has_complete_data || generating}
                           className="mt-1"
                         />
-
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-2">
                             <h3 className="font-medium text-gray-900">{client.client_name}</h3>
@@ -686,9 +736,11 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
                           <div className="flex justify-between items-center">
                             <div className="text-sm text-gray-600">
                               {client.appointments.map((apt, index) => (
-                                <span key={apt.id}>
+                                <span key={apt.id} className="block">
                                   {apt.start_time}-{apt.end_time} ({apt.professional_name})
-                                  {index < client.appointments.length - 1 && ", "}
+                                  <Badge variant="outline" className="ml-2 text-xs">
+                                    {apt.status}
+                                  </Badge>
                                 </span>
                               ))}
                             </div>
