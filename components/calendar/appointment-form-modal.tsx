@@ -132,7 +132,9 @@ export function AppointmentFormModal({
       ? Number(citaExistente.service_id)
       : waitingListEntry?.service_id
         ? Number(waitingListEntry.service_id)
-        : (null as number | null),
+        : services.length > 0
+          ? services[0].id
+          : null, // Seleccionar el primer servicio por defecto
     // 🆕 CAMPOS PARA RECURRENCIA
     isRecurring: citaExistente?.isRecurring || false,
     recurrenceType: citaExistente?.recurrenceType || "weekly",
@@ -243,8 +245,8 @@ export function AppointmentFormModal({
   const updateFilteredUsers = useCallback(async () => {
     let usersToFilter = users.filter((user) => user.type === 1) // Solo profesionales
 
-    // Si hay servicio seleccionado (número), filtrar por servicio
-    if (formData.service_id !== null && typeof formData.service_id === "number") {
+    // Siempre filtrar por servicio ya que es obligatorio
+    if (formData.service_id) {
       usersToFilter = await getUsersByService(formData.service_id)
     }
 
@@ -465,14 +467,6 @@ export function AppointmentFormModal({
   // Handler para manejar service_id como número o null - SIN console.log
   const handleServiceChange = useCallback(
     (value: string) => {
-      if (value === "none") {
-        setFormData((prev) => ({
-          ...prev,
-          service_id: null,
-        }))
-        return
-      }
-
       const selectedService = services.find((s) => s.id.toString() === value)
       setFormData((prev) => ({
         ...prev,
@@ -506,6 +500,10 @@ export function AppointmentFormModal({
 
       if (!clienteEncontrado && !formData.telefonoPaciente.trim()) {
         newErrors.telefono = "Debes proporcionar un teléfono válido"
+      }
+
+      if (!formData.service_id) {
+        newErrors.service = "Debes seleccionar un servicio"
       }
 
       // 🆕 Validaciones de recurrencia
@@ -764,19 +762,18 @@ export function AppointmentFormModal({
           <div className="space-y-2">
             <Label htmlFor="service" className="flex items-center gap-2 text-sm font-medium">
               <Briefcase className="h-4 w-4" />
-              Servicio (opcional)
-              {servicesLoading && <Loader2 className="h-3 w-3 animate-spin" />}
+              Servicio *{servicesLoading && <Loader2 className="h-3 w-3 animate-spin" />}
             </Label>
             <Select
-              value={formData.service_id ? formData.service_id.toString() : "none"}
+              value={formData.service_id ? formData.service_id.toString() : ""}
               onValueChange={handleServiceChange}
               disabled={servicesLoading}
+              required
             >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder={servicesLoading ? "Cargando servicios..." : "Selecciona un servicio"} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">Sin servicio específico</SelectItem>
                 {services.map((service) => (
                   <SelectItem key={service.id} value={service.id.toString()}>
                     <div className="flex items-center gap-2 w-full">
@@ -793,9 +790,7 @@ export function AppointmentFormModal({
                 ))}
               </SelectContent>
             </Select>
-            {formData.service_id && (
-              <p className="text-sm text-blue-600">Solo se mostrarán profesionales asignados a este servicio</p>
-            )}
+            {errors.service && <p className="text-sm text-red-600">{errors.service}</p>}
           </div>
 
           {/* Fecha y Horario */}

@@ -18,6 +18,7 @@ export class AppointmentService {
         professional:users!appointments_professional_id_fkey(*),
         appointment_type:appointment_types(*),
         consultation:consultations(*),
+        service:services(*),
         created_by_user:users!appointments_created_by_fkey(*)
       `)
       .order("date", { ascending: true })
@@ -71,6 +72,7 @@ export class AppointmentService {
         professional:users!appointments_professional_id_fkey(*),
         appointment_type:appointment_types(*),
         consultation:consultations(*),
+        service:services(*),
         created_by_user:users!appointments_created_by_fkey(*)
       `)
       .single()
@@ -131,6 +133,7 @@ export class AppointmentService {
         professional:users!appointments_professional_id_fkey(*),
         appointment_type:appointment_types(*),
         consultation:consultations(*),
+        service:services(*),
         created_by_user:users!appointments_created_by_fkey(*)
       `)
 
@@ -157,6 +160,7 @@ export class AppointmentService {
         professional:users!appointments_professional_id_fkey(*),
         appointment_type:appointment_types(*),
         consultation:consultations(*),
+        service:services(*),
         created_by_user:users!appointments_created_by_fkey(*)
       `)
       .single()

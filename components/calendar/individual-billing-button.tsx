@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { FileText, Loader2 } from "lucide-react"
+import { FileText, Loader2, AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase/client"
@@ -19,6 +19,30 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
   const { toast } = useToast()
   const [generating, setGenerating] = useState(false)
 
+  // ✅ LOGS DETALLADOS PARA DEBUGGEAR
+  console.log("=== INDIVIDUAL BILLING BUTTON DEBUG ===")
+  console.log("Appointment completo:", appointment)
+  console.log("appointment.service:", appointment.service)
+  console.log("appointment.service_id:", appointment.service_id)
+  console.log("appointment.services:", appointment.service)
+
+  // ✅ VERIFICAR SI FALTA SERVICIO - MEJORADO
+  const hasService = appointment.service?.id && appointment.service?.price
+  const hasServiceId = appointment.service_id
+  const hasServices = appointment.service?.id && appointment.service?.price
+
+  console.log("hasService (appointment.service):", hasService)
+  console.log("hasServiceId (appointment.service_id):", hasServiceId)
+  console.log("hasServices (appointment.services):", hasServices)
+
+  // Usar cualquiera de las dos formas de servicio
+  const serviceData = appointment.service || appointment.service
+  const finalHasService = serviceData?.id && serviceData?.price
+
+  console.log("serviceData final:", serviceData)
+  console.log("finalHasService:", finalHasService)
+
+  // ✅ VERIFICAR DATOS DEL CLIENTE
   const validateClientData = () => {
     const client = appointment.client
     const missingFields: string[] = []
@@ -35,19 +59,10 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
     }
   }
 
+  const clientValidation = validateClientData()
+
   const generateInvoice = async () => {
     if (!userProfile?.organization_id) return
-
-    // Validar datos del cliente
-    const validation = validateClientData()
-    if (!validation.isValid) {
-      toast({
-        title: "Datos incompletos",
-        description: `Faltan los siguientes datos del cliente: ${validation.missingFields.join(", ")}`,
-        variant: "destructive",
-      })
-      return
-    }
 
     setGenerating(true)
 
@@ -74,12 +89,12 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
         "normal",
       )
 
-      // Preparar línea de factura
-      const servicePrice = appointment.service?.price || 50
+      // Usar precio del servicio - ACTUALIZADO
+      const servicePrice = serviceData!.price
       const invoiceLines = [
         {
           id: crypto.randomUUID(),
-          description: `${appointment.consultation?.name || "Consulta"} - ${appointment.professional.name} (${appointment.start_time}-${appointment.end_time}) [${appointment.status}]`,
+          description: `${serviceData!.name} - ${appointment.professional.name} (${appointment.start_time}-${appointment.end_time}) [${appointment.status}]`,
           quantity: 1,
           unit_price: servicePrice,
           discount_percentage: 0,
@@ -133,7 +148,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
       // Preparar datos de la factura
       const client = appointment.client
       const clientInfoText = `Cliente: ${client.name}, CIF/NIF: ${(client as any).tax_id}, Dirección: ${(client as any).address}, ${(client as any).postal_code} ${(client as any).city}, ${(client as any).province}`
-      const additionalNotes = `Factura generada para cita del ${format(new Date(appointment.date), "dd/MM/yyyy")} - ${appointment.start_time} (Estado: ${appointment.status})`
+      const additionalNotes = `Factura generada para cita del ${format(new Date(appointment.date), "dd/MM/yyyy")} - ${appointment.start_time} (Estado: ${appointment.status})\nServicio: ${serviceData!.name} - ${servicePrice}€`
       const fullNotes = clientInfoText + "\n\n" + additionalNotes
 
       // Crear factura en la base de datos
@@ -250,20 +265,17 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
             await supabase.from("invoices").update({ pdf_url: pdfUrl }).eq("id", invoiceData.id)
           } catch (pdfError) {
             console.error("Error saving PDF:", pdfError)
-            // No fallar por error de PDF
           }
         }
       } catch (pdfError) {
         console.error("Error generating PDF:", pdfError)
-        // No fallar por error de PDF
       }
 
       toast({
         title: "Factura generada",
-        description: `Factura ${invoiceNumberFormatted} creada correctamente`,
+        description: `Factura ${invoiceNumberFormatted} creada correctamente (${servicePrice}€)`,
       })
 
-      // Callback para actualizar la UI si es necesario
       if (onBillingComplete) {
         onBillingComplete()
       }
@@ -271,7 +283,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
       console.error("Error generating invoice:", error)
       toast({
         title: "Error",
-        description: "No se pudo generar la factura",
+        description: error instanceof Error ? error.message : "No se pudo generar la factura",
         variant: "destructive",
       })
     } finally {
@@ -279,6 +291,31 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
     }
   }
 
+  // ✅ SI NO HAY SERVICIO, MOSTRAR MENSAJE DE ERROR
+  if (!finalHasService) {
+    return (
+      <div className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded border border-red-200">
+        <div className="flex items-center gap-1">
+          <AlertTriangle className="h-3 w-3" />
+          <span>Necesita servicio asignado (ID: {appointment.service_id || "null"})</span>
+        </div>
+      </div>
+    )
+  }
+
+  // ✅ SI FALTAN DATOS DEL CLIENTE, MOSTRAR MENSAJE
+  if (!clientValidation.isValid) {
+    return (
+      <div className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-200">
+        <div className="flex items-center gap-1">
+          <AlertTriangle className="h-3 w-3" />
+          <span>Faltan datos: {clientValidation.missingFields.join(", ")}</span>
+        </div>
+      </div>
+    )
+  }
+
+  // ✅ SI TODO ESTÁ BIEN, MOSTRAR BOTÓN DE FACTURAR
   return (
     <Button
       variant="outline"

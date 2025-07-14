@@ -14,6 +14,7 @@ interface AppointmentData {
   client_id: number
   appointment_type_id: string
   consultation_id: string
+  service_id: number | null // ✅ AÑADIDO
   day_of_week: string | null
   // 🆕 CAMPOS DE RECURRENCIA
   is_recurring?: boolean
@@ -35,6 +36,12 @@ interface AppointmentData {
   appointment_types: {
     id: string
     name: string
+  } | null
+  services: {
+    // ✅ AÑADIDO
+    id: number
+    name: string
+    price: number
   } | null
   // Nuevos campos del historial médico
   motivo_consulta?: string | null
@@ -113,7 +120,6 @@ export async function getTomorrowAppointments(
     await debugAppointments(organizationId)
 
     // Consulta paso a paso para debuggear
-
     // 1. Ver todas las citas de la fecha sin filtros
     const { data: allDateAppointments, error: dateError } = await supabase
       .from("appointments")
@@ -147,6 +153,7 @@ export async function getTomorrowAppointments(
         client_id,
         appointment_type_id,
         consultation_id,
+        service_id,
         day_of_week,
         organization_id,
         is_recurring,
@@ -168,6 +175,11 @@ export async function getTomorrowAppointments(
         appointment_types!appointments_appointment_type_id_fkey (
           id,
           name
+        ),
+        services (
+          id,
+          name,
+          price
         ),
         medical_histories!left(
           motivo_consulta,
@@ -207,6 +219,7 @@ export async function getTomorrowAppointments(
       client_id: appointment.client_id,
       appointment_type_id: appointment.appointment_type_id,
       consultation_id: appointment.consultation_id,
+      service_id: appointment.service_id, // ✅ AÑADIDO
       day_of_week: appointment.day_of_week,
       // 🆕 CAMPOS DE RECURRENCIA
       is_recurring: appointment.is_recurring,
@@ -217,6 +230,7 @@ export async function getTomorrowAppointments(
       clients: appointment.clients,
       professional: appointment.professional,
       appointment_types: appointment.appointment_types,
+      services: appointment.services, // ✅ AÑADIDO
       // Nuevos campos del historial médico
       motivo_consulta: appointment.medical_histories?.[0]?.motivo_consulta || null,
       diagnostico: appointment.medical_histories?.[0]?.diagnostico || null,
@@ -262,6 +276,7 @@ export async function getAppointmentsByDate(
         client_id,
         appointment_type_id,
         consultation_id,
+        service_id,
         day_of_week,
         organization_id,
         is_recurring,
@@ -283,6 +298,11 @@ export async function getAppointmentsByDate(
         appointment_types!appointments_appointment_type_id_fkey (
           id,
           name
+        ),
+        services (
+          id,
+          name,
+          price
         ),
         medical_histories!left(
           motivo_consulta,
@@ -322,6 +342,7 @@ export async function getAppointmentsByDate(
       client_id: appointment.client_id,
       appointment_type_id: appointment.appointment_type_id,
       consultation_id: appointment.consultation_id,
+      service_id: appointment.service_id, // ✅ AÑADIDO
       day_of_week: appointment.day_of_week,
       // 🆕 CAMPOS DE RECURRENCIA
       is_recurring: appointment.is_recurring,
@@ -332,6 +353,7 @@ export async function getAppointmentsByDate(
       clients: appointment.clients,
       professional: appointment.professional,
       appointment_types: appointment.appointment_types,
+      services: appointment.services, // ✅ AÑADIDO
       // Nuevos campos del historial médico - obtener el más reciente
       motivo_consulta: appointment.medical_histories?.[0]?.motivo_consulta || null,
       diagnostico: appointment.medical_histories?.[0]?.diagnostico || null,
@@ -376,6 +398,7 @@ export async function getRecurringAppointmentsByParent(
         client_id,
         appointment_type_id,
         consultation_id,
+        service_id,
         day_of_week,
         organization_id,
         is_recurring,
@@ -393,6 +416,11 @@ export async function getRecurringAppointmentsByParent(
           id,
           name,
           email
+        ),
+        services (
+          id,
+          name,
+          price
         ),
         appointment_types!appointments_appointment_type_id_fkey (
           id,
@@ -421,6 +449,7 @@ export async function getRecurringAppointmentsByParent(
       client_id: appointment.client_id,
       appointment_type_id: appointment.appointment_type_id,
       consultation_id: appointment.consultation_id,
+      service_id: appointment.service_id, // ✅ AÑADIDO
       day_of_week: appointment.day_of_week,
       is_recurring: appointment.is_recurring,
       recurrence_type: appointment.recurrence_type,
@@ -430,6 +459,7 @@ export async function getRecurringAppointmentsByParent(
       clients: appointment.clients,
       professional: appointment.professional,
       appointment_types: appointment.appointment_types,
+      services: appointment.services, // ✅ AÑADIDO
     }))
 
     return {

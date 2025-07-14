@@ -11,7 +11,7 @@ export interface AppointmentUpdate {
   client_id?: number
   appointment_type_id?: number
   consultation_id?: string
-  service_id?: number | null // 🆕 Cambiado de string | null a number | null
+  service_id?: number 
   // 🆕 CAMPOS DE RECURRENCIA
   is_recurring?: boolean
   recurrence_type?: "weekly" | "monthly" | null

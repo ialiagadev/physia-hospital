@@ -56,21 +56,12 @@ const getColorEstado = (estado: string) => {
     case "confirmada":
     case "confirmed":
       return "bg-green-500"
-    case "programada":
-    case "scheduled":
-      return "bg-blue-500"
-    case "en-curso":
-    case "in-progress":
-      return "bg-yellow-500"
-    case "completada":
-    case "completed":
-      return "bg-emerald-500"
+    case "pendiente":
+    case "pending":
+      return "bg-amber-400"
     case "cancelada":
     case "cancelled":
       return "bg-red-500"
-    case "no-asistio":
-    case "no-show":
-      return "bg-gray-500"
     default:
       return "bg-gray-300"
   }

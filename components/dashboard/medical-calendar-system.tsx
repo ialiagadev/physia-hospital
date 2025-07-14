@@ -314,6 +314,7 @@ const MedicalCalendarSystem: React.FC = () => {
         status: mapEstadoToStatus(appointmentData.estado) || "confirmed",
         notes: appointmentData.notas || undefined,
         created_by: currentUser.id,
+        service_id: appointmentData.service_id || null,
         // Campos de recurrencia
         is_recurring: appointmentData.isRecurring || false,
         recurrence_type: appointmentData.isRecurring ? appointmentData.recurrenceType || "weekly" : null,
