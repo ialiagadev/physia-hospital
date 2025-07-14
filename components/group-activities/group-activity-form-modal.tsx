@@ -143,7 +143,7 @@ export function GroupActivityFormModal({
     updateProfessionals()
   }, [formData.service_id, getUsersByService, users])
 
-  // ✅ VERIFICACIÓN DE CONFLICTOS SIMPLIFICADA
+  // ✅ VERIFICACIÓN DE CONFLICTOS MEJORADA - INCLUIR ACTIVIDADES GRUPALES
   useEffect(() => {
     if (formData.date && formData.start_time && formData.end_time && formData.professional_id) {
       const timeoutId = setTimeout(() => {
@@ -157,7 +157,8 @@ export function GroupActivityFormModal({
             formData.start_time, // string
             duration, // number (minutos)
             formData.professional_id, // string
-            isEditing ? activity?.id : undefined, // string | undefined
+            undefined, // excludeAppointmentId - no aplica para actividades grupales
+            isEditing ? activity?.id : undefined, // ✅ NUEVO: excludeGroupActivityId
           )
         }
       }, 500)
@@ -171,7 +172,7 @@ export function GroupActivityFormModal({
     formData.professional_id,
     checkConflicts,
     isEditing,
-    activity?.id,
+    activity?.id, // ✅ AGREGAR como dependencia
   ])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -401,7 +402,7 @@ export function GroupActivityFormModal({
             )}
           </div>
 
-          {/* Alertas de conflictos - MOVIDO AQUÍ */}
+          {/* Alertas de conflictos - MEJORADO PARA MOSTRAR TIPOS */}
           {conflicts.length > 0 && (
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
@@ -410,9 +411,24 @@ export function GroupActivityFormModal({
                   <p className="font-medium mb-2">⚠️ Conflictos de horario detectados:</p>
                   {conflicts.map((conflict, index) => (
                     <div key={index} className="text-sm bg-red-50 p-2 rounded border-l-4 border-red-400">
-                      • <strong>{conflict.client_name}</strong> - {conflict.start_time} a {conflict.end_time}
-                      {conflict.professional_name && (
-                        <span className="text-gray-600"> (Prof: {conflict.professional_name})</span>
+                      {conflict.type === "group_activity" ? (
+                        <>
+                          • <strong>Actividad Grupal:</strong> {conflict.client_name}
+                          <br />
+                          <span className="text-gray-600 ml-2">
+                            {conflict.start_time} a {conflict.end_time}
+                            {conflict.professional_name && ` (Prof: ${conflict.professional_name})`}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          • <strong>Cita Individual:</strong> {conflict.client_name}
+                          <br />
+                          <span className="text-gray-600 ml-2">
+                            {conflict.start_time} a {conflict.end_time}
+                            {conflict.professional_name && ` (Prof: ${conflict.professional_name})`}
+                          </span>
+                        </>
                       )}
                     </div>
                   ))}

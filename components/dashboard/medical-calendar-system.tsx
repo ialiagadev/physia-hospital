@@ -10,7 +10,7 @@ import { CalendarSearch } from "@/components/calendar/calendar-search"
 import { ProfesionalesLegend } from "@/components/calendar/profesionales-legend"
 import { AppointmentFormModal } from "@/components/calendar/appointment-form-modal"
 import { AppointmentDetailsModal } from "@/components/calendar/appointment-details-modal"
-import { DailyBillingModal } from "@/components/calendar/daily-billing-modal"
+import { DailyBillingModal } from "../calendar/daily-billing-modal"
 import { ListView } from "@/components/calendar/list-view"
 import { ProfesionalesView } from "@/components/calendar/profesionales-view"
 import { ConsultationsView } from "@/components/calendar/consultations-view"
@@ -95,10 +95,10 @@ const MedicalCalendarSystem: React.FC = () => {
   const [showGroupActivityDetails, setShowGroupActivityDetails] = useState(false)
   const [selectedGroupActivity, setSelectedGroupActivity] = useState<any>(null)
 
-  // 🆕 Estado para datos de lista de espera
+  // Estado para datos de lista de espera
   const [waitingListEntry, setWaitingListEntry] = useState<any>(null)
 
-  // 🆕 Función para eliminar entrada de lista de espera
+  // Función para eliminar entrada de lista de espera
   const removeFromWaitingList = async (entryId: string) => {
     try {
       const { error } = await supabase.from("waiting_list").delete().eq("id", entryId)
@@ -167,7 +167,6 @@ const MedicalCalendarSystem: React.FC = () => {
   }
 
   const { startDate, endDate } = getDateRange()
-
   const {
     appointments,
     loading: appointmentsLoading,
@@ -181,11 +180,18 @@ const MedicalCalendarSystem: React.FC = () => {
     usuariosSeleccionados.length > 0 ? usuariosSeleccionados : undefined,
   )
 
-  // Función para verificar si hay citas completadas en el día actual
+  // ✅ FUNCIÓN MEJORADA PARA VERIFICAR CITAS DEL DÍA
   const hasAppointmentsToday = () => {
     const today = format(currentDate, "yyyy-MM-dd")
     return appointments.some((apt) => format(new Date(apt.date), "yyyy-MM-dd") === today)
   }
+
+  // ✅ FUNCIÓN ESPECÍFICA PARA CITAS COMPLETADAS (OPCIONAL)
+  const hasCompletedAppointmentsToday = () => {
+    const today = format(currentDate, "yyyy-MM-dd")
+    return appointments.some((apt) => format(new Date(apt.date), "yyyy-MM-dd") === today && apt.status === "completed")
+  }
+
   // Inicializar con todos los usuarios seleccionados
   useEffect(() => {
     if (users.length > 0) {
@@ -308,7 +314,7 @@ const MedicalCalendarSystem: React.FC = () => {
         status: mapEstadoToStatus(appointmentData.estado) || "confirmed",
         notes: appointmentData.notas || undefined,
         created_by: currentUser.id,
-        // 🆕 Campos de recurrencia
+        // Campos de recurrencia
         is_recurring: appointmentData.isRecurring || false,
         recurrence_type: appointmentData.isRecurring ? appointmentData.recurrenceType || "weekly" : null,
         recurrence_interval: appointmentData.isRecurring ? appointmentData.recurrenceInterval || 1 : null,
@@ -319,10 +325,9 @@ const MedicalCalendarSystem: React.FC = () => {
         parent_appointment_id: appointmentData.parentAppointmentId || null,
       }
 
-      // ✅ CORREGIDO: Solo pasar el objeto AppointmentInsert
       await createAppointment(newAppointment)
 
-      // 🆕 Si viene de lista de espera, eliminarla después de crear la cita
+      // Si viene de lista de espera, eliminarla después de crear la cita
       if (waitingListEntry?.id) {
         await removeFromWaitingList(waitingListEntry.id)
       }
@@ -396,7 +401,6 @@ const MedicalCalendarSystem: React.FC = () => {
   // Handler para actualizar citas en formato legacy
   const handleUpdateLegacyAppointment = async (cita: any) => {
     const originalAppointment = appointments.find((apt) => Number.parseInt(apt.id.slice(-8), 16) === cita.id)
-
     if (originalAppointment) {
       const updatedAppointment = {
         ...originalAppointment,
@@ -408,7 +412,6 @@ const MedicalCalendarSystem: React.FC = () => {
           users.find((u) => Number.parseInt(u.id.slice(-8), 16) === cita.profesionalId)?.id ||
           originalAppointment.professional_id,
       }
-
       await handleUpdateAppointment(updatedAppointment)
     }
   }
@@ -440,7 +443,6 @@ const MedicalCalendarSystem: React.FC = () => {
       month: "long",
       day: "numeric",
     }
-
     switch (vistaCalendario) {
       case "dia":
         return currentDate.toLocaleDateString("es-ES", options)
@@ -457,7 +459,7 @@ const MedicalCalendarSystem: React.FC = () => {
   const isUserOnVacationDate = isUserOnVacationHook
   const getUserVacationOnDate = getUserVacation
 
-  // ✅ FUNCIONES DE CONVERSIÓN SIMPLIFICADAS PARA OTRAS VISTAS
+  // FUNCIONES DE CONVERSIÓN SIMPLIFICADAS PARA OTRAS VISTAS
   const convertAppointmentsToLegacyFormat = (appointments: AppointmentWithDetails[]) => {
     return appointments.map((apt) => ({
       id: Number.parseInt(apt.id.slice(-8), 16),
@@ -492,7 +494,7 @@ const MedicalCalendarSystem: React.FC = () => {
     }))
   }
 
-  // ✅ COMPONENTE PARA HANDLERS DE ACTIVIDADES GRUPALES
+  // COMPONENTE PARA HANDLERS DE ACTIVIDADES GRUPALES
   function GroupActivityHandlers({ children }: { children: React.ReactNode }) {
     const {
       updateActivity: updateGroupActivity,
@@ -501,7 +503,7 @@ const MedicalCalendarSystem: React.FC = () => {
       removeParticipant: removeGroupActivityParticipant,
     } = useGroupActivitiesContext()
 
-    // ✅ HANDLERS MEJORADOS PARA ACTIVIDADES GRUPALES
+    // HANDLERS MEJORADOS PARA ACTIVIDADES GRUPALES
     const handleAddGroupActivityParticipant = async (activityId: string, clientId: number, notes?: string) => {
       try {
         await addGroupActivityParticipant(activityId, clientId, notes)
@@ -766,7 +768,7 @@ const MedicalCalendarSystem: React.FC = () => {
                           <Plus className="h-4 w-4" />
                         </Button>
 
-                        {/* Botón Facturar Día - Solo en vista día y si hay citas completadas */}
+                        {/* ✅ BOTÓN FACTURAR DÍA MEJORADO - Solo en vista día y si hay citas */}
                         {vistaCalendario === "dia" && hasAppointmentsToday() && (
                           <Button
                             onClick={() => setShowDailyBillingModal(true)}
@@ -1003,6 +1005,7 @@ const MedicalCalendarSystem: React.FC = () => {
         />
       )}
 
+      {/* ✅ MODAL DE FACTURACIÓN DIARIA ACTUALIZADO */}
       {showDailyBillingModal && (
         <DailyBillingModal
           isOpen={showDailyBillingModal}

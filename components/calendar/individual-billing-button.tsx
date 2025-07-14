@@ -52,12 +52,12 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
     setGenerating(true)
 
     try {
-      // Importar las funciones necesarias de la página de nueva factura
+      // Importar las funciones necesarias
       const { generateUniqueInvoiceNumber } = await import("@/lib/invoice-utils")
       const { generatePdf } = await import("@/lib/pdf-generator")
       const { savePdfToStorage } = await import("@/lib/storage-utils")
 
-      // Obtener datos de la organización (igual que en new invoice)
+      // Obtener datos de la organización
       const { data: orgData, error: orgError } = await supabase
         .from("organizations")
         .select("*")
@@ -68,18 +68,18 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
         throw new Error("No se pudieron obtener los datos de la organización")
       }
 
-      // Usar la misma función de generación de número que new invoice
+      // Generar número de factura único
       const { invoiceNumberFormatted, newInvoiceNumber } = await generateUniqueInvoiceNumber(
         userProfile.organization_id,
         "normal",
       )
 
-      // Preparar línea de factura con la misma estructura que new invoice
+      // Preparar línea de factura
       const servicePrice = appointment.service?.price || 50
       const invoiceLines = [
         {
           id: crypto.randomUUID(),
-          description: `${appointment.consultation.name} - ${appointment.professional.name} (${appointment.start_time}-${appointment.end_time}) [${appointment.status}]`,
+          description: `${appointment.consultation?.name || "Consulta"} - ${appointment.professional.name} (${appointment.start_time}-${appointment.end_time}) [${appointment.status}]`,
           quantity: 1,
           unit_price: servicePrice,
           discount_percentage: 0,
@@ -91,7 +91,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
         },
       ]
 
-      // Calcular totales usando la misma lógica que new invoice
+      // Calcular totales
       const subtotalAmount = invoiceLines.reduce((sum, line) => {
         return sum + line.quantity * line.unit_price
       }, 0)
@@ -130,7 +130,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
 
       const totalAmount = baseAmount + vatAmount - irpfAmount - retentionAmount
 
-      // Preparar datos de la factura con la misma estructura que new invoice
+      // Preparar datos de la factura
       const client = appointment.client
       const clientInfoText = `Cliente: ${client.name}, CIF/NIF: ${(client as any).tax_id}, Dirección: ${(client as any).address}, ${(client as any).postal_code} ${(client as any).city}, ${(client as any).province}`
       const additionalNotes = `Factura generada para cita del ${format(new Date(appointment.date), "dd/MM/yyyy")} - ${appointment.start_time} (Estado: ${appointment.status})`
@@ -160,7 +160,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
 
       if (invoiceError) throw invoiceError
 
-      // Crear línea de factura con la misma estructura que new invoice
+      // Crear líneas de factura
       const invoiceLines_db = invoiceLines.map((line) => ({
         invoice_id: invoiceData.id,
         description: line.description,
@@ -180,7 +180,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
         console.error("Error saving invoice lines:", linesError)
       }
 
-      // Actualizar número de factura en la organización (igual que new invoice)
+      // Actualizar número de factura en la organización
       const { error: updateOrgError } = await supabase
         .from("organizations")
         .update({ last_invoice_number: newInvoiceNumber })
@@ -190,7 +190,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
         console.error("Error updating organization:", updateOrgError)
       }
 
-      // Generar PDF usando la misma función que new invoice
+      // Generar PDF
       try {
         const newInvoice = {
           id: invoiceData.id,
@@ -279,7 +279,6 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
     }
   }
 
-  // Mostrar el botón para TODAS las citas (sin filtrar por estado)
   return (
     <Button
       variant="outline"
