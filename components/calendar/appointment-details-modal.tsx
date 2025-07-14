@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog"
 import { PatientHistoryModal } from "./patient-history-modal"
 import type { AppointmentWithDetails } from "@/types/calendar"
+import { IndividualBillingButton } from "./individual-billing-button"
 
 interface AppointmentDetailsModalProps {
   isOpen: boolean
@@ -213,6 +214,13 @@ export function AppointmentDetailsModal({
                 <div className="flex items-center gap-2">
                   {!isEditing && (
                     <>
+                      <IndividualBillingButton
+                        appointment={appointment}
+                        onBillingComplete={() => {
+                          // Opcional: actualizar datos si es necesario
+                          console.log("Factura generada para la cita")
+                        }}
+                      />
                       <Button
                         variant="outline"
                         size="sm"

@@ -4,12 +4,13 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns"
 import { Button } from "@/components/ui/button"
-import { ChevronLeft, ChevronRight, Plus, Search, Clock } from "lucide-react"
+import { ChevronLeft, ChevronRight, Plus, Search, Clock, FileText } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CalendarSearch } from "@/components/calendar/calendar-search"
 import { ProfesionalesLegend } from "@/components/calendar/profesionales-legend"
 import { AppointmentFormModal } from "@/components/calendar/appointment-form-modal"
 import { AppointmentDetailsModal } from "@/components/calendar/appointment-details-modal"
+import { DailyBillingModal } from "@/components/calendar/daily-billing-modal"
 import { ListView } from "@/components/calendar/list-view"
 import { ProfesionalesView } from "@/components/calendar/profesionales-view"
 import { ConsultationsView } from "@/components/calendar/consultations-view"
@@ -88,6 +89,7 @@ const MedicalCalendarSystem: React.FC = () => {
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [usuariosSeleccionados, setUsuariosSeleccionados] = useState<string[]>([])
   const [showSearch, setShowSearch] = useState(false)
+  const [showDailyBillingModal, setShowDailyBillingModal] = useState(false)
 
   // Estados para actividades grupales
   const [showGroupActivityDetails, setShowGroupActivityDetails] = useState(false)
@@ -165,6 +167,7 @@ const MedicalCalendarSystem: React.FC = () => {
   }
 
   const { startDate, endDate } = getDateRange()
+
   const {
     appointments,
     loading: appointmentsLoading,
@@ -177,6 +180,12 @@ const MedicalCalendarSystem: React.FC = () => {
     endDate,
     usuariosSeleccionados.length > 0 ? usuariosSeleccionados : undefined,
   )
+
+  // Función para verificar si hay citas completadas en el día actual
+  const hasCompletedAppointmentsToday = () => {
+    const today = format(currentDate, "yyyy-MM-dd")
+    return appointments.some((apt) => format(new Date(apt.date), "yyyy-MM-dd") === today && apt.status === "completed")
+  }
 
   // Inicializar con todos los usuarios seleccionados
   useEffect(() => {
@@ -757,6 +766,18 @@ const MedicalCalendarSystem: React.FC = () => {
                         <Button onClick={() => setShowNewAppointmentModal(true)} size="sm">
                           <Plus className="h-4 w-4" />
                         </Button>
+
+                        {/* Botón Facturar Día - Solo en vista día y si hay citas completadas */}
+                        {vistaCalendario === "dia" && hasCompletedAppointmentsToday() && (
+                          <Button
+                            onClick={() => setShowDailyBillingModal(true)}
+                            size="sm"
+                            className="bg-green-600 hover:bg-green-700 text-white gap-2"
+                          >
+                            <FileText className="h-4 w-4" />
+                            Facturar Día
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -821,6 +842,7 @@ const MedicalCalendarSystem: React.FC = () => {
                             vacationRequests={vacationRequests}
                             isUserOnVacationDate={isUserOnVacationDate}
                             getUserVacationOnDate={getUserVacationOnDate}
+                            onOpenDailyBilling={() => setShowDailyBillingModal(true)}
                           />
                         )}
                         {vistaCalendario === "semana" && (
@@ -979,6 +1001,14 @@ const MedicalCalendarSystem: React.FC = () => {
           appointment={selectedAppointment}
           onUpdate={handleUpdateAppointment}
           onDelete={handleDeleteAppointment}
+        />
+      )}
+
+      {showDailyBillingModal && (
+        <DailyBillingModal
+          isOpen={showDailyBillingModal}
+          onClose={() => setShowDailyBillingModal(false)}
+          selectedDate={currentDate}
         />
       )}
     </div>

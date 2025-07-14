@@ -3,13 +3,14 @@
 import React from "react"
 import { useState, useEffect } from "react"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { Button } from "@/components/ui/button"
 import { AppointmentFormModal } from "./appointment-form-modal"
 import { HoraPreviewTooltip } from "./hora-preview-tooltip"
 import { horaAMinutos, calcularHoraFin } from "@/utils/calendar-utils"
 import type { Cita, Profesional, IntervaloTiempo } from "@/types/calendar"
 import { toast } from "sonner"
 import { useVacationRequests } from "@/hooks/use-vacation-requests"
-import { Plane, AlertTriangle, Clock, User } from "lucide-react"
+import { Plane, AlertTriangle, Clock, User, FileText } from "lucide-react"
 
 interface HorarioViewProps {
   date: Date
@@ -21,6 +22,7 @@ interface HorarioViewProps {
   intervaloTiempo: IntervaloTiempo
   onUpdateCita: (cita: Cita) => void
   onAddCita: (cita: Partial<Cita>) => void
+  onOpenDailyBilling?: () => void // Nueva prop para abrir facturación diaria
 }
 
 interface VacationRequest {
@@ -110,6 +112,7 @@ export function HorarioView({
   intervaloTiempo,
   onUpdateCita,
   onAddCita,
+  onOpenDailyBilling,
 }: HorarioViewProps) {
   const [draggedCita, setDraggedCita] = useState<Cita | null>(null)
   const [dragOverProfesional, setDragOverProfesional] = useState<number | null>(null)
@@ -130,6 +133,11 @@ export function HorarioView({
   const horaInicio = 8 * 60 // 8:00 AM en minutos
   const horaFin = 20 * 60 // 8:00 PM en minutos
   const duracionDia = horaFin - horaInicio
+
+  // Verificar si hay citas completadas en el día
+  const hasCompletedAppointments = () => {
+    return citas.some((cita) => cita.estado === "completada")
+  }
 
   // Cargar vacaciones de profesionales
   useEffect(() => {
@@ -313,171 +321,192 @@ export function HorarioView({
 
   return (
     <TooltipProvider>
-      <div className="flex h-full bg-white">
-        {/* Columna de horas */}
-        <div className="w-16 border-r bg-gray-50 flex-shrink-0">
-          <div className="h-12 border-b flex items-center justify-center text-xs font-medium text-gray-500">Hora</div>
-          <div className="relative">
-            {horas.map((hora, index) => (
-              <div key={hora} className="h-16 border-b border-gray-100 flex items-start justify-center pt-1">
-                <span className="text-xs text-gray-600 font-mono">{hora}</span>
-              </div>
-            ))}
+      <div className="flex flex-col h-full bg-white">
+        {/* Header con botón de facturación si hay citas completadas */}
+        {hasCompletedAppointments() && onOpenDailyBilling && (
+          <div className="border-b px-4 py-2 bg-green-50">
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-green-700">Hay citas completadas en este día que pueden ser facturadas</div>
+              <Button
+                onClick={onOpenDailyBilling}
+                size="sm"
+                className="bg-green-600 hover:bg-green-700 text-white gap-2"
+              >
+                <FileText className="h-4 w-4" />
+                Facturar Día
+              </Button>
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Columnas de profesionales */}
-        <div className="flex-1 flex overflow-x-auto">
-          {profesionalesFiltrados.map((profesional) => {
-            const { titulo, nombre } = extraerTituloProfesional(profesional.nombre || profesional.name)
-            const citasProfesional = citas.filter((cita) => cita.profesionalId === profesional.id)
-            const isOnVacation = isProfessionalOnVacation(profesional.id)
-            const vacationInfo = getProfessionalVacationInfo(profesional.id)
+        {/* Contenido principal del calendario */}
+        <div className="flex flex-1 overflow-hidden">
+          {/* Columna de horas */}
+          <div className="w-16 border-r bg-gray-50 flex-shrink-0">
+            <div className="h-12 border-b flex items-center justify-center text-xs font-medium text-gray-500">Hora</div>
+            <div className="relative">
+              {horas.map((hora, index) => (
+                <div key={hora} className="h-16 border-b border-gray-100 flex items-start justify-center pt-1">
+                  <span className="text-xs text-gray-600 font-mono">{hora}</span>
+                </div>
+              ))}
+            </div>
+          </div>
 
-            return (
-              <div key={profesional.id} className="flex-1 min-w-48 border-r">
-                {/* Header del profesional */}
-                <div
-                  className={`h-12 border-b flex items-center justify-center px-2 ${
-                    isOnVacation ? "bg-red-50" : "bg-gray-50"
-                  }`}
-                >
-                  <div className="text-center">
-                    <div className="text-sm font-medium text-gray-900 truncate">
-                      {titulo && <span className="text-blue-600">{titulo} </span>}
-                      {nombre}
+          {/* Columnas de profesionales */}
+          <div className="flex-1 flex overflow-x-auto">
+            {profesionalesFiltrados.map((profesional) => {
+              const { titulo, nombre } = extraerTituloProfesional(profesional.nombre || profesional.name)
+              const citasProfesional = citas.filter((cita) => cita.profesionalId === profesional.id)
+              const isOnVacation = isProfessionalOnVacation(profesional.id)
+              const vacationInfo = getProfessionalVacationInfo(profesional.id)
+
+              return (
+                <div key={profesional.id} className="flex-1 min-w-48 border-r">
+                  {/* Header del profesional */}
+                  <div
+                    className={`h-12 border-b flex items-center justify-center px-2 ${
+                      isOnVacation ? "bg-red-50" : "bg-gray-50"
+                    }`}
+                  >
+                    <div className="text-center">
+                      <div className="text-sm font-medium text-gray-900 truncate">
+                        {titulo && <span className="text-blue-600">{titulo} </span>}
+                        {nombre}
+                      </div>
+                      <div className="text-xs text-gray-500 truncate">{profesional.especialidad}</div>
+                      {isOnVacation && vacationInfo && (
+                        <div className="flex items-center justify-center gap-1 mt-1">
+                          {React.createElement(
+                            VACATION_ICONS[vacationInfo.type as keyof typeof VACATION_ICONS] || Clock,
+                            { className: "h-3 w-3 text-red-500" },
+                          )}
+                          <span className="text-xs text-red-600">
+                            {VACATION_LABELS[vacationInfo.type as keyof typeof VACATION_LABELS] || "Ausencia"}
+                          </span>
+                        </div>
+                      )}
                     </div>
-                    <div className="text-xs text-gray-500 truncate">{profesional.especialidad}</div>
+                  </div>
+
+                  {/* Área de citas */}
+                  <div
+                    className={`relative h-full ${
+                      isOnVacation ? "bg-red-50 opacity-60" : "bg-white"
+                    } ${dragOverProfesional === profesional.id ? "bg-blue-50" : ""}`}
+                    onDragOver={(e) => handleDragOver(e, profesional.id)}
+                    onDrop={(e) => handleDrop(e, profesional.id)}
+                    onDragLeave={handleDragLeave}
+                  >
+                    {/* Líneas de hora */}
+                    {horas.map((hora, index) => (
+                      <div
+                        key={hora}
+                        className={`h-16 border-b border-gray-100 cursor-pointer hover:bg-gray-50 ${
+                          isOnVacation ? "cursor-not-allowed" : ""
+                        }`}
+                        onClick={() => !isOnVacation && handleSlotClick(profesional.id, hora)}
+                      />
+                    ))}
+
+                    {/* Citas */}
+                    {citasProfesional.map((cita) => {
+                      const top = calcularPosicionCita(cita.hora)
+                      const height = calcularAlturaCita(cita.duracion)
+                      const colorProfesional = getColorProfesional(profesional)
+                      const colorEstado = getColorEstado(cita.estado)
+
+                      return (
+                        <div
+                          key={cita.id}
+                          className={`absolute left-1 right-1 rounded-lg border-l-4 p-2 cursor-move shadow-sm hover:shadow-md transition-shadow ${colorProfesional} ${
+                            isDragging && draggedCita?.id === cita.id ? "opacity-50" : ""
+                          }`}
+                          style={{
+                            top: `${top}%`,
+                            height: `${height}%`,
+                            minHeight: "40px",
+                          }}
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, cita)}
+                          onDragEnd={handleDragEnd}
+                          onClick={() => onSelectCita(cita)}
+                        >
+                          <div className="flex items-start justify-between h-full">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1 mb-1">
+                                <span className="text-xs font-medium truncate">
+                                  {cita.hora} - {cita.horaFin || calcularHoraFin(cita.hora, cita.duracion)}
+                                </span>
+                                <div className={`w-2 h-2 rounded-full ${colorEstado}`} />
+                              </div>
+                              <div className="text-sm font-medium truncate">
+                                {cita.nombrePaciente} {cita.apellidosPaciente}
+                              </div>
+                              <div className="text-xs text-gray-600 truncate">{cita.tipo}</div>
+                              {cita.telefonoPaciente && (
+                                <div className="text-xs text-gray-500 truncate">{cita.telefonoPaciente}</div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+
+                    {/* Preview de nueva cita durante drag */}
+                    {dragOverProfesional === profesional.id && previewHora && draggedCita && (
+                      <HoraPreviewTooltip
+                        hora={previewHora}
+                        position={previewPosition}
+                        citaOriginal={{
+                          hora: draggedCita.hora,
+                          fecha:
+                            typeof draggedCita.fecha === "string" ? new Date(draggedCita.fecha) : draggedCita.fecha,
+                          profesionalId:
+                            typeof draggedCita.profesionalId === "string"
+                              ? Number.parseInt(draggedCita.profesionalId)
+                              : draggedCita.profesionalId,
+                        }}
+                        profesionales={profesionales}
+                      >
+                        <div
+                          className="absolute left-1 right-1 rounded-lg border-2 border-dashed border-blue-400 bg-blue-50 p-2 opacity-75"
+                          style={{
+                            top: `${calcularPosicionCita(previewHora)}%`,
+                            height: `${calcularAlturaCita(draggedCita.duracion)}%`,
+                            minHeight: "40px",
+                          }}
+                        >
+                          <div className="text-xs text-blue-600 font-medium">
+                            {previewHora} - {calcularHoraFin(previewHora, draggedCita.duracion)}
+                          </div>
+                          <div className="text-sm text-blue-800">
+                            {draggedCita.nombrePaciente} {draggedCita.apellidosPaciente}
+                          </div>
+                        </div>
+                      </HoraPreviewTooltip>
+                    )}
+
+                    {/* Overlay de vacaciones */}
                     {isOnVacation && vacationInfo && (
-                      <div className="flex items-center justify-center gap-1 mt-1">
-                        {React.createElement(
-                          VACATION_ICONS[vacationInfo.type as keyof typeof VACATION_ICONS] || Clock,
-                          { className: "h-3 w-3 text-red-500" },
-                        )}
-                        <span className="text-xs text-red-600">
-                          {VACATION_LABELS[vacationInfo.type as keyof typeof VACATION_LABELS] || "Ausencia"}
-                        </span>
+                      <div className="absolute inset-0 flex items-center justify-center bg-red-100 bg-opacity-75 pointer-events-none">
+                        <div className="text-center">
+                          {React.createElement(
+                            VACATION_ICONS[vacationInfo.type as keyof typeof VACATION_ICONS] || Clock,
+                            { className: "h-8 w-8 text-red-500 mx-auto mb-2" },
+                          )}
+                          <div className="text-sm font-medium text-red-700">
+                            {VACATION_LABELS[vacationInfo.type as keyof typeof VACATION_LABELS] || "Ausencia"}
+                          </div>
+                          <div className="text-xs text-red-600">{vacationInfo.reason}</div>
+                        </div>
                       </div>
                     )}
                   </div>
                 </div>
-
-                {/* Área de citas */}
-                <div
-                  className={`relative h-full ${
-                    isOnVacation ? "bg-red-50 opacity-60" : "bg-white"
-                  } ${dragOverProfesional === profesional.id ? "bg-blue-50" : ""}`}
-                  onDragOver={(e) => handleDragOver(e, profesional.id)}
-                  onDrop={(e) => handleDrop(e, profesional.id)}
-                  onDragLeave={handleDragLeave}
-                >
-                  {/* Líneas de hora */}
-                  {horas.map((hora, index) => (
-                    <div
-                      key={hora}
-                      className={`h-16 border-b border-gray-100 cursor-pointer hover:bg-gray-50 ${
-                        isOnVacation ? "cursor-not-allowed" : ""
-                      }`}
-                      onClick={() => !isOnVacation && handleSlotClick(profesional.id, hora)}
-                    />
-                  ))}
-
-                  {/* Citas */}
-                  {citasProfesional.map((cita) => {
-                    const top = calcularPosicionCita(cita.hora)
-                    const height = calcularAlturaCita(cita.duracion)
-                    const colorProfesional = getColorProfesional(profesional)
-                    const colorEstado = getColorEstado(cita.estado)
-
-                    return (
-                      <div
-                        key={cita.id}
-                        className={`absolute left-1 right-1 rounded-lg border-l-4 p-2 cursor-move shadow-sm hover:shadow-md transition-shadow ${colorProfesional} ${
-                          isDragging && draggedCita?.id === cita.id ? "opacity-50" : ""
-                        }`}
-                        style={{
-                          top: `${top}%`,
-                          height: `${height}%`,
-                          minHeight: "40px",
-                        }}
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, cita)}
-                        onDragEnd={handleDragEnd}
-                        onClick={() => onSelectCita(cita)}
-                      >
-                        <div className="flex items-start justify-between h-full">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1 mb-1">
-                              <span className="text-xs font-medium truncate">
-                                {cita.hora} - {cita.horaFin || calcularHoraFin(cita.hora, cita.duracion)}
-                              </span>
-                              <div className={`w-2 h-2 rounded-full ${colorEstado}`} />
-                            </div>
-                            <div className="text-sm font-medium truncate">
-                              {cita.nombrePaciente} {cita.apellidosPaciente}
-                            </div>
-                            <div className="text-xs text-gray-600 truncate">{cita.tipo}</div>
-                            {cita.telefonoPaciente && (
-                              <div className="text-xs text-gray-500 truncate">{cita.telefonoPaciente}</div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-
-                  {/* Preview de nueva cita durante drag */}
-                  {dragOverProfesional === profesional.id && previewHora && draggedCita && (
-                    <HoraPreviewTooltip
-                      hora={previewHora}
-                      position={previewPosition}
-                      citaOriginal={{
-                        hora: draggedCita.hora,
-                        fecha: typeof draggedCita.fecha === "string" ? new Date(draggedCita.fecha) : draggedCita.fecha,
-                        profesionalId:
-                          typeof draggedCita.profesionalId === "string"
-                            ? Number.parseInt(draggedCita.profesionalId)
-                            : draggedCita.profesionalId,
-                      }}
-                      profesionales={profesionales}
-                    >
-                      <div
-                        className="absolute left-1 right-1 rounded-lg border-2 border-dashed border-blue-400 bg-blue-50 p-2 opacity-75"
-                        style={{
-                          top: `${calcularPosicionCita(previewHora)}%`,
-                          height: `${calcularAlturaCita(draggedCita.duracion)}%`,
-                          minHeight: "40px",
-                        }}
-                      >
-                        <div className="text-xs text-blue-600 font-medium">
-                          {previewHora} - {calcularHoraFin(previewHora, draggedCita.duracion)}
-                        </div>
-                        <div className="text-sm text-blue-800">
-                          {draggedCita.nombrePaciente} {draggedCita.apellidosPaciente}
-                        </div>
-                      </div>
-                    </HoraPreviewTooltip>
-                  )}
-
-                  {/* Overlay de vacaciones */}
-                  {isOnVacation && vacationInfo && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-red-100 bg-opacity-75 pointer-events-none">
-                      <div className="text-center">
-                        {React.createElement(
-                          VACATION_ICONS[vacationInfo.type as keyof typeof VACATION_ICONS] || Clock,
-                          { className: "h-8 w-8 text-red-500 mx-auto mb-2" },
-                        )}
-                        <div className="text-sm font-medium text-red-700">
-                          {VACATION_LABELS[vacationInfo.type as keyof typeof VACATION_LABELS] || "Ausencia"}
-                        </div>
-                        <div className="text-xs text-red-600">{vacationInfo.reason}</div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
         </div>
 
         {/* Modal para nueva cita */}

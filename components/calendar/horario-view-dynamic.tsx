@@ -3,6 +3,7 @@
 import type React from "react"
 import { useState } from "react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Button } from "@/components/ui/button"
 import { AppointmentFormModal } from "./appointment-form-modal"
 import { HoraPreviewTooltip } from "./hora-preview-tooltip"
 import { calcularHoraFin } from "@/utils/calendar-utils"
@@ -16,11 +17,12 @@ import {
 } from "@/utils/schedule-utils"
 import type { Cita, Profesional, IntervaloTiempo } from "@/types/calendar"
 import type { User } from "@/types/calendar"
+import { isCompletedAppointment } from "@/types/citas"
 import { toast } from "sonner"
 import { format } from "date-fns"
 import type { WorkSchedule } from "@/types/calendar"
 import type { JSX } from "react"
-// ✅ CAMBIO: Importar el contexto en lugar del hook
+import { FileText } from "lucide-react"
 
 interface HorarioViewDynamicProps {
   date: Date
@@ -37,6 +39,7 @@ interface HorarioViewDynamicProps {
   isUserOnVacationDate?: (userId: string, date: Date | string) => boolean
   getUserVacationOnDate?: (userId: string, date: Date | string) => any
   workSchedules?: WorkSchedule[] // DATOS DEL SISTEMA NUEVO
+  onOpenDailyBilling?: () => void // Nueva prop para abrir facturación diaria
 }
 
 const getColorProfesional = (profesional: Profesional) => {
@@ -51,11 +54,23 @@ const getColorProfesional = (profesional: Profesional) => {
 const getColorEstado = (estado: string) => {
   switch (estado) {
     case "confirmada":
+    case "confirmed":
       return "bg-green-500"
-    case "pendiente":
-      return "bg-amber-400"
+    case "programada":
+    case "scheduled":
+      return "bg-blue-500"
+    case "en-curso":
+    case "in-progress":
+      return "bg-yellow-500"
+    case "completada":
+    case "completed":
+      return "bg-emerald-500"
     case "cancelada":
+    case "cancelled":
       return "bg-red-500"
+    case "no-asistio":
+    case "no-show":
+      return "bg-gray-500"
     default:
       return "bg-gray-300"
   }
@@ -117,9 +132,8 @@ export function HorarioViewDynamic({
   isUserOnVacationDate = () => false,
   getUserVacationOnDate = () => null,
   workSchedules = [], // SOLO SISTEMA NUEVO
+  onOpenDailyBilling,
 }: HorarioViewDynamicProps) {
-
-
   const [draggedCita, setDraggedCita] = useState<Cita | null>(null)
   const [dragOverProfesional, setDragOverProfesional] = useState<number | null>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -154,6 +168,11 @@ export function HorarioViewDynamic({
   const timeSlots = generateTimeSlots(usuariosActivos, dayOfWeek, intervaloTiempo)
   const { start: startMinutes, end: endMinutes } = getCalendarTimeRange(usuariosActivos, dayOfWeek)
   const duracionDia = endMinutes - startMinutes
+
+  // Verificar si hay citas completadas en el día - USANDO LA FUNCIÓN DE UTILIDAD
+  const hasCompletedAppointments = () => {
+    return citas.some((cita) => isCompletedAppointment(cita.estado))
+  }
 
   // Funciones de vacaciones
   const isProfessionalOnVacation = (profesionalId: number | string) => {
@@ -613,236 +632,258 @@ export function HorarioViewDynamic({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        {profesionalesFiltrados.map((profesional) => {
-          const citasProfesional = citas.filter((cita) => cita.profesionalId === profesional.id)
-          const { titulo, nombre } = extraerTituloProfesional(profesional?.name)
-          const huecosLibres = renderHuecosLibres(profesional.id)
-          const descansos = renderDescansos(profesional.id)
-
-          // Obtener usuario correspondiente
-          const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesional.id)
-          const workingHours = user ? getWorkingHoursForDay(user, dayOfWeek) : []
-          const isWorkingToday = workingHours.length > 0
-
-          // Verificar vacaciones
-          const isOnVacation = isProfessionalOnVacation(profesional.id)
-          const vacationInfo = getProfessionalVacationInfo(profesional.id)
-
-          // Obtener estilos de color dinámicos
-          const colorStyles = getColorProfesional(profesional)
-
-          return (
-            <div key={profesional.id} className="relative">
-              {/* Cabecera del profesional */}
-              <div
-                className={`sticky top-0 z-10 rounded-t-md border-b-2 text-center ${
-                  !isWorkingToday || isOnVacation ? "opacity-50" : ""
-                }`}
-                style={{
-                  backgroundColor: isOnVacation ? "#fef3c7" : colorStyles.backgroundColor,
-                  borderColor: isOnVacation ? "#f59e0b" : colorStyles.borderColor,
-                  color: isOnVacation ? "#92400e" : colorStyles.color,
-                }}
-              >
-                <div className="flex flex-col items-center justify-center py-2 px-2" style={{ height: 56 }}>
-                  <span className="font-medium text-sm leading-tight">{nombre}</span>
-                  {isOnVacation && (
-                    <span className="text-xs text-orange-600 flex items-center gap-1">
-                      {getVacationIcon(vacationInfo?.type)} {getVacationLabel(vacationInfo?.type)}
-                    </span>
-                  )}
-                  {!isOnVacation && !isWorkingToday && <span className="text-xs text-gray-500">No trabaja hoy</span>}
-                  {!isOnVacation && isWorkingToday && workingHours.length > 0 && (
-                    <span className="text-xs opacity-75">
-                      {workingHours.map((h) => `${minutesToTime(h.start)}-${minutesToTime(h.end)}`).join(", ")}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Contenedor de citas */}
-              <div
-                className={`relative border rounded-b-md transition-all duration-200 ${
-                  dragOverProfesional === profesional.id
-                    ? "bg-blue-50 border-blue-300 shadow-lg"
-                    : !isWorkingToday || isOnVacation
-                      ? "bg-gray-100"
-                      : "bg-gray-50"
-                }`}
-                style={{ height: "1000px" }}
-                onDragOver={(e) => handleDragOver(e, profesional.id)}
-                onDrop={(e) => handleDrop(e, profesional.id)}
-                onClick={isWorkingToday && !isOnVacation ? (e) => handleContainerClick(e, profesional.id) : undefined}
-              >
-                {!isWorkingToday && !isOnVacation ? (
-                  <div className="flex items-center justify-center h-full text-gray-500">
-                    <div className="text-center">
-                      <div className="text-4xl mb-2">😴</div>
-                      <div className="text-sm">Día libre</div>
-                    </div>
-                  </div>
-                ) : isOnVacation ? (
-                  <div className="flex items-center justify-center h-full text-orange-600">
-                    <div className="text-center p-4">
-                      <div className="text-4xl mb-3">{getVacationIcon(vacationInfo?.type)}</div>
-                      <div className="text-lg font-semibold mb-2">{getVacationLabel(vacationInfo?.type)}</div>
-                      {vacationInfo?.reason && <div className="text-sm mb-2">{vacationInfo.reason}</div>}
-                      <div className="text-xs">
-                        {format(new Date(vacationInfo?.start_date), "dd/MM")} -{" "}
-                        {format(new Date(vacationInfo?.end_date), "dd/MM")}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    {/* Líneas de hora */}
-                    {timeSlots.map((hora, index) => (
-                      <div
-                        key={hora}
-                        className="absolute w-full border-t border-gray-200"
-                        style={{ top: `${(index / (timeSlots.length - 1)) * 100}%` }}
-                      />
-                    ))}
-
-                    {/* Períodos de descanso - MEJORADOS PARA DESCANSOS PEQUEÑOS */}
-                    {descansos}
-
-                    {/* Huecos libres - solo en horario de trabajo y sin vacaciones */}
-                    {huecosLibres}
-
-                    {/* Citas */}
-                    <TooltipProvider>
-                      {citasProfesional.map((cita, index) => {
-                        const normalizedStartTime = normalizeTimeFormat(cita.hora)
-                        const normalizedEndTime = normalizeTimeFormat(
-                          cita.horaFin || calcularHoraFin(cita.hora, cita.duracion),
-                        )
-                        const posicionTop = calcularPosicionCita(normalizedStartTime)
-                        const altura = calcularAlturaCita(cita.duracion)
-
-                        return (
-                          <Tooltip key={cita.id}>
-                            <TooltipTrigger asChild>
-                              <div
-                                draggable={!isOnVacation}
-                                onDragStart={(e) => !isOnVacation && handleDragStart(e, cita)}
-                                onDragEnd={handleDragEnd}
-                                className={`absolute rounded-md cursor-move shadow-sm border transition-all duration-200 hover:shadow-lg ${
-                                  draggedCita?.id === cita.id ? "opacity-50 scale-95 z-50" : "hover:brightness-95"
-                                }`}
-                                style={{
-                                  top: `${posicionTop}%`,
-                                  left: 0,
-                                  right: 0,
-                                  width: "100%",
-                                  height: `${Math.max(altura, 2.5)}%`,
-                                  padding: "4px",
-                                  overflow: "hidden",
-                                  zIndex: 10 + index,
-                                  backgroundColor: colorStyles.backgroundColor,
-                                  borderLeftColor: colorStyles.borderColor,
-                                  borderLeftWidth: "4px",
-                                  color: colorStyles.color,
-                                }}
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  onSelectCita(cita)
-                                }}
-                              >
-                                <div className="space-y-0.5">
-                                  <div className="flex items-center gap-1 text-xs whitespace-nowrap overflow-hidden text-ellipsis">
-                                    <div className={`w-2 h-2 rounded-full ${getColorEstado(cita.estado)}`} />
-                                    <span className="font-medium">
-                                      {normalizedStartTime}-{normalizedEndTime}
-                                    </span>
-                                  </div>
-                                  <div className="font-medium text-xs whitespace-nowrap overflow-hidden text-ellipsis">
-                                    {cita.nombrePaciente} {cita.apellidosPaciente || ""}
-                                  </div>
-                                  {cita.telefonoPaciente && (
-                                    <div className="text-xs whitespace-nowrap overflow-hidden text-ellipsis opacity-75">
-                                      📞 {cita.telefonoPaciente}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent side="right" className="max-w-xs">
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-2">
-                                  <div className={`w-3 h-3 rounded-full ${getColorEstado(cita.estado)}`} />
-                                  <p className="font-medium">
-                                    {cita.nombrePaciente} {cita.apellidosPaciente || ""}
-                                  </p>
-                                </div>
-                                <p>
-                                  {normalizedStartTime}-{normalizedEndTime} ({cita.duracion} min)
-                                </p>
-                                {cita.telefonoPaciente && <p className="text-xs">Tel: {cita.telefonoPaciente}</p>}
-                                <p className="text-xs">{cita.tipo}</p>
-                              </div>
-                            </TooltipContent>
-                          </Tooltip>
-                        )
-                      })}
-                    </TooltipProvider>
-                  </>
-                )}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Modal para nueva cita */}
-      {showNewAppointmentModal && newAppointmentData && (
-        <AppointmentFormModal
-          fecha={newAppointmentData.fecha}
-          hora={newAppointmentData.hora}
-          profesionalId={newAppointmentData.profesionalId}
-          onClose={() => {
-            setShowNewAppointmentModal(false)
-            setNewAppointmentData(null)
-          }}
-          onSubmit={onAddCita}
-        />
-      )}
-
-      {/* Preview de hora durante drag */}
-      {isDragging && previewHora && (
-        <HoraPreviewTooltip
-          hora={previewHora}
-          position={previewPosition}
-          citaOriginal={
-            draggedCita
-              ? {
-                  hora: draggedCita.hora,
-                  fecha: typeof draggedCita.fecha === "string" ? new Date(draggedCita.fecha) : draggedCita.fecha,
-                  profesionalId:
-                    typeof draggedCita.profesionalId === "string"
-                      ? Number.parseInt(draggedCita.profesionalId)
-                      : draggedCita.profesionalId,
-                }
-              : undefined
-          }
-          profesionales={profesionales}
-        />
-      )}
-
-      {/* Overlay de arrastre */}
-      {isDragging && (
-        <div className="fixed inset-0 bg-black bg-opacity-10 z-40 pointer-events-none">
-          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-white rounded-lg shadow-lg p-4 border-2 border-blue-400">
-            <div className="flex items-center gap-2 text-sm">
-              <div className="w-3 h-3 bg-blue-400 rounded-full animate-pulse" />
-              <span className="font-medium">Arrastrando cita</span>
-            </div>
-            <div className="text-xs text-gray-600 mt-1">💡 Suelta en otro profesional para cambiar asignación</div>
+    <div className="flex flex-col h-full">
+      {/* Header con botón de facturación si hay citas completadas */}
+      {hasCompletedAppointments() && onOpenDailyBilling && (
+        <div className="border-b px-4 py-2 bg-green-50">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-green-700">Hay citas completadas en este día que pueden ser facturadas</div>
+            <Button onClick={onOpenDailyBilling} size="sm" className="bg-green-600 hover:bg-green-700 text-white gap-2">
+              <FileText className="h-4 w-4" />
+              Facturar Día
+            </Button>
           </div>
         </div>
       )}
+
+      {/* Contenido principal del calendario */}
+      <div className="flex-1 overflow-hidden">
+        <div className="space-y-4 p-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            {profesionalesFiltrados.map((profesional) => {
+              const citasProfesional = citas.filter((cita) => cita.profesionalId === profesional.id)
+              const { titulo, nombre } = extraerTituloProfesional(profesional?.name)
+              const huecosLibres = renderHuecosLibres(profesional.id)
+              const descansos = renderDescansos(profesional.id)
+
+              // Obtener usuario correspondiente
+              const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesional.id)
+              const workingHours = user ? getWorkingHoursForDay(user, dayOfWeek) : []
+              const isWorkingToday = workingHours.length > 0
+
+              // Verificar vacaciones
+              const isOnVacation = isProfessionalOnVacation(profesional.id)
+              const vacationInfo = getProfessionalVacationInfo(profesional.id)
+
+              // Obtener estilos de color dinámicos
+              const colorStyles = getColorProfesional(profesional)
+
+              return (
+                <div key={profesional.id} className="relative">
+                  {/* Cabecera del profesional */}
+                  <div
+                    className={`sticky top-0 z-10 rounded-t-md border-b-2 text-center ${
+                      !isWorkingToday || isOnVacation ? "opacity-50" : ""
+                    }`}
+                    style={{
+                      backgroundColor: isOnVacation ? "#fef3c7" : colorStyles.backgroundColor,
+                      borderColor: isOnVacation ? "#f59e0b" : colorStyles.borderColor,
+                      color: isOnVacation ? "#92400e" : colorStyles.color,
+                    }}
+                  >
+                    <div className="flex flex-col items-center justify-center py-2 px-2" style={{ height: 56 }}>
+                      <span className="font-medium text-sm leading-tight">{nombre}</span>
+                      {isOnVacation && (
+                        <span className="text-xs text-orange-600 flex items-center gap-1">
+                          {getVacationIcon(vacationInfo?.type)} {getVacationLabel(vacationInfo?.type)}
+                        </span>
+                      )}
+                      {!isOnVacation && !isWorkingToday && (
+                        <span className="text-xs text-gray-500">No trabaja hoy</span>
+                      )}
+                      {!isOnVacation && isWorkingToday && workingHours.length > 0 && (
+                        <span className="text-xs opacity-75">
+                          {workingHours.map((h) => `${minutesToTime(h.start)}-${minutesToTime(h.end)}`).join(", ")}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Contenedor de citas */}
+                  <div
+                    className={`relative border rounded-b-md transition-all duration-200 ${
+                      dragOverProfesional === profesional.id
+                        ? "bg-blue-50 border-blue-300 shadow-lg"
+                        : !isWorkingToday || isOnVacation
+                          ? "bg-gray-100"
+                          : "bg-gray-50"
+                    }`}
+                    style={{ height: "1000px" }}
+                    onDragOver={(e) => handleDragOver(e, profesional.id)}
+                    onDrop={(e) => handleDrop(e, profesional.id)}
+                    onClick={
+                      isWorkingToday && !isOnVacation ? (e) => handleContainerClick(e, profesional.id) : undefined
+                    }
+                  >
+                    {!isWorkingToday && !isOnVacation ? (
+                      <div className="flex items-center justify-center h-full text-gray-500">
+                        <div className="text-center">
+                          <div className="text-4xl mb-2">😴</div>
+                          <div className="text-sm">Día libre</div>
+                        </div>
+                      </div>
+                    ) : isOnVacation ? (
+                      <div className="flex items-center justify-center h-full text-orange-600">
+                        <div className="text-center p-4">
+                          <div className="text-4xl mb-3">{getVacationIcon(vacationInfo?.type)}</div>
+                          <div className="text-lg font-semibold mb-2">{getVacationLabel(vacationInfo?.type)}</div>
+                          {vacationInfo?.reason && <div className="text-sm mb-2">{vacationInfo.reason}</div>}
+                          <div className="text-xs">
+                            {format(new Date(vacationInfo?.start_date), "dd/MM")} -{" "}
+                            {format(new Date(vacationInfo?.end_date), "dd/MM")}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Líneas de hora */}
+                        {timeSlots.map((hora, index) => (
+                          <div
+                            key={hora}
+                            className="absolute w-full border-t border-gray-200"
+                            style={{ top: `${(index / (timeSlots.length - 1)) * 100}%` }}
+                          />
+                        ))}
+
+                        {/* Períodos de descanso - MEJORADOS PARA DESCANSOS PEQUEÑOS */}
+                        {descansos}
+
+                        {/* Huecos libres - solo en horario de trabajo y sin vacaciones */}
+                        {huecosLibres}
+
+                        {/* Citas */}
+                        <TooltipProvider>
+                          {citasProfesional.map((cita, index) => {
+                            const normalizedStartTime = normalizeTimeFormat(cita.hora)
+                            const normalizedEndTime = normalizeTimeFormat(
+                              cita.horaFin || calcularHoraFin(cita.hora, cita.duracion),
+                            )
+                            const posicionTop = calcularPosicionCita(normalizedStartTime)
+                            const altura = calcularAlturaCita(cita.duracion)
+
+                            return (
+                              <Tooltip key={cita.id}>
+                                <TooltipTrigger asChild>
+                                  <div
+                                    draggable={!isOnVacation}
+                                    onDragStart={(e) => !isOnVacation && handleDragStart(e, cita)}
+                                    onDragEnd={handleDragEnd}
+                                    className={`absolute rounded-md cursor-move shadow-sm border transition-all duration-200 hover:shadow-lg ${
+                                      draggedCita?.id === cita.id ? "opacity-50 scale-95 z-50" : "hover:brightness-95"
+                                    }`}
+                                    style={{
+                                      top: `${posicionTop}%`,
+                                      left: 0,
+                                      right: 0,
+                                      width: "100%",
+                                      height: `${Math.max(altura, 2.5)}%`,
+                                      padding: "4px",
+                                      overflow: "hidden",
+                                      zIndex: 10 + index,
+                                      backgroundColor: colorStyles.backgroundColor,
+                                      borderLeftColor: colorStyles.borderColor,
+                                      borderLeftWidth: "4px",
+                                      color: colorStyles.color,
+                                    }}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      onSelectCita(cita)
+                                    }}
+                                  >
+                                    <div className="space-y-0.5">
+                                      <div className="flex items-center gap-1 text-xs whitespace-nowrap overflow-hidden text-ellipsis">
+                                        <div className={`w-2 h-2 rounded-full ${getColorEstado(cita.estado)}`} />
+                                        <span className="font-medium">
+                                          {normalizedStartTime}-{normalizedEndTime}
+                                        </span>
+                                      </div>
+                                      <div className="font-medium text-xs whitespace-nowrap overflow-hidden text-ellipsis">
+                                        {cita.nombrePaciente} {cita.apellidosPaciente || ""}
+                                      </div>
+                                      {cita.telefonoPaciente && (
+                                        <div className="text-xs whitespace-nowrap overflow-hidden text-ellipsis opacity-75">
+                                          📞 {cita.telefonoPaciente}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent side="right" className="max-w-xs">
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-2">
+                                      <div className={`w-3 h-3 rounded-full ${getColorEstado(cita.estado)}`} />
+                                      <p className="font-medium">
+                                        {cita.nombrePaciente} {cita.apellidosPaciente || ""}
+                                      </p>
+                                    </div>
+                                    <p>
+                                      {normalizedStartTime}-{normalizedEndTime} ({cita.duracion} min)
+                                    </p>
+                                    {cita.telefonoPaciente && <p className="text-xs">Tel: {cita.telefonoPaciente}</p>}
+                                    <p className="text-xs">{cita.tipo}</p>
+                                  </div>
+                                </TooltipContent>
+                              </Tooltip>
+                            )
+                          })}
+                        </TooltipProvider>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Modal para nueva cita */}
+          {showNewAppointmentModal && newAppointmentData && (
+            <AppointmentFormModal
+              fecha={newAppointmentData.fecha}
+              hora={newAppointmentData.hora}
+              profesionalId={newAppointmentData.profesionalId}
+              onClose={() => {
+                setShowNewAppointmentModal(false)
+                setNewAppointmentData(null)
+              }}
+              onSubmit={onAddCita}
+            />
+          )}
+
+          {/* Preview de hora durante drag */}
+          {isDragging && previewHora && (
+            <HoraPreviewTooltip
+              hora={previewHora}
+              position={previewPosition}
+              citaOriginal={
+                draggedCita
+                  ? {
+                      hora: draggedCita.hora,
+                      fecha: typeof draggedCita.fecha === "string" ? new Date(draggedCita.fecha) : draggedCita.fecha,
+                      profesionalId:
+                        typeof draggedCita.profesionalId === "string"
+                          ? Number.parseInt(draggedCita.profesionalId)
+                          : draggedCita.profesionalId,
+                    }
+                  : undefined
+              }
+              profesionales={profesionales}
+            />
+          )}
+
+          {/* Overlay de arrastre */}
+          {isDragging && (
+            <div className="fixed inset-0 bg-black bg-opacity-10 z-40 pointer-events-none">
+              <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-white rounded-lg shadow-lg p-4 border-2 border-blue-400">
+                <div className="flex items-center gap-2 text-sm">
+                  <div className="w-3 h-3 bg-blue-400 rounded-full animate-pulse" />
+                  <span className="font-medium">Arrastrando cita</span>
+                </div>
+                <div className="text-xs text-gray-600 mt-1">💡 Suelta en otro profesional para cambiar asignación</div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
