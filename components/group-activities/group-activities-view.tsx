@@ -302,12 +302,7 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
           {groupActivitiesIntoSeries.map((series) => {
             const isExpanded = expandedSeries.has(series.id)
             const firstActivity = series.activities[0]
-            const totalParticipants = series.activities.reduce((sum, act) => sum + act.current_participants, 0)
-            const avgParticipation = totalParticipants / series.activities.length
-            const participationStatus = getParticipationStatus({
-              ...firstActivity,
-              current_participants: avgParticipation,
-            })
+            const participationStatus = getParticipationStatus(firstActivity)
 
             return (
               <div key={series.id} className="border rounded-lg overflow-hidden">
@@ -375,11 +370,9 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
 
                     {/* Participantes */}
                     <div className="flex items-center gap-2 mr-4">
-                      <Badge variant={participationStatus.variant} className="text-xs">
-                        {series.isRecurringSeries
-                          ? `${Math.round(avgParticipation)}/${series.max_participants} promedio`
-                          : `${firstActivity.current_participants}/${series.max_participants}`}
-                      </Badge>
+                    <Badge variant={participationStatus.variant} className="text-xs">
+  {firstActivity.current_participants}/{firstActivity.max_participants}
+</Badge>
                       <div className="w-16 bg-gray-200 rounded-full h-1.5">
                         <div
                           className="bg-blue-600 h-1.5 rounded-full transition-all"
