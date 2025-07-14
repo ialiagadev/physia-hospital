@@ -22,9 +22,9 @@ import {
   Search,
   CalendarIcon,
   Clock,
-  AlertCircle,
   ClipboardList,
   Repeat,
+  Ban,
 } from "lucide-react"
 import { useClients } from "@/hooks/use-clients"
 import { useUsers } from "@/hooks/use-users"
@@ -62,6 +62,28 @@ const estadosCita = [
   { value: "pendiente", label: "Pendiente" },
   { value: "cancelada", label: "Cancelada" },
 ]
+
+// 🔧 FUNCIONES AUXILIARES PARA MANEJO DE FECHAS
+const formatDateForInput = (date: Date): string => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+const parseDateFromInput = (dateString: string): Date => {
+  const [year, month, day] = dateString.split("-").map(Number)
+  return new Date(year, month - 1, day) // month - 1 porque los meses en JS van de 0-11
+}
+
+const ensureLocalDate = (date: Date | string): Date => {
+  if (typeof date === "string") {
+    // Si es string, parsearlo como fecha local
+    return parseDateFromInput(date.split("T")[0])
+  }
+  // Si ya es Date, crear una nueva fecha local para evitar mutaciones
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+}
 
 export function AppointmentFormModal({
   fecha,
@@ -114,13 +136,14 @@ export function AppointmentFormModal({
     return `${nuevasHoras.toString().padStart(2, "0")}:${nuevosMinutos.toString().padStart(2, "0")}`
   }, [])
 
-  // Estado del formulario con service_id como número o null
+  // 🔧 ESTADO DEL FORMULARIO CON FECHAS CORREGIDAS
   const [formData, setFormData] = useState({
     telefonoPaciente: citaExistente?.telefonoPaciente || waitingListEntry?.phone || "",
     nombrePaciente: citaExistente?.nombrePaciente || waitingListEntry?.client_name?.split(" ")[0] || "",
     apellidosPaciente:
       citaExistente?.apellidosPaciente || waitingListEntry?.client_name?.split(" ").slice(1).join(" ") || "",
-    fecha: citaExistente?.fecha instanceof Date ? citaExistente.fecha : new Date(citaExistente?.fecha || fecha),
+    // 🔧 FECHA CORREGIDA - siempre como Date local
+    fecha: citaExistente?.fecha ? ensureLocalDate(citaExistente.fecha) : ensureLocalDate(fecha),
     hora: citaExistente?.hora || hora,
     duracion: citaExistente?.duracion || waitingListEntry?.estimated_duration || 45,
     notas: citaExistente?.notas || waitingListEntry?.notes || "",
@@ -134,12 +157,15 @@ export function AppointmentFormModal({
         ? Number(waitingListEntry.service_id)
         : services.length > 0
           ? services[0].id
-          : null, // Seleccionar el primer servicio por defecto
+          : null,
     // 🆕 CAMPOS PARA RECURRENCIA
     isRecurring: citaExistente?.isRecurring || false,
     recurrenceType: citaExistente?.recurrenceType || "weekly",
     recurrenceInterval: citaExistente?.recurrenceInterval || 1,
-    recurrenceEndDate: citaExistente?.recurrenceEndDate || addMonths(fecha, 3),
+    // 🔧 FECHA DE RECURRENCIA CORREGIDA
+    recurrenceEndDate: citaExistente?.recurrenceEndDate
+      ? ensureLocalDate(citaExistente.recurrenceEndDate)
+      : addMonths(ensureLocalDate(fecha), 3),
   })
 
   // 🆕 Efecto para generar preview de recurrencia
@@ -151,11 +177,7 @@ export function AppointmentFormModal({
           interval: formData.recurrenceInterval,
           endDate: formData.recurrenceEndDate,
         }
-
-        const preview = RecurrenceService.generatePreview(
-          formData.fecha instanceof Date ? formData.fecha : new Date(formData.fecha),
-          config,
-        )
+        const preview = RecurrenceService.generatePreview(formData.fecha, config)
         setRecurrencePreview(preview)
       } catch (error) {
         console.error("Error generating recurrence preview:", error)
@@ -180,9 +202,8 @@ export function AppointmentFormModal({
 
     try {
       const endTime = calcularHoraFin(formData.hora, formData.duracion)
-      const dateString = (formData.fecha instanceof Date ? formData.fecha : new Date(formData.fecha))
-        .toISOString()
-        .split("T")[0]
+      // 🔧 USAR FECHA LOCAL CORRECTAMENTE
+      const dateString = formatDateForInput(formData.fecha)
 
       const available = await getAvailableConsultations(
         dateString,
@@ -482,6 +503,32 @@ export function AppointmentFormModal({
     setFormData((prev) => ({ ...prev, [field]: value }))
   }, [])
 
+  // 🔧 HANDLER PARA CAMBIO DE FECHA CORREGIDO
+  const handleDateChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const dateString = e.target.value
+    if (dateString) {
+      const nuevaFecha = parseDateFromInput(dateString)
+      setFormData((prev) => ({ ...prev, fecha: nuevaFecha }))
+    }
+  }, [])
+
+  // 🔧 HANDLER PARA CAMBIO DE FECHA DE RECURRENCIA CORREGIDO
+  const handleRecurrenceEndDateChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const dateString = e.target.value
+      const date = dateString ? parseDateFromInput(dateString) : null
+      handleRecurrenceChange("recurrenceEndDate", date)
+    },
+    [handleRecurrenceChange],
+  )
+
+  // 🆕 Verificar si el botón debe estar deshabilitado
+  const isSubmitDisabled = useCallback(() => {
+    return (
+      searchingClients || consultationsLoading || conflictsLoading || conflicts.length > 0 // 🔥 NUEVA CONDICIÓN: Deshabilitar si hay conflictos
+    )
+  }, [searchingClients, consultationsLoading, conflictsLoading, conflicts.length])
+
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault()
@@ -511,7 +558,6 @@ export function AppointmentFormModal({
         if (!formData.recurrenceEndDate) {
           newErrors.recurrenceEndDate = "Debes seleccionar una fecha de finalización"
         }
-
         if (formData.recurrenceInterval < 1 || formData.recurrenceInterval > 12) {
           newErrors.recurrenceInterval = "El intervalo debe estar entre 1 y 12"
         }
@@ -527,6 +573,12 @@ export function AppointmentFormModal({
         if (validationErrors.length > 0) {
           newErrors.recurrence = validationErrors.join(", ")
         }
+      }
+
+      // 🔥 NUEVA VALIDACIÓN: Bloquear si hay conflictos
+      if (conflicts.length > 0) {
+        newErrors.conflicts = "No se puede crear la cita debido a conflictos de horario"
+        return
       }
 
       if (Object.keys(newErrors).length > 0) {
@@ -555,7 +607,16 @@ export function AppointmentFormModal({
       onSubmit(nuevaCita)
       onClose()
     },
-    [formData, clienteEncontrado, calcularHoraFin, citaExistente?.id, onSubmit, onClose, profesionalId],
+    [
+      formData,
+      clienteEncontrado,
+      calcularHoraFin,
+      citaExistente?.id,
+      onSubmit,
+      onClose,
+      profesionalId,
+      conflicts.length,
+    ],
   )
 
   if (!organizationId) {
@@ -645,7 +706,9 @@ export function AppointmentFormModal({
                 onFocus={() => searchTerm && searchClients(searchTerm)}
                 placeholder="Buscar por teléfono (3+ dígitos), nombre o apellido..."
                 required
-                className={`w-full ${errors.telefono ? "border-red-500" : ""} ${clienteEncontrado ? "border-green-500" : ""}`}
+                className={`w-full ${errors.telefono ? "border-red-500" : ""} ${
+                  clienteEncontrado ? "border-green-500" : ""
+                }`}
               />
               {searchingClients && (
                 <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 animate-spin text-gray-400" />
@@ -800,18 +863,12 @@ export function AppointmentFormModal({
                 <CalendarIcon className="h-4 w-4" />
                 Fecha *
               </Label>
+              {/* 🔧 INPUT DE FECHA CORREGIDO */}
               <Input
                 id="fecha"
                 type="date"
-                value={
-                  (formData.fecha instanceof Date ? formData.fecha : new Date(formData.fecha))
-                    .toISOString()
-                    .split("T")[0]
-                }
-                onChange={(e) => {
-                  const nuevaFecha = new Date(e.target.value + "T00:00:00")
-                  setFormData((prev) => ({ ...prev, fecha: nuevaFecha }))
-                }}
+                value={formatDateForInput(formData.fecha)}
+                onChange={handleDateChange}
                 required
                 className="w-full"
               />
@@ -918,28 +975,13 @@ export function AppointmentFormModal({
 
                 <div>
                   <Label htmlFor="recurrenceEndDate">Hasta el</Label>
+                  {/* 🔧 INPUT DE FECHA DE RECURRENCIA CORREGIDO */}
                   <Input
                     id="recurrenceEndDate"
                     type="date"
-                    value={
-                      formData.recurrenceEndDate
-                        ? (formData.recurrenceEndDate instanceof Date
-                            ? formData.recurrenceEndDate
-                            : new Date(formData.recurrenceEndDate)
-                          )
-                            .toISOString()
-                            .split("T")[0]
-                        : ""
-                    }
-                    onChange={(e) => {
-                      const date = e.target.value ? new Date(e.target.value + "T00:00:00") : null
-                      handleRecurrenceChange("recurrenceEndDate", date)
-                    }}
-                    min={
-                      (formData.fecha instanceof Date ? formData.fecha : new Date(formData.fecha))
-                        .toISOString()
-                        .split("T")[0]
-                    }
+                    value={formData.recurrenceEndDate ? formatDateForInput(formData.recurrenceEndDate) : ""}
+                    onChange={handleRecurrenceEndDateChange}
+                    min={formatDateForInput(formData.fecha)}
                     className={`w-full ${errors.recurrenceEndDate ? "border-red-500" : ""}`}
                     required={formData.isRecurring}
                   />
@@ -960,12 +1002,10 @@ export function AppointmentFormModal({
                         {showRecurrencePreview ? "Ocultar" : "Ver fechas"}
                       </Button>
                     </div>
-
                     <p className="text-sm text-gray-600 mb-2">
                       Se crearán <strong>{recurrencePreview.count}</strong> citas hasta el{" "}
                       <strong>{format(formData.recurrenceEndDate, "dd/MM/yyyy")}</strong>
                     </p>
-
                     {recurrencePreview.conflicts.length > 0 && (
                       <Alert className="mb-2">
                         <AlertTriangle className="h-4 w-4" />
@@ -974,7 +1014,6 @@ export function AppointmentFormModal({
                         </AlertDescription>
                       </Alert>
                     )}
-
                     {showRecurrencePreview && (
                       <div className="max-h-32 overflow-y-auto">
                         <div className="grid grid-cols-3 gap-1 text-xs">
@@ -1011,12 +1050,12 @@ export function AppointmentFormModal({
             )}
           </div>
 
-          {/* Advertencia de conflictos */}
+          {/* 🔥 ADVERTENCIA DE CONFLICTOS MEJORADA */}
           {conflicts.length > 0 && (
             <Alert className="border-red-200 bg-red-50">
-              <AlertCircle className="h-4 w-4" />
+              <Ban className="h-4 w-4" />
               <AlertDescription className="text-red-800">
-                <strong>⚠️ Conflicto de horario detectado</strong>
+                <strong>🚫 Conflicto de horario - No se puede crear la cita</strong>
                 <br />
                 <span className="text-sm">
                   Ya existe{conflicts.length > 1 ? "n" : ""} {conflicts.length} cita{conflicts.length > 1 ? "s" : ""} en
@@ -1032,8 +1071,8 @@ export function AppointmentFormModal({
                     </div>
                   ))}
                 </div>
-                <div className="mt-2 text-sm">
-                  <strong>Puedes continuar si es necesario, pero considera cambiar el horario.</strong>
+                <div className="mt-2 text-sm font-medium">
+                  <strong>Debes cambiar el horario, profesional o fecha para continuar.</strong>
                 </div>
               </AlertDescription>
             </Alert>
@@ -1198,6 +1237,11 @@ export function AppointmentFormModal({
             {waitingListEntry && (
               <p className="text-green-600">• Al crear la cita, se eliminará automáticamente de la lista de espera</p>
             )}
+            {conflicts.length > 0 && (
+              <p className="text-red-600 font-medium">
+                • ⚠️ Hay conflictos de horario - debes resolverlos antes de continuar
+              </p>
+            )}
           </div>
 
           {/* Botones */}
@@ -1205,7 +1249,8 @@ export function AppointmentFormModal({
             <Button type="button" variant="outline" onClick={onClose}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={searchingClients || consultationsLoading || conflictsLoading}>
+            <Button type="submit" disabled={isSubmitDisabled()}>
+              {conflicts.length > 0 && <Ban className="h-4 w-4 mr-2" />}
               {citaExistente ? "Actualizar" : "Crear"}
               {formData.isRecurring && recurrencePreview ? ` (${recurrencePreview.count} citas)` : " Cita"}
             </Button>
