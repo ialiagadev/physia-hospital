@@ -32,8 +32,8 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
     if (!client) {
       return { isValid: false, missingFields: ["Cliente completo"] }
     }
-    const missingFields: string[] = []
 
+    const missingFields: string[] = []
     if (!client.name?.trim()) missingFields.push("Nombre")
     if (!(client as any).tax_id?.trim()) missingFields.push("CIF/NIF")
     if (!(client as any).address?.trim()) missingFields.push("Dirección")
@@ -48,13 +48,24 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
 
   const clientValidation = validateClientData()
 
+  // Función para descargar automáticamente el PDF
+  const downloadPdf = (blob: Blob, filename: string) => {
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+  }
+
   const generateInvoice = async () => {
     if (!userProfile?.organization_id) {
       return
     }
 
     setGenerating(true)
-
     try {
       // Importar las funciones necesarias
       const { generateUniqueInvoiceNumber } = await import("@/lib/invoice-utils")
@@ -108,7 +119,6 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
       }, 0)
 
       const baseAmount = subtotalAmount - totalDiscountAmount
-
       const vatAmount = invoiceLines.reduce((sum, line) => {
         const lineSubtotal = line.quantity * line.unit_price
         const lineDiscount = (lineSubtotal * line.discount_percentage) / 100
@@ -180,7 +190,6 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
       }))
 
       const { error: linesError } = await supabase.from("invoice_lines").insert(invoiceLines_db)
-
       if (linesError) {
         console.error("Error saving invoice lines:", linesError)
       }
@@ -239,22 +248,25 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
           },
         }
 
-        // Generar PDF y descargarlo automáticamente
-        const pdfBlob = await generatePdf(newInvoice, invoiceLines, `factura-${invoiceNumberFormatted}.pdf`, true)
+        const filename = `factura-${invoiceNumberFormatted}.pdf`
+
+        // Generar PDF SIN descarga automática primero
+        const pdfBlob = await generatePdf(newInvoice, invoiceLines, filename, false)
 
         // Guardar PDF en storage si se generó correctamente
         if (pdfBlob && pdfBlob instanceof Blob) {
           try {
-            const pdfUrl = await savePdfToStorage(
-              pdfBlob,
-              `factura-${invoiceNumberFormatted}.pdf`,
-              userProfile.organization_id,
-            )
+            const pdfUrl = await savePdfToStorage(pdfBlob, filename, userProfile.organization_id)
 
             // Actualizar la factura con la URL del PDF
             await supabase.from("invoices").update({ pdf_url: pdfUrl }).eq("id", invoiceData.id)
+
+            // ✅ DESCARGAR AUTOMÁTICAMENTE DESPUÉS DE GUARDAR
+            downloadPdf(pdfBlob, filename)
           } catch (pdfError) {
             console.error("Error saving PDF:", pdfError)
+            // Aún así descargar el PDF aunque no se haya guardado en storage
+            downloadPdf(pdfBlob, filename)
           }
         }
       } catch (pdfError) {
@@ -263,7 +275,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
 
       toast({
         title: "Factura generada",
-        description: `Factura ${invoiceNumberFormatted} creada correctamente (${servicePrice}€)`,
+        description: `Factura ${invoiceNumberFormatted} creada correctamente (${servicePrice}€) y descargada automáticamente`,
       })
 
       if (onBillingComplete) {
