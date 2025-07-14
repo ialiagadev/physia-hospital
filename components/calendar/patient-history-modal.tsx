@@ -355,7 +355,7 @@ export function PatientHistoryModal({ client, isOpen, onClose, isEmbedded = fals
 
   const openFullHistory = () => {
     if (client) {
-      window.open(`/clients/${client.id}`, "_blank")
+      window.open(`dashboard/clients/${client.id}`, "_blank")
     }
   }
 
