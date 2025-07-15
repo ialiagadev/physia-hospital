@@ -66,7 +66,7 @@ export function AppointmentDetailsModal({
       const { data: services, error } = await supabase
         .from("services")
         .select("id, name, price, duration, color, active, organization_id, created_at, updated_at")
-                .eq("organization_id", userProfile!.organization_id)
+        .eq("organization_id", userProfile!.organization_id)
         .eq("active", true)
         .order("name")
 
@@ -131,6 +131,8 @@ export function AppointmentDetailsModal({
 
   // Handler para cambio de servicio
   const handleServiceChange = (value: string) => {
+    console.log("Cambiando servicio a:", value)
+
     if (value === "none") {
       setEditedAppointment({
         ...editedAppointment,
@@ -142,8 +144,11 @@ export function AppointmentDetailsModal({
 
     const serviceId = Number.parseInt(value)
     const selectedService = availableServices.find((s) => s.id === serviceId)
+
     if (selectedService) {
+      console.log("Servicio encontrado:", selectedService)
       const newEndTime = calculateEndTime(editedAppointment.start_time, selectedService.duration)
+
       setEditedAppointment({
         ...editedAppointment,
         service_id: serviceId,
@@ -154,15 +159,63 @@ export function AppointmentDetailsModal({
     }
   }
 
+  // Función de actualización mejorada
   const handleSave = async () => {
     setIsSaving(true)
     try {
-      await onUpdate(editedAppointment)
+      console.log("Datos a actualizar:", editedAppointment)
+
+      // Preparar los datos para la actualización
+      const updateData = {
+        date: editedAppointment.date,
+        start_time: editedAppointment.start_time,
+        end_time: editedAppointment.end_time,
+        duration: editedAppointment.duration,
+        status: editedAppointment.status,
+        notes: editedAppointment.notes || null,
+        service_id: editedAppointment.service_id, // Puede ser null
+        updated_at: new Date().toISOString(),
+      }
+
+      console.log("Datos de actualización:", updateData)
+
+      // Actualizar en la base de datos
+      const { data, error } = await supabase
+        .from("appointments")
+        .update(updateData)
+        .eq("id", appointment.id)
+        .select(`
+          *,
+          client:clients(*),
+          service:services(*),
+          consultation:consultations(*)
+        `)
+        .single()
+
+      if (error) {
+        console.error("Error de Supabase:", error)
+        throw error
+      }
+
+      console.log("Datos actualizados en DB:", data)
+
+      // Crear el objeto actualizado con la estructura correcta
+      const updatedAppointment: AppointmentWithDetails = {
+        ...data,
+        client: data.client,
+        service: data.service,
+        consultation: data.consultation,
+      }
+
+      // Llamar a la función onUpdate del componente padre
+      await onUpdate(updatedAppointment)
+
       setIsEditing(false)
       console.log("Cita actualizada correctamente")
       onClose()
     } catch (error) {
       console.error("Error al actualizar la cita:", error)
+      // Aquí podrías mostrar un toast o mensaje de error
     } finally {
       setIsSaving(false)
     }
@@ -194,10 +247,6 @@ export function AppointmentDetailsModal({
         return "bg-yellow-100 text-yellow-800 border-yellow-200"
       case "cancelled":
         return "bg-red-100 text-red-800 border-red-200"
-      case "completed":
-        return "bg-blue-100 text-blue-800 border-blue-200"
-      case "no_show":
-        return "bg-gray-100 text-gray-800 border-gray-200"
       default:
         return "bg-gray-100 text-gray-800 border-gray-200"
     }
@@ -211,10 +260,6 @@ export function AppointmentDetailsModal({
         return "Pendiente"
       case "cancelled":
         return "Cancelada"
-      case "completed":
-        return "Completada"
-      case "no_show":
-        return "No asistió"
       default:
         return status
     }
@@ -229,8 +274,8 @@ export function AppointmentDetailsModal({
       appointment.consultation_id !== "" &&
       appointment.consultation_id !== null &&
       appointment.consultation_id !== undefined &&
-      appointment.consultation.name && // Verificar que la consulta tenga nombre
-      appointment.consultation.name.trim() !== "" // Y que no esté vacío
+      appointment.consultation.name &&
+      appointment.consultation.name.trim() !== ""
     )
   }
 
@@ -287,7 +332,6 @@ export function AppointmentDetailsModal({
                       <IndividualBillingButton
                         appointment={appointment}
                         onBillingComplete={() => {
-                          // Opcional: actualizar datos si es necesario
                           console.log("Factura generada para la cita")
                         }}
                       />
@@ -392,10 +436,10 @@ export function AppointmentDetailsModal({
                       </div>
                     ) : (
                       <div className="flex-1 flex items-center gap-4">
-                        <span className="font-medium text-gray-900">{appointment.service?.name}</span>
-                        {appointment.service?.price && (
+                        <span className="font-medium text-gray-900">{editedAppointment.service?.name}</span>
+                        {editedAppointment.service?.price && (
                           <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
-                            {formatCurrency(appointment.service.price)}
+                            {formatCurrency(editedAppointment.service.price)}
                           </Badge>
                         )}
                       </div>
@@ -484,11 +528,9 @@ export function AppointmentDetailsModal({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="confirmed">Confirmada</SelectItem>
                           <SelectItem value="pending">Pendiente</SelectItem>
+                          <SelectItem value="confirmed">Confirmada</SelectItem>
                           <SelectItem value="cancelled">Cancelada</SelectItem>
-                          <SelectItem value="completed">Completada</SelectItem>
-                          <SelectItem value="no_show">No asistió</SelectItem>
                         </SelectContent>
                       </Select>
                     ) : (
@@ -620,7 +662,7 @@ export function AppointmentDetailsModal({
               {appointment.start_time}
             </p>
           </div>
-          <p className="mt-3 text-sm text-red-600">Esta acción no se puede deshacer.</p>
+          <p className="mt-3 text-sm text-red-red-600">Esta acción no se puede deshacer.</p>
           <DialogFooter className="flex gap-2 mt-4">
             <Button variant="outline" onClick={() => setShowDeleteDialog(false)} disabled={isDeleting}>
               Cancelar
