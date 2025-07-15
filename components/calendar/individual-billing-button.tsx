@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { FileText, Loader2, AlertTriangle } from "lucide-react"
+import { FileText, Loader2, AlertTriangle, Download } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase/client"
@@ -18,6 +18,10 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
   const { userProfile } = useAuth()
   const { toast } = useToast()
   const [generating, setGenerating] = useState(false)
+  const [downloading, setDownloading] = useState(false) // 🆕 Estado para descarga
+  const [invoiceGenerated, setInvoiceGenerated] = useState(false)
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  const [invoiceNumber, setInvoiceNumber] = useState<string>("")
 
   const hasService = appointment.service?.id && appointment.service?.price
   const hasServiceId = appointment.service_id
@@ -48,16 +52,43 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
 
   const clientValidation = validateClientData()
 
-  // Función para descargar automáticamente el PDF
-  const downloadPdf = (blob: Blob, filename: string) => {
-    const url = window.URL.createObjectURL(blob)
-    const link = document.createElement("a")
-    link.href = url
-    link.download = filename
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    window.URL.revokeObjectURL(url)
+  // 🆕 Función para descargar PDF con loading
+  const downloadPdf = async () => {
+    if (!pdfUrl) return
+
+    setDownloading(true) // 🆕 Activar loading
+
+    try {
+      const response = await fetch(pdfUrl)
+
+      if (!response.ok) {
+        throw new Error("Error al obtener el archivo")
+      }
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = `factura-${invoiceNumber}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+
+      toast({
+        title: "PDF descargado",
+        description: `Factura ${invoiceNumber} descargada correctamente`,
+      })
+    } catch (error) {
+      console.error("Error downloading PDF:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo descargar el PDF. Inténtalo de nuevo.",
+        variant: "destructive",
+      })
+    } finally {
+      setDownloading(false) // 🆕 Desactivar loading
+    }
   }
 
   const generateInvoice = async () => {
@@ -66,6 +97,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
     }
 
     setGenerating(true)
+
     try {
       // Importar las funciones necesarias
       const { generateUniqueInvoiceNumber } = await import("@/lib/invoice-utils")
@@ -190,6 +222,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
       }))
 
       const { error: linesError } = await supabase.from("invoice_lines").insert(invoiceLines_db)
+
       if (linesError) {
         console.error("Error saving invoice lines:", linesError)
       }
@@ -250,23 +283,23 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
 
         const filename = `factura-${invoiceNumberFormatted}.pdf`
 
-        // Generar PDF SIN descarga automática primero
+        // 🔥 GENERAR PDF SIN DESCARGA AUTOMÁTICA
         const pdfBlob = await generatePdf(newInvoice, invoiceLines, filename, false)
 
         // Guardar PDF en storage si se generó correctamente
         if (pdfBlob && pdfBlob instanceof Blob) {
           try {
-            const pdfUrl = await savePdfToStorage(pdfBlob, filename, userProfile.organization_id)
+            const savedPdfUrl = await savePdfToStorage(pdfBlob, filename, userProfile.organization_id)
 
             // Actualizar la factura con la URL del PDF
-            await supabase.from("invoices").update({ pdf_url: pdfUrl }).eq("id", invoiceData.id)
+            await supabase.from("invoices").update({ pdf_url: savedPdfUrl }).eq("id", invoiceData.id)
 
-            // ✅ DESCARGAR AUTOMÁTICAMENTE DESPUÉS DE GUARDAR
-            downloadPdf(pdfBlob, filename)
+            // 🆕 GUARDAR ESTADOS PARA EL BOTÓN DE DESCARGA
+            setPdfUrl(savedPdfUrl)
+            setInvoiceNumber(invoiceNumberFormatted)
+            setInvoiceGenerated(true)
           } catch (pdfError) {
             console.error("Error saving PDF:", pdfError)
-            // Aún así descargar el PDF aunque no se haya guardado en storage
-            downloadPdf(pdfBlob, filename)
           }
         }
       } catch (pdfError) {
@@ -275,7 +308,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
 
       toast({
         title: "Factura generada",
-        description: `Factura ${invoiceNumberFormatted} creada correctamente (${servicePrice}€) y descargada automáticamente`,
+        description: `Factura ${invoiceNumberFormatted} creada correctamente (${servicePrice}€)`,
       })
 
       if (onBillingComplete) {
@@ -321,6 +354,31 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
     )
   }
 
+  // 🆕 SI LA FACTURA YA FUE GENERADA, MOSTRAR BOTÓN DE DESCARGA CON LOADING
+  if (invoiceGenerated && pdfUrl) {
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={downloadPdf}
+        disabled={downloading} // 🆕 Deshabilitar durante descarga
+        className="gap-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 bg-transparent"
+      >
+        {downloading ? (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Descargando...
+          </>
+        ) : (
+          <>
+            <Download className="h-4 w-4" />
+            Descargar PDF
+          </>
+        )}
+      </Button>
+    )
+  }
+
   // ✅ SI TODO ESTÁ BIEN, MOSTRAR BOTÓN DE FACTURAR
   return (
     <Button
@@ -331,7 +389,6 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
       className="gap-2 text-green-600 hover:text-green-700 hover:bg-green-50 bg-transparent"
     >
       {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-      {/* ✅ TEXTO DEL BOTÓN SIN PRECIO */}
       {generating ? "Generando..." : "Facturar"}
     </Button>
   )

@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import { Calendar, Clock, User, Phone, FileText, Edit2, Trash2, Save, X } from "lucide-react"
+import Link from "next/link"
+import { Calendar, Clock, User, Phone, FileText, Edit2, Trash2, Save, X, DollarSign } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -18,8 +19,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { PatientHistoryModal } from "./patient-history-modal"
-import type { AppointmentWithDetails } from "@/types/calendar"
+import type { AppointmentWithDetails, Service } from "@/types/calendar"
 import { IndividualBillingButton } from "./individual-billing-button"
+import { supabase } from "@/lib/supabase/client"
+import { useAuth } from "@/app/contexts/auth-context"
 
 interface AppointmentDetailsModalProps {
   isOpen: boolean
@@ -36,10 +39,12 @@ export function AppointmentDetailsModal({
   onUpdate,
   onDelete,
 }: AppointmentDetailsModalProps) {
+  const { userProfile } = useAuth()
   const [isEditing, setIsEditing] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [availableServices, setAvailableServices] = useState<Service[]>([])
 
   // Form states
   const [editedAppointment, setEditedAppointment] = useState<AppointmentWithDetails>(appointment)
@@ -48,6 +53,29 @@ export function AppointmentDetailsModal({
     setEditedAppointment(appointment)
     setIsEditing(false)
   }, [appointment])
+
+  // Cargar servicios disponibles cuando se abre el modal de edición
+  useEffect(() => {
+    if (isEditing && userProfile?.organization_id) {
+      loadAvailableServices()
+    }
+  }, [isEditing, userProfile])
+
+  const loadAvailableServices = async () => {
+    try {
+      const { data: services, error } = await supabase
+        .from("services")
+        .select("id, name, price, duration, color, active, organization_id, created_at, updated_at")
+                .eq("organization_id", userProfile!.organization_id)
+        .eq("active", true)
+        .order("name")
+
+      if (error) throw error
+      setAvailableServices(services || [])
+    } catch (error) {
+      console.error("Error loading services:", error)
+    }
+  }
 
   // Funciones helper para manejar tiempos
   const timeToMinutes = (time: string): number => {
@@ -99,6 +127,31 @@ export function AppointmentDetailsModal({
       duration: newDuration,
       end_time: newEndTime,
     })
+  }
+
+  // Handler para cambio de servicio
+  const handleServiceChange = (value: string) => {
+    if (value === "none") {
+      setEditedAppointment({
+        ...editedAppointment,
+        service_id: null,
+        service: undefined,
+      })
+      return
+    }
+
+    const serviceId = Number.parseInt(value)
+    const selectedService = availableServices.find((s) => s.id === serviceId)
+    if (selectedService) {
+      const newEndTime = calculateEndTime(editedAppointment.start_time, selectedService.duration)
+      setEditedAppointment({
+        ...editedAppointment,
+        service_id: serviceId,
+        duration: selectedService.duration,
+        end_time: newEndTime,
+        service: selectedService,
+      })
+    }
   }
 
   const handleSave = async () => {
@@ -179,6 +232,23 @@ export function AppointmentDetailsModal({
       appointment.consultation.name && // Verificar que la consulta tenga nombre
       appointment.consultation.name.trim() !== "" // Y que no esté vacío
     )
+  }
+
+  // Función para verificar si hay un servicio válido
+  const hasValidService = () => {
+    return (
+      editedAppointment.service &&
+      editedAppointment.service_id &&
+      editedAppointment.service.name &&
+      editedAppointment.service.name.trim() !== ""
+    )
+  }
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat("es-ES", {
+      style: "currency",
+      currency: "EUR",
+    }).format(amount)
   }
 
   if (!isOpen) return null
@@ -271,8 +341,22 @@ export function AppointmentDetailsModal({
                     <User className="h-4 w-4 text-gray-600" />
                     <span className="text-sm font-medium text-gray-700">Paciente:</span>
                   </div>
-                  <div className="flex-1">
-                    <span className="font-medium text-gray-900">{appointment.client.name}</span>
+                  <div className="flex-1 flex items-center gap-2">
+                    <Link href={`/dashboard/clients/${appointment.client.id}`}>
+                      <span className="font-medium text-gray-900 hover:text-blue-600 cursor-pointer transition-colors duration-200">
+                        {appointment.client.name}
+                      </span>
+                    </Link>
+                    <Link href={`/dashboard/clients/${appointment.client.id}`}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                        title="Ver/editar datos del cliente"
+                      >
+                        <User className="h-3 w-3" />
+                      </Button>
+                    </Link>
                   </div>
                   <div className="flex items-center gap-2">
                     <Phone className="h-4 w-4 text-gray-400" />
@@ -280,7 +364,46 @@ export function AppointmentDetailsModal({
                   </div>
                 </div>
 
-                {/* SECCIÓN 2: HORARIO Y DURACIÓN - Todo en una línea */}
+                {/* SECCIÓN 2: SERVICIO - Solo mostrar si hay servicio válido */}
+                {(hasValidService() || isEditing) && (
+                  <div className="flex items-center gap-4 p-3 bg-purple-50 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <DollarSign className="h-4 w-4 text-purple-600" />
+                      <span className="text-sm font-medium text-gray-700">Servicio:</span>
+                    </div>
+                    {isEditing ? (
+                      <div className="flex-1">
+                        <Select
+                          value={editedAppointment.service_id ? editedAppointment.service_id.toString() : "none"}
+                          onValueChange={handleServiceChange}
+                        >
+                          <SelectTrigger className="h-8 text-sm">
+                            <SelectValue placeholder="Seleccionar servicio..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">Sin servicio</SelectItem>
+                            {availableServices.map((service) => (
+                              <SelectItem key={service.id} value={service.id.toString()}>
+                                {service.name} - {formatCurrency(service.price)} ({service.duration} min)
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ) : (
+                      <div className="flex-1 flex items-center gap-4">
+                        <span className="font-medium text-gray-900">{appointment.service?.name}</span>
+                        {appointment.service?.price && (
+                          <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
+                            {formatCurrency(appointment.service.price)}
+                          </Badge>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* SECCIÓN 3: HORARIO Y DURACIÓN - Todo en una línea */}
                 <div className="flex items-center gap-6 p-3 bg-blue-50 rounded-lg">
                   <div className="flex items-center gap-2">
                     <Clock className="h-4 w-4 text-blue-600" />
@@ -343,7 +466,7 @@ export function AppointmentDetailsModal({
                   )}
                 </div>
 
-                {/* SECCIÓN 3: ESTADO, TIPO Y CONSULTA - Todo en una línea */}
+                {/* SECCIÓN 4: ESTADO, TIPO Y CONSULTA - Todo en una línea */}
                 <div className="flex items-center gap-6 p-3 bg-green-50 rounded-lg">
                   <div className="flex items-center gap-3">
                     <span className="text-sm font-medium text-gray-700">Estado:</span>
@@ -408,7 +531,7 @@ export function AppointmentDetailsModal({
                   )}
                 </div>
 
-                {/* SECCIÓN 4: NOTAS - Solo si hay notas o está editando */}
+                {/* SECCIÓN 5: NOTAS - Solo si hay notas o está editando */}
                 {(appointment.notes || isEditing) && (
                   <div className="p-3 bg-yellow-50 rounded-lg">
                     <div className="flex items-start gap-2">

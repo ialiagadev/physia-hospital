@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
+import Link from "next/link"
 import {
   FileText,
   X,
@@ -16,6 +17,7 @@ import {
   Download,
   Zap,
   Package,
+  User,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -781,19 +783,19 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
 
         setProgress((prev) => ({
           ...prev!,
-          message: "💾 Descargando archivo ZIP...",
+          message: "💾 ZIP listo para descarga...",
           zipProgress: 100,
         }))
 
         // Descargar el ZIP
-        const url = URL.createObjectURL(zipBlob)
+        /*const url = URL.createObjectURL(zipBlob)
         const a = document.createElement("a")
         a.href = url
         a.download = zipFileName
         document.body.appendChild(a)
         a.click()
         document.body.removeChild(a)
-        URL.revokeObjectURL(url)
+        URL.revokeObjectURL(url)*/
 
         setGeneratedInvoices(invoicesForZip)
       }
@@ -803,14 +805,14 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
         phase: "completed",
         current: selectedClientsArray.length,
         total: selectedClientsArray.length,
-        message: `🎉 ¡Proceso completado exitosamente! ${successCount} facturas generadas y empaquetadas.`,
+        message: `🎉 ¡Proceso completado exitosamente! ${successCount} facturas generadas. Usa el botón "Descargar ZIP" para obtener el archivo.`,
         errors,
       })
 
       if (successCount > 0) {
         toast({
           title: "🎉 Facturas generadas",
-          description: `Se generaron ${successCount} facturas correctamente y se descargó el ZIP`,
+          description: `Se generaron ${successCount} facturas correctamente. Usa el botón para descargar el ZIP`,
         })
       }
 
@@ -1097,7 +1099,24 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
 
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-2">
-                            <h3 className="font-medium text-gray-900">{client.client_name}</h3>
+                            <Link href={`/dashboard/clients/${client.client_id}`}>
+                              <h3 className="font-medium text-gray-900 hover:text-blue-600 cursor-pointer transition-colors duration-200">
+                                {client.client_name}
+                              </h3>
+                            </Link>
+
+                            {/* ✅ BOTÓN DE ENLACE A DATOS DEL CLIENTE */}
+                            <Link href={`/dashboard/clients/${client.client_id}`}>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                title="Ver/editar datos del cliente"
+                              >
+                                <User className="h-3 w-3" />
+                              </Button>
+                            </Link>
+
                             {client.has_complete_data ? (
                               <Badge variant="secondary" className="bg-green-100 text-green-800">
                                 <CheckCircle className="h-3 w-3 mr-1" />

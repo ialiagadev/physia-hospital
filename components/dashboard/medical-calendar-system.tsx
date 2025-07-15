@@ -995,7 +995,7 @@ if (appointmentData.clienteEncontrado) {
       {/* Modales */}
       {showNewAppointmentModal && (
         <AppointmentFormModal
-          fecha={new Date()}
+        fecha={currentDate}
           hora="09:00"
           waitingListEntry={waitingListEntry}
           onClose={() => {

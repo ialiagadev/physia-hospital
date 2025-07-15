@@ -20,7 +20,7 @@ interface User {
   email: string | null
   role: string | null
   type: number
-  organization_id: number // ✅ Agregado para coincidir con la consulta
+  organization_id: number
 }
 
 interface ServiceFormProps {
@@ -36,6 +36,7 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
   const [users, setUsers] = useState<User[]>([])
   const [selectedUsers, setSelectedUsers] = useState<string[]>([])
   const [loadingUsers, setLoadingUsers] = useState(false)
+
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -67,9 +68,11 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
             color: service.color,
             active: service.active,
           })
+
           // Cargar usuarios asignados
           await fetchAssignedUsers(service.id.toString())
         }
+
         // Cargar usuarios para la organización
         await fetchUsers(organizationId)
       } catch (err) {
@@ -151,6 +154,11 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
         throw new Error("El nombre del servicio es obligatorio")
       }
 
+      // 🔥 NUEVA VALIDACIÓN: Verificar que al menos un usuario esté seleccionado
+      if (selectedUsers.length === 0) {
+        throw new Error("Debes asignar al menos un usuario al servicio")
+      }
+
       // Validar que el precio sea un número válido
       const price = Number.parseFloat(formData.price)
       if (isNaN(price) || price < 0) {
@@ -177,6 +185,7 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
       }
 
       let serviceId: number
+
       if (service) {
         // Actualizar servicio existente
         const { error: updateError } = await supabase.from("services").update(serviceData).eq("id", service.id)
@@ -201,18 +210,16 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
         await supabase.from("user_services").delete().eq("service_id", serviceId)
       }
 
-      // Crear nuevas relaciones
-      if (selectedUsers.length > 0) {
-        const userServiceRelations = selectedUsers.map((userId) => ({
-          user_id: userId,
-          service_id: serviceId,
-        }))
+      // Crear nuevas relaciones (ahora siempre habrá al menos una)
+      const userServiceRelations = selectedUsers.map((userId) => ({
+        user_id: userId,
+        service_id: serviceId,
+      }))
 
-        const { error: relationError } = await supabase.from("user_services").insert(userServiceRelations)
+      const { error: relationError } = await supabase.from("user_services").insert(userServiceRelations)
 
-        if (relationError) {
-          // Error silencioso para no bloquear la operación principal
-        }
+      if (relationError) {
+        // Error silencioso para no bloquear la operación principal
       }
 
       onSuccess()
@@ -258,11 +265,10 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
         />
       </div>
 
-      {/* Usuarios Asignados */}
+      {/* 🔥 USUARIOS ASIGNADOS - AHORA OBLIGATORIO */}
       <div className="space-y-2">
         <Label className="flex items-center gap-2">
-          Usuarios Asignados (opcional)
-          {loadingUsers && <Loader2 className="h-4 w-4 animate-spin" />}
+          Usuarios Asignados *{loadingUsers && <Loader2 className="h-4 w-4 animate-spin" />}
         </Label>
         <div className="border rounded-lg p-4 max-h-48 overflow-y-auto">
           {loadingUsers ? (
@@ -305,7 +311,10 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
             </div>
           )}
         </div>
-        <p className="text-sm text-gray-600">{selectedUsers.length} usuarios seleccionados</p>
+        <p className="text-sm text-gray-600">
+          {selectedUsers.length} usuarios seleccionados
+          {selectedUsers.length === 0 && <span className="text-red-500 ml-1">(mínimo 1 requerido)</span>}
+        </p>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -322,6 +331,7 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
             required
           />
         </div>
+
         <div>
           <Label htmlFor="duration">Duración (min)</Label>
           <Select value={formData.duration} onValueChange={(value) => setFormData({ ...formData, duration: value })}>
@@ -359,6 +369,7 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
             required
           />
         </div>
+
         <div className="space-y-2">
           <Label htmlFor="irpf_rate">IRPF (%)</Label>
           <Input
@@ -371,6 +382,7 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
             onChange={handleChange}
           />
         </div>
+
         <div className="space-y-2">
           <Label htmlFor="retention_rate">Retención (%)</Label>
           <Input
