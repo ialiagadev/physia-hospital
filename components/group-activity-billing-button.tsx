@@ -30,74 +30,24 @@ export function GroupActivityBillingButton({
   const validParticipants =
     activity.participants?.filter((p) => p.status === "attended" || p.status === "registered") || []
 
-  // ✅ FUNCIÓN DE VALIDACIÓN CON LOGS DETALLADOS
+  // Función de validación
   const validateParticipantData = (participant: any) => {
     const client = participant.client
 
-    // ✅ LOG INICIAL - Ver toda la estructura del participante
-    console.log("🔍 VALIDANDO PARTICIPANTE:", {
-      participantId: participant.id,
-      clientId: participant.client_id,
-      status: participant.status,
-      clientData: client,
-      clientKeys: client ? Object.keys(client) : "NO CLIENT",
-    })
-
     if (!client) {
-      console.log("❌ VALIDACIÓN FALLIDA: No hay cliente")
       return { isValid: false, missingFields: ["Cliente completo"] }
     }
 
     const missingFields: string[] = []
 
-    // ✅ VALIDAR CADA CAMPO CON LOGS
-    console.log("🔍 VALIDANDO CAMPOS INDIVIDUALES:")
-
-    if (!client.name?.trim()) {
-      console.log("❌ FALTA: name =", client.name)
-      missingFields.push("Nombre")
-    } else {
-      console.log("✅ OK: name =", client.name)
-    }
-
-    if (!(client as any).tax_id?.trim()) {
-      console.log("❌ FALTA: tax_id =", (client as any).tax_id)
-      missingFields.push("CIF/NIF")
-    } else {
-      console.log("✅ OK: tax_id =", (client as any).tax_id)
-    }
-
-    if (!(client as any).address?.trim()) {
-      console.log("❌ FALTA: address =", (client as any).address)
-      missingFields.push("Dirección")
-    } else {
-      console.log("✅ OK: address =", (client as any).address)
-    }
-
-    if (!(client as any).postal_code?.trim()) {
-      console.log("❌ FALTA: postal_code =", (client as any).postal_code)
-      missingFields.push("Código Postal")
-    } else {
-      console.log("✅ OK: postal_code =", (client as any).postal_code)
-    }
-
-    if (!(client as any).city?.trim()) {
-      console.log("❌ FALTA: city =", (client as any).city)
-      missingFields.push("Ciudad")
-    } else {
-      console.log("✅ OK: city =", (client as any).city)
-    }
-
-    const isValid = missingFields.length === 0
-
-    console.log("📊 RESULTADO VALIDACIÓN:", {
-      isValid,
-      missingFields,
-      totalMissing: missingFields.length,
-    })
+    if (!client.name?.trim()) missingFields.push("Nombre")
+    if (!(client as any).tax_id?.trim()) missingFields.push("CIF/NIF")
+    if (!(client as any).address?.trim()) missingFields.push("Dirección")
+    if (!(client as any).postal_code?.trim()) missingFields.push("Código Postal")
+    if (!(client as any).city?.trim()) missingFields.push("Ciudad")
 
     return {
-      isValid,
+      isValid: missingFields.length === 0,
       missingFields,
     }
   }
@@ -106,16 +56,6 @@ export function GroupActivityBillingButton({
   const participantsWithCompleteData = validParticipants.filter((p) => {
     const validation = validateParticipantData(p)
     return validation.isValid
-  })
-
-  // ✅ LOG FINAL DEL RESUMEN
-  console.log("📈 RESUMEN FINAL:", {
-    activityName: activity.name,
-    totalParticipants: activity.participants?.length || 0,
-    validParticipants: validParticipants.length,
-    participantsWithCompleteData: participantsWithCompleteData.length,
-    hasService,
-    serviceId: activity.service_id,
   })
 
   const handleBillingComplete = () => {
@@ -161,7 +101,6 @@ export function GroupActivityBillingButton({
           {validParticipants.length} participante{validParticipants.length !== 1 ? "s" : ""} registrado
           {validParticipants.length !== 1 ? "s" : ""}
         </div>
-        {/* ✅ MOSTRAR QUÉ CAMPOS FALTAN */}
         <div className="text-xs mt-1 text-red-700">
           {validParticipants.map((p, index) => {
             const validation = validateParticipantData(p)

@@ -707,8 +707,8 @@ export function GroupActivityBillingModal({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white rounded-lg shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2">
+      <div className="bg-white rounded-lg shadow-2xl w-full max-w-7xl max-h-[95vh] overflow-hidden">
         {/* Header */}
         <div className="bg-purple-50 px-6 py-4 border-b border-purple-100">
           <div className="flex items-center justify-between">

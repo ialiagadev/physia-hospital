@@ -56,6 +56,8 @@ interface ClientAppointmentData {
     notes: string | null
     service_price?: number
     status: string
+    type?: "appointment" | "group_activity"
+    activity_name?: string
   }>
   total_amount: number
   has_complete_data: boolean
@@ -86,6 +88,8 @@ const STATUS_LABELS = {
   cancelled: "Cancelada",
   completed: "Completada",
   no_show: "No se presentó",
+  registered: "Registrado",
+  attended: "Asistió",
 }
 
 const STATUS_COLORS = {
@@ -94,9 +98,11 @@ const STATUS_COLORS = {
   cancelled: "bg-red-100 text-red-800",
   completed: "bg-blue-100 text-blue-800",
   no_show: "bg-gray-100 text-gray-800",
+  registered: "bg-blue-100 text-blue-800",
+  attended: "bg-green-100 text-green-800",
 }
 
-// ✅ COMPONENTE DE PROGRESO MEJORADO
+// Componente de progreso mejorado
 function EnhancedProgressBar({ progress }: { progress: BillingProgress }) {
   const getPhaseIcon = () => {
     switch (progress.phase) {
@@ -181,7 +187,6 @@ function EnhancedProgressBar({ progress }: { progress: BillingProgress }) {
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          {/* Barra de progreso principal */}
           <div className="relative">
             <Progress value={progressPercentage} className="h-3 bg-gray-200" />
             <div
@@ -190,7 +195,6 @@ function EnhancedProgressBar({ progress }: { progress: BillingProgress }) {
             />
           </div>
 
-          {/* Indicadores de fase */}
           <div className="flex justify-between text-xs">
             {["validating", "generating", "creating_pdfs", "creating_zip", "completed"].map((phase, index) => {
               const isActive = progress.phase === phase
@@ -218,7 +222,6 @@ function EnhancedProgressBar({ progress }: { progress: BillingProgress }) {
             })}
           </div>
 
-          {/* Mensaje detallado */}
           <div className="bg-white/70 rounded-lg p-3 border border-blue-100">
             <p className="text-sm text-gray-700 font-medium">{progress.message}</p>
             {progress.phase === "creating_zip" && (
@@ -229,7 +232,6 @@ function EnhancedProgressBar({ progress }: { progress: BillingProgress }) {
             )}
           </div>
 
-          {/* Errores si los hay */}
           {progress.errors.length > 0 && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3">
               <h4 className="text-sm font-medium text-red-800 mb-2 flex items-center gap-2">
@@ -269,9 +271,8 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
   // Filtros
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
-  const [dataFilter, setDataFilter] = useState<string>("all") // all, complete, incomplete
+  const [dataFilter, setDataFilter] = useState<string>("all")
 
-  // Cargar datos de citas del día
   useEffect(() => {
     if (isOpen && userProfile?.organization_id) {
       loadDayAppointments()
@@ -282,7 +283,6 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
   useEffect(() => {
     let filtered = [...clientsData]
 
-    // Filtro por búsqueda
     if (searchTerm) {
       filtered = filtered.filter(
         (client) =>
@@ -291,17 +291,16 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           client.appointments.some(
             (apt) =>
               apt.professional_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-              apt.consultation_name.toLowerCase().includes(searchTerm.toLowerCase()),
+              apt.consultation_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              apt.activity_name?.toLowerCase().includes(searchTerm.toLowerCase()),
           ),
       )
     }
 
-    // Filtro por estado de citas
     if (statusFilter !== "all") {
       filtered = filtered.filter((client) => client.appointments.some((apt) => apt.status === statusFilter))
     }
 
-    // Filtro por completitud de datos
     if (dataFilter === "complete") {
       filtered = filtered.filter((client) => client.has_complete_data)
     } else if (dataFilter === "incomplete") {
@@ -316,9 +315,8 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
 
     try {
       const dateStr = format(selectedDate, "yyyy-MM-dd")
-      console.log(`🔍 Cargando TODAS las citas para la fecha: ${dateStr}`)
 
-      // ✅ OBTENER TODAS LAS CITAS DEL DÍA SIN FILTRAR POR ESTADO
+      // Cargar citas individuales
       const { data: appointments, error } = await supabase
         .from("appointments")
         .select(`
@@ -354,33 +352,61 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
         .order("client_id")
 
       if (error) {
-        console.error("❌ Error en la consulta:", error)
         throw error
       }
 
-      console.log(`📊 Total de citas encontradas: ${appointments?.length || 0}`)
+      // Cargar actividades grupales
+      const { data: groupActivities, error: groupError } = await supabase
+        .from("group_activities")
+        .select(`
+          id,
+          name,
+          start_time,
+          end_time,
+          professional_id,
+          service_id,
+          group_activity_participants (
+            status,
+            client_id,
+            clients (
+              id,
+              name,
+              tax_id,
+              address,
+              postal_code,
+              city,
+              province,
+              email,
+              phone
+            )
+          )
+        `)
+        .eq("organization_id", userProfile!.organization_id)
+        .eq("date", dateStr)
 
-      // Log de estados encontrados
-      const statusCounts: Record<string, number> = {}
-      appointments?.forEach((apt: any) => {
-        const status = apt.status || "sin_estado"
-        statusCounts[status] = (statusCounts[status] || 0) + 1
-      })
-      console.log("📈 Estados de citas encontrados:", statusCounts)
+      if (groupError) {
+        throw groupError
+      }
 
-      // ✅ USAR TODAS LAS CITAS SIN FILTRAR
+      // Cargar datos auxiliares para resolver en JS
+      const [usersData, servicesData] = await Promise.all([
+        supabase.from("users").select("id, name").eq("organization_id", userProfile!.organization_id),
+        supabase.from("services").select("id, name, price").eq("organization_id", userProfile!.organization_id),
+      ])
+
+      const users = usersData.data || []
+      const services = servicesData.data || []
+
+      // Combinar datos
       const allAppointments = appointments || []
-      console.log(`✅ Procesando TODAS las citas: ${allAppointments.length}`)
-
-      // Agrupar por cliente y validar datos
       const clientsMap = new Map<number, ClientAppointmentData>()
 
+      // Procesar citas individuales
       allAppointments.forEach((apt: any) => {
         const client = apt.clients
         const clientId = client.id
 
         if (!clientsMap.has(clientId)) {
-          // Validar datos requeridos para facturación
           const missingFields: string[] = []
           if (!client.name?.trim()) missingFields.push("Nombre")
           if (!client.tax_id?.trim()) missingFields.push("CIF/NIF")
@@ -417,9 +443,69 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           notes: apt.notes,
           service_price: servicePrice,
           status: apt.status,
+          type: "appointment",
         })
 
         clientData.total_amount += servicePrice
+      })
+
+      // Procesar actividades grupales
+      groupActivities?.forEach((activity: any) => {
+        const professional = users.find((user) => user.id === activity.professional_id)
+        const service = services.find((svc) => svc.id === activity.service_id)
+
+        const validParticipants =
+          activity.group_activity_participants?.filter(
+            (p: any) => p.status === "attended" || p.status === "registered",
+          ) || []
+
+        validParticipants.forEach((participant: any) => {
+          const client = participant.clients
+          const clientId = client.id
+
+          if (!clientsMap.has(clientId)) {
+            const missingFields: string[] = []
+            if (!client.name?.trim()) missingFields.push("Nombre")
+            if (!client.tax_id?.trim()) missingFields.push("CIF/NIF")
+            if (!client.address?.trim()) missingFields.push("Dirección")
+            if (!client.postal_code?.trim()) missingFields.push("Código Postal")
+            if (!client.city?.trim()) missingFields.push("Ciudad")
+
+            clientsMap.set(clientId, {
+              client_id: clientId,
+              client_name: client.name || "Sin nombre",
+              client_tax_id: client.tax_id,
+              client_address: client.address,
+              client_postal_code: client.postal_code,
+              client_city: client.city,
+              client_province: client.province,
+              client_email: client.email,
+              client_phone: client.phone,
+              appointments: [],
+              total_amount: 0,
+              has_complete_data: missingFields.length === 0,
+              missing_fields: missingFields,
+            })
+          }
+
+          const clientData = clientsMap.get(clientId)!
+          const servicePrice = service?.price || 50
+
+          clientData.appointments.push({
+            id: `group_${activity.id}_${participant.client_id}`,
+            start_time: activity.start_time,
+            end_time: activity.end_time,
+            professional_name: professional?.name || "Sin asignar",
+            consultation_name: activity.name,
+            notes: null,
+            service_price: servicePrice,
+            status: participant.status,
+            type: "group_activity",
+            activity_name: activity.name,
+          })
+
+          clientData.total_amount += servicePrice
+        })
       })
 
       const clientsArray = Array.from(clientsMap.values())
@@ -428,11 +514,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
       // Seleccionar automáticamente clientes con datos completos
       const validClientIds = clientsArray.filter((client) => client.has_complete_data).map((client) => client.client_id)
       setSelectedClients(new Set(validClientIds))
-
-      console.log(`🎯 Procesados ${clientsArray.length} clientes con citas del día`)
-      console.log(`✅ ${validClientIds.length} clientes tienen datos completos para facturación`)
     } catch (error) {
-      console.error("❌ Error loading day appointments:", error)
       toast({
         title: "Error",
         description: "No se pudieron cargar las citas del día",
@@ -468,7 +550,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
     if (selectedClients.size === 0) return
 
     setGenerating(true)
-    setGeneratedInvoices([]) // Limpiar facturas anteriores
+    setGeneratedInvoices([])
     const selectedClientsArray = Array.from(selectedClients)
 
     setProgress({
@@ -480,12 +562,10 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
     })
 
     try {
-      // Importar funciones necesarias
       const { generateUniqueInvoiceNumber } = await import("@/lib/invoice-utils")
       const { generatePdf } = await import("@/lib/pdf-generator")
       const { savePdfToStorage } = await import("@/lib/storage-utils")
 
-      // Obtener datos de la organización
       const { data: orgData, error: orgError } = await supabase
         .from("organizations")
         .select("*")
@@ -496,7 +576,6 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
         throw new Error("No se pudieron obtener los datos de la organización")
       }
 
-      // Fase de generación
       setProgress((prev) => ({
         ...prev!,
         phase: "generating",
@@ -519,16 +598,17 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
         }))
 
         try {
-          // Generar número de factura único
           const { invoiceNumberFormatted, newInvoiceNumber } = await generateUniqueInvoiceNumber(
             userProfile!.organization_id,
             "normal",
           )
 
-          // Preparar líneas de factura
           const invoiceLines = clientData.appointments.map((apt) => ({
             id: crypto.randomUUID(),
-            description: `${apt.consultation_name} - ${apt.professional_name} (${apt.start_time}-${apt.end_time})`,
+            description:
+              apt.type === "group_activity"
+                ? `Actividad Grupal: ${apt.activity_name} - ${apt.professional_name} (${apt.start_time}-${apt.end_time})`
+                : `${apt.consultation_name} - ${apt.professional_name} (${apt.start_time}-${apt.end_time})`,
             quantity: 1,
             unit_price: apt.service_price || 50,
             discount_percentage: 0,
@@ -539,7 +619,6 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
             professional_id: null,
           }))
 
-          // Calcular totales
           const subtotalAmount = invoiceLines.reduce((sum, line) => {
             return sum + line.quantity * line.unit_price
           }, 0)
@@ -551,7 +630,6 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           }, 0)
 
           const baseAmount = subtotalAmount - totalDiscountAmount
-
           const vatAmount = invoiceLines.reduce((sum, line) => {
             const lineSubtotal = line.quantity * line.unit_price
             const lineDiscount = (lineSubtotal * line.discount_percentage) / 100
@@ -578,12 +656,10 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
 
           const totalAmount = baseAmount + vatAmount - irpfAmount - retentionAmount
 
-          // Preparar notas de la factura
           const clientInfoText = `Cliente: ${clientData.client_name}, CIF/NIF: ${clientData.client_tax_id}, Dirección: ${clientData.client_address}, ${clientData.client_postal_code} ${clientData.client_city}, ${clientData.client_province}`
           const additionalNotes = `Factura generada automáticamente para citas del ${format(selectedDate, "dd/MM/yyyy", { locale: es })} `
           const fullNotes = clientInfoText + "\n\n" + additionalNotes
 
-          // Crear factura en la base de datos
           const { data: invoiceData, error: invoiceError } = await supabase
             .from("invoices")
             .insert({
@@ -607,7 +683,6 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
 
           if (invoiceError) throw invoiceError
 
-          // Crear líneas de factura
           const invoiceLines_db = invoiceLines.map((line) => ({
             invoice_id: invoiceData.id,
             description: line.description,
@@ -622,12 +697,10 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           }))
 
           const { error: linesError } = await supabase.from("invoice_lines").insert(invoiceLines_db)
-
           if (linesError) {
             console.error("Error saving invoice lines:", linesError)
           }
 
-          // Actualizar número de factura en la organización
           const { error: updateOrgError } = await supabase
             .from("organizations")
             .update({ last_invoice_number: newInvoiceNumber })
@@ -637,7 +710,6 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
             console.error("Error updating organization:", updateOrgError)
           }
 
-          // ✅ FASE DE CREACIÓN DE PDFs
           setProgress((prev) => ({
             ...prev!,
             phase: "creating_pdfs",
@@ -645,7 +717,6 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
             currentClient: clientData.client_name,
           }))
 
-          // Generar PDF
           try {
             const newInvoice = {
               id: invoiceData.id,
@@ -689,11 +760,9 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
               },
             }
 
-            // Generar PDF pero no descargarlo automáticamente
             const pdfBlob = await generatePdf(newInvoice, invoiceLines, `factura-${invoiceNumberFormatted}.pdf`, false)
 
             if (pdfBlob && pdfBlob instanceof Blob) {
-              // Guardar para el ZIP
               invoicesForZip.push({
                 invoiceNumber: invoiceNumberFormatted,
                 clientName: clientData.client_name,
@@ -702,7 +771,6 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
                 invoiceId: invoiceData.id,
               })
 
-              // Guardar PDF en storage
               try {
                 const pdfUrl = await savePdfToStorage(
                   pdfBlob,
@@ -725,11 +793,9 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           errors.push(`${clientData.client_name}: ${error instanceof Error ? error.message : "Error desconocido"}`)
         }
 
-        // Pequeña pausa para no saturar
         await new Promise((resolve) => setTimeout(resolve, 300))
       }
 
-      // ✅ CREAR ZIP CON TODAS LAS FACTURAS CON PROGRESO ANIMADO
       if (invoicesForZip.length > 0) {
         setProgress((prev) => ({
           ...prev!,
@@ -740,18 +806,15 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
 
         const zip = new JSZip()
 
-        // Añadir cada PDF al ZIP con progreso
         for (let i = 0; i < invoicesForZip.length; i++) {
           const invoice = invoicesForZip[i]
 
-          // Actualizar progreso del ZIP
           setProgress((prev) => ({
             ...prev!,
             zipProgress: ((i + 1) / invoicesForZip.length) * 100,
             message: `📦 Añadiendo ${invoice.invoiceNumber} al ZIP... (${i + 1}/${invoicesForZip.length})`,
           }))
 
-          // Limpiar el nombre del cliente para el archivo
           const cleanClientName = invoice.clientName
             .replace(/[^a-zA-Z0-9\s]/g, "")
             .replace(/\s+/g, "_")
@@ -760,11 +823,9 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           const fileName = `${invoice.invoiceNumber}_${cleanClientName}.pdf`
           zip.file(fileName, invoice.pdfBlob)
 
-          // Pequeña pausa para mostrar el progreso
           await new Promise((resolve) => setTimeout(resolve, 100))
         }
 
-        // Generar el ZIP con progreso
         setProgress((prev) => ({
           ...prev!,
           message: "🗜️ Comprimiendo archivo ZIP...",
@@ -777,30 +838,15 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           compressionOptions: { level: 6 },
         })
 
-        // Crear nombre del archivo ZIP
-        const dateStr = format(selectedDate, "yyyy-MM-dd")
-        const zipFileName = `facturas_${dateStr}_${invoicesForZip.length}_facturas.zip`
-
         setProgress((prev) => ({
           ...prev!,
           message: "💾 ZIP listo para descarga...",
           zipProgress: 100,
         }))
 
-        // Descargar el ZIP
-        /*const url = URL.createObjectURL(zipBlob)
-        const a = document.createElement("a")
-        a.href = url
-        a.download = zipFileName
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        URL.revokeObjectURL(url)*/
-
         setGeneratedInvoices(invoicesForZip)
       }
 
-      // Completado
       setProgress({
         phase: "completed",
         current: selectedClientsArray.length,
@@ -837,7 +883,6 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
     }
   }
 
-  // ✅ FUNCIÓN PARA DESCARGAR ZIP NUEVAMENTE
   const downloadZipAgain = async () => {
     if (generatedInvoices.length === 0) return
 
@@ -921,7 +966,8 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">Facturación del Día</h2>
                 <p className="text-sm text-gray-600">
-                  {format(selectedDate, "EEEE, d 'de' MMMM 'de' yyyy", { locale: es })}
+                  {format(selectedDate, "EEEE, d 'de' MMMM 'de' yyyy", { locale: es })} - Citas individuales +
+                  Actividades grupales
                 </p>
               </div>
             </div>
@@ -943,12 +989,11 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           ) : clientsData.length === 0 ? (
             <div className="text-center py-12">
               <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No hay citas</h3>
-              <p className="text-gray-600">No se encontraron citas para este día.</p>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No hay citas ni actividades grupales</h3>
+              <p className="text-gray-600">No se encontraron citas ni actividades grupales para este día.</p>
             </div>
           ) : (
             <>
-              {/* ✅ BARRA DE PROGRESO MEJORADA */}
               {progress && <EnhancedProgressBar progress={progress} />}
 
               {/* Summary Cards */}
@@ -994,7 +1039,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
                     <div className="flex items-center gap-2">
                       <Clock className="h-4 w-4 text-blue-600" />
                       <div>
-                        <p className="text-sm text-gray-600">Total Citas</p>
+                        <p className="text-sm text-gray-600">Total Citas/Actividades</p>
                         <p className="text-lg font-semibold">
                           {clientsData.reduce((sum, client) => sum + client.appointments.length, 0)}
                         </p>
@@ -1007,7 +1052,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
               {/* Status Summary */}
               <Card className="mb-6">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium">Estados de las citas</CardTitle>
+                  <CardTitle className="text-sm font-medium">Estados de las citas y actividades</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="flex flex-wrap gap-2">
@@ -1105,7 +1150,6 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
                               </h3>
                             </Link>
 
-                            {/* ✅ BOTÓN DE ENLACE A DATOS DEL CLIENTE */}
                             <Link href={`/dashboard/clients/${client.client_id}`}>
                               <Button
                                 variant="ghost"
@@ -1150,7 +1194,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
                                 <strong>Teléfono:</strong> {client.client_phone || "No especificado"}
                               </p>
                               <p>
-                                <strong>Citas:</strong> {client.appointments.length}
+                                <strong>Citas/Actividades:</strong> {client.appointments.length}
                               </p>
                             </div>
                           </div>
@@ -1166,9 +1210,17 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
                                     {apt.start_time}-{apt.end_time}
                                   </span>
                                   <span>({apt.professional_name})</span>
+                                  {apt.type === "group_activity" && (
+                                    <Badge variant="secondary" className="bg-purple-100 text-purple-800 text-xs">
+                                      Actividad Grupal
+                                    </Badge>
+                                  )}
                                   <Badge
                                     variant="outline"
-                                    className={`text-xs ${STATUS_COLORS[apt.status as keyof typeof STATUS_COLORS] || "bg-gray-100 text-gray-800"}`}
+                                    className={`text-xs ${
+                                      STATUS_COLORS[apt.status as keyof typeof STATUS_COLORS] ||
+                                      "bg-gray-100 text-gray-800"
+                                    }`}
                                   >
                                     {STATUS_LABELS[apt.status as keyof typeof STATUS_LABELS] || apt.status}
                                   </Badge>
@@ -1180,7 +1232,8 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
 
                           <div className="flex justify-between items-center">
                             <div className="text-sm text-gray-600">
-                              {client.appointments.length} cita{client.appointments.length !== 1 ? "s" : ""}
+                              {client.appointments.length} cita{client.appointments.length !== 1 ? "s" : ""}/actividad
+                              {client.appointments.length !== 1 ? "es" : ""}
                             </div>
                             <div className="text-lg font-semibold text-green-600">
                               {formatCurrency(client.total_amount)}
@@ -1215,7 +1268,6 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
                   <FileText className="h-4 w-4" />
                   {generating ? "Generando..." : `Generar ${selectedClients.size} Facturas`}
                 </Button>
-                {/* ✅ BOTÓN PARA DESCARGAR ZIP NUEVAMENTE */}
                 {progress?.phase === "completed" && generatedInvoices.length > 0 && (
                   <Button onClick={downloadZipAgain} variant="outline" className="gap-2 bg-transparent">
                     <Download className="h-4 w-4" />

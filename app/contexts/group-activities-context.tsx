@@ -49,6 +49,11 @@ export interface GroupActivityParticipant {
     name: string
     phone: string | null
     email: string | null
+    tax_id?: string | null
+    address?: string | null
+    postal_code?: string | null
+    city?: string | null
+    province?: string | null
   }
 }
 
@@ -266,7 +271,12 @@ export function GroupActivitiesProvider({ children, organizationId, users }: Gro
               id,
               name,
               phone,
-              email
+              email,
+              tax_id,
+              address,
+              postal_code,
+              city,
+              province
             )
           )
         `)
@@ -278,15 +288,18 @@ export function GroupActivitiesProvider({ children, organizationId, users }: Gro
 
       const processedActivities: GroupActivity[] = (activitiesData || []).map((activity: any) => {
         const professional = users.find((user) => user.id === activity.professional_id)
+
+        const processedParticipants =
+          activity.group_activity_participants?.map((participant: any) => ({
+            ...participant,
+            client: Array.isArray(participant.clients) ? participant.clients[0] : participant.clients,
+          })) || []
+
         return {
           ...activity,
           professional: professional ? { id: professional.id, name: professional.name } : undefined,
           consultation: Array.isArray(activity.consultations) ? activity.consultations[0] : activity.consultations,
-          participants:
-            activity.group_activity_participants?.map((participant: any) => ({
-              ...participant,
-              client: Array.isArray(participant.clients) ? participant.clients[0] : participant.clients,
-            })) || [],
+          participants: processedParticipants,
         }
       })
 

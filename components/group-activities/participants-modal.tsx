@@ -15,7 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Users, Plus, Trash2, Phone, Mail, AlertTriangle } from "lucide-react"
 import { AddParticipantModal } from "./add-participant-modal"
-import type { GroupActivity } from "@/hooks/use-group-activities"
+// ✅ CAMBIAR IMPORTACIÓN - Usar el contexto en lugar del hook
+import type { GroupActivity } from "@/app/contexts/group-activities-context"
 
 interface ParticipantsModalProps {
   isOpen: boolean

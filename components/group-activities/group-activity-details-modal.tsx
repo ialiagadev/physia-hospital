@@ -193,13 +193,13 @@ export function GroupActivityDetailsModal({
 
   return (
     <>
-      {/* ✅ MODAL PRINCIPAL - Condiciones simplificadas */}
+      {/* ✅ MODAL PRINCIPAL - TAMAÑO AUMENTADO */}
       <Dialog
         open={isOpen && !showEditModal && !showAddParticipantModal && !showDeleteConfirm}
         onOpenChange={handleClose}
       >
-        <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
+<DialogContent className="sm:max-w-6xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <DialogTitle className="text-xl">{currentActivity.name}</DialogTitle>
@@ -318,7 +318,7 @@ export function GroupActivityDetailsModal({
 
               {/* Lista de participantes */}
               {currentActivity.participants && currentActivity.participants.length > 0 ? (
-                <div className="mt-3 space-y-2 max-h-40 overflow-y-auto">
+                <div className="mt-3 space-y-2 max-h-60 overflow-y-auto">
                   {currentActivity.participants.map((participant) => (
                     <div key={participant.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                       <div className="flex-1 min-w-0">
