@@ -29,6 +29,7 @@ import { GroupActivityFormModal } from "./group-activity-form-modal"
 import { AddParticipantModal } from "./add-participant-modal"
 import { toast } from "sonner"
 import type { GroupActivity } from "@/app/contexts/group-activities-context"
+import { GroupActivityBillingButton } from "../group-activity-billing-button"
 
 interface GroupActivityDetailsModalProps {
   isOpen: boolean
@@ -417,6 +418,15 @@ export function GroupActivityDetailsModal({
           </div>
 
           <DialogFooter>
+            <GroupActivityBillingButton
+              activity={currentActivity}
+              organizationId={organizationId}
+              services={services}
+              onBillingComplete={() => {
+                // Opcional: actualizar datos si es necesario
+                console.log("Facturación completada para la actividad")
+              }}
+            />
             <Button variant="outline" onClick={handleClose} disabled={loading || deleting}>
               Cerrar
             </Button>

@@ -189,11 +189,16 @@ export function useGroupActivities(organizationId?: number, users: any[] = []) {
             status,
             registration_date,
             notes,
-            clients!client_id(
-              id,
-              name,
-              phone,
-              email
+          clients!client_id(
+            id,
+            name,
+            phone,
+            email,
+            tax_id,        // ← FALTA
+            address,       // ← FALTA  
+            postal_code,   // ← FALTA
+            city,          // ← FALTA
+            province       // ← FALTA
             )
           )
         `)
