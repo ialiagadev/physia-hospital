@@ -262,25 +262,39 @@ const MedicalCalendarSystem: React.FC = () => {
         return
       }
 
-      // Buscar o crear cliente
-      let clientId: number
-      const existingClient = clients.find(
-        (c) =>
-          c.name.toLowerCase() ===
-          `${appointmentData.nombrePaciente} ${appointmentData.apellidosPaciente || ""}`.toLowerCase().trim(),
-      )
+    // Buscar cliente existente - VERIFICAR SI YA VIENE SELECCIONADO
+let clientId: number
 
-      if (existingClient) {
-        clientId = existingClient.id
-      } else {
-        const newClient = await createClient({
-          name: `${appointmentData.nombrePaciente} ${appointmentData.apellidosPaciente || ""}`.trim(),
-          phone: appointmentData.telefonoPaciente,
-          organization_id: currentUser.organization_id,
-        })
-        clientId = newClient.id
-      }
+// Si ya hay un cliente seleccionado desde el modal, usarlo
+if (appointmentData.clienteEncontrado) {
+  clientId = appointmentData.clienteEncontrado.id
+} else {
+  // Buscar primero por teléfono (restricción única)
+  let existingClient = null
+  if (appointmentData.telefonoPaciente) {
+    existingClient = clients.find((c) => c.phone === appointmentData.telefonoPaciente)
+  }
 
+  // Si no encuentra por teléfono, buscar por nombre
+  if (!existingClient) {
+    const fullName = `${appointmentData.nombrePaciente} ${appointmentData.apellidosPaciente || ""}`
+      .toLowerCase()
+      .trim()
+    existingClient = clients.find((c) => c.name.toLowerCase() === fullName)
+  }
+
+  if (existingClient) {
+    clientId = existingClient.id
+  } else {
+    // Crear nuevo cliente solo si no existe
+    const newClient = await createClient({
+      name: `${appointmentData.nombrePaciente} ${appointmentData.apellidosPaciente || ""}`.trim(),
+      phone: appointmentData.telefonoPaciente,
+      organization_id: currentUser.organization_id,
+    })
+    clientId = newClient.id
+  }
+}
       // Determinar el profesional
       let professionalUuid = currentUser.id
       if (appointmentData.profesionalId) {

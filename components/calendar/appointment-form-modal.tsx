@@ -602,6 +602,7 @@ export function AppointmentFormModal({
         recurrenceType: formData.isRecurring ? formData.recurrenceType : undefined,
         recurrenceInterval: formData.isRecurring ? formData.recurrenceInterval : undefined,
         recurrenceEndDate: formData.isRecurring ? formData.recurrenceEndDate : undefined,
+        clienteEncontrado: clienteEncontrado,
       }
 
       onSubmit(nuevaCita)
@@ -905,7 +906,14 @@ export function AppointmentFormModal({
                   <SelectItem value="30">30 min</SelectItem>
                   <SelectItem value="45">45 min</SelectItem>
                   <SelectItem value="60">60 min</SelectItem>
+                  <SelectItem value="75">75 min</SelectItem>
                   <SelectItem value="90">90 min</SelectItem>
+                  <SelectItem value="105">105 min</SelectItem>
+                  <SelectItem value="120">120 min</SelectItem>
+                  <SelectItem value="135">135 min</SelectItem>
+                  <SelectItem value="150">150 min</SelectItem>
+                  <SelectItem value="165">165 min</SelectItem>
+                  <SelectItem value="180">180 min</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -317,6 +317,12 @@ export interface GroupActivityFormData {
   max_participants: number
   color: string
 }
+export interface ClientMatch {
+  id: number
+  name: string
+  phone: string
+  matchType: "phone" | "name"
+}
 
 // Actualizar el tipo Cita para incluir actividades grupales
 export interface Cita {
@@ -350,6 +356,7 @@ export interface Cita {
   recurrenceInterval?: number
   recurrenceEndDate?: Date
   parentAppointmentId?: string
+  clienteEncontrado?: ClientMatch // Añadir esta línea
 }
 
 // NUEVO: Tipo para múltiples descansos

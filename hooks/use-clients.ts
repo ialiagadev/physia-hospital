@@ -108,21 +108,48 @@ export function useClients(organizationId?: number): UseClientsReturn {
     [organizationId],
   )
 
-  const createClient = useCallback(async (clientData: ClientInsert): Promise<Client> => {
-    try {
-      const { data, error: insertError } = await supabase.from("clients").insert(clientData).select().single()
+  const createClient = useCallback(
+    async (clientData: ClientInsert): Promise<Client> => {
+      try {
+        // Primero verificar si ya existe un cliente con ese teléfono
+        if (clientData.phone) {
+          const existingClient = clients.find((c) => c.phone === clientData.phone)
+          if (existingClient) {
+            // Si ya existe, retornar el cliente existente en lugar de crear uno nuevo
+            console.log("Cliente ya existe con este teléfono:", existingClient.name)
+            return existingClient
+          }
+        }
 
-      if (insertError) {
-        throw insertError
+        const { data, error: insertError } = await supabase.from("clients").insert(clientData).select().single()
+
+        if (insertError) {
+          // Si es error de teléfono duplicado, buscar el cliente existente
+          if (insertError.code === "23505" && clientData.phone) {
+            const { data: existingData, error: searchError } = await supabase
+              .from("clients")
+              .select("*")
+              .eq("organization_id", clientData.organization_id)
+              .eq("phone", clientData.phone)
+              .single()
+
+            if (!searchError && existingData) {
+              console.log("Cliente encontrado después del error:", existingData.name)
+              return existingData
+            }
+          }
+          throw insertError
+        }
+
+        setClients((prev) => [...prev, data])
+        return data
+      } catch (err) {
+        console.error("Error creating client:", err)
+        throw err
       }
-
-      setClients((prev) => [...prev, data])
-      return data
-    } catch (err) {
-      console.error("Error creating client:", err)
-      throw err
-    }
-  }, [])
+    },
+    [clients],
+  )
 
   const updateClient = useCallback(async (id: number, clientData: ClientUpdate): Promise<Client> => {
     try {
