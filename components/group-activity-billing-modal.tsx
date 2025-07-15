@@ -241,6 +241,16 @@ export function GroupActivityBillingModal({
   const [generating, setGenerating] = useState(false)
   const [progress, setProgress] = useState<BillingProgress | null>(null)
   const [generatedInvoices, setGeneratedInvoices] = useState<GeneratedInvoice[]>([])
+  const [existingInvoices, setExistingInvoices] = useState<
+    Map<
+      number,
+      {
+        invoice_number: string
+        created_at: string
+        id: string
+      }
+    >
+  >(new Map())
 
   // Cargar y procesar datos de participantes
   useEffect(() => {
@@ -267,6 +277,8 @@ export function GroupActivityBillingModal({
         if (!(client as any)?.postal_code?.trim()) missingFields.push("Código Postal")
         if (!(client as any)?.city?.trim()) missingFields.push("Ciudad")
 
+        const hasCompleteData = missingFields.length === 0
+
         return {
           participant_id: participant.id,
           client_id: client?.id || 0,
@@ -279,7 +291,7 @@ export function GroupActivityBillingModal({
           client_email: (client as any)?.email || null,
           client_phone: (client as any)?.phone || null,
           status: participant.status,
-          has_complete_data: missingFields.length === 0,
+          has_complete_data: hasCompleteData,
           missing_fields: missingFields,
         }
       })
@@ -287,8 +299,12 @@ export function GroupActivityBillingModal({
       setParticipantsData(participantsWithData)
 
       // Seleccionar automáticamente participantes con datos completos
-      const validParticipantIds = participantsWithData.filter((p) => p.has_complete_data).map((p) => p.participant_id)
-      setSelectedParticipants(new Set(validParticipantIds))
+      // const validParticipantIds = participantsWithData.filter((p) => p.has_complete_data).map((p) => p.participant_id)
+      // setSelectedParticipants(new Set(validParticipantIds))
+
+      // Verificar facturas existentes ANTES de seleccionar
+      const clientIds = participantsWithData.map((p) => p.client_id)
+      await checkExistingInvoices(clientIds, format(new Date(activity.date), "yyyy-MM-dd"))
     } catch (error) {
       console.error("Error loading participants data:", error)
       toast({
@@ -301,7 +317,50 @@ export function GroupActivityBillingModal({
     }
   }
 
+  const checkExistingInvoices = async (clientIds: number[], dateStr: string) => {
+    if (!userProfile?.organization_id || clientIds.length === 0) return
+
+    try {
+      const { data, error } = await supabase
+        .from("invoices")
+        .select("id, invoice_number, created_at, client_id")
+        .eq("organization_id", userProfile.organization_id)
+        .eq("issue_date", dateStr)
+        .in("client_id", clientIds)
+        .order("created_at", { ascending: true })
+
+      if (error) throw error
+
+      const invoicesMap = new Map()
+      data?.forEach((invoice) => {
+        // Solo guardar la primera factura de cada cliente
+        if (!invoicesMap.has(invoice.client_id)) {
+          invoicesMap.set(invoice.client_id, {
+            invoice_number: invoice.invoice_number,
+            created_at: invoice.created_at,
+            id: invoice.id,
+          })
+        }
+      })
+
+      setExistingInvoices(invoicesMap)
+
+      // Seleccionar automáticamente participantes con datos completos Y que NO estén ya facturados
+      const participantsToSelect = participantsData
+        .filter((participant) => participant.has_complete_data && !invoicesMap.has(participant.client_id))
+        .map((participant) => participant.participant_id)
+      setSelectedParticipants(new Set(participantsToSelect))
+    } catch (error) {
+      console.error("Error checking existing invoices:", error)
+    }
+  }
+
   const handleParticipantToggle = (participantId: string, checked: boolean) => {
+    const participant = participantsData.find((p) => p.participant_id === participantId)
+    if (participant && existingInvoices.has(participant.client_id)) {
+      return // No permitir seleccionar participantes ya facturados
+    }
+
     const newSelected = new Set(selectedParticipants)
     if (checked) {
       newSelected.add(participantId)
@@ -312,7 +371,9 @@ export function GroupActivityBillingModal({
   }
 
   const handleSelectAll = () => {
-    const validParticipantIds = participantsData.filter((p) => p.has_complete_data).map((p) => p.participant_id)
+    const validParticipantIds = participantsData
+      .filter((p) => p.has_complete_data && !existingInvoices.has(p.client_id))
+      .map((p) => p.participant_id)
     setSelectedParticipants(new Set(validParticipantIds))
   }
 
@@ -420,7 +481,7 @@ export function GroupActivityBillingModal({
               client_id: participantData.client_id,
               issue_date: format(new Date(activity.date), "yyyy-MM-dd"),
               invoice_type: "normal",
-              status: "sent",
+              status: "paid",
               base_amount: baseAmount,
               vat_amount: vatAmount,
               irpf_amount: irpfAmount,
@@ -434,6 +495,22 @@ export function GroupActivityBillingModal({
             .single()
 
           if (invoiceError) throw invoiceError
+
+          // ✅ ACTUALIZACIÓN OPTIMISTA INMEDIATA
+          setExistingInvoices((prev) =>
+            new Map(prev).set(participantData.client_id, {
+              invoice_number: invoiceNumberFormatted,
+              created_at: invoiceData.created_at,
+              id: invoiceData.id,
+            }),
+          )
+
+          // ✅ REMOVER DE SELECCIONADOS
+          setSelectedParticipants((prev) => {
+            const newSet = new Set(prev)
+            newSet.delete(participantId)
+            return newSet
+          })
 
           // Crear líneas de factura
           const invoiceLines_db = invoiceLines.map((line) => ({
@@ -479,7 +556,7 @@ export function GroupActivityBillingModal({
               invoice_number: invoiceNumberFormatted,
               issue_date: format(new Date(activity.date), "yyyy-MM-dd"),
               invoice_type: "normal" as const,
-              status: "sent",
+              status: "paid",
               base_amount: baseAmount,
               vat_amount: vatAmount,
               irpf_amount: irpfAmount,
@@ -601,6 +678,12 @@ export function GroupActivityBillingModal({
 
         setGeneratedInvoices(invoicesForZip)
       }
+
+      // ✅ RE-CONSULTA FINAL PARA CONFIRMAR
+      await checkExistingInvoices(
+        participantsData.map((p) => p.client_id),
+        format(new Date(activity.date), "yyyy-MM-dd"),
+      )
 
       // Completado
       setProgress({
@@ -862,7 +945,9 @@ export function GroupActivityBillingModal({
                           onCheckedChange={(checked) =>
                             handleParticipantToggle(participant.participant_id, checked as boolean)
                           }
-                          disabled={!participant.has_complete_data || generating}
+                          disabled={
+                            !participant.has_complete_data || generating || existingInvoices.has(participant.client_id)
+                          }
                           className="mt-1"
                         />
 
@@ -870,7 +955,12 @@ export function GroupActivityBillingModal({
                           <div className="flex items-center gap-2 mb-2">
                             <h3 className="font-medium text-gray-900">{participant.client_name}</h3>
                             {getStatusBadge(participant.status)}
-                            {participant.has_complete_data ? (
+                            {existingInvoices.has(participant.client_id) ? (
+                              <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
+                                <AlertTriangle className="h-3 w-3 mr-1" />
+                                Ya facturado
+                              </Badge>
+                            ) : participant.has_complete_data ? (
                               <Badge variant="secondary" className="bg-green-100 text-green-800">
                                 <CheckCircle className="h-3 w-3 mr-1" />
                                 Datos completos

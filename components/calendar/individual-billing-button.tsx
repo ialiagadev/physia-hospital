@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { FileText, Loader2, AlertTriangle, Download } from "lucide-react"
+import { useState, useEffect } from "react"
+import { FileText, Loader2, AlertTriangle, CheckCircle, Clock, Download } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase/client"
@@ -18,10 +18,13 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
   const { userProfile } = useAuth()
   const { toast } = useToast()
   const [generating, setGenerating] = useState(false)
-  const [downloading, setDownloading] = useState(false) // 🆕 Estado para descarga
-  const [invoiceGenerated, setInvoiceGenerated] = useState(false)
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
-  const [invoiceNumber, setInvoiceNumber] = useState<string>("")
+  const [existingInvoice, setExistingInvoice] = useState<{
+    invoice_number: string
+    created_at: string
+    id: string
+  } | null>(null)
+  const [checkingInvoice, setCheckingInvoice] = useState(true)
+  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null)
 
   const hasService = appointment.service?.id && appointment.service?.price
   const hasServiceId = appointment.service_id
@@ -52,52 +55,12 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
 
   const clientValidation = validateClientData()
 
-  // 🆕 Función para descargar PDF con loading
-  const downloadPdf = async () => {
-    if (!pdfUrl) return
-
-    setDownloading(true) // 🆕 Activar loading
-
-    try {
-      const response = await fetch(pdfUrl)
-
-      if (!response.ok) {
-        throw new Error("Error al obtener el archivo")
-      }
-
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement("a")
-      link.href = url
-      link.download = `factura-${invoiceNumber}.pdf`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
-
-      toast({
-        title: "PDF descargado",
-        description: `Factura ${invoiceNumber} descargada correctamente`,
-      })
-    } catch (error) {
-      console.error("Error downloading PDF:", error)
-      toast({
-        title: "Error",
-        description: "No se pudo descargar el PDF. Inténtalo de nuevo.",
-        variant: "destructive",
-      })
-    } finally {
-      setDownloading(false) // 🆕 Desactivar loading
-    }
-  }
-
   const generateInvoice = async () => {
     if (!userProfile?.organization_id) {
       return
     }
 
     setGenerating(true)
-
     try {
       // Importar las funciones necesarias
       const { generateUniqueInvoiceNumber } = await import("@/lib/invoice-utils")
@@ -207,6 +170,13 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
 
       if (invoiceError) throw invoiceError
 
+      // ✅ ACTUALIZACIÓN OPTIMISTA INMEDIATA
+      setExistingInvoice({
+        invoice_number: invoiceNumberFormatted,
+        created_at: invoiceData.created_at,
+        id: invoiceData.id,
+      })
+
       // Crear líneas de factura
       const invoiceLines_db = invoiceLines.map((line) => ({
         invoice_id: invoiceData.id,
@@ -222,7 +192,6 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
       }))
 
       const { error: linesError } = await supabase.from("invoice_lines").insert(invoiceLines_db)
-
       if (linesError) {
         console.error("Error saving invoice lines:", linesError)
       }
@@ -283,21 +252,17 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
 
         const filename = `factura-${invoiceNumberFormatted}.pdf`
 
-        // 🔥 GENERAR PDF SIN DESCARGA AUTOMÁTICA
+        // Generar PDF SIN descarga automática primero
         const pdfBlob = await generatePdf(newInvoice, invoiceLines, filename, false)
 
         // Guardar PDF en storage si se generó correctamente
         if (pdfBlob && pdfBlob instanceof Blob) {
+          // Guardar el blob para descarga opcional
+          setPdfBlob(pdfBlob)
+
           try {
-            const savedPdfUrl = await savePdfToStorage(pdfBlob, filename, userProfile.organization_id)
-
-            // Actualizar la factura con la URL del PDF
-            await supabase.from("invoices").update({ pdf_url: savedPdfUrl }).eq("id", invoiceData.id)
-
-            // 🆕 GUARDAR ESTADOS PARA EL BOTÓN DE DESCARGA
-            setPdfUrl(savedPdfUrl)
-            setInvoiceNumber(invoiceNumberFormatted)
-            setInvoiceGenerated(true)
+            const pdfUrl = await savePdfToStorage(pdfBlob, filename, userProfile.organization_id)
+            await supabase.from("invoices").update({ pdf_url: pdfUrl }).eq("id", invoiceData.id)
           } catch (pdfError) {
             console.error("Error saving PDF:", pdfError)
           }
@@ -316,6 +281,8 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
       }
     } catch (error) {
       console.error("Error generating invoice:", error)
+      // ✅ REVERTIR ACTUALIZACIÓN OPTIMISTA EN CASO DE ERROR
+      setExistingInvoice(null)
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "No se pudo generar la factura",
@@ -325,6 +292,38 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
       setGenerating(false)
     }
   }
+
+  const checkExistingInvoice = async () => {
+    if (!userProfile?.organization_id || !appointment.client_id) {
+      setCheckingInvoice(false)
+      return
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("invoices")
+        .select("id, invoice_number, created_at")
+        .eq("organization_id", userProfile.organization_id)
+        .eq("client_id", appointment.client_id)
+        .eq("issue_date", appointment.date)
+        .order("created_at", { ascending: false })
+        .limit(1)
+
+      if (error) throw error
+
+      if (data && data.length > 0) {
+        setExistingInvoice(data[0])
+      }
+    } catch (error) {
+      console.error("Error checking existing invoice:", error)
+    } finally {
+      setCheckingInvoice(false)
+    }
+  }
+
+  useEffect(() => {
+    checkExistingInvoice()
+  }, [appointment.id, appointment.client_id, appointment.date, userProfile])
 
   // ✅ SI NO HAY SERVICIO, MOSTRAR MENSAJE DE ERROR
   if (!finalHasService) {
@@ -354,28 +353,53 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
     )
   }
 
-  // 🆕 SI LA FACTURA YA FUE GENERADA, MOSTRAR BOTÓN DE DESCARGA CON LOADING
-  if (invoiceGenerated && pdfUrl) {
+  // ✅ SI ESTÁ VERIFICANDO FACTURA EXISTENTE
+  if (checkingInvoice) {
     return (
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={downloadPdf}
-        disabled={downloading} // 🆕 Deshabilitar durante descarga
-        className="gap-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 bg-transparent"
-      >
-        {downloading ? (
-          <>
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Descargando...
-          </>
-        ) : (
-          <>
-            <Download className="h-4 w-4" />
-            Descargar PDF
-          </>
+      <div className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded border border-gray-200">
+        <div className="flex items-center gap-1">
+          <Clock className="h-3 w-3 animate-spin" />
+          <span>Verificando...</span>
+        </div>
+      </div>
+    )
+  }
+
+  // ✅ SI YA EXISTE FACTURA
+  if (existingInvoice) {
+    return (
+      <div className="flex items-center gap-2">
+        <div className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded border border-green-200">
+          <div className="flex items-center gap-1">
+            <CheckCircle className="h-3 w-3" />
+            <span>Ya facturado</span>
+          </div>
+          <div className="text-xs mt-1">Factura #{existingInvoice.invoice_number}</div>
+          <div className="text-xs text-gray-600">
+            {format(new Date(existingInvoice.created_at), "dd/MM/yyyy HH:mm")}
+          </div>
+        </div>
+        {pdfBlob && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              const url = window.URL.createObjectURL(pdfBlob)
+              const link = document.createElement("a")
+              link.href = url
+              link.download = `factura-${existingInvoice.invoice_number}.pdf`
+              document.body.appendChild(link)
+              link.click()
+              document.body.removeChild(link)
+              window.URL.revokeObjectURL(url)
+            }}
+            className="h-6 px-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+            title="Descargar PDF"
+          >
+            <Download className="h-3 w-3" />
+          </Button>
         )}
-      </Button>
+      </div>
     )
   }
 

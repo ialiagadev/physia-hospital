@@ -238,7 +238,14 @@ export function AppointmentFormModal({
 
   // Verificar conflictos de citas
   const checkAppointmentConflicts = useCallback(async () => {
-    if (!formData.fecha || !formData.hora || !formData.duracion || !formData.profesionalId) {
+    // Only check if we have the minimum required data
+    if (!formData.fecha || !formData.hora || !formData.duracion) {
+      return
+    }
+
+    // If no professional is selected yet, clear conflicts and return
+    if (!formData.profesionalId) {
+      // We can't directly call setConflicts, so we'll let the hook handle empty results
       return
     }
 
@@ -261,6 +268,21 @@ export function AppointmentFormModal({
     checkConflicts,
     citaExistente?.id,
   ])
+
+  // Verificar conflictos cuando cambien los datos relevantes
+  useEffect(() => {
+    checkAppointmentConflicts()
+  }, [checkAppointmentConflicts])
+
+  // Verificar conflictos inmediatamente si el profesional viene preseleccionado (desde calendario)
+  useEffect(() => {
+    if (profesionalId && formData.profesionalId && users.length > 0) {
+      // Solo verificar si tenemos los datos básicos
+      if (formData.fecha && formData.hora && formData.duracion) {
+        checkAppointmentConflicts()
+      }
+    }
+  }, [profesionalId, users.length, checkAppointmentConflicts])
 
   // Filtrar usuarios - CORREGIDO y SIN console.log
   const updateFilteredUsers = useCallback(async () => {
@@ -379,22 +401,6 @@ export function AppointmentFormModal({
       }
     }
   }, [formData.hora, formData.duracion, formData.fecha])
-
-  // Verificar conflictos con debounce
-  useEffect(() => {
-    if (conflictCheckTimeoutRef.current) {
-      clearTimeout(conflictCheckTimeoutRef.current)
-    }
-    conflictCheckTimeoutRef.current = setTimeout(() => {
-      checkAppointmentConflicts()
-    }, 500)
-
-    return () => {
-      if (conflictCheckTimeoutRef.current) {
-        clearTimeout(conflictCheckTimeoutRef.current)
-      }
-    }
-  }, [checkAppointmentConflicts])
 
   // Actualizar usuarios filtrados
   useEffect(() => {

@@ -267,6 +267,16 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
   const [generating, setGenerating] = useState(false)
   const [progress, setProgress] = useState<BillingProgress | null>(null)
   const [generatedInvoices, setGeneratedInvoices] = useState<GeneratedInvoice[]>([])
+  const [existingInvoices, setExistingInvoices] = useState<
+    Map<
+      number,
+      {
+        invoice_number: string
+        created_at: string
+        id: string
+      }
+    >
+  >(new Map())
 
   // Filtros
   const [searchTerm, setSearchTerm] = useState("")
@@ -511,9 +521,10 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
       const clientsArray = Array.from(clientsMap.values())
       setClientsData(clientsArray)
 
-      // Seleccionar automáticamente clientes con datos completos
-      const validClientIds = clientsArray.filter((client) => client.has_complete_data).map((client) => client.client_id)
-      setSelectedClients(new Set(validClientIds))
+      // Verificar facturas existentes ANTES de seleccionar
+      const clientIds = clientsArray.map((client) => client.client_id)
+      await checkExistingInvoices(clientIds, dateStr, clientsArray)
+      // La selección automática ahora se hace dentro de checkExistingInvoices
     } catch (error) {
       toast({
         title: "Error",
@@ -537,7 +548,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
 
   const handleSelectAll = () => {
     const validClientIds = filteredClientsData
-      .filter((client) => client.has_complete_data)
+      .filter((client) => client.has_complete_data && !existingInvoices.has(client.client_id))
       .map((client) => client.client_id)
     setSelectedClients(new Set(validClientIds))
   }
@@ -585,6 +596,27 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
       const errors: string[] = []
       let successCount = 0
       const invoicesForZip: GeneratedInvoice[] = []
+
+      // Filtrar clientes ya facturados antes de generar
+      const validSelectedClients = Array.from(selectedClients).filter((clientId) => {
+        const isAlreadyInvoiced = existingInvoices.has(clientId)
+        if (isAlreadyInvoiced) {
+          console.warn(`Cliente ${clientId} ya tiene factura, se omite`)
+        }
+        return !isAlreadyInvoiced
+      })
+
+      if (validSelectedClients.length === 0) {
+        toast({
+          title: "⚠️ Sin clientes válidos",
+          description: "Todos los clientes seleccionados ya han sido facturados",
+          variant: "destructive",
+        })
+        return
+      }
+
+      // Usar validSelectedClients en lugar de selectedClientsArray
+      const selectedClientsArray = validSelectedClients
 
       for (let i = 0; i < selectedClientsArray.length; i++) {
         const clientId = selectedClientsArray[i]
@@ -668,7 +700,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
               client_id: clientId,
               issue_date: format(selectedDate, "yyyy-MM-dd"),
               invoice_type: "normal",
-              status: "sent",
+              status: "paid",
               base_amount: baseAmount,
               vat_amount: vatAmount,
               irpf_amount: irpfAmount,
@@ -723,7 +755,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
               invoice_number: invoiceNumberFormatted,
               issue_date: format(selectedDate, "yyyy-MM-dd"),
               invoice_type: "normal" as const,
-              status: "sent",
+              status: "paid",
               base_amount: baseAmount,
               vat_amount: vatAmount,
               irpf_amount: irpfAmount,
@@ -788,6 +820,21 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           }
 
           successCount++
+          // ✅ ACTUALIZACIÓN OPTIMISTA INMEDIATA
+          setExistingInvoices((prev) =>
+            new Map(prev).set(clientId, {
+              invoice_number: invoiceNumberFormatted,
+              created_at: invoiceData.created_at,
+              id: invoiceData.id,
+            }),
+          )
+
+          // ✅ REMOVER DE SELECCIONADOS
+          setSelectedClients((prev) => {
+            const newSet = new Set(prev)
+            newSet.delete(clientId)
+            return newSet
+          })
         } catch (error) {
           console.error(`Error generating invoice for client ${clientData.client_name}:`, error)
           errors.push(`${clientData.client_name}: ${error instanceof Error ? error.message : "Error desconocido"}`)
@@ -846,6 +893,13 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
 
         setGeneratedInvoices(invoicesForZip)
       }
+
+      // ✅ RE-CONSULTA FINAL PARA CONFIRMAR
+      await checkExistingInvoices(
+        clientsData.map((c) => c.client_id),
+        format(selectedDate, "yyyy-MM-dd"),
+        clientsData,
+      )
 
       setProgress({
         phase: "completed",
@@ -947,6 +1001,49 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
       })
     })
     return counts
+  }
+
+  const checkExistingInvoices = async (clientIds: number[], dateStr: string, clientsArray: ClientAppointmentData[]) => {
+    if (!userProfile?.organization_id || clientIds.length === 0) return
+
+    try {
+      const { data, error } = await supabase
+        .from("invoices")
+        .select("id, invoice_number, created_at, client_id")
+        .eq("organization_id", userProfile.organization_id)
+        .eq("issue_date", dateStr)
+        .in("client_id", clientIds)
+        .order("created_at", { ascending: true })
+
+      if (error) throw error
+
+      const invoicesMap = new Map()
+      data?.forEach((invoice) => {
+        // Solo guardar la primera factura de cada cliente
+        if (!invoicesMap.has(invoice.client_id)) {
+          invoicesMap.set(invoice.client_id, {
+            invoice_number: invoice.invoice_number,
+            created_at: invoice.created_at,
+            id: invoice.id,
+          })
+        }
+      })
+
+      setExistingInvoices(invoicesMap)
+
+      // Seleccionar automáticamente clientes con datos completos Y que NO estén ya facturados
+      // Usar clientsArray pasado como parámetro en lugar del estado clientsData
+      const clientsToSelect = clientIds
+        .map((id) => clientsArray.find((client) => client.client_id === id))
+        .filter(
+          (client): client is ClientAppointmentData =>
+            client !== undefined && client.has_complete_data && !invoicesMap.has(client.client_id),
+        )
+        .map((client) => client.client_id)
+      setSelectedClients(new Set(clientsToSelect))
+    } catch (error) {
+      console.error("Error checking existing invoices:", error)
+    }
   }
 
   if (!isOpen) return null
@@ -1113,7 +1210,8 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
               {/* Controls */}
               <div className="flex gap-2 mb-4">
                 <Button variant="outline" size="sm" onClick={handleSelectAll} disabled={generating}>
-                  Seleccionar Válidos ({filteredClientsData.filter((c) => c.has_complete_data).length})
+                  Seleccionar Válidos (
+                  {filteredClientsData.filter((c) => c.has_complete_data && !existingInvoices.has(c.client_id)).length})
                 </Button>
                 <Button variant="outline" size="sm" onClick={handleDeselectAll} disabled={generating}>
                   Deseleccionar Todos
@@ -1126,11 +1224,13 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
                   <Card
                     key={client.client_id}
                     className={`${
-                      !client.has_complete_data
-                        ? "border-red-200 bg-red-50"
-                        : selectedClients.has(client.client_id)
-                          ? "border-blue-200 bg-blue-50"
-                          : ""
+                      existingInvoices.has(client.client_id)
+                        ? "border-yellow-200 bg-yellow-50 opacity-75"
+                        : !client.has_complete_data
+                          ? "border-red-200 bg-red-50"
+                          : selectedClients.has(client.client_id)
+                            ? "border-blue-200 bg-blue-50"
+                            : ""
                     }`}
                   >
                     <CardContent className="p-4">
@@ -1138,7 +1238,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
                         <Checkbox
                           checked={selectedClients.has(client.client_id)}
                           onCheckedChange={(checked) => handleClientToggle(client.client_id, checked as boolean)}
-                          disabled={!client.has_complete_data || generating}
+                          disabled={!client.has_complete_data || generating || existingInvoices.has(client.client_id)}
                           className="mt-1"
                         />
 
@@ -1161,7 +1261,13 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
                               </Button>
                             </Link>
 
-                            {client.has_complete_data ? (
+                            {/* Mostrar aviso de factura existente PRIMERO */}
+                            {existingInvoices.has(client.client_id) ? (
+                              <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
+                                <AlertTriangle className="h-3 w-3 mr-1" />
+                                Ya facturado
+                              </Badge>
+                            ) : client.has_complete_data ? (
                               <Badge variant="secondary" className="bg-green-100 text-green-800">
                                 <CheckCircle className="h-3 w-3 mr-1" />
                                 Datos completos
@@ -1173,6 +1279,27 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
                               </Badge>
                             )}
                           </div>
+
+                          {/* Mostrar detalles de factura existente */}
+                          {existingInvoices.has(client.client_id) && (
+                            <div className="mb-3 p-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
+                              <div className="flex items-center gap-1 mb-1">
+                                <AlertTriangle className="h-3 w-3" />
+                                <strong>Factura existente:</strong>
+                              </div>
+                              <p>
+                                #{existingInvoices.get(client.client_id)!.invoice_number}
+                                <br />
+                                <span className="text-xs text-yellow-600">
+                                  Generada el{" "}
+                                  {format(
+                                    new Date(existingInvoices.get(client.client_id)!.created_at),
+                                    "dd/MM/yyyy 'a las' HH:mm",
+                                  )}
+                                </span>
+                              </p>
+                            </div>
+                          )}
 
                           {!client.has_complete_data && (
                             <div className="mb-3 p-2 bg-red-100 rounded text-sm text-red-800">
@@ -1255,6 +1382,11 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
             <div className="flex justify-between items-center">
               <div className="text-sm text-gray-600">
                 {selectedClients.size} clientes seleccionados • {formatCurrency(getTotalSelected())} total
+                {existingInvoices.size > 0 && (
+                  <span className="ml-2 text-yellow-600">
+                    • {existingInvoices.size} ya facturado{existingInvoices.size !== 1 ? "s" : ""} anteriormente
+                  </span>
+                )}
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" onClick={onClose} disabled={generating}>

@@ -586,7 +586,7 @@ export default function InvoicesPage() {
               client_id: Number.parseInt(clientId),
               issue_date: dateStr,
               invoice_type: "normal",
-              status: "sent",
+              status: "paid",
               base_amount: baseAmount,
               vat_amount: vatAmount,
               irpf_amount: 0,
