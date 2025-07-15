@@ -147,7 +147,7 @@ export function AppointmentFormModal({
     hora: citaExistente?.hora || hora,
     duracion: citaExistente?.duracion || waitingListEntry?.estimated_duration || 45,
     notas: citaExistente?.notas || waitingListEntry?.notes || "",
-    profesionalId: citaExistente?.profesionalId || profesionalId || waitingListEntry?.preferred_professional_id || 1,
+    profesionalId: citaExistente?.profesionalId || profesionalId || waitingListEntry?.preferred_professional_id || 0,
     estado: citaExistente?.estado || ("pendiente" as EstadoCita),
     consultationId:
       citaExistente?.consultationId && citaExistente.consultationId !== "" ? citaExistente.consultationId : "none",
@@ -297,13 +297,14 @@ export function AppointmentFormModal({
     const availableUsers = getAvailableUsers(usersToFilter, formData.fecha)
     setFilteredUsers(availableUsers)
 
-    // Si el profesional seleccionado ya no está disponible, resetear
-    if (
-      formData.profesionalId &&
-      !availableUsers.find((user) => Number.parseInt(user.id.slice(-8), 16) === formData.profesionalId)
-    ) {
-      setFormData((prev) => ({ ...prev, profesionalId: 0 }))
-    }
+  // Si el profesional seleccionado ya no está disponible, resetear
+// PERO NO resetear si viene preseleccionado desde el calendario
+if (formData.profesionalId &&
+  formData.profesionalId !== profesionalId && // ✅ No resetear si viene del calendario
+  !availableUsers.find((user) => Number.parseInt(user.id.slice(-8), 16) === formData.profesionalId)
+) {
+setFormData((prev) => ({ ...prev, profesionalId: profesionalId || 0 }))
+}
   }, [formData.service_id, formData.fecha, formData.profesionalId, users, getUsersByService, getAvailableUsers])
 
   // Función para buscar clientes
@@ -531,7 +532,10 @@ export function AppointmentFormModal({
   // 🆕 Verificar si el botón debe estar deshabilitado
   const isSubmitDisabled = useCallback(() => {
     return (
-      searchingClients || consultationsLoading || conflictsLoading || conflicts.length > 0 // 🔥 NUEVA CONDICIÓN: Deshabilitar si hay conflictos
+      searchingClients ||
+      consultationsLoading ||
+      conflictsLoading ||
+      conflicts.length > 0
     )
   }, [searchingClients, consultationsLoading, conflictsLoading, conflicts.length])
 
@@ -557,6 +561,10 @@ export function AppointmentFormModal({
 
       if (!formData.service_id) {
         newErrors.service = "Debes seleccionar un servicio"
+      }
+
+      if (!formData.profesionalId || formData.profesionalId === 0) {
+        newErrors.profesional = "Debes seleccionar un profesional"
       }
 
       // 🆕 Validaciones de recurrencia
@@ -1164,14 +1172,14 @@ export function AppointmentFormModal({
           {/* Profesional */}
           <div className="space-y-2">
             <Label htmlFor="profesional" className="flex items-center gap-2 text-sm font-medium">
-              Profesional
+              Profesional *
             </Label>
             <Select
               value={formData.profesionalId.toString()}
               onValueChange={(value) => setFormData({ ...formData, profesionalId: Number.parseInt(value) })}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Selecciona un profesional" />
+                <SelectValue placeholder="Selecciona un profesional *" />
               </SelectTrigger>
               <SelectContent>
                 {filteredUsers.map((user) => (
@@ -1184,6 +1192,7 @@ export function AppointmentFormModal({
                 ))}
               </SelectContent>
             </Select>
+            {errors.profesional && <p className="text-sm text-red-600">{errors.profesional}</p>}
             {formData.service_id && filteredUsers.length === 0 && (
               <p className="text-sm text-amber-600">No hay profesionales asignados a este servicio</p>
             )}
