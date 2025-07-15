@@ -95,15 +95,6 @@ export function useAppointmentConflicts(organizationId?: number) {
         // Calcular hora de fin usando la función utilitaria
         const endTime = calculateEndTimeFromDuration(startTime, duration)
 
-        console.log(`🔍 Verificando conflictos para:`, {
-          dateString,
-          dayOfWeek,
-          startTime,
-          endTime,
-          duration,
-          professionalId,
-        })
-
         // 1. Verificar citas individuales
         let appointmentsQuery = supabase
           .from("appointments")
@@ -132,12 +123,9 @@ export function useAppointmentConflicts(organizationId?: number) {
         const { data: appointments, error: appointmentsError } = await appointmentsQuery
 
         if (appointmentsError) {
-          console.error("Error obteniendo citas:", appointmentsError)
           setError(appointmentsError.message)
           return []
         }
-
-        console.log(`📅 Citas encontradas:`, appointments?.length || 0)
 
         // 2. Verificar actividades grupales
         let groupQuery = supabase
@@ -165,12 +153,9 @@ export function useAppointmentConflicts(organizationId?: number) {
         const { data: groupActivities, error: groupError } = await groupQuery
 
         if (groupError) {
-          console.error("Error obteniendo actividades grupales:", groupError)
           setError(groupError.message)
           return []
         }
-
-        console.log(`👥 Actividades grupales encontradas:`, groupActivities?.length || 0)
 
         // 3. Verificar horarios de trabajo y descansos
         let workSchedules = null
@@ -197,7 +182,6 @@ export function useAppointmentConflicts(organizationId?: number) {
         if (exceptionSchedules && exceptionSchedules.length > 0) {
           workSchedules = exceptionSchedules
           currentScheduleId = exceptionSchedules[0].id
-          console.log(`⚠️ Usando horario de excepción:`, exceptionSchedules[0])
         } else {
           // Si no hay excepciones, buscar horario regular para este día
           const { data: regularSchedules, error: regularError } = await supabase
@@ -220,7 +204,6 @@ export function useAppointmentConflicts(organizationId?: number) {
           if (regularSchedules && regularSchedules.length > 0) {
             workSchedules = regularSchedules
             currentScheduleId = regularSchedules[0].id
-            console.log(`📋 Usando horario regular:`, regularSchedules[0])
           }
 
           if (regularError) {
@@ -247,7 +230,6 @@ export function useAppointmentConflicts(organizationId?: number) {
 
           if (breaks && !breaksError) {
             scheduleBreaks = breaks as ScheduleBreak[]
-            console.log(`☕ Descansos encontrados:`, scheduleBreaks.length)
           }
 
           if (breaksError) {
@@ -276,7 +258,6 @@ export function useAppointmentConflicts(organizationId?: number) {
                 status: apt.status,
                 type: "appointment" as const,
               })
-              console.log(`⚠️ Conflicto con cita:`, apt.start_time, "-", apt.end_time)
             }
           }
         }
@@ -297,7 +278,6 @@ export function useAppointmentConflicts(organizationId?: number) {
                 status: activity.status,
                 type: "group_activity" as const,
               })
-              console.log(`⚠️ Conflicto con actividad grupal:`, activity.start_time, "-", activity.end_time)
             }
           }
         }
@@ -316,10 +296,6 @@ export function useAppointmentConflicts(organizationId?: number) {
                 status: "blocked",
                 type: "outside_hours",
               })
-              console.log(`⚠️ Fuera del horario laboral:`, {
-                cita: `${startTime} - ${endTime}`,
-                horario: `${schedule.start_time} - ${schedule.end_time}`,
-              })
             }
 
             // Verificar conflicto con descanso principal (break_start/break_end)
@@ -334,7 +310,6 @@ export function useAppointmentConflicts(organizationId?: number) {
                   status: "blocked",
                   type: "work_break",
                 })
-                console.log(`⚠️ Conflicto con descanso principal:`, schedule.break_start, "-", schedule.break_end)
               }
             }
 
@@ -350,13 +325,6 @@ export function useAppointmentConflicts(organizationId?: number) {
                   status: "blocked",
                   type: "work_break",
                 })
-                console.log(
-                  `⚠️ Conflicto con descanso:`,
-                  breakItem.break_name,
-                  breakItem.start_time,
-                  "-",
-                  breakItem.end_time,
-                )
               }
             }
           }
@@ -371,10 +339,7 @@ export function useAppointmentConflicts(organizationId?: number) {
             status: "blocked",
             type: "outside_hours",
           })
-          console.log(`⚠️ Sin horario laboral definido para el día:`, dayOfWeek)
         }
-
-        console.log(`🔍 Total de conflictos encontrados:`, conflictList.length)
 
         setConflicts(conflictList)
         return conflictList
