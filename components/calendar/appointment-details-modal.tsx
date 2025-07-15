@@ -131,8 +131,6 @@ export function AppointmentDetailsModal({
 
   // Handler para cambio de servicio
   const handleServiceChange = (value: string) => {
-    console.log("Cambiando servicio a:", value)
-
     if (value === "none") {
       setEditedAppointment({
         ...editedAppointment,
@@ -146,7 +144,6 @@ export function AppointmentDetailsModal({
     const selectedService = availableServices.find((s) => s.id === serviceId)
 
     if (selectedService) {
-      console.log("Servicio encontrado:", selectedService)
       const newEndTime = calculateEndTime(editedAppointment.start_time, selectedService.duration)
 
       setEditedAppointment({
@@ -163,8 +160,6 @@ export function AppointmentDetailsModal({
   const handleSave = async () => {
     setIsSaving(true)
     try {
-      console.log("Datos a actualizar:", editedAppointment)
-
       // Preparar los datos para la actualización
       const updateData = {
         date: editedAppointment.date,
@@ -176,8 +171,6 @@ export function AppointmentDetailsModal({
         service_id: editedAppointment.service_id, // Puede ser null
         updated_at: new Date().toISOString(),
       }
-
-      console.log("Datos de actualización:", updateData)
 
       // Actualizar en la base de datos
       const { data, error } = await supabase
@@ -193,11 +186,8 @@ export function AppointmentDetailsModal({
         .single()
 
       if (error) {
-        console.error("Error de Supabase:", error)
         throw error
       }
-
-      console.log("Datos actualizados en DB:", data)
 
       // Crear el objeto actualizado con la estructura correcta
       const updatedAppointment: AppointmentWithDetails = {
@@ -211,7 +201,6 @@ export function AppointmentDetailsModal({
       await onUpdate(updatedAppointment)
 
       setIsEditing(false)
-      console.log("Cita actualizada correctamente")
       onClose()
     } catch (error) {
       console.error("Error al actualizar la cita:", error)
@@ -226,7 +215,6 @@ export function AppointmentDetailsModal({
     try {
       await onDelete(appointment.id)
       setShowDeleteDialog(false)
-      console.log("Cita eliminada correctamente")
     } catch (error) {
       console.error("Error al eliminar la cita:", error)
     } finally {
@@ -329,12 +317,7 @@ export function AppointmentDetailsModal({
                 <div className="flex items-center gap-2">
                   {!isEditing && (
                     <>
-                      <IndividualBillingButton
-                        appointment={appointment}
-                        onBillingComplete={() => {
-                          console.log("Factura generada para la cita")
-                        }}
-                      />
+                      <IndividualBillingButton appointment={appointment} onBillingComplete={() => {}} />
                       <Button
                         variant="outline"
                         size="sm"
