@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { CalendarDays, Clock, User, MapPin, FileText, Calendar } from "lucide-react"
+import { CalendarDays, Clock, User, MapPin, FileText, Calendar } from 'lucide-react'
 import { supabase } from "@/lib/supabase/client"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
@@ -21,8 +21,6 @@ interface Appointment {
   status: "confirmed" | "pending" | "cancelled" | "completed" | "no_show"
   notes?: string
   professional_name?: string
-  appointment_type_name?: string
-  consultation_title?: string
   consultation_location?: string
 }
 
@@ -62,9 +60,7 @@ export function PatientAppointmentsSection({ clientId, clientName }: PatientAppo
       if (simpleData && simpleData.length > 0) {
         const enrichedAppointments = await Promise.all(
           simpleData.map(async (appointment) => {
-            let professionalName = "Profesional no asignado"
-            let appointmentTypeName = "Tipo no especificado"
-            let consultationTitle = ""
+            let professionalName = ""
             let consultationLocation = ""
 
             if (appointment.professional_id) {
@@ -75,31 +71,18 @@ export function PatientAppointmentsSection({ clientId, clientName }: PatientAppo
                 .single()
 
               if (professionalData) {
-                professionalName = professionalData.full_name || professionalData.name || "Profesional"
-              }
-            }
-
-            if (appointment.appointment_type_id) {
-              const { data: typeData } = await supabase
-                .from("appointment_types")
-                .select("name")
-                .eq("id", appointment.appointment_type_id)
-                .single()
-
-              if (typeData) {
-                appointmentTypeName = typeData.name
+                professionalName = professionalData.full_name || professionalData.name || ""
               }
             }
 
             if (appointment.consultation_id) {
               const { data: consultationData } = await supabase
                 .from("consultations")
-                .select("title, location")
+                .select("location")
                 .eq("id", appointment.consultation_id)
                 .single()
 
               if (consultationData) {
-                consultationTitle = consultationData.title || ""
                 consultationLocation = consultationData.location || ""
               }
             }
@@ -113,8 +96,6 @@ export function PatientAppointmentsSection({ clientId, clientName }: PatientAppo
               status: appointment.status,
               notes: appointment.notes,
               professional_name: professionalName,
-              appointment_type_name: appointmentTypeName,
-              consultation_title: consultationTitle,
               consultation_location: consultationLocation,
             }
           }),
@@ -231,14 +212,13 @@ export function PatientAppointmentsSection({ clientId, clientName }: PatientAppo
             const formattedDate = formatDate(appointment.date)
             const startTime = formatTime(appointment.start_time)
             const endTime = formatTime(appointment.end_time)
-            const title = appointment.consultation_title || appointment.appointment_type_name || "Consulta"
 
             return (
               <Card key={appointment.id} className="hover:shadow-md transition-shadow">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div className="space-y-1">
-                      <CardTitle className="text-lg">{title}</CardTitle>
+                      <CardTitle className="text-lg">Cita</CardTitle>
                       <div className="flex items-center gap-4 text-sm text-gray-600">
                         <div className="flex items-center gap-1">
                           <CalendarDays className="h-4 w-4" />
@@ -246,9 +226,7 @@ export function PatientAppointmentsSection({ clientId, clientName }: PatientAppo
                         </div>
                         <div className="flex items-center gap-1">
                           <Clock className="h-4 w-4" />
-                          <span>
-                            {startTime} - {endTime}
-                          </span>
+                          <span>{startTime} - {endTime}</span>
                         </div>
                         <div className="text-xs text-gray-500">({appointment.duration} min)</div>
                       </div>
@@ -256,10 +234,9 @@ export function PatientAppointmentsSection({ clientId, clientName }: PatientAppo
                     {getStatusBadge(appointment.status)}
                   </div>
                 </CardHeader>
-
                 <CardContent className="pt-0">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {appointment.professional_name && (
+                    {appointment.professional_name && appointment.professional_name !== "" && (
                       <div className="space-y-2">
                         <h4 className="font-medium text-gray-900 flex items-center gap-2">
                           <User className="h-4 w-4" />
@@ -270,27 +247,16 @@ export function PatientAppointmentsSection({ clientId, clientName }: PatientAppo
                         </div>
                       </div>
                     )}
-
-                    <div className="space-y-2">
-                      {appointment.appointment_type_name && (
-                        <div>
-                          <h4 className="font-medium text-gray-900">Tipo de Cita</h4>
-                          <p className="text-sm text-gray-600">{appointment.appointment_type_name}</p>
-                        </div>
-                      )}
-
-                      {appointment.consultation_location && (
-                        <div>
-                          <h4 className="font-medium text-gray-900 flex items-center gap-2">
-                            <MapPin className="h-4 w-4" />
-                            Ubicación
-                          </h4>
-                          <p className="text-sm text-gray-600">{appointment.consultation_location}</p>
-                        </div>
-                      )}
-                    </div>
+                    {appointment.consultation_location && (
+                      <div className="space-y-2">
+                        <h4 className="font-medium text-gray-900 flex items-center gap-2">
+                          <MapPin className="h-4 w-4" />
+                          Ubicación
+                        </h4>
+                        <p className="text-sm text-gray-600">{appointment.consultation_location}</p>
+                      </div>
+                    )}
                   </div>
-
                   {appointment.notes && (
                     <div className="mt-4 pt-4 border-t">
                       <h4 className="font-medium text-gray-900 mb-2 flex items-center gap-2">

@@ -52,6 +52,9 @@ export function AppointmentDetailsModal({
   } | null>(null)
   const [checkingInvoice, setCheckingInvoice] = useState(true)
 
+  // Determinar si el usuario es coordinador
+  const isCoordinator = userProfile?.role === "coordinador"
+
   // Form states
   const [editedAppointment, setEditedAppointment] = useState<AppointmentWithDetails>(appointment)
 
@@ -114,6 +117,7 @@ export function AppointmentDetailsModal({
         .order("name")
 
       if (error) throw error
+
       setAvailableServices(services || [])
     } catch (error) {
       console.error("Error loading services:", error)
@@ -185,6 +189,7 @@ export function AppointmentDetailsModal({
 
     const serviceId = Number.parseInt(value)
     const selectedService = availableServices.find((s) => s.id === serviceId)
+
     if (selectedService) {
       const newEndTime = calculateEndTime(editedAppointment.start_time, selectedService.duration)
       setEditedAppointment({
@@ -337,9 +342,14 @@ export function AppointmentDetailsModal({
         }}
       >
         {/* Contenedor principal que se ajusta al contenido - CENTRADO VERTICALMENTE */}
-        <div className="flex w-full max-w-7xl gap-2 max-h-[calc(100vh-4rem)] my-auto">
-          {/* Modal de detalles de la cita - Lado izquierdo - SE AJUSTA AL CONTENIDO */}
-          <div className="w-1/2 bg-white shadow-2xl rounded-lg overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div
+          className={`flex w-full ${isCoordinator ? "justify-center" : "max-w-7xl gap-2"} max-h-[calc(100vh-4rem)] my-auto`}
+        >
+          {/* Modal de detalles de la cita - Ajustar ancho según si es coordinador */}
+          <div
+            className={`${isCoordinator ? "w-full max-w-2xl" : "w-1/2"} bg-white shadow-2xl rounded-lg overflow-hidden`}
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Header */}
             <div className="bg-blue-50 px-4 py-3 border-b border-blue-100">
               <div className="flex items-center justify-between">
@@ -376,7 +386,6 @@ export function AppointmentDetailsModal({
                         <Edit2 className="h-4 w-4" />
                         Editar
                       </Button>
-
                       {/* ✅ MOSTRAR MENSAJE DE AVISO O BOTÓN ELIMINAR */}
                       {checkingInvoice ? (
                         <div className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded border border-gray-200">
@@ -684,13 +693,15 @@ export function AppointmentDetailsModal({
             )}
           </div>
 
-          {/* Modal de historial del paciente - Lado derecho - SE AJUSTA AL CONTENIDO */}
-          <div
-            className="w-1/2 bg-white shadow-2xl border-l border-gray-200 rounded-lg overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <PatientHistoryModal client={appointment.client} isOpen={true} onClose={() => {}} isEmbedded={true} />
-          </div>
+          {/* Modal de historial del paciente - Lado derecho - Solo visible si NO es coordinador */}
+          {!isCoordinator && (
+            <div
+              className="w-1/2 bg-white shadow-2xl border-l border-gray-200 rounded-lg overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <PatientHistoryModal client={appointment.client} isOpen={true} onClose={() => {}} isEmbedded={true} />
+            </div>
+          )}
         </div>
       </div>
 

@@ -1,197 +1,690 @@
 "use client"
-
-import { useState, useEffect } from "react"
-import Link from "next/link"
+import type React from "react"
+import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
-import { Plus, Edit, Trash2 } from "lucide-react"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Plus, Users, Mail, Calendar, Shield, RefreshCw, Eye, EyeOff, Shuffle, Edit2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { OrganizationSelector } from "@/components/organization-selector"
-import { useToast } from "@/hooks/use-toast"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Separator } from "@/components/ui/separator"
 
-interface Professional {
-  id: number
+interface User {
+  id: string
+  email: string
   name: string
-  active: boolean
+  role: string
+  is_physia_admin: boolean
+  created_at: string
   organization_id: number
+  type: number
 }
 
 export default function ProfessionalsPage() {
-  const [professionals, setProfessionals] = useState<Professional[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedOrgId, setSelectedOrgId] = useState("all")
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [professionalToDelete, setProfessionalToDelete] = useState<number | null>(null)
-  const { toast } = useToast()
+  const [error, setError] = useState<string | null>(null)
+  const [user, setUser] = useState<any>(null)
+  const [profile, setProfile] = useState<any>(null)
+  const [organizations, setOrganizations] = useState<any[]>([])
 
-  // Cargar profesionales basados en la organización seleccionada
+  // Estados para usuarios
+  const [users, setUsers] = useState<User[]>([])
+  const [usersLoading, setUsersLoading] = useState(false)
+  const [usersError, setUsersError] = useState<string | null>(null)
+  const [usersLoaded, setUsersLoaded] = useState(false)
+
+  // Estados para el modal de crear usuario
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false)
+  const [createUserLoading, setCreateUserLoading] = useState(false)
+  const [createUserError, setCreateUserError] = useState("")
+  const [createUserResult, setCreateUserResult] = useState<any>(null)
+  const [showPassword, setShowPassword] = useState(false)
+  const [userForm, setUserForm] = useState({
+    email: "",
+    password: "",
+    name: "",
+    role: "user" as "user" | "admin" | "coordinador",
+  })
+
+  // Estados para el modal de editar usuario
+  const [showEditUserModal, setShowEditUserModal] = useState(false)
+  const [editingUser, setEditingUser] = useState<User | null>(null)
+  const [editUserLoading, setEditUserLoading] = useState(false)
+  const [editUserError, setEditUserError] = useState("")
+
   useEffect(() => {
-    async function loadProfessionals() {
-      setLoading(true)
-
+    // Obtener usuario actual
+    const getUser = async () => {
       try {
-        let query = supabase
-          .from("professionals")
-          .select(`
-            *,
-            organizations (name)
-          `)
-          .order("name")
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser()
 
-        // Filtrar por organización si se ha seleccionado una específica
-        if (selectedOrgId !== "all") {
-          query = query.eq("organization_id", selectedOrgId)
+        if (userError) {
+          console.error("Error obteniendo usuario:", userError)
+          setError("Error de autenticación")
+          setLoading(false)
+          return
         }
 
-        const { data, error } = await query
+        if (!user) {
+          setError("Usuario no autenticado")
+          setLoading(false)
+          return
+        }
 
-        if (error) throw error
+        setUser(user)
 
-        setProfessionals(data || [])
-      } catch (error) {
-        console.error("Error al cargar profesionales:", error)
-        toast({
-          title: "Error",
-          description: "No se pudieron cargar los profesionales",
-          variant: "destructive",
-        })
-      } finally {
+        // Obtener perfil del usuario
+        const { data: profile, error: profileError } = await supabase
+          .from("users")
+          .select("*")
+          .eq("id", user.id)
+          .single()
+
+        if (profileError) {
+          console.error("Error obteniendo perfil:", profileError)
+          setError("Error al cargar perfil de usuario")
+          setLoading(false)
+          return
+        }
+
+        setProfile(profile)
+
+        // Obtener organizaciones para el modal
+        const { data: orgs, error: orgsError } = await supabase
+          .from("organizations")
+          .select("*")
+          .order("created_at", { ascending: false })
+
+        if (orgsError) {
+          console.error("Error obteniendo organizaciones:", orgsError)
+        } else {
+          setOrganizations(orgs || [])
+        }
+
+        setLoading(false)
+
+        // Cargar usuarios automáticamente
+        loadUsers(profile)
+      } catch (err) {
+        console.error("Error en getUser:", err)
+        setError("Error inesperado")
         setLoading(false)
       }
     }
 
-    loadProfessionals()
-  }, [selectedOrgId, toast])
+    getUser()
+  }, [])
 
-  const handleDeleteClick = (professionalId: number) => {
-    setProfessionalToDelete(professionalId)
-    setDeleteDialogOpen(true)
-  }
+  // Función para cargar usuarios
+  const loadUsers = async (userProfile = profile) => {
+    if (!userProfile || usersLoaded) return
 
-  const confirmDelete = async () => {
-    if (!professionalToDelete) return
+    setUsersLoading(true)
+    setUsersError(null)
 
     try {
-      const { error } = await supabase.from("professionals").delete().eq("id", professionalToDelete)
+      // Obtener usuarios de la organización con type=1
+      const { data: usersData, error: usersError } = await supabase
+        .from("users")
+        .select("*")
+        .eq("organization_id", userProfile.organization_id)
+        .eq("type", 1)
+        .order("created_at", { ascending: false })
 
-      if (error) throw error
+      if (usersError) {
+        console.error("Error obteniendo usuarios:", usersError)
+        setUsersError("Error obteniendo usuarios: " + usersError.message)
+        setUsersLoading(false)
+        return
+      }
 
-      setProfessionals((prev) => prev.filter((professional) => professional.id !== professionalToDelete))
-      toast({
-        title: "Profesional eliminado",
-        description: "El profesional ha sido eliminado correctamente",
-      })
-    } catch (error) {
-      console.error("Error al eliminar el profesional:", error)
-      toast({
-        title: "Error",
-        description: "No se pudo eliminar el profesional",
-        variant: "destructive",
-      })
+      setUsers(usersData || [])
+      setUsersLoaded(true)
+    } catch (err: any) {
+      console.error("Error general:", err)
+      setUsersError("Error inesperado: " + err.message)
     } finally {
-      setDeleteDialogOpen(false)
-      setProfessionalToDelete(null)
+      setUsersLoading(false)
     }
+  }
+
+  // Función para generar contraseña
+  const generatePassword = () => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*"
+    let password = ""
+    for (let i = 0; i < 12; i++) {
+      password += chars.charAt(Math.floor(Math.random() * chars.length))
+    }
+    setUserForm((prev) => ({ ...prev, password }))
+  }
+
+  // Función para crear usuario
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setCreateUserLoading(true)
+    setCreateUserError("")
+    setCreateUserResult(null)
+
+    try {
+      const response = await fetch("/api/create-user-simple", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: userForm.email,
+          password: userForm.password,
+          name: userForm.name,
+          role: profile?.role === "admin" ? userForm.role : "user",
+          organizationId: profile?.organization_id,
+          type: 1, // Asegurar que sea tipo 1
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || "Error creando usuario")
+      }
+
+      setCreateUserResult(data)
+      setUserForm({ email: "", password: "", name: "", role: "user" })
+
+      // Recargar usuarios
+      setUsersLoaded(false)
+      loadUsers()
+    } catch (err: any) {
+      setCreateUserError(err.message)
+    } finally {
+      setCreateUserLoading(false)
+    }
+  }
+
+  // Función para editar usuario
+  const handleEditUser = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingUser) return
+
+    setEditUserLoading(true)
+    setEditUserError("")
+
+    try {
+      const { data, error } = await supabase
+        .from("users")
+        .update({
+          role: editingUser.role,
+          name: editingUser.name,
+        })
+        .eq("id", editingUser.id)
+        .select()
+        .single()
+
+      if (error) {
+        throw new Error(error.message)
+      }
+
+      // Actualizar la lista local
+      setUsers(users.map((u) => (u.id === editingUser.id ? { ...u, ...data } : u)))
+      setShowEditUserModal(false)
+      setEditingUser(null)
+    } catch (err: any) {
+      setEditUserError(err.message)
+    } finally {
+      setEditUserLoading(false)
+    }
+  }
+
+  // Función para resetear el modal de crear
+  const resetCreateUserModal = () => {
+    setCreateUserError("")
+    setCreateUserResult(null)
+    setUserForm({ email: "", password: "", name: "", role: "user" })
+    setShowPassword(false)
+  }
+
+  // Función para resetear el modal de editar
+  const resetEditUserModal = () => {
+    setEditUserError("")
+    setEditingUser(null)
+  }
+
+  // Función para abrir modal de edición
+  const openEditModal = (user: User) => {
+    setEditingUser({ ...user })
+    setShowEditUserModal(true)
+  }
+
+  const getRoleBadgeColor = (role: string) => {
+    switch (role) {
+      case "admin":
+        return "bg-red-100 text-red-800"
+      case "coordinador":
+        return "bg-orange-100 text-orange-800"
+      case "user":
+        return "bg-blue-100 text-blue-800"
+      default:
+        return "bg-gray-100 text-gray-800"
+    }
+  }
+
+  const getRoleLabel = (role: string) => {
+    switch (role) {
+      case "admin":
+        return "Administrador"
+      case "coordinador":
+        return "Coordinador"
+      case "user":
+        return "Usuario"
+      default:
+        return role
+    }
+  }
+
+  if (loading) {
+    return <div>Cargando profesionales...</div>
+  }
+
+  if (error) {
+    return <div>Error: {error}</div>
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Profesionales</h1>
-          <p className="text-muted-foreground">Gestiona los profesionales para asignarlos a servicios</p>
+          <h1 className="text-3xl font-bold tracking-tight">Gestión de Profesionales</h1>
+          <p className="text-muted-foreground">
+            {profile?.role === "admin"
+              ? "Administra los profesionales de tu organización"
+              : "Lista de profesionales de tu organización"}
+          </p>
         </div>
-        <Button asChild>
-          <Link href="/dashboard/professionals/new">
-            <Plus className="mr-2 h-4 w-4" />
-            Nuevo Profesional
-          </Link>
-        </Button>
-      </div>
 
-      {/* Selector de organización */}
-      <OrganizationSelector selectedOrgId={selectedOrgId} onSelectOrganization={setSelectedOrgId} className="mb-6" />
+        {profile?.role === "admin" && (
+          <Dialog
+            open={showCreateUserModal}
+            onOpenChange={(open) => {
+              setShowCreateUserModal(open)
+              if (!open) resetCreateUserModal()
+            }}
+          >
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="mr-2 h-4 w-4" />
+                Nuevo Profesional
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle>Crear Nuevo Profesional</DialogTitle>
+                <DialogDescription>
+                  Crear profesional para:{" "}
+                  <strong>
+                    {organizations.find((org) => org.id === profile?.organization_id)?.name ||
+                      `Organización ${profile?.organization_id}`}
+                  </strong>
+                </DialogDescription>
+              </DialogHeader>
 
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Nombre</TableHead>
-              <TableHead>Estado</TableHead>
-              <TableHead className="text-right">Acciones</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={3} className="h-24 text-center">
-                  Cargando profesionales...
-                </TableCell>
-              </TableRow>
-            ) : professionals.length > 0 ? (
-              professionals.map((professional) => (
-                <TableRow key={professional.id}>
-                  <TableCell className="font-medium">{professional.name}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={professional.active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}
+              <form onSubmit={handleCreateUser} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="user-email">Email</Label>
+                  <Input
+                    id="user-email"
+                    type="email"
+                    value={userForm.email}
+                    onChange={(e) => setUserForm((prev) => ({ ...prev, email: e.target.value }))}
+                    placeholder="usuario@ejemplo.com"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="user-name">Nombre completo</Label>
+                  <Input
+                    id="user-name"
+                    type="text"
+                    value={userForm.name}
+                    onChange={(e) => setUserForm((prev) => ({ ...prev, name: e.target.value }))}
+                    placeholder="Juan Pérez"
+                    required
+                  />
+                </div>
+
+                {profile?.role === "admin" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="user-role">Rol</Label>
+                    <Select
+                      value={userForm.role}
+                      onValueChange={(value: "user" | "admin" | "coordinador") =>
+                        setUserForm((prev) => ({ ...prev, role: value }))
+                      }
                     >
-                      {professional.active ? "Activo" : "Inactivo"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button variant="ghost" size="icon" asChild>
-                        <Link href={`/dashboard/professionals/${professional.id}`}>
-                          <Edit className="h-4 w-4" />
-                        </Link>
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(professional.id)}>
-                        <Trash2 className="h-4 w-4" />
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccionar rol" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="user">Usuario</SelectItem>
+                        <SelectItem value="coordinador">Coordinador</SelectItem>
+                        <SelectItem value="admin">Administrador</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Los usuarios normales solo pueden ver sus propios datos. Los coordinadores tienen acceso limitado.
+                      Los administradores pueden gestionar toda la organización.
+                    </p>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label htmlFor="user-password">Contraseña</Label>
+                  <div className="flex space-x-2">
+                    <div className="relative flex-1">
+                      <Input
+                        id="user-password"
+                        type={showPassword ? "text" : "password"}
+                        value={userForm.password}
+                        onChange={(e) => setUserForm((prev) => ({ ...prev, password: e.target.value }))}
+                        placeholder="Contraseña segura"
+                        required
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                        onClick={() => setShowPassword(!showPassword)}
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </Button>
                     </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={3} className="h-24 text-center">
-                  No hay profesionales registrados
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+                    <Button type="button" variant="outline" onClick={generatePassword}>
+                      <Shuffle className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Usa el botón de generar para crear una contraseña segura automáticamente.
+                  </p>
+                </div>
+
+                {createUserError && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{createUserError}</AlertDescription>
+                  </Alert>
+                )}
+
+                {createUserResult && (
+                  <Alert>
+                    <AlertDescription>
+                      <div className="space-y-2">
+                        <p className="font-medium text-green-800">Profesional creado exitosamente:</p>
+                        <div className="bg-white p-3 rounded border space-y-1 text-sm">
+                          <p>
+                            <strong>Email:</strong> {createUserResult.user.email}
+                          </p>
+                          <p>
+                            <strong>Nombre:</strong> {createUserResult.user.name}
+                          </p>
+                          <p>
+                            <strong>Rol:</strong> {getRoleLabel(userForm.role)}
+                          </p>
+                          <Separator className="my-2" />
+                          <p>
+                            <strong>Contraseña temporal:</strong>{" "}
+                            <code className="bg-gray-100 px-1 rounded">{userForm.password}</code>
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Asegúrate de compartir esta contraseña de forma segura con el profesional.
+                          </p>
+                        </div>
+                      </div>
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                <div className="flex justify-end space-x-2 pt-4">
+                  <Button type="button" variant="outline" onClick={() => setShowCreateUserModal(false)}>
+                    Cancelar
+                  </Button>
+                  <Button type="submit" disabled={createUserLoading}>
+                    {createUserLoading ? "Creando..." : "Crear Profesional"}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta acción no se puede deshacer. Esto eliminará permanentemente el profesional seleccionado.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} className="bg-red-600 hover:bg-red-700">
-              Eliminar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {usersLoading ? (
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+            <p className="mt-2 text-muted-foreground">Cargando profesionales...</p>
+          </div>
+        </div>
+      ) : usersError ? (
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <Shield className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <h2 className="text-xl font-semibold mb-2">Error</h2>
+            <p className="text-muted-foreground">{usersError}</p>
+            <Button className="mt-4" onClick={() => loadUsers()}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Reintentar
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {/* Estadísticas de profesionales */}
+          <div className="grid gap-4 md:grid-cols-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Profesionales</CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{users.length}</div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Administradores</CardTitle>
+                <Shield className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{users.filter((u) => u.role === "admin").length}</div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Coordinadores</CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{users.filter((u) => u.role === "coordinador").length}</div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Usuarios Regulares</CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{users.filter((u) => u.role === "user").length}</div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Lista de profesionales */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Lista de Profesionales</CardTitle>
+              <CardDescription>Todos los profesionales de tu organización</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {users.length === 0 ? (
+                <div className="text-center py-8">
+                  <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">No hay profesionales</h3>
+                  <p className="text-muted-foreground mb-4">
+                    {profile?.role === "admin"
+                      ? "Comienza agregando tu primer profesional."
+                      : "Aún no hay profesionales registrados en la organización."}
+                  </p>
+                  {profile?.role === "admin" && (
+                    <Dialog
+                      open={showCreateUserModal}
+                      onOpenChange={(open) => {
+                        setShowCreateUserModal(open)
+                        if (!open) resetCreateUserModal()
+                      }}
+                    >
+                      <DialogTrigger asChild>
+                        <Button>
+                          <Plus className="mr-2 h-4 w-4" />
+                          Crear Primer Profesional
+                        </Button>
+                      </DialogTrigger>
+                    </Dialog>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {users.map((user) => (
+                    <div key={user.id} className="flex items-center justify-between p-4 border rounded-lg">
+                      <div className="flex items-center space-x-4">
+                        <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
+                          <span className="text-sm font-medium text-primary">
+                            {user.name
+                              ?.split(" ")
+                              .map((n) => n[0])
+                              .join("")
+                              .toUpperCase() || "U"}
+                          </span>
+                        </div>
+                        <div>
+                          <h4 className="font-medium">{user.name || "Sin nombre"}</h4>
+                          <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+                            <Mail className="h-3 w-3" />
+                            <span>{user.email}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Badge className={getRoleBadgeColor(user.role)}>{getRoleLabel(user.role)}</Badge>
+                        {user.is_physia_admin && <Badge variant="outline">Super Admin</Badge>}
+                        <div className="flex items-center text-xs text-muted-foreground">
+                          <Calendar className="h-3 w-3 mr-1" />
+                          {new Date(user.created_at).toLocaleDateString()}
+                        </div>
+                        {profile?.role === "admin" && (
+                          <Button variant="ghost" size="sm" onClick={() => openEditModal(user)} className="ml-2">
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Modal de editar usuario */}
+      <Dialog
+        open={showEditUserModal}
+        onOpenChange={(open) => {
+          setShowEditUserModal(open)
+          if (!open) resetEditUserModal()
+        }}
+      >
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Editar Profesional</DialogTitle>
+            <DialogDescription>Modificar información del profesional</DialogDescription>
+          </DialogHeader>
+
+          {editingUser && (
+            <form onSubmit={handleEditUser} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-user-name">Nombre completo</Label>
+                <Input
+                  id="edit-user-name"
+                  type="text"
+                  value={editingUser.name}
+                  onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })}
+                  placeholder="Juan Pérez"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-user-email">Email (solo lectura)</Label>
+                <Input id="edit-user-email" type="email" value={editingUser.email} disabled className="bg-gray-50" />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-user-role">Rol</Label>
+                <Select
+                  value={editingUser.role}
+                  onValueChange={(value: "user" | "admin" | "coordinador") =>
+                    setEditingUser({ ...editingUser, role: value })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar rol" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="user">Usuario</SelectItem>
+                    <SelectItem value="coordinador">Coordinador</SelectItem>
+                    <SelectItem value="admin">Administrador</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Los usuarios normales solo pueden ver sus propios datos. Los coordinadores tienen acceso limitado. Los
+                  administradores pueden gestionar toda la organización.
+                </p>
+              </div>
+
+              {editUserError && (
+                <Alert variant="destructive">
+                  <AlertDescription>{editUserError}</AlertDescription>
+                </Alert>
+              )}
+
+              <div className="flex justify-end space-x-2 pt-4">
+                <Button type="button" variant="outline" onClick={() => setShowEditUserModal(false)}>
+                  Cancelar
+                </Button>
+                <Button type="submit" disabled={editUserLoading}>
+                  {editUserLoading ? "Guardando..." : "Guardar Cambios"}
+                </Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
