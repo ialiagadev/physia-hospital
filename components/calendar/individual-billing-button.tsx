@@ -27,12 +27,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null)
 
   const hasService = appointment.service?.id && appointment.service?.price
-  const hasServiceId = appointment.service_id
-  const hasServices = appointment.service?.id && appointment.service?.price
-
-  // Usar cualquiera de las dos formas de servicio
-  const serviceData = appointment.service || appointment.service
-  const finalHasService = serviceData?.id && serviceData?.price
+  const serviceData = appointment.service
 
   const validateClientData = () => {
     const client = appointment.client
@@ -84,12 +79,11 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
         "normal",
       )
 
-      // Usar precio del servicio - ACTUALIZADO
+      // Usar precio del servicio
       const servicePrice = serviceData!.price
       const invoiceLines = [
         {
           id: crypto.randomUUID(),
-          // ✅ DESCRIPCIÓN SIN ESTADO DE LA CITA
           description: `${serviceData!.name} - ${appointment.professional?.name || "Sin profesional"} (${appointment.start_time}-${appointment.end_time})`,
           quantity: 1,
           unit_price: servicePrice,
@@ -153,6 +147,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
           organization_id: userProfile.organization_id,
           invoice_number: invoiceNumberFormatted,
           client_id: appointment.client_id,
+          appointment_id: appointment.id, // ✅ NUEVO CAMPO
           issue_date: appointment.date,
           invoice_type: "normal",
           status: "sent",
@@ -294,7 +289,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
   }
 
   const checkExistingInvoice = async () => {
-    if (!userProfile?.organization_id || !appointment.client_id) {
+    if (!userProfile?.organization_id || !appointment.id) {
       setCheckingInvoice(false)
       return
     }
@@ -304,8 +299,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
         .from("invoices")
         .select("id, invoice_number, created_at")
         .eq("organization_id", userProfile.organization_id)
-        .eq("client_id", appointment.client_id)
-        .eq("issue_date", appointment.date)
+        .eq("appointment_id", appointment.id) // ✅ CAMBIO: usar appointment_id en lugar de client_id + date
         .order("created_at", { ascending: false })
         .limit(1)
 
@@ -326,16 +320,12 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
   }, [appointment.id, appointment.client_id, appointment.date, userProfile])
 
   // ✅ SI NO HAY SERVICIO, MOSTRAR MENSAJE DE ERROR
-  if (!finalHasService) {
+  if (!hasService) {
     return (
       <div className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded border border-red-200">
         <div className="flex items-center gap-1">
           <AlertTriangle className="h-3 w-3" />
-          <span>Sin servicio (ID: {appointment.service_id || "null"})</span>
-        </div>
-        <div className="text-xs mt-1">
-          service: {appointment.service ? "✅" : "❌"} | services: {appointment.service ? "✅" : "❌"} | service_id:{" "}
-          {appointment.service_id || "null"}
+          <span>Sin servicio asociado</span>
         </div>
       </div>
     )

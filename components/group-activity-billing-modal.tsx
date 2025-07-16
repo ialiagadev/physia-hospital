@@ -298,10 +298,6 @@ export function GroupActivityBillingModal({
 
       setParticipantsData(participantsWithData)
 
-      // Seleccionar automáticamente participantes con datos completos
-      // const validParticipantIds = participantsWithData.filter((p) => p.has_complete_data).map((p) => p.participant_id)
-      // setSelectedParticipants(new Set(validParticipantIds))
-
       // Verificar facturas existentes ANTES de seleccionar
       const clientIds = participantsWithData.map((p) => p.client_id)
       await checkExistingInvoices(clientIds, format(new Date(activity.date), "yyyy-MM-dd"))
@@ -317,6 +313,20 @@ export function GroupActivityBillingModal({
     }
   }
 
+  // ✅ AÑADIR useEffect para selección automática después de que ambos estados estén listos
+  useEffect(() => {
+    if (participantsData.length > 0 && !loading) {
+      // Seleccionar automáticamente participantes con datos completos Y que NO estén ya facturados
+      const participantsToSelect = participantsData
+        .filter((participant) => participant.has_complete_data && !existingInvoices.has(participant.client_id))
+        .map((participant) => participant.participant_id)
+
+      console.log("Auto-seleccionando participantes:", participantsToSelect.length)
+      setSelectedParticipants(new Set(participantsToSelect))
+    }
+  }, [participantsData, existingInvoices, loading])
+
+  // ✅ MODIFICAR checkExistingInvoices para NO hacer la selección automática aquí
   const checkExistingInvoices = async (clientIds: number[], dateStr: string) => {
     if (!userProfile?.organization_id || clientIds.length === 0) return
 
@@ -325,7 +335,7 @@ export function GroupActivityBillingModal({
         .from("invoices")
         .select("id, invoice_number, created_at, client_id")
         .eq("organization_id", userProfile.organization_id)
-        .eq("issue_date", dateStr)
+        .eq("group_activity_id", activity.id) // ✅ CAMBIO: usar group_activity_id específico
         .in("client_id", clientIds)
         .order("created_at", { ascending: true })
 
@@ -333,7 +343,7 @@ export function GroupActivityBillingModal({
 
       const invoicesMap = new Map()
       data?.forEach((invoice) => {
-        // Solo guardar la primera factura de cada cliente
+        // Solo guardar la primera factura de cada cliente para esta actividad específica
         if (!invoicesMap.has(invoice.client_id)) {
           invoicesMap.set(invoice.client_id, {
             invoice_number: invoice.invoice_number,
@@ -344,12 +354,7 @@ export function GroupActivityBillingModal({
       })
 
       setExistingInvoices(invoicesMap)
-
-      // Seleccionar automáticamente participantes con datos completos Y que NO estén ya facturados
-      const participantsToSelect = participantsData
-        .filter((participant) => participant.has_complete_data && !invoicesMap.has(participant.client_id))
-        .map((participant) => participant.participant_id)
-      setSelectedParticipants(new Set(participantsToSelect))
+      // ✅ REMOVER la selección automática de aquí - se hace en el useEffect
     } catch (error) {
       console.error("Error checking existing invoices:", error)
     }
@@ -479,9 +484,10 @@ export function GroupActivityBillingModal({
               organization_id: organizationId,
               invoice_number: invoiceNumberFormatted,
               client_id: participantData.client_id,
+              group_activity_id: activity.id, // ✅ NUEVO CAMPO
               issue_date: format(new Date(activity.date), "yyyy-MM-dd"),
               invoice_type: "normal",
-              status: "paid",
+              status: "sent",
               base_amount: baseAmount,
               vat_amount: vatAmount,
               irpf_amount: irpfAmount,
@@ -556,7 +562,7 @@ export function GroupActivityBillingModal({
               invoice_number: invoiceNumberFormatted,
               issue_date: format(new Date(activity.date), "yyyy-MM-dd"),
               invoice_type: "normal" as const,
-              status: "paid",
+              status: "sent",
               base_amount: baseAmount,
               vat_amount: vatAmount,
               irpf_amount: irpfAmount,
