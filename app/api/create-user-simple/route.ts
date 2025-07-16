@@ -2,12 +2,16 @@
 import { createClient } from "@supabase/supabase-js"
 import { NextResponse } from "next/server"
 
-const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-})
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  }
+)
 
 export async function POST(request: Request) {
   try {
@@ -18,8 +22,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Faltan datos requeridos." }, { status: 400 })
     }
 
-    // Validar rol
-    if (role && !["user", "admin"].includes(role)) {
+    // Validar rol - AQUÍ ESTÁ EL CAMBIO
+    if (role && !["user", "admin", "coordinador"].includes(role)) {
       return NextResponse.json({ error: "Rol inválido." }, { status: 400 })
     }
 

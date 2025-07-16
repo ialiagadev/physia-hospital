@@ -3,7 +3,7 @@ import type React from "react"
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
-import { Plus, Users, Mail, Calendar, Shield, RefreshCw, Eye, EyeOff, Shuffle, Edit2 } from "lucide-react"
+import { Plus, Users, Mail, Calendar, Shield, RefreshCw, Eye, EyeOff, Shuffle, Edit2, Info } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -325,7 +325,7 @@ export default function ProfessionalsPage() {
             <DialogTrigger asChild>
               <Button>
                 <Plus className="mr-2 h-4 w-4" />
-                Nuevo Profesional
+                Nuevo Usuario
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[500px]">
@@ -469,6 +469,78 @@ export default function ProfessionalsPage() {
           </Dialog>
         )}
       </div>
+
+      {/* Sección de información de roles */}
+      <Card className="bg-blue-50 border-blue-200">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-blue-900">
+            <Info className="h-5 w-5" />
+            Permisos por Rol
+          </CardTitle>
+          <CardDescription className="text-blue-700">
+            Información sobre los permisos y accesos de cada tipo de usuario
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-3">
+            {/* Usuario */}
+            <div className="bg-white p-4 rounded-lg border border-blue-200">
+              <div className="flex items-center gap-2 mb-3">
+                <Badge className="bg-blue-100 text-blue-800">Usuario</Badge>
+              </div>
+              <ul className="text-sm space-y-1 text-gray-700">
+                <li>• Acceso completo a información de clientes</li>
+                <li>• Incluye historial médico e informes</li>
+                <li>
+                  • <span className="text-red-600">No puede acceder a facturación</span>
+                </li>
+                <li>
+                  • <span className="text-red-600">No puede crear otros usuarios</span>
+                </li>
+                <li>
+                  • <span className="text-red-600">No puede acceder a configuración avanzada</span>
+                </li>
+                <li>• En fichaje: solo ve sus propios registros</li>
+              </ul>
+            </div>
+
+            {/* Coordinador */}
+            <div className="bg-white p-4 rounded-lg border border-orange-200">
+              <div className="flex items-center gap-2 mb-3">
+                <Badge className="bg-orange-100 text-orange-800">Coordinador</Badge>
+              </div>
+              <ul className="text-sm space-y-1 text-gray-700">
+                <li>• Acceso a información de clientes</li>
+                <li>
+                  • <span className="text-red-600">EXCEPTO historial médico e informes</span>
+                </li>
+                <li>• Acceso completo a facturación</li>
+                <li>
+                  • <span className="text-red-600">No puede crear otros usuarios</span>
+                </li>
+                <li>• Acceso limitado a configuración</li>
+                <li>• En fichaje: solo ve sus propios registros</li>
+              </ul>
+            </div>
+
+            {/* Administrador */}
+            <div className="bg-white p-4 rounded-lg border border-red-200">
+              <div className="flex items-center gap-2 mb-3">
+                <Badge className="bg-red-100 text-red-800">Administrador</Badge>
+              </div>
+              <ul className="text-sm space-y-1 text-gray-700">
+                <li>• Acceso completo a todas las funcionalidades</li>
+                <li>• Acceso completo a facturación</li>
+                <li>• Puede crear y gestionar otros usuarios</li>
+                <li>• Acceso a toda la información médica</li>
+                <li>• Puede configurar la organización</li>
+                <li>• En fichaje: ve todos los registros y puede aprobar/rechazar</li>
+                <li>• Gestión completa del sistema</li>
+              </ul>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {usersLoading ? (
         <div className="flex items-center justify-center min-h-[400px]">
