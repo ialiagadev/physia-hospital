@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import Link from "next/link"
-import { Calendar, Clock, User, Phone, FileText, Edit2, Trash2, Save, X, DollarSign } from "lucide-react"
+import { Calendar, Clock, User, Phone, FileText, Edit2, Trash2, Save, X, DollarSign, AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -45,6 +45,12 @@ export function AppointmentDetailsModal({
   const [isDeleting, setIsDeleting] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [availableServices, setAvailableServices] = useState<Service[]>([])
+  const [existingInvoice, setExistingInvoice] = useState<{
+    invoice_number: string
+    created_at: string
+    id: string
+  } | null>(null)
+  const [checkingInvoice, setCheckingInvoice] = useState(true)
 
   // Form states
   const [editedAppointment, setEditedAppointment] = useState<AppointmentWithDetails>(appointment)
@@ -60,6 +66,43 @@ export function AppointmentDetailsModal({
       loadAvailableServices()
     }
   }, [isEditing, userProfile])
+
+  // ✅ VERIFICAR FACTURA EXISTENTE
+  useEffect(() => {
+    if (isOpen && userProfile?.organization_id && appointment.id) {
+      checkExistingInvoice()
+    }
+  }, [isOpen, appointment.id, userProfile])
+
+  const checkExistingInvoice = async () => {
+    if (!userProfile?.organization_id || !appointment.id) {
+      setCheckingInvoice(false)
+      return
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("invoices")
+        .select("id, invoice_number, created_at")
+        .eq("organization_id", userProfile.organization_id)
+        .eq("appointment_id", appointment.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+
+      if (error) throw error
+
+      if (data && data.length > 0) {
+        setExistingInvoice(data[0])
+      } else {
+        setExistingInvoice(null)
+      }
+    } catch (error) {
+      console.error("Error checking existing invoice:", error)
+      setExistingInvoice(null)
+    } finally {
+      setCheckingInvoice(false)
+    }
+  }
 
   const loadAvailableServices = async () => {
     try {
@@ -142,10 +185,8 @@ export function AppointmentDetailsModal({
 
     const serviceId = Number.parseInt(value)
     const selectedService = availableServices.find((s) => s.id === serviceId)
-
     if (selectedService) {
       const newEndTime = calculateEndTime(editedAppointment.start_time, selectedService.duration)
-
       setEditedAppointment({
         ...editedAppointment,
         service_id: serviceId,
@@ -199,7 +240,6 @@ export function AppointmentDetailsModal({
 
       // Llamar a la función onUpdate del componente padre
       await onUpdate(updatedAppointment)
-
       setIsEditing(false)
       onClose()
     } catch (error) {
@@ -317,7 +357,13 @@ export function AppointmentDetailsModal({
                 <div className="flex items-center gap-2">
                   {!isEditing && (
                     <>
-                      <IndividualBillingButton appointment={appointment} onBillingComplete={() => {}} />
+                      <IndividualBillingButton
+                        appointment={appointment}
+                        onBillingComplete={() => {
+                          // Recargar estado de factura después de facturar
+                          checkExistingInvoice()
+                        }}
+                      />
                       <Button
                         variant="outline"
                         size="sm"
@@ -330,18 +376,40 @@ export function AppointmentDetailsModal({
                         <Edit2 className="h-4 w-4" />
                         Editar
                       </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setShowDeleteDialog(true)
-                        }}
-                        className="gap-2 text-red-600 hover:text-red-700 hover:bg-red-50"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Eliminar
-                      </Button>
+
+                      {/* ✅ MOSTRAR MENSAJE DE AVISO O BOTÓN ELIMINAR */}
+                      {checkingInvoice ? (
+                        <div className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded border border-gray-200">
+                          <div className="flex items-center gap-1">
+                            <Clock className="h-3 w-3 animate-spin" />
+                            <span>Verificando...</span>
+                          </div>
+                        </div>
+                      ) : existingInvoice ? (
+                        <div className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-200 max-w-48">
+                          <div className="flex items-center gap-1 mb-1">
+                            <AlertTriangle className="h-3 w-3" />
+                            <span className="font-medium">No se puede eliminar</span>
+                          </div>
+                          <div className="text-xs">Cita facturada #{existingInvoice.invoice_number}</div>
+                          <div className="text-xs text-gray-600">
+                            {format(new Date(existingInvoice.created_at), "dd/MM/yyyy")}
+                          </div>
+                        </div>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setShowDeleteDialog(true)
+                          }}
+                          className="gap-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Eliminar
+                        </Button>
+                      )}
                     </>
                   )}
                   <Button
@@ -645,7 +713,7 @@ export function AppointmentDetailsModal({
               {appointment.start_time}
             </p>
           </div>
-          <p className="mt-3 text-sm text-red-red-600">Esta acción no se puede deshacer.</p>
+          <p className="mt-3 text-sm text-red-600">Esta acción no se puede deshacer.</p>
           <DialogFooter className="flex gap-2 mt-4">
             <Button variant="outline" onClick={() => setShowDeleteDialog(false)} disabled={isDeleting}>
               Cancelar
