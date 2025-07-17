@@ -18,6 +18,7 @@ import {
   Zap,
   Package,
   User,
+  CreditCard,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -25,6 +26,7 @@ import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase/client"
@@ -55,9 +57,10 @@ interface ClientAppointmentData {
     consultation_name: string
     notes: string | null
     service_price?: number
-    service_vat_rate?: number // ✅ NUEVO
-    service_irpf_rate?: number // ✅ NUEVO
-    service_retention_rate?: number // ✅ NUEVO
+    service_vat_rate?: number
+    service_irpf_rate?: number
+    service_name?: string
+    service_retention_rate?: number
     status: string
     type?: "appointment" | "group_activity"
     activity_name?: string
@@ -73,6 +76,8 @@ interface ClientAppointmentData {
   missing_fields: string[]
   invoiceable_appointments: number
   invoiced_appointments: number
+  payment_method?: "tarjeta" | "efectivo" | "transferencia" | "paypal" | "bizum" | "otro"
+  payment_method_other?: string
 }
 
 interface BillingProgress {
@@ -205,14 +210,12 @@ function EnhancedProgressBar({ progress }: { progress: BillingProgress }) {
               style={{ width: `${progressPercentage}%` }}
             />
           </div>
-
           <div className="flex justify-between text-xs">
             {["validating", "generating", "creating_pdfs", "creating_zip", "completed"].map((phase, index) => {
               const isActive = progress.phase === phase
               const isCompleted =
                 ["validating", "generating", "creating_pdfs", "creating_zip", "completed"].indexOf(progress.phase) >
                 index
-
               return (
                 <div
                   key={phase}
@@ -232,7 +235,6 @@ function EnhancedProgressBar({ progress }: { progress: BillingProgress }) {
               )
             })}
           </div>
-
           <div className="bg-white/70 rounded-lg p-3 border border-blue-100">
             <p className="text-sm text-gray-700 font-medium">{progress.message}</p>
             {progress.phase === "creating_zip" && (
@@ -242,7 +244,6 @@ function EnhancedProgressBar({ progress }: { progress: BillingProgress }) {
               </div>
             )}
           </div>
-
           {progress.errors.length > 0 && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3">
               <h4 className="text-sm font-medium text-red-800 mb-2 flex items-center gap-2">
@@ -270,7 +271,6 @@ function EnhancedProgressBar({ progress }: { progress: BillingProgress }) {
 export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillingModalProps) {
   const { userProfile } = useAuth()
   const { toast } = useToast()
-
   const [clientsData, setClientsData] = useState<ClientAppointmentData[]>([])
   const [filteredClientsData, setFilteredClientsData] = useState<ClientAppointmentData[]>([])
   const [selectedClients, setSelectedClients] = useState<Set<number>>(new Set())
@@ -285,6 +285,15 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
         invoice_number: string
         created_at: string
         id: string
+      }
+    >
+  >(new Map())
+  const [clientPaymentMethods, setClientPaymentMethods] = useState<
+    Map<
+      number,
+      {
+        method: "tarjeta" | "efectivo" | "transferencia" | "paypal" | "bizum" | "otro"
+        other?: string
       }
     >
   >(new Map())
@@ -331,9 +340,19 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
     setFilteredClientsData(filtered)
   }, [clientsData, searchTerm, statusFilter, dataFilter])
 
+  const handlePaymentMethodChange = (clientId: number, method: string, other?: string) => {
+    setClientPaymentMethods((prev) => {
+      const newMap = new Map(prev)
+      newMap.set(clientId, {
+        method: method as "tarjeta" | "efectivo" | "transferencia" | "paypal" | "bizum" | "otro",
+        other: method === "otro" ? other : undefined,
+      })
+      return newMap
+    })
+  }
+
   const loadDayAppointments = async () => {
     setLoading(true)
-
     try {
       const dateStr = format(selectedDate, "yyyy-MM-dd")
 
@@ -341,36 +360,37 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
       const { data: appointments, error } = await supabase
         .from("appointments")
         .select(`
-    id,
-    start_time,
-    end_time,
-    notes,
-    status,
-    client_id,
-    clients (
-      id,
-      name,
-      tax_id,
-      address,
-      postal_code,
-      city,
-      province,
-      email,
-      phone
-    ),
-    professional:users!appointments_professional_id_fkey (
-      name
-    ),
-    consultation:consultations (
-      name
-    ),
-    services (
-      price,
-      vat_rate,
-      irpf_rate,
-      retention_rate
-    )
-  `)
+          id,
+          start_time,
+          end_time,
+          notes,
+          status,
+          client_id,
+          clients (
+            id,
+            name,
+            tax_id,
+            address,
+            postal_code,
+            city,
+            province,
+            email,
+            phone
+          ),
+          professional:users!appointments_professional_id_fkey (
+            name
+          ),
+          consultation:consultations (
+            name
+          ),
+          services (
+            name,
+            price,
+            vat_rate,
+            irpf_rate,
+            retention_rate
+          )
+        `)
         .eq("organization_id", userProfile!.organization_id)
         .eq("date", dateStr)
         .order("client_id")
@@ -471,9 +491,10 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           consultation_name: apt.consultation?.name || "Consulta general",
           notes: apt.notes,
           service_price: servicePrice,
-          service_vat_rate: apt.services?.vat_rate ?? 0, // ✅ NUEVO
-          service_irpf_rate: apt.services?.irpf_rate ?? 0, // ✅ NUEVO
-          service_retention_rate: apt.services?.retention_rate ?? 0, // ✅ NUEVO
+          service_name: apt.services?.name,
+          service_vat_rate: apt.services?.vat_rate ?? 0,
+          service_irpf_rate: apt.services?.irpf_rate ?? 0,
+          service_retention_rate: apt.services?.retention_rate ?? 0,
           status: apt.status,
           type: "appointment",
         })
@@ -533,9 +554,9 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
             consultation_name: activity.name,
             notes: null,
             service_price: servicePrice,
-            service_vat_rate: service?.vat_rate ?? 0, // ✅ NUEVO
-            service_irpf_rate: service?.irpf_rate ?? 0, // ✅ NUEVO
-            service_retention_rate: service?.retention_rate ?? 0, // ✅ NUEVO
+            service_vat_rate: service?.vat_rate ?? 0,
+            service_irpf_rate: service?.irpf_rate ?? 0,
+            service_retention_rate: service?.retention_rate ?? 0,
             status: participant.status,
             type: "group_activity",
             activity_name: activity.name,
@@ -565,7 +586,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
   const handleClientToggle = (clientId: number, checked: boolean) => {
     const clientData = clientsData.find((c) => c.client_id === clientId)
 
-    // ✅ PERMITIR SELECCIÓN SI HAY CITAS SIN FACTURAR
+    // Permitir selección si hay citas sin facturar
     if (clientData && clientData.invoiceable_appointments === 0) {
       return // No permitir si no hay citas facturables
     }
@@ -581,7 +602,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
 
   const handleSelectAll = () => {
     const validClientIds = filteredClientsData
-      .filter((client) => client.has_complete_data && client.invoiceable_appointments > 0) // ✅ CAMBIO
+      .filter((client) => client.has_complete_data && client.invoiceable_appointments > 0)
       .map((client) => client.client_id)
     setSelectedClients(new Set(validClientIds))
   }
@@ -595,6 +616,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
 
     setGenerating(true)
     setGeneratedInvoices([])
+
     const selectedClientsArray = Array.from(selectedClients)
 
     setProgress({
@@ -665,21 +687,32 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
             "normal",
           )
 
+          // Obtener método de pago específico del cliente
+          const clientPaymentInfo = clientPaymentMethods.get(clientId) || { method: "tarjeta" }
+          const paymentMethod = clientPaymentInfo.method
+          const paymentMethodOther = clientPaymentInfo.other
+
+          // Validar método de pago específico del cliente
+          if (paymentMethod === "otro" && !paymentMethodOther?.trim()) {
+            errors.push(`${clientData.client_name}: Método de pago 'Otro' sin especificar`)
+            continue
+          }
+
           // En la función generateInvoices, filtrar solo las citas no facturadas
           const invoiceLines = clientData.appointments
-            .filter((apt) => !apt.is_invoiced) // ✅ SOLO CITAS NO FACTURADAS
+            .filter((apt) => !apt.is_invoiced) // Solo citas no facturadas
             .map((apt) => ({
               id: crypto.randomUUID(),
               description:
                 apt.type === "group_activity"
                   ? `Actividad Grupal: ${apt.activity_name} - ${apt.professional_name} (${apt.start_time}-${apt.end_time})`
-                  : `${apt.consultation_name} - ${apt.professional_name} (${apt.start_time}-${apt.end_time})`,
+                  : `${apt.service_name || "Servicio médico"} - ${apt.professional_name} (${apt.start_time}-${apt.end_time})`,
               quantity: 1,
               unit_price: apt.service_price || 50,
               discount_percentage: 0,
-              vat_rate: apt.service_vat_rate ?? 0, // ✅ USAR EL IVA DEL SERVICIO
-              irpf_rate: apt.service_irpf_rate ?? 0, // ✅ USAR EL IRPF DEL SERVICIO
-              retention_rate: apt.service_retention_rate ?? 0, // ✅ USAR LA RETENCIÓN DEL SERVICIO
+              vat_rate: apt.service_vat_rate ?? 0,
+              irpf_rate: apt.service_irpf_rate ?? 0,
+              retention_rate: apt.service_retention_rate ?? 0,
               line_amount: apt.service_price || 50,
               professional_id: null,
             }))
@@ -695,6 +728,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           }, 0)
 
           const baseAmount = subtotalAmount - totalDiscountAmount
+
           const vatAmount = invoiceLines.reduce((sum, line) => {
             const lineSubtotal = line.quantity * line.unit_price
             const lineDiscount = (lineSubtotal * line.discount_percentage) / 100
@@ -722,20 +756,23 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           const totalAmount = baseAmount + vatAmount - irpfAmount - retentionAmount
 
           const clientInfoText = `Cliente: ${clientData.client_name}, CIF/NIF: ${clientData.client_tax_id}, Dirección: ${clientData.client_address}, ${clientData.client_postal_code} ${clientData.client_city}, ${clientData.client_province}`
+
           const additionalNotes = `Factura generada automáticamente para citas del ${format(selectedDate, "dd/MM/yyyy", { locale: es })} `
+
           const fullNotes = clientInfoText + "\n\n" + additionalNotes
 
+          // Incluir método de pago específico del cliente en la inserción
           const { data: invoiceData, error: invoiceError } = await supabase
             .from("invoices")
             .insert({
               organization_id: userProfile!.organization_id,
               invoice_number: invoiceNumberFormatted,
               client_id: clientId,
-              appointment_id: clientData.appointments[0]?.type === "appointment" ? clientData.appointments[0].id : null, // ✅ NUEVO
+              appointment_id: clientData.appointments[0]?.type === "appointment" ? clientData.appointments[0].id : null,
               group_activity_id:
                 clientData.appointments[0]?.type === "group_activity"
                   ? clientData.appointments[0].id.split("_")[1]
-                  : null, // ✅ NUEVO
+                  : null,
               issue_date: format(selectedDate, "yyyy-MM-dd"),
               invoice_type: "normal",
               status: "sent",
@@ -746,6 +783,8 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
               total_amount: totalAmount,
               discount_amount: totalDiscountAmount,
               notes: fullNotes,
+              payment_method: paymentMethod, // Método específico del cliente
+              payment_method_other: paymentMethod === "otro" ? paymentMethodOther : null, // Método específico del cliente
               created_by: userProfile!.id,
             })
             .select()
@@ -767,6 +806,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           }))
 
           const { error: linesError } = await supabase.from("invoice_lines").insert(invoiceLines_db)
+
           if (linesError) {
             console.error("Error saving invoice lines:", linesError)
           }
@@ -788,6 +828,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           }))
 
           try {
+            // Incluir método de pago específico del cliente en el objeto de factura para PDF
             const newInvoice = {
               id: invoiceData.id,
               invoice_number: invoiceNumberFormatted,
@@ -802,6 +843,8 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
               discount_amount: totalDiscountAmount,
               notes: fullNotes,
               signature: null,
+              payment_method: paymentMethod, // Método específico del cliente
+              payment_method_other: paymentMethod === "otro" ? paymentMethodOther : null, // Método específico del cliente
               organization: {
                 name: orgData.name,
                 tax_id: orgData.tax_id,
@@ -858,7 +901,33 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           }
 
           successCount++
-          // ✅ ACTUALIZACIÓN OPTIMISTA INMEDIATA
+
+          // ✅ AQUÍ ESTÁ LA CORRECCIÓN PRINCIPAL:
+          // Actualizar TODAS las citas del cliente como facturadas
+          setClientsData((prevClients) =>
+            prevClients.map((client) => {
+              if (client.client_id === clientId) {
+                return {
+                  ...client,
+                  appointments: client.appointments.map((apt) => ({
+                    ...apt,
+                    is_invoiced: true, // Marcar TODAS las citas como facturadas
+                    invoice_info: {
+                      invoice_number: invoiceNumberFormatted,
+                      created_at: invoiceData.created_at,
+                      id: invoiceData.id,
+                    },
+                  })),
+                  invoiceable_appointments: 0, // Ya no hay citas facturables
+                  invoiced_appointments: client.appointments.length, // Todas están facturadas
+                  total_amount: 0, // El total ahora es 0 porque todas están facturadas
+                }
+              }
+              return client
+            }),
+          )
+
+          // Actualización optimista inmediata
           setExistingInvoices((prev) =>
             new Map(prev).set(clientId, {
               invoice_number: invoiceNumberFormatted,
@@ -867,7 +936,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
             }),
           )
 
-          // ✅ REMOVER DE SELECCIONADOS
+          // Remover de seleccionados
           setSelectedClients((prev) => {
             const newSet = new Set(prev)
             newSet.delete(clientId)
@@ -932,7 +1001,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
         setGeneratedInvoices(invoicesForZip)
       }
 
-      // ✅ RE-CONSULTA FINAL PARA CONFIRMAR
+      // Re-consulta final para confirmar
       await checkExistingInvoices(
         clientsData.map((c) => c.client_id),
         format(selectedDate, "yyyy-MM-dd"),
@@ -993,6 +1062,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
       })
 
       const zipBlob = await zip.generateAsync({ type: "blob" })
+
       const dateStr = format(selectedDate, "yyyy-MM-dd")
       const zipFileName = `facturas_${dateStr}_${generatedInvoices.length}_facturas.zip`
 
@@ -1046,7 +1116,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
     if (!userProfile?.organization_id || clientIds.length === 0) return
 
     try {
-      // ✅ NUEVA LÓGICA: Verificar cada cita/actividad específicamente
+      // Nueva lógica: Verificar cada cita/actividad específicamente
       for (const client of clientsArray) {
         for (const appointment of client.appointments) {
           let query = supabase
@@ -1066,7 +1136,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           if (error) throw error
 
           if (data && data.length > 0) {
-            // ✅ MARCAR ESTA CITA ESPECÍFICA COMO FACTURADA
+            // Marcar esta cita específica como facturada
             appointment.is_invoiced = true
             appointment.invoice_info = {
               invoice_number: data[0].invoice_number,
@@ -1078,21 +1148,21 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           }
         }
 
-        // ✅ RECALCULAR TOTALES SOLO CON CITAS NO FACTURADAS
+        // Recalcular totales solo con citas no facturadas
         const nonInvoicedAppointments = client.appointments.filter((apt) => !apt.is_invoiced)
         client.total_amount = nonInvoicedAppointments.reduce((sum, apt) => sum + (apt.service_price || 50), 0)
         client.invoiceable_appointments = nonInvoicedAppointments.length
         client.invoiced_appointments = client.appointments.length - nonInvoicedAppointments.length
       }
 
-      // ✅ SELECCIONAR AUTOMÁTICAMENTE SOLO CLIENTES QUE TENGAN CITAS SIN FACTURAR
+      // Seleccionar automáticamente solo clientes que tengan citas sin facturar
       const clientsToSelect = clientsArray
         .filter((client) => client.has_complete_data && client.invoiceable_appointments > 0)
         .map((client) => client.client_id)
 
       setSelectedClients(new Set(clientsToSelect))
 
-      // ✅ ACTUALIZAR EL MAPA DE FACTURAS EXISTENTES (para compatibilidad con UI)
+      // Actualizar el mapa de facturas existentes (para compatibilidad con UI)
       const invoicesMap = new Map()
       clientsArray.forEach((client) => {
         // Solo marcar como "completamente facturado" si TODAS las citas están facturadas
@@ -1313,7 +1383,6 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
                                 {client.client_name}
                               </h3>
                             </Link>
-
                             <Link href={`/dashboard/clients/${client.client_id}`}>
                               <Button
                                 variant="ghost"
@@ -1386,6 +1455,46 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
                             </div>
                           </div>
 
+                          {/* Selector de método de pago por cliente */}
+                          {client.has_complete_data && client.invoiceable_appointments > 0 && (
+                            <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded">
+                              <div className="flex items-center gap-2 mb-2">
+                                <CreditCard className="h-4 w-4 text-blue-600" />
+                                <Label className="text-sm font-medium text-blue-900">Método de Pago</Label>
+                              </div>
+                              <div className="space-y-2">
+                                <Select
+                                  value={clientPaymentMethods.get(client.client_id)?.method || "tarjeta"}
+                                  onValueChange={(value) => handlePaymentMethodChange(client.client_id, value)}
+                                  disabled={generating}
+                                >
+                                  <SelectTrigger className="w-full bg-white">
+                                    <SelectValue placeholder="Método de pago" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="tarjeta">Tarjeta</SelectItem>
+                                    <SelectItem value="efectivo">Efectivo</SelectItem>
+                                    <SelectItem value="transferencia">Transferencia</SelectItem>
+                                    <SelectItem value="paypal">PayPal</SelectItem>
+                                    <SelectItem value="bizum">Bizum</SelectItem>
+                                    <SelectItem value="otro">Otro</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                {clientPaymentMethods.get(client.client_id)?.method === "otro" && (
+                                  <Input
+                                    placeholder="Especificar método"
+                                    value={clientPaymentMethods.get(client.client_id)?.other || ""}
+                                    onChange={(e) =>
+                                      handlePaymentMethodChange(client.client_id, "otro", e.target.value)
+                                    }
+                                    className="text-sm bg-white"
+                                    disabled={generating}
+                                  />
+                                )}
+                              </div>
+                            </div>
+                          )}
+
                           {/* Mostrar detalles de cada cita con su estado de facturación */}
                           <div className="space-y-2 mb-3">
                             {client.appointments.map((apt, index) => (
@@ -1414,7 +1523,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
                                   >
                                     {STATUS_LABELS[apt.status as keyof typeof STATUS_LABELS] || apt.status}
                                   </Badge>
-                                  {/* ✅ NUEVO: Mostrar estado de facturación por cita */}
+                                  {/* Mostrar estado de facturación por cita */}
                                   {apt.is_invoiced && (
                                     <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 text-xs">
                                       Facturada #{apt.invoice_info?.invoice_number}
@@ -1435,8 +1544,13 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
                               {client.appointments.length} cita{client.appointments.length !== 1 ? "s" : ""}/actividad
                               {client.appointments.length !== 1 ? "es" : ""}
                             </div>
-                            <div className="text-lg font-semibold text-green-600">
-                              {formatCurrency(client.total_amount)}
+                            <div className="text-right">
+                              <div className="font-semibold text-lg">
+                                {formatCurrency(client.total_amount)}
+                                {client.invoiced_appointments > 0 && (
+                                  <span className="text-xs text-gray-500 block">(Solo citas pendientes)</span>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1450,39 +1564,39 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
         </div>
 
         {/* Footer */}
-        {!loading && clientsData.length > 0 && (
-          <div className="border-t bg-gray-50 px-6 py-4">
-            <div className="flex justify-between items-center">
-              <div className="text-sm text-gray-600">
-                {selectedClients.size} clientes seleccionados • {formatCurrency(getTotalSelected())} total
-                {existingInvoices.size > 0 && (
-                  <span className="ml-2 text-yellow-600">
-                    • {existingInvoices.size} ya facturado{existingInvoices.size !== 1 ? "s" : ""} anteriormente
-                  </span>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={onClose} disabled={generating}>
-                  Cancelar
+        <div className="bg-gray-50 px-6 py-4 border-t">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-gray-600">
+              {selectedClients.size} cliente{selectedClients.size !== 1 ? "s" : ""} seleccionado
+              {selectedClients.size !== 1 ? "s" : ""} • Total: {formatCurrency(getTotalSelected())}
+            </div>
+            <div className="flex gap-2">
+              {generatedInvoices.length > 0 && (
+                <Button onClick={downloadZipAgain} variant="outline" className="bg-green-50 border-green-200">
+                  <Download className="h-4 w-4 mr-2" />
+                  Descargar ZIP ({generatedInvoices.length})
                 </Button>
-                <Button
-                  onClick={generateInvoices}
-                  disabled={selectedClients.size === 0 || generating}
-                  className="gap-2"
-                >
-                  <FileText className="h-4 w-4" />
-                  {generating ? "Generando..." : `Generar ${selectedClients.size} Facturas`}
-                </Button>
-                {progress?.phase === "completed" && generatedInvoices.length > 0 && (
-                  <Button onClick={downloadZipAgain} variant="outline" className="gap-2 bg-transparent">
-                    <Download className="h-4 w-4" />
-                    Descargar ZIP ({generatedInvoices.length})
-                  </Button>
+              )}
+              <Button
+                onClick={generateInvoices}
+                disabled={selectedClients.size === 0 || generating}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {generating ? (
+                  <>
+                    <Clock className="h-4 w-4 mr-2 animate-spin" />
+                    Generando...
+                  </>
+                ) : (
+                  <>
+                    <FileText className="h-4 w-4 mr-2" />
+                    Generar Facturas ({selectedClients.size})
+                  </>
                 )}
-              </div>
+              </Button>
             </div>
           </div>
-        )}
+        </div>
       </div>
     </div>
   )

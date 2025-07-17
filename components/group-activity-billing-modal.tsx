@@ -21,6 +21,9 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase/client"
 import { useAuth } from "@/app/contexts/auth-context"
@@ -50,6 +53,8 @@ interface ParticipantBillingData {
   status: string
   has_complete_data: boolean
   missing_fields: string[]
+  payment_method: "tarjeta" | "efectivo" | "transferencia" | "paypal" | "bizum" | "otro"
+  payment_method_other: string
 }
 
 interface BillingProgress {
@@ -247,6 +252,9 @@ export function GroupActivityBillingModal({
     >
   >(new Map())
 
+  // Agregar esta línea después de los otros useState (alrededor de la línea 200)
+  const [initialSelectionDone, setInitialSelectionDone] = useState(false)
+
   // Cargar y procesar datos de participantes
   useEffect(() => {
     if (isOpen) {
@@ -288,6 +296,8 @@ export function GroupActivityBillingModal({
           status: participant.status,
           has_complete_data: hasCompleteData,
           missing_fields: missingFields,
+          payment_method: "tarjeta", // Cambiar de "efectivo" a "tarjeta"
+          payment_method_other: "",
         }
       })
 
@@ -308,18 +318,19 @@ export function GroupActivityBillingModal({
     }
   }
 
-  // ✅ AÑADIR useEffect para selección automática después de que ambos estados estén listos
+  // Y luego reemplazar el useEffect anterior con este:
   useEffect(() => {
-    if (participantsData.length > 0 && !loading) {
-      // Seleccionar automáticamente participantes con datos completos Y que NO estén ya facturados
+    if (participantsData.length > 0 && !loading && !initialSelectionDone) {
+      // Solo seleccionar automáticamente la primera vez que se cargan los datos
       const participantsToSelect = participantsData
         .filter((participant) => participant.has_complete_data && !existingInvoices.has(participant.client_id))
         .map((participant) => participant.participant_id)
 
       console.log("Auto-seleccionando participantes:", participantsToSelect.length)
       setSelectedParticipants(new Set(participantsToSelect))
+      setInitialSelectionDone(true)
     }
-  }, [participantsData, existingInvoices, loading])
+  }, [participantsData, existingInvoices, loading, initialSelectionDone])
 
   // ✅ MODIFICAR checkExistingInvoices para NO hacer la selección automática aquí
   const checkExistingInvoices = async (clientIds: number[], dateStr: string) => {
@@ -379,6 +390,45 @@ export function GroupActivityBillingModal({
 
   const handleDeselectAll = () => {
     setSelectedParticipants(new Set())
+  }
+
+  // ✅ NUEVA FUNCIÓN: Actualizar método de pago de un participante
+  const updatePaymentMethod = (
+    participantId: string,
+    paymentMethod: "tarjeta" | "efectivo" | "transferencia" | "paypal" | "bizum" | "otro",
+    paymentMethodOther?: string,
+  ) => {
+    setParticipantsData((prev) =>
+      prev.map((participant) =>
+        participant.participant_id === participantId
+          ? {
+              ...participant,
+              payment_method: paymentMethod,
+              payment_method_other: paymentMethodOther || "",
+            }
+          : participant,
+      ),
+    )
+  }
+
+  // ✅ NUEVA FUNCIÓN: Obtener texto del método de pago
+  const getPaymentMethodText = (participant: ParticipantBillingData) => {
+    switch (participant.payment_method) {
+      case "tarjeta":
+        return "Tarjeta"
+      case "efectivo":
+        return "Efectivo"
+      case "transferencia":
+        return "Transferencia"
+      case "paypal":
+        return "PayPal"
+      case "bizum":
+        return "Bizum"
+      case "otro":
+        return `Otro: ${participant.payment_method_other || "No especificado"}`
+      default:
+        return "No especificado"
+    }
   }
 
   const generateInvoices = async () => {
@@ -474,7 +524,7 @@ export function GroupActivityBillingModal({
 
           // Preparar notas de la factura
           const clientInfoText = `Cliente: ${participantData.client_name}, CIF/NIF: ${participantData.client_tax_id}, Dirección: ${participantData.client_address}, ${participantData.client_postal_code} ${participantData.client_city}, ${participantData.client_province}`
-          const additionalNotes = `Factura generada para actividad grupal "${activity.name}" del ${format(new Date(activity.date), "dd/MM/yyyy", { locale: es })}\nServicio: ${service.name} - ${service.price}€\nEstado del participante: ${participantData.status === "attended" ? "Asistió" : "Registrado"}`
+          const additionalNotes = `Factura generada para actividad grupal "${activity.name}" del ${format(new Date(activity.date), "dd/MM/yyyy", { locale: es })}\nServicio: ${service.name} - ${service.price}€\nEstado del participante: ${participantData.status === "attended" ? "Asistió" : "Registrado"}\nMétodo de pago: ${getPaymentMethodText(participantData)}`
           const fullNotes = clientInfoText + "\n\n" + additionalNotes
 
           // Crear factura en la base de datos
@@ -495,6 +545,8 @@ export function GroupActivityBillingModal({
               total_amount: totalAmount,
               discount_amount: totalDiscountAmount,
               notes: fullNotes,
+              payment_method: participantData.payment_method, // ✅ AÑADIR MÉTODO DE PAGO
+              payment_method_other: participantData.payment_method_other || null, // ✅ AÑADIR MÉTODO DE PAGO OTRO
               created_by: userProfile!.id,
             })
             .select()
@@ -571,6 +623,8 @@ export function GroupActivityBillingModal({
               discount_amount: totalDiscountAmount,
               notes: fullNotes,
               signature: null,
+              payment_method: participantData.payment_method, // ✅ AÑADIR MÉTODO DE PAGO
+              payment_method_other: participantData.payment_method_other || null, // ✅ AÑADIR MÉTODO DE PAGO OTRO
               organization: {
                 name: orgData.name,
                 tax_id: orgData.tax_id,
@@ -997,6 +1051,45 @@ export function GroupActivityBillingModal({
                               <p>
                                 <strong>Ciudad:</strong> {participant.client_city || "No especificado"}
                               </p>
+                            </div>
+                          </div>
+
+                          {/* ✅ NUEVA SECCIÓN: Método de Pago */}
+                          <div className="mb-3 p-3 bg-gray-50 rounded-lg border">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Label className="text-sm font-medium text-gray-700">Método de Pago</Label>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <Select
+                                value={participant.payment_method}
+                                onValueChange={(
+                                  value: "tarjeta" | "efectivo" | "transferencia" | "paypal" | "bizum" | "otro",
+                                ) => updatePaymentMethod(participant.participant_id, value)}
+                                disabled={generating || existingInvoices.has(participant.client_id)}
+                              >
+                                <SelectTrigger className="h-8">
+                                  <SelectValue placeholder="Seleccionar método" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="tarjeta">Tarjeta</SelectItem>
+                                  <SelectItem value="efectivo">Efectivo</SelectItem>
+                                  <SelectItem value="transferencia">Transferencia</SelectItem>
+                                  <SelectItem value="paypal">PayPal</SelectItem>
+                                  <SelectItem value="bizum">Bizum</SelectItem>
+                                  <SelectItem value="otro">Otro</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              {participant.payment_method === "otro" && (
+                                <Input
+                                  placeholder="Especificar método..."
+                                  value={participant.payment_method_other}
+                                  onChange={(e) =>
+                                    updatePaymentMethod(participant.participant_id, "otro", e.target.value)
+                                  }
+                                  disabled={generating || existingInvoices.has(participant.client_id)}
+                                  className="h-8 text-sm"
+                                />
+                              )}
                             </div>
                           </div>
 

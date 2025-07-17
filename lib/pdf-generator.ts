@@ -46,6 +46,8 @@ export interface InvoiceData {
     phone?: string
     client_type: string
   }
+  payment_method?: "tarjeta" | "efectivo" | "transferencia" | "paypal" | "bizum" | "otro"
+  payment_method_other?: string | null
 }
 
 export interface InvoiceLine {
@@ -581,6 +583,47 @@ export async function generatePdf(
     doc.text("Importe adeudado", totalsX, yPosition)
     doc.text(`${validatedInvoice.total_amount.toFixed(2)} €`, amountX, yPosition, { align: "right" })
     yPosition += 20
+
+    // === MÉTODO DE PAGO ===
+    if (validatedInvoice.payment_method) {
+      if (yPosition > 250) {
+        doc.addPage()
+        yPosition = 30
+      }
+
+      doc.setFont("helvetica", "bold")
+      doc.setFontSize(10)
+      doc.text("Método de Pago:", 20, yPosition)
+      yPosition += 6
+
+      doc.setFont("helvetica", "normal")
+      doc.setFontSize(9)
+      let paymentMethodText = ""
+      switch (validatedInvoice.payment_method) {
+        case "tarjeta":
+          paymentMethodText = "Tarjeta"
+          break
+        case "efectivo":
+          paymentMethodText = "Efectivo"
+          break
+        case "transferencia":
+          paymentMethodText = "Transferencia"
+          break
+        case "paypal":
+          paymentMethodText = "PayPal"
+          break
+        case "bizum":
+          paymentMethodText = "Bizum"
+          break
+        case "otro":
+          paymentMethodText = `Otro: ${validatedInvoice.payment_method_other || "No especificado"}`
+          break
+        default:
+          paymentMethodText = "No especificado"
+      }
+      doc.text(paymentMethodText, 20, yPosition)
+      yPosition += 10
+    }
 
     // === NOTAS COMPACTAS ===
     if (validatedInvoice.notes && validatedInvoice.notes.trim()) {

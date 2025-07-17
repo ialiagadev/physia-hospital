@@ -173,6 +173,8 @@ export default function NewInvoicePage() {
       UnidadTramitadora: "",
       OficinaContable: "",
     },
+    payment_method: "tarjeta" as "tarjeta" | "efectivo" | "transferencia" | "paypal" | "bizum" | "otro",
+    payment_method_other: "",
   })
 
   // Calcular totales considerando descuentos por línea
@@ -1008,6 +1010,8 @@ export default function NewInvoicePage() {
           signature_url: signatureUrl,
           pdf_url: pdfUrl,
           created_by: user.id,
+          payment_method: formData.payment_method,
+          payment_method_other: formData.payment_method === "otro" ? formData.payment_method_other : null,
           ...(invoiceType === "rectificativa" && {
             original_invoice_id: originalInvoiceId,
             rectification_reason: rectificativeData.rectification_reason,
@@ -1265,6 +1269,53 @@ export default function NewInvoicePage() {
                   placeholder="Notas adicionales para la factura"
                 />
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Método de Pago</CardTitle>
+              <CardDescription>Selecciona el método de pago utilizado</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="payment_method">Método de Pago</Label>
+                <Select
+                  value={formData.payment_method}
+                  onValueChange={(value: "tarjeta" | "efectivo" | "transferencia" | "paypal" | "bizum" | "otro") =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      payment_method: value,
+                      payment_method_other: value !== "otro" ? "" : prev.payment_method_other,
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona método de pago" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="tarjeta">Tarjeta</SelectItem>
+                    <SelectItem value="efectivo">Efectivo</SelectItem>
+                    <SelectItem value="transferencia">Transferencia</SelectItem>
+                    <SelectItem value="paypal">PayPal</SelectItem>
+                    <SelectItem value="bizum">Bizum</SelectItem>
+                    <SelectItem value="otro">Otro</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {formData.payment_method === "otro" && (
+                <div className="space-y-2">
+                  <Label htmlFor="payment_method_other">Especificar método de pago</Label>
+                  <Input
+                    id="payment_method_other"
+                    value={formData.payment_method_other}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, payment_method_other: e.target.value }))}
+                    placeholder="Especifica el método de pago..."
+                    required
+                  />
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -1567,62 +1618,68 @@ export default function NewInvoicePage() {
                       </div>
                     </div>
 
-                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor={`description-${line.id}`} className="block h-5">Descripción</Label>
-                  <Input
-                    id={`description-${line.id}`}
-                    value={line.description}
-                    onChange={(e) => handleLineChange(line.id, "description", e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor={`quantity-${line.id}`} className="block h-5">Cantidad</Label>
-                  <Input
-                    id={`quantity-${line.id}`}
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={line.quantity}
-                    onChange={(e) =>
-                      handleLineChange(line.id, "quantity", Number.parseFloat(e.target.value) || 0)
-                    }
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor={`unit_price-${line.id}`} className="block h-5">Precio Unitario (€)</Label>
-                  <Input
-                    id={`unit_price-${line.id}`}
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={line.unit_price}
-                    onChange={(e) =>
-                      handleLineChange(line.id, "unit_price", Number.parseFloat(e.target.value) || 0)
-                    }
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor={`discount_percentage-${line.id}`} className="flex items-center gap-1 h-5">
-                    <Percent className="h-3 w-3" />
-                    Descuento (%)
-                  </Label>
-                  <Input
-                    id={`discount_percentage-${line.id}`}
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.01"
-                    value={line.discount_percentage}
-                    onChange={(e) =>
-                      handleLineChange(line.id, "discount_percentage", Number.parseFloat(e.target.value) || 0)
-                    }
-                  />
-                </div>
-              </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor={`description-${line.id}`} className="block h-5">
+                          Descripción
+                        </Label>
+                        <Input
+                          id={`description-${line.id}`}
+                          value={line.description}
+                          onChange={(e) => handleLineChange(line.id, "description", e.target.value)}
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor={`quantity-${line.id}`} className="block h-5">
+                          Cantidad
+                        </Label>
+                        <Input
+                          id={`quantity-${line.id}`}
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={line.quantity}
+                          onChange={(e) =>
+                            handleLineChange(line.id, "quantity", Number.parseFloat(e.target.value) || 0)
+                          }
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor={`unit_price-${line.id}`} className="block h-5">
+                          Precio Unitario (€)
+                        </Label>
+                        <Input
+                          id={`unit_price-${line.id}`}
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={line.unit_price}
+                          onChange={(e) =>
+                            handleLineChange(line.id, "unit_price", Number.parseFloat(e.target.value) || 0)
+                          }
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor={`discount_percentage-${line.id}`} className="flex items-center gap-1 h-5">
+                          <Percent className="h-3 w-3" />
+                          Descuento (%)
+                        </Label>
+                        <Input
+                          id={`discount_percentage-${line.id}`}
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          value={line.discount_percentage}
+                          onChange={(e) =>
+                            handleLineChange(line.id, "discount_percentage", Number.parseFloat(e.target.value) || 0)
+                          }
+                        />
+                      </div>
+                    </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                       <div className="space-y-2">

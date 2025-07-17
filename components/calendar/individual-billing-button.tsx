@@ -1,8 +1,21 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { FileText, Loader2, AlertTriangle, CheckCircle, Clock, Download } from "lucide-react"
+import { FileText, Loader2, AlertTriangle, CheckCircle, Clock, Download, CreditCard } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase/client"
 import { useAuth } from "@/app/contexts/auth-context"
@@ -25,6 +38,15 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
   } | null>(null)
   const [checkingInvoice, setCheckingInvoice] = useState(true)
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+
+  // Estado del formulario
+  const [formData, setFormData] = useState({
+    issue_date: new Date().toISOString().split("T")[0],
+    notes: "",
+    payment_method: "tarjeta" as "tarjeta" | "efectivo" | "transferencia" | "paypal" | "bizum" | "otro",
+    payment_method_other: "",
+  })
 
   const hasService = appointment.service?.id && appointment.service?.price
   const serviceData = appointment.service
@@ -88,9 +110,9 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
           quantity: 1,
           unit_price: servicePrice,
           discount_percentage: 0,
-          vat_rate: serviceData!.vat_rate ?? 0, // Usar el IVA del servicio (0 si es null/undefined)
-          irpf_rate: serviceData!.irpf_rate ?? 0, // Usar el IRPF del servicio
-          retention_rate: serviceData!.retention_rate ?? 0, // Usar la retención del servicio
+          vat_rate: serviceData!.vat_rate ?? 0,
+          irpf_rate: serviceData!.irpf_rate ?? 0,
+          retention_rate: serviceData!.retention_rate ?? 0,
           line_amount: servicePrice,
           professional_id: null,
         },
@@ -137,8 +159,10 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
       // Preparar datos de la factura
       const client = appointment.client!
       const clientInfoText = `Cliente: ${client.name}, CIF/NIF: ${(client as any).tax_id}, Dirección: ${(client as any).address}, ${(client as any).postal_code} ${(client as any).city}, ${(client as any).province}`
-      const additionalNotes = `Factura generada para cita del ${format(new Date(appointment.date), "dd/MM/yyyy")} - ${appointment.start_time}\nServicio: ${serviceData!.name} - ${servicePrice}€`
-      const fullNotes = clientInfoText + "\n\n" + additionalNotes
+      const additionalNotes = `Factura generada para cita del ${format(new Date(appointment.date), "dd/MM/yyyy")} - ${appointment.start_time}
+Servicio: ${serviceData!.name} - ${servicePrice}€`
+      const fullNotes =
+        clientInfoText + "\n\n" + additionalNotes + (formData.notes ? `\n\nNotas adicionales: ${formData.notes}` : "")
 
       // Crear factura en la base de datos
       const { data: invoiceData, error: invoiceError } = await supabase
@@ -148,7 +172,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
           invoice_number: invoiceNumberFormatted,
           client_id: appointment.client_id,
           appointment_id: appointment.id,
-          issue_date: appointment.date,
+          issue_date: formData.issue_date,
           invoice_type: "normal",
           status: "sent",
           base_amount: baseAmount,
@@ -158,6 +182,8 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
           total_amount: totalAmount,
           discount_amount: totalDiscountAmount,
           notes: fullNotes,
+          payment_method: formData.payment_method,
+          payment_method_other: formData.payment_method === "otro" ? formData.payment_method_other : null,
           created_by: userProfile.id,
         })
         .select()
@@ -206,7 +232,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
         const newInvoice = {
           id: invoiceData.id,
           invoice_number: invoiceNumberFormatted,
-          issue_date: appointment.date,
+          issue_date: formData.issue_date,
           invoice_type: "normal" as const,
           status: "sent",
           base_amount: baseAmount,
@@ -217,6 +243,8 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
           discount_amount: totalDiscountAmount,
           notes: fullNotes,
           signature: null,
+          payment_method: formData.payment_method,
+          payment_method_other: formData.payment_method === "otro" ? formData.payment_method_other : null,
           organization: {
             name: orgData.name,
             tax_id: orgData.tax_id,
@@ -271,7 +299,8 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
         description: `Factura ${invoiceNumberFormatted} creada correctamente (${servicePrice}€)`,
       })
 
-      // Llamar al callback si existe
+      // Cerrar modal y llamar al callback si existe
+      setIsModalOpen(false)
       if (onBillingComplete) {
         onBillingComplete()
       }
@@ -319,6 +348,13 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
   useEffect(() => {
     checkExistingInvoice()
   }, [appointment.id, appointment.client_id, appointment.date, userProfile])
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat("es-ES", {
+      style: "currency",
+      currency: "EUR",
+    }).format(amount)
+  }
 
   // Si no hay servicio, mostrar mensaje de error
   if (!hasService) {
@@ -396,15 +432,164 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
 
   // Si todo está bien, mostrar botón de facturar
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={generateInvoice}
-      disabled={generating}
-      className="gap-2 text-green-600 hover:text-green-700 hover:bg-green-50 bg-transparent"
-    >
-      {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-      {generating ? "Generando..." : "Facturar"}
-    </Button>
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setIsModalOpen(true)}
+        disabled={generating}
+        className="gap-2 text-green-600 hover:text-green-700 hover:bg-green-50 bg-transparent"
+      >
+        <FileText className="h-4 w-4" />
+        Facturar
+      </Button>
+
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Facturar Cita
+            </DialogTitle>
+            <DialogDescription>
+              Crear factura para la cita de {appointment.client.name} del{" "}
+              {format(new Date(appointment.date), "dd/MM/yyyy")} a las {appointment.start_time}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6">
+            {/* Información de la cita */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Información de la Cita</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="font-medium">Cliente:</span> {appointment.client.name}
+                  </div>
+                  <div>
+                    <span className="font-medium">Fecha:</span> {format(new Date(appointment.date), "dd/MM/yyyy")}
+                  </div>
+                  <div>
+                    <span className="font-medium">Hora:</span> {appointment.start_time} - {appointment.end_time}
+                  </div>
+                  <div>
+                    <span className="font-medium">Profesional:</span> {appointment.professional?.name}
+                  </div>
+                  {appointment.service && (
+                    <>
+                      <div>
+                        <span className="font-medium">Servicio:</span> {appointment.service.name}
+                      </div>
+                      <div>
+                        <span className="font-medium">Precio:</span> {formatCurrency(appointment.service.price)}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Datos de la factura */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Datos de la Factura</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="issue_date">Fecha de Emisión</Label>
+                  <Input
+                    id="issue_date"
+                    type="date"
+                    value={formData.issue_date}
+                    onChange={(e) => setFormData({ ...formData, issue_date: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="notes">Notas Adicionales</Label>
+                  <Textarea
+                    id="notes"
+                    value={formData.notes}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    placeholder="Notas adicionales para la factura..."
+                    rows={3}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Método de Pago */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CreditCard className="h-5 w-5" />
+                  Método de Pago
+                </CardTitle>
+                <CardDescription>Selecciona el método de pago utilizado</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="payment_method">Método de Pago</Label>
+                  <Select
+                    value={formData.payment_method}
+                    onValueChange={(value: "tarjeta" | "efectivo" | "transferencia" | "paypal" | "bizum" | "otro") =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        payment_method: value,
+                        payment_method_other: value !== "otro" ? "" : prev.payment_method_other,
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecciona método de pago" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="tarjeta">Tarjeta</SelectItem>
+                      <SelectItem value="efectivo">Efectivo</SelectItem>
+                      <SelectItem value="transferencia">Transferencia</SelectItem>
+                      <SelectItem value="paypal">PayPal</SelectItem>
+                      <SelectItem value="bizum">Bizum</SelectItem>
+                      <SelectItem value="otro">Otro</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {formData.payment_method === "otro" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="payment_method_other">Especificar método de pago</Label>
+                    <Input
+                      id="payment_method_other"
+                      value={formData.payment_method_other}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, payment_method_other: e.target.value }))}
+                      placeholder="Especifica el método de pago..."
+                      required
+                    />
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={generateInvoice} disabled={generating}>
+              {generating ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Generando...
+                </>
+              ) : (
+                "Crear Factura"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }

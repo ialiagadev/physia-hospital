@@ -21,6 +21,8 @@ interface InvoiceData {
   irpf_amount: number
   retention_amount: number
   total_amount: number
+  payment_method: string
+  payment_method_other: string
   clients?: {
     name: string
     tax_id: string
@@ -127,7 +129,6 @@ export default function InvoiceDetailPage() {
 
   const getStatusText = (status: string) => {
     switch (status) {
-      
       case "issued":
         return "Emitida"
       case "paid":
@@ -235,6 +236,18 @@ export default function InvoiceDetailPage() {
                   currentStatus={invoice.status}
                   onStatusChange={handleStatusChange}
                 />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Método de Pago</p>
+                <p>
+                  {invoice.payment_method === "tarjeta" && "Tarjeta"}
+                  {invoice.payment_method === "efectivo" && "Efectivo"}
+                  {invoice.payment_method === "transferencia" && "Transferencia"}
+                  {invoice.payment_method === "paypal" && "PayPal"}
+                  {invoice.payment_method === "bizum" && "Bizum"}
+                  {invoice.payment_method === "otro" && `Otro: ${invoice.payment_method_other || "No especificado"}`}
+                  {!invoice.payment_method && "No especificado"}
+                </p>
               </div>
             </div>
 

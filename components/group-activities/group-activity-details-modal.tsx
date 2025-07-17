@@ -289,15 +289,16 @@ export function GroupActivityDetailsModal({
                   Participantes ({currentActivity.current_participants}/{currentActivity.max_participants})
                 </h4>
                 {onAddParticipant && canAddMoreParticipants && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setShowAddParticipantModal(true)}
-                    disabled={loading || deleting}
-                  >
-                    <UserPlus className="h-3 w-3 mr-1" />
-                    Añadir
-                  </Button>
+                 <Button
+                 size="default"
+                 variant="default"
+                 onClick={() => setShowAddParticipantModal(true)}
+                 disabled={loading || deleting}
+                 className="bg-green-600 hover:bg-green-700 text-white border-green-600 hover:border-green-700"
+               >
+                 <UserPlus className="h-4 w-4 mr-2" />
+                 Añadir
+               </Button>
                 )}
               </div>
 

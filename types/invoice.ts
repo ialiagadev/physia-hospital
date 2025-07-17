@@ -23,6 +23,8 @@ export interface Invoice {
   xml_path?: string | null
   signature?: string | null
   signature_url?: string | null
+  payment_method?: "tarjeta" | "efectivo" | "transferencia" | "paypal" | "bizum" | "otro"
+  payment_method_other?: string | null
 }
 
 export interface InvoiceLine {
