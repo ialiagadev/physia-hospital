@@ -1,9 +1,16 @@
-import { addWeeks, addMonths, isAfter, isBefore } from "date-fns"
+import { addDays, addWeeks, addMonths, isAfter, isBefore } from "date-fns"
 
+// ✅ INTERFAZ ACTUALIZADA CON "daily"
 export interface RecurrenceConfig {
-  type: "weekly" | "monthly"
+  type: "daily" | "weekly" | "monthly"
   interval: number
   endDate: Date
+}
+
+export interface RecurrencePreview {
+  dates: Date[]
+  count: number
+  conflicts: Date[]
 }
 
 export class RecurrenceService {
@@ -21,6 +28,9 @@ export class RecurrenceService {
     while (dates.length < maxInstances) {
       // Calcular la siguiente fecha según el tipo de recurrencia
       switch (config.type) {
+        case "daily":
+          currentDate = addDays(currentDate, config.interval)
+          break
         case "weekly":
           currentDate = addWeeks(currentDate, config.interval)
           break
@@ -84,8 +94,17 @@ export class RecurrenceService {
       errors.push("El intervalo debe ser mayor a 0")
     }
 
-    if (config.interval > 12) {
-      errors.push("El intervalo no puede ser mayor a 12")
+    // ✅ VALIDACIONES ESPECÍFICAS POR TIPO
+    if (config.type === "daily" && config.interval > 7) {
+      errors.push("Para recurrencia diaria, el intervalo máximo es 7 días")
+    }
+
+    if (config.type === "weekly" && config.interval > 12) {
+      errors.push("Para recurrencia semanal, el intervalo máximo es 12 semanas")
+    }
+
+    if (config.type === "monthly" && config.interval > 12) {
+      errors.push("Para recurrencia mensual, el intervalo máximo es 12 meses")
     }
 
     if (!config.endDate) {
@@ -96,10 +115,19 @@ export class RecurrenceService {
       errors.push("La fecha de finalización debe ser futura")
     }
 
-    // Validar que no sea más de 2 años en el futuro
-    const twoYearsFromNow = addMonths(new Date(), 24)
-    if (config.endDate && isAfter(config.endDate, twoYearsFromNow)) {
-      errors.push("La fecha de finalización no puede ser más de 2 años en el futuro")
+    // ✅ VALIDAR LÍMITES SEGÚN EL TIPO
+    const maxEndDate =
+      config.type === "daily"
+        ? addMonths(new Date(), 6) // 6 meses para diaria
+        : config.type === "weekly"
+          ? addMonths(new Date(), 12) // 1 año para semanal
+          : addMonths(new Date(), 24) // 2 años para mensual
+
+    if (config.endDate && isAfter(config.endDate, maxEndDate)) {
+      const maxPeriod = config.type === "daily" ? "6 meses" : config.type === "weekly" ? "1 año" : "2 años"
+      errors.push(
+        `Para recurrencia ${config.type === "daily" ? "diaria" : config.type === "weekly" ? "semanal" : "mensual"}, el máximo es ${maxPeriod}`,
+      )
     }
 
     return errors
@@ -113,6 +141,12 @@ export class RecurrenceService {
     const endDateStr = endDate.toLocaleDateString("es-ES")
 
     switch (type) {
+      case "daily":
+        if (interval === 1) {
+          return `Cada día hasta el ${endDateStr}`
+        } else {
+          return `Cada ${interval} días hasta el ${endDateStr}`
+        }
       case "weekly":
         if (interval === 1) {
           return `Cada semana hasta el ${endDateStr}`
@@ -137,10 +171,36 @@ export class RecurrenceService {
     const dates = this.generateRecurringDates(startDate, config)
     return dates.length
   }
-}
 
-export interface RecurrencePreview {
-  dates: Date[]
-  count: number
-  conflicts: Date[]
+  /**
+   * ✅ NUEVA: Obtiene las opciones de intervalo según el tipo
+   */
+  static getIntervalOptions(type: "daily" | "weekly" | "monthly"): number[] {
+    switch (type) {
+      case "daily":
+        return [1, 2, 3, 4, 5, 6, 7] // Hasta una semana
+      case "weekly":
+        return [1, 2, 3, 4, 6, 8, 12] // Hasta 3 meses
+      case "monthly":
+        return [1, 2, 3, 4, 6, 12] // Hasta un año
+      default:
+        return [1]
+    }
+  }
+
+  /**
+   * ✅ NUEVA: Obtiene el límite máximo de fechas según el tipo
+   */
+  static getMaxInstances(type: "daily" | "weekly" | "monthly"): number {
+    switch (type) {
+      case "daily":
+        return 180 // ~6 meses máximo
+      case "weekly":
+        return 52 // ~1 año máximo
+      case "monthly":
+        return 24 // ~2 años máximo
+      default:
+        return 50
+    }
+  }
 }

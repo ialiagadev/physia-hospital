@@ -133,18 +133,16 @@ export function CalendarHeader({
 
         {/* Right section - Actions and View */}
         <div className="flex items-center gap-2">
-          {/* Billing button - only show for day view */}
-          {view === "day" && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setBillingModalOpen(true)}
-              className="gap-2 text-green-600 hover:text-green-700 hover:bg-green-50 bg-transparent"
-            >
-              <FileText className="h-4 w-4" />
-              Facturar Día
-            </Button>
-          )}
+          {/* Billing button - now always visible */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setBillingModalOpen(true)}
+            className="gap-2 text-green-600 hover:text-green-700 hover:bg-green-50 bg-transparent"
+          >
+            <FileText className="h-4 w-4" />
+            Facturar Día
+          </Button>
 
           <Button onClick={onNewAppointment} size="sm" className="gap-2 bg-blue-600 hover:bg-blue-700">
             <Plus className="h-4 w-4" />

@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase/client"
 import type { AppointmentWithDetails, AppointmentInsert, AppointmentUpdate } from "@/types/calendar"
-import { RecurrenceService } from "./recurrence-service"
+import { RecurrenceService, type RecurrenceConfig } from "./recurrence-service"
 import { format } from "date-fns"
 
 export class AppointmentService {
@@ -9,6 +9,7 @@ export class AppointmentService {
     startDate?: string,
     endDate?: string,
     professionalIds?: string[],
+    organizationId?: number,
   ): Promise<AppointmentWithDetails[]> {
     let query = supabase
       .from("appointments")
@@ -23,6 +24,11 @@ export class AppointmentService {
       `)
       .order("date", { ascending: true })
       .order("start_time", { ascending: true })
+
+    // Filtrar por organización si se proporciona
+    if (organizationId) {
+      query = query.eq("organization_id", organizationId)
+    }
 
     // Filtrar por rango de fechas
     if (startDate && endDate) {
@@ -91,12 +97,23 @@ export class AppointmentService {
       throw new Error("Configuración de recurrencia incompleta")
     }
 
+    // ✅ VALIDAR TIPO DE RECURRENCIA
+    if (!["daily", "weekly", "monthly"].includes(appointment.recurrence_type)) {
+      throw new Error(`Tipo de recurrencia no válido: ${appointment.recurrence_type}`)
+    }
+
     // Generar fechas de la serie
     const startDate = new Date(appointment.date)
-    const config = {
-      type: appointment.recurrence_type,
+    const config: RecurrenceConfig = {
+      type: appointment.recurrence_type as "daily" | "weekly" | "monthly",
       interval: appointment.recurrence_interval || 1,
       endDate: new Date(appointment.recurrence_end_date),
+    }
+
+    // ✅ VALIDAR CONFIGURACIÓN ANTES DE GENERAR
+    const validationErrors = RecurrenceService.validateRecurrenceConfig(config)
+    if (validationErrors.length > 0) {
+      throw new Error(`Configuración de recurrencia inválida: ${validationErrors.join(", ")}`)
     }
 
     const recurringDates = RecurrenceService.generateRecurringDates(startDate, config)
@@ -105,7 +122,13 @@ export class AppointmentService {
       throw new Error("No se pudieron generar fechas para la recurrencia")
     }
 
-    console.log(`Creating ${recurringDates.length} individual appointments for recurrence`)
+    // ✅ LÍMITE DE SEGURIDAD
+    const maxInstances = RecurrenceService.getMaxInstances(config.type)
+    if (recurringDates.length > maxInstances) {
+      throw new Error(`Demasiadas citas para crear (${recurringDates.length}). Máximo permitido: ${maxInstances}`)
+    }
+
+    console.log(`Creating ${recurringDates.length} individual appointments for ${config.type} recurrence`)
 
     // Crear una cita individual para cada fecha (SIN campos de recurrencia)
     const appointmentsToCreate = recurringDates.map((date) => {
@@ -123,29 +146,43 @@ export class AppointmentService {
       return cleanAppointment
     })
 
-    // Insertar todas las citas de una vez
-    const { data, error } = await supabase
-      .from("appointments")
-      .insert(appointmentsToCreate)
-      .select(`
-        *,
-        client:clients(*),
-        professional:users!appointments_professional_id_fkey(*),
-        appointment_type:appointment_types(*),
-        consultation:consultations(*),
-        service:services(*),
-        created_by_user:users!appointments_created_by_fkey(*)
-      `)
+    // ✅ INSERTAR EN LOTES PARA EVITAR TIMEOUTS
+    const batchSize = 50
+    const allCreatedAppointments: AppointmentWithDetails[] = []
 
-    if (error) {
-      console.error("Error creating recurring appointments:", error)
-      throw error
+    for (let i = 0; i < appointmentsToCreate.length; i += batchSize) {
+      const batch = appointmentsToCreate.slice(i, i + batchSize)
+
+      const { data, error } = await supabase
+        .from("appointments")
+        .insert(batch)
+        .select(`
+          *,
+          client:clients(*),
+          professional:users!appointments_professional_id_fkey(*),
+          appointment_type:appointment_types(*),
+          consultation:consultations(*),
+          service:services(*),
+          created_by_user:users!appointments_created_by_fkey(*)
+        `)
+
+      if (error) {
+        console.error(`Error creating batch ${i / batchSize + 1}:`, error)
+        throw error
+      }
+
+      allCreatedAppointments.push(...(data as AppointmentWithDetails[]))
+
+      // Pequeña pausa entre lotes
+      if (i + batchSize < appointmentsToCreate.length) {
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
     }
 
-    console.log(`Successfully created ${data.length} appointments`)
+    console.log(`Successfully created ${allCreatedAppointments.length} appointments`)
 
     // Retornar la primera cita como referencia
-    return data[0] as AppointmentWithDetails
+    return allCreatedAppointments[0]
   }
 
   // Actualizar cita
@@ -183,6 +220,20 @@ export class AppointmentService {
     }
   }
 
+  // ✅ NUEVA: Eliminar múltiples citas (para series recurrentes)
+  static async deleteMultipleAppointments(appointmentIds: string[]): Promise<void> {
+    if (appointmentIds.length === 0) return
+
+    const { error } = await supabase.from("appointments").delete().in("id", appointmentIds)
+
+    if (error) {
+      console.error("Error deleting multiple appointments:", error)
+      throw error
+    }
+
+    console.log(`Successfully deleted ${appointmentIds.length} appointments`)
+  }
+
   // Verificar disponibilidad (ahora incluye consulta)
   static async checkAvailability(
     professionalId: string,
@@ -205,20 +256,30 @@ export class AppointmentService {
       professionalQuery = professionalQuery.neq("id", excludeAppointmentId)
     }
 
-    // Verificar disponibilidad de la consulta
-    let consultationQuery = supabase
-      .from("appointments")
-      .select("id")
-      .eq("consultation_id", consultationId)
-      .eq("date", date)
-      .neq("status", "cancelled")
-      .or(`start_time.lt.${endTime},end_time.gt.${startTime}`)
+    // Verificar disponibilidad de la consulta (solo si se especifica)
+    let consultationQuery = null
+    if (consultationId && consultationId !== "none") {
+      consultationQuery = supabase
+        .from("appointments")
+        .select("id")
+        .eq("consultation_id", consultationId)
+        .eq("date", date)
+        .neq("status", "cancelled")
+        .or(`start_time.lt.${endTime},end_time.gt.${startTime}`)
 
-    if (excludeAppointmentId) {
-      consultationQuery = consultationQuery.neq("id", excludeAppointmentId)
+      if (excludeAppointmentId) {
+        consultationQuery = consultationQuery.neq("id", excludeAppointmentId)
+      }
     }
 
-    const [professionalResult, consultationResult] = await Promise.all([professionalQuery, consultationQuery])
+    const queries = [professionalQuery]
+    if (consultationQuery) {
+      queries.push(consultationQuery)
+    }
+
+    const results = await Promise.all(queries)
+    const professionalResult = results[0]
+    const consultationResult = results[1] || { data: [], error: null }
 
     if (professionalResult.error || consultationResult.error) {
       console.error("Error checking availability:", {
@@ -232,5 +293,50 @@ export class AppointmentService {
       professionalAvailable: professionalResult.data.length === 0,
       consultationAvailable: consultationResult.data.length === 0,
     }
+  }
+
+  // ✅ NUEVA: Verificar conflictos para múltiples fechas (para recurrencia)
+  static async checkMultipleAvailability(
+    professionalId: string,
+    consultationId: string,
+    dates: string[],
+    startTime: string,
+    endTime: string,
+  ): Promise<{ date: string; available: boolean; conflicts: any[] }[]> {
+    const results = []
+
+    for (const date of dates) {
+      try {
+        const availability = await this.checkAvailability(professionalId, consultationId, date, startTime, endTime)
+
+        // Si hay conflictos, obtener detalles
+        let conflicts: any[] = []
+        if (!availability.professionalAvailable || !availability.consultationAvailable) {
+          const { data } = await supabase
+            .from("appointments")
+            .select("id, start_time, end_time, client:clients(name)")
+            .eq("professional_id", professionalId)
+            .eq("date", date)
+            .neq("status", "cancelled")
+            .or(`start_time.lt.${endTime},end_time.gt.${startTime}`)
+
+          conflicts = data || []
+        }
+
+        results.push({
+          date,
+          available: availability.professionalAvailable && availability.consultationAvailable,
+          conflicts,
+        })
+      } catch (error) {
+        results.push({
+          date,
+          available: false,
+          conflicts: [],
+        })
+      }
+    }
+
+    return results
   }
 }

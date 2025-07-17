@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect, useMemo } from "react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
@@ -14,9 +13,9 @@ import { CalendarDays, Clock, AlertTriangle } from "lucide-react"
 import { format, addDays, addWeeks, addMonths, isAfter, isValid, parse } from "date-fns"
 import { es } from "date-fns/locale"
 
-// ✅ TIPOS CORREGIDOS
+// ✅ TIPOS CORREGIDOS - Añadida opción "daily"
 export interface GroupActivityRecurrenceConfig {
-  type: "weekly" | "monthly"
+  type: "daily" | "weekly" | "monthly"
   interval: number
   endType: "date" | "count"
   endDate: Date
@@ -36,7 +35,6 @@ interface RecurrenceConfigComponentProps {
 // ✅ FUNCIONES SIMPLIFICADAS PARA LA MÁSCARA DE FECHA
 const formatDateMask = (value: string): string => {
   const numbers = value.replace(/\D/g, "").slice(0, 8)
-
   if (numbers.length <= 2) return numbers
   if (numbers.length <= 4) return `${numbers.slice(0, 2)}/${numbers.slice(2)}`
   return `${numbers.slice(0, 2)}/${numbers.slice(2, 4)}/${numbers.slice(4)}`
@@ -44,7 +42,6 @@ const formatDateMask = (value: string): string => {
 
 const parseDateFromMask = (maskedValue: string): Date | null => {
   const numbers = maskedValue.replace(/\D/g, "")
-
   if (numbers.length !== 8) return null
 
   const day = numbers.slice(0, 2)
@@ -114,7 +111,10 @@ export function RecurrenceConfigComponent({
     while (dates.length < maxDates) {
       dates.push(new Date(currentDate))
 
-      if (localConfig.type === "weekly") {
+      // ✅ Añadida lógica para recurrencia diaria
+      if (localConfig.type === "daily") {
+        currentDate = addDays(currentDate, localConfig.interval)
+      } else if (localConfig.type === "weekly") {
         currentDate = addWeeks(currentDate, localConfig.interval)
       } else if (localConfig.type === "monthly") {
         currentDate = addMonths(currentDate, localConfig.interval)
@@ -123,6 +123,7 @@ export function RecurrenceConfigComponent({
       if (localConfig.endType === "date" && isAfter(currentDate, localConfig.endDate)) {
         break
       }
+
       if (localConfig.endType === "count" && dates.length >= (localConfig.count || 1)) {
         break
       }
@@ -134,7 +135,6 @@ export function RecurrenceConfigComponent({
   const updateConfig = (newConfig: Partial<GroupActivityRecurrenceConfig>) => {
     const updatedConfig = { ...localConfig, ...newConfig }
     setLocalConfig(updatedConfig)
-
     if (isEnabled) {
       onConfigChange(updatedConfig)
     }
@@ -152,7 +152,6 @@ export function RecurrenceConfigComponent({
   const handleDateInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const inputValue = e.target.value
     const maskedValue = formatDateMask(inputValue)
-
     setDateInputValue(maskedValue)
 
     // Solo intentar parsear si tenemos 8 dígitos
@@ -176,11 +175,26 @@ export function RecurrenceConfigComponent({
     }
   }
 
+  // ✅ Función actualizada para incluir "diaria"
   const getFrequencyLabel = () => {
+    if (localConfig.type === "daily") {
+      return localConfig.interval === 1 ? "día" : `${localConfig.interval} días`
+    }
     if (localConfig.type === "weekly") {
       return localConfig.interval === 1 ? "semana" : `${localConfig.interval} semanas`
     }
     return localConfig.interval === 1 ? "mes" : `${localConfig.interval} meses`
+  }
+
+  // ✅ Función para obtener las opciones de intervalo según el tipo
+  const getIntervalOptions = () => {
+    if (localConfig.type === "daily") {
+      return [1, 2, 3, 4, 5, 6, 7] // Hasta una semana
+    }
+    if (localConfig.type === "weekly") {
+      return [1, 2, 3, 4] // Hasta un mes
+    }
+    return [1, 2, 3, 4, 6, 12] // Hasta un año para mensual
   }
 
   const minDateFormatted = format(addDays(startDate, 1), "dd/MM/yyyy")
@@ -219,18 +233,22 @@ export function RecurrenceConfigComponent({
                 <Label>Frecuencia</Label>
                 <Select
                   value={localConfig.type}
-                  onValueChange={(value: "weekly" | "monthly") => updateConfig({ type: value })}
+                  onValueChange={(value: "daily" | "weekly" | "monthly") => {
+                    // Ajustar el intervalo por defecto según el tipo
+                    const defaultInterval = value === "daily" ? 1 : value === "weekly" ? 1 : 1
+                    updateConfig({ type: value, interval: defaultInterval })
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="daily">Diaria</SelectItem>
                     <SelectItem value="weekly">Semanal</SelectItem>
                     <SelectItem value="monthly">Mensual</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-
               <div className="space-y-2">
                 <Label>Cada</Label>
                 <Select
@@ -241,16 +259,20 @@ export function RecurrenceConfigComponent({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {[1, 2, 3, 4].map((num) => (
+                    {getIntervalOptions().map((num) => (
                       <SelectItem key={num} value={num.toString()}>
                         {num}{" "}
-                        {localConfig.type === "weekly"
+                        {localConfig.type === "daily"
                           ? num === 1
-                            ? "semana"
-                            : "semanas"
-                          : num === 1
-                            ? "mes"
-                            : "meses"}
+                            ? "día"
+                            : "días"
+                          : localConfig.type === "weekly"
+                            ? num === 1
+                              ? "semana"
+                              : "semanas"
+                            : num === 1
+                              ? "mes"
+                              : "meses"}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -275,6 +297,7 @@ export function RecurrenceConfigComponent({
                     En fecha específica
                   </Label>
                 </div>
+
                 {localConfig.endType === "date" && (
                   <div className="ml-6 space-y-2">
                     <div className="flex gap-2">
@@ -333,12 +356,13 @@ export function RecurrenceConfigComponent({
                     Después de un número de sesiones
                   </Label>
                 </div>
+
                 {localConfig.endType === "count" && (
                   <div className="ml-6 flex items-center space-x-2">
                     <Input
                       type="number"
                       min="1"
-                      max="52"
+                      max={localConfig.type === "daily" ? "365" : "52"}
                       value={localConfig.count || 5}
                       onChange={(e) => updateConfig({ count: Number.parseInt(e.target.value) || 1 })}
                       className="w-20"
@@ -357,7 +381,10 @@ export function RecurrenceConfigComponent({
                   <Label className="text-sm font-medium">Vista previa ({previewDates.length} sesiones)</Label>
                 </div>
 
-                {previewDates.length > 10 && (
+                {/* ✅ Alerta ajustada para recurrencia diaria */}
+                {((localConfig.type === "daily" && previewDates.length > 30) ||
+                  (localConfig.type === "weekly" && previewDates.length > 10) ||
+                  (localConfig.type === "monthly" && previewDates.length > 12)) && (
                   <Alert>
                     <AlertTriangle className="h-4 w-4" />
                     <AlertDescription>

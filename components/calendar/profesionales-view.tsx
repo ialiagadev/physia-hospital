@@ -293,10 +293,7 @@ export function ProfesionalesView({
           <h2 className="text-2xl font-bold">Gestión de Profesionales</h2>
           <p className="text-sm text-muted-foreground">{filteredProfesionales.length} profesionales disponibles</p>
         </div>
-        <Button onClick={() => setShowAddModal(true)} className="gap-2">
-          <Plus className="h-4 w-4" />
-          Añadir Profesional
-        </Button>
+       
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -524,6 +521,8 @@ export function ProfesionalesView({
       <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
         <DialogContent>
           <DialogHeader>
+
+
             <DialogTitle>Añadir Profesional</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">

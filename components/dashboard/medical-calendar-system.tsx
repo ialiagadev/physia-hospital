@@ -783,8 +783,8 @@ if (appointmentData.clienteEncontrado) {
                           <Plus className="h-4 w-4" />
                         </Button>
 
-                        {/* ✅ BOTÓN FACTURAR DÍA MEJORADO - Solo en vista día y si hay citas */}
-                        {vistaCalendario === "dia" && hasAppointmentsToday() && (
+                        {/* ✅ BOTÓN FACTURAR DÍA MEJORADO  */}
+                        {vistaCalendario === "dia" && (
                           <Button
                             onClick={() => setShowDailyBillingModal(true)}
                             size="sm"

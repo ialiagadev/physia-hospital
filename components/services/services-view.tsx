@@ -4,8 +4,19 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Edit, Trash2, Euro, Clock, Tag } from "lucide-react"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { Plus, Edit, Trash2, Euro, Clock, Tag, AlertTriangle } from "lucide-react"
 import { useServices } from "@/hooks/use-services"
+import { useToast } from "@/hooks/use-toast"
 import { ServiceFormModal } from "./services-form-modal"
 import type { Service } from "@/types/services"
 
@@ -16,18 +27,43 @@ interface ServicesViewProps {
 
 export function ServicesView({ organizationId, onRefreshServices }: ServicesViewProps) {
   const { services, loading, error, deleteService } = useServices(organizationId)
+  const { toast } = useToast()
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingService, setEditingService] = useState<Service | null>(null)
+  const [deletingServiceId, setDeletingServiceId] = useState<number | null>(null)
+  const [serviceToDelete, setServiceToDelete] = useState<Service | null>(null)
 
-  const handleDeleteService = async (service: Service) => {
-    if (window.confirm(`¿Estás seguro de que quieres eliminar el servicio "${service.name}"?`)) {
-      try {
-        await deleteService(service.id)
-        onRefreshServices?.()
-      } catch (error) {
-        console.error("Error deleting service:", error)
-      }
+  const handleDeleteClick = (service: Service) => {
+    setServiceToDelete(service)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!serviceToDelete) return
+
+    setDeletingServiceId(serviceToDelete.id)
+    try {
+      await deleteService(serviceToDelete.id)
+      toast({
+        title: "✅ Servicio eliminado",
+        description: `El servicio "${serviceToDelete.name}" ha sido eliminado correctamente.`,
+        variant: "default",
+      })
+      onRefreshServices?.()
+    } catch (error) {
+      console.error("Error deleting service:", error)
+      toast({
+        title: "❌ Error al eliminar",
+        description: `No se pudo eliminar el servicio "${serviceToDelete.name}". Inténtalo de nuevo.`,
+        variant: "destructive",
+      })
+    } finally {
+      setDeletingServiceId(null)
+      setServiceToDelete(null)
     }
+  }
+
+  const handleCancelDelete = () => {
+    setServiceToDelete(null)
   }
 
   const formatPrice = (price: number) => {
@@ -119,10 +155,15 @@ export function ServicesView({ organizationId, onRefreshServices }: ServicesView
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleDeleteService(service)}
+                      onClick={() => handleDeleteClick(service)}
+                      disabled={deletingServiceId === service.id}
                       className="text-red-600 hover:text-red-700"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      {deletingServiceId === service.id ? (
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600"></div>
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
                     </Button>
                   </div>
                 </div>
@@ -164,6 +205,45 @@ export function ServicesView({ organizationId, onRefreshServices }: ServicesView
           ))}
         </div>
       )}
+
+      {/* Modal de confirmación para eliminar */}
+      <AlertDialog open={!!serviceToDelete} onOpenChange={() => setServiceToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+              <AlertDialogTitle>Confirmar eliminación</AlertDialogTitle>
+            </div>
+            <AlertDialogDescription>
+              ¿Estás seguro de que quieres eliminar el servicio{" "}
+              <span className="font-semibold text-gray-900">"{serviceToDelete?.name}"</span>?
+              <br />
+              <br />
+              <span className="text-red-600 font-medium">Esta acción no se puede deshacer.</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleCancelDelete}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+              disabled={!!deletingServiceId}
+            >
+              {deletingServiceId ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Eliminando...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Eliminar servicio
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Modal para crear servicio */}
       {showCreateModal && (

@@ -158,7 +158,7 @@ export function AppointmentFormModal({
         : services.length > 0
           ? services[0].id
           : null,
-    // 🆕 CAMPOS PARA RECURRENCIA
+    // 🆕 CAMPOS PARA RECURRENCIA - Añadida opción "daily"
     isRecurring: citaExistente?.isRecurring || false,
     recurrenceType: citaExistente?.recurrenceType || "weekly",
     recurrenceInterval: citaExistente?.recurrenceInterval || 1,
@@ -173,7 +173,7 @@ export function AppointmentFormModal({
     if (formData.isRecurring && formData.recurrenceType && formData.recurrenceEndDate) {
       try {
         const config: RecurrenceConfig = {
-          type: formData.recurrenceType as "weekly" | "monthly",
+          type: formData.recurrenceType as "daily" | "weekly" | "monthly", // ✅ Añadida "daily"
           interval: formData.recurrenceInterval,
           endDate: formData.recurrenceEndDate,
         }
@@ -204,7 +204,6 @@ export function AppointmentFormModal({
       const endTime = calcularHoraFin(formData.hora, formData.duracion)
       // 🔧 USAR FECHA LOCAL CORRECTAMENTE
       const dateString = formatDateForInput(formData.fecha)
-
       const available = await getAvailableConsultations(
         dateString,
         formData.hora,
@@ -297,14 +296,15 @@ export function AppointmentFormModal({
     const availableUsers = getAvailableUsers(usersToFilter, formData.fecha)
     setFilteredUsers(availableUsers)
 
-  // Si el profesional seleccionado ya no está disponible, resetear
-// PERO NO resetear si viene preseleccionado desde el calendario
-if (formData.profesionalId &&
-  formData.profesionalId !== profesionalId && // ✅ No resetear si viene del calendario
-  !availableUsers.find((user) => Number.parseInt(user.id.slice(-8), 16) === formData.profesionalId)
-) {
-setFormData((prev) => ({ ...prev, profesionalId: profesionalId || 0 }))
-}
+    // Si el profesional seleccionado ya no está disponible, resetear
+    // PERO NO resetear si viene preseleccionado desde el calendario
+    if (
+      formData.profesionalId &&
+      formData.profesionalId !== profesionalId && // ✅ No resetear si viene del calendario
+      !availableUsers.find((user) => Number.parseInt(user.id.slice(-8), 16) === formData.profesionalId)
+    ) {
+      setFormData((prev) => ({ ...prev, profesionalId: profesionalId || 0 }))
+    }
   }, [formData.service_id, formData.fecha, formData.profesionalId, users, getUsersByService, getAvailableUsers])
 
   // Función para buscar clientes
@@ -392,6 +392,7 @@ setFormData((prev) => ({ ...prev, profesionalId: profesionalId || 0 }))
     if (consultationCheckTimeoutRef.current) {
       clearTimeout(consultationCheckTimeoutRef.current)
     }
+
     consultationCheckTimeoutRef.current = setTimeout(() => {
       checkConsultationAvailability()
     }, 300)
@@ -531,12 +532,7 @@ setFormData((prev) => ({ ...prev, profesionalId: profesionalId || 0 }))
 
   // 🆕 Verificar si el botón debe estar deshabilitado
   const isSubmitDisabled = useCallback(() => {
-    return (
-      searchingClients ||
-      consultationsLoading ||
-      conflictsLoading ||
-      conflicts.length > 0
-    )
+    return searchingClients || consultationsLoading || conflictsLoading || conflicts.length > 0
   }, [searchingClients, consultationsLoading, conflictsLoading, conflicts.length])
 
   const handleSubmit = useCallback(
@@ -572,13 +568,14 @@ setFormData((prev) => ({ ...prev, profesionalId: profesionalId || 0 }))
         if (!formData.recurrenceEndDate) {
           newErrors.recurrenceEndDate = "Debes seleccionar una fecha de finalización"
         }
+
         if (formData.recurrenceInterval < 1 || formData.recurrenceInterval > 12) {
           newErrors.recurrenceInterval = "El intervalo debe estar entre 1 y 12"
         }
 
         // Validar usando el servicio de recurrencia
         const config: RecurrenceConfig = {
-          type: formData.recurrenceType as "weekly" | "monthly",
+          type: formData.recurrenceType as "daily" | "weekly" | "monthly", // ✅ Añadida "daily"
           interval: formData.recurrenceInterval,
           endDate: formData.recurrenceEndDate,
         }
@@ -721,9 +718,7 @@ setFormData((prev) => ({ ...prev, profesionalId: profesionalId || 0 }))
                 onFocus={() => searchTerm && searchClients(searchTerm)}
                 placeholder="Buscar por teléfono (3+ dígitos), nombre o apellido..."
                 required
-                className={`w-full ${errors.telefono ? "border-red-500" : ""} ${
-                  clienteEncontrado ? "border-green-500" : ""
-                }`}
+                className={`w-full ${errors.telefono ? "border-red-500" : ""} ${clienteEncontrado ? "border-green-500" : ""}`}
               />
               {searchingClients && (
                 <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 animate-spin text-gray-400" />
@@ -960,6 +955,7 @@ setFormData((prev) => ({ ...prev, profesionalId: profesionalId || 0 }))
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="daily">Diaria</SelectItem>
                         <SelectItem value="weekly">Semanal</SelectItem>
                         <SelectItem value="monthly">Mensual</SelectItem>
                       </SelectContent>
@@ -968,7 +964,12 @@ setFormData((prev) => ({ ...prev, profesionalId: profesionalId || 0 }))
 
                   <div>
                     <Label htmlFor="recurrenceInterval">
-                      Cada {formData.recurrenceType === "weekly" ? "semanas" : "meses"}
+                      Cada{" "}
+                      {formData.recurrenceType === "daily"
+                        ? "días"
+                        : formData.recurrenceType === "weekly"
+                          ? "semanas"
+                          : "meses"}
                     </Label>
                     <Select
                       value={formData.recurrenceInterval.toString()}
@@ -978,18 +979,24 @@ setFormData((prev) => ({ ...prev, profesionalId: profesionalId || 0 }))
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {[1, 2, 3, 4, 6, 8, 12].map((interval) => (
-                          <SelectItem key={interval} value={interval.toString()}>
-                            {interval}{" "}
-                            {formData.recurrenceType === "weekly"
-                              ? interval === 1
-                                ? "semana"
-                                : "semanas"
-                              : interval === 1
-                                ? "mes"
-                                : "meses"}
-                          </SelectItem>
-                        ))}
+                        {/* ✅ Opciones ajustadas según el tipo */}
+                        {formData.recurrenceType === "daily"
+                          ? [1, 2, 3, 4, 5, 6, 7].map((interval) => (
+                              <SelectItem key={interval} value={interval.toString()}>
+                                {interval} {interval === 1 ? "día" : "días"}
+                              </SelectItem>
+                            ))
+                          : formData.recurrenceType === "weekly"
+                            ? [1, 2, 3, 4].map((interval) => (
+                                <SelectItem key={interval} value={interval.toString()}>
+                                  {interval} {interval === 1 ? "semana" : "semanas"}
+                                </SelectItem>
+                              ))
+                            : [1, 2, 3, 4, 6, 8, 12].map((interval) => (
+                                <SelectItem key={interval} value={interval.toString()}>
+                                  {interval} {interval === 1 ? "mes" : "meses"}
+                                </SelectItem>
+                              ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -1028,6 +1035,7 @@ setFormData((prev) => ({ ...prev, profesionalId: profesionalId || 0 }))
                       Se crearán <strong>{recurrencePreview.count}</strong> citas hasta el{" "}
                       <strong>{format(formData.recurrenceEndDate, "dd/MM/yyyy")}</strong>
                     </p>
+
                     {recurrencePreview.conflicts.length > 0 && (
                       <Alert className="mb-2">
                         <AlertTriangle className="h-4 w-4" />
@@ -1036,6 +1044,7 @@ setFormData((prev) => ({ ...prev, profesionalId: profesionalId || 0 }))
                         </AlertDescription>
                       </Alert>
                     )}
+
                     {showRecurrencePreview && (
                       <div className="max-h-32 overflow-y-auto">
                         <div className="grid grid-cols-3 gap-1 text-xs">
