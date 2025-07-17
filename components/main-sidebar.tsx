@@ -28,6 +28,8 @@ import {
   FileIcon as FileTemplate,
   CreditCard,
   FileCheck,
+  Megaphone,
+  Warehouse,
 } from "lucide-react"
 
 interface MenuItem {
@@ -38,6 +40,8 @@ interface MenuItem {
   isActive: boolean
   badge?: number | null
   hidden?: boolean
+  disabled?: boolean
+  comingSoon?: boolean
 }
 
 export function MainSidebar() {
@@ -98,6 +102,24 @@ export function MainSidebar() {
       href: "/dashboard/clients",
       icon: Users,
       isActive: isInSection("clients"),
+    },
+    {
+      id: "marketing",
+      label: "Marketing",
+      href: "#",
+      icon: Megaphone,
+      isActive: false,
+      disabled: true,
+      comingSoon: true,
+    },
+    {
+      id: "stock",
+      label: "Stock",
+      href: "#",
+      icon: Warehouse,
+      isActive: false,
+      disabled: true,
+      comingSoon: true,
     },
     {
       id: "facturacion",
@@ -227,6 +249,29 @@ export function MainSidebar() {
           .map((item) => {
             const Icon = item.icon
             if (item.hidden) return null
+
+            // Si el item está deshabilitado, renderizar como div en lugar de Link
+            if (item.disabled) {
+              return (
+                <div key={item.id} className="relative">
+                  <div className="flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium cursor-not-allowed opacity-60">
+                    <div className="flex items-center space-x-3">
+                      <Icon className="h-5 w-5 text-gray-400" />
+                      <span className="text-gray-500">{item.label}</span>
+                    </div>
+                  </div>
+                  {item.comingSoon && (
+                    <Badge
+                      variant="secondary"
+                      className="absolute top-1 right-1 h-4 text-xs bg-orange-100 text-orange-700 hover:bg-orange-100 px-1.5"
+                    >
+                      Pronto
+                    </Badge>
+                  )}
+                </div>
+              )
+            }
+
             return (
               <Link
                 key={item.id}
@@ -270,6 +315,24 @@ export function MainSidebar() {
             .map((item) => {
               const Icon = item.icon
               if (item.hidden) return null
+
+              // Si está deshabilitado, mostrar como div
+              if (item.disabled) {
+                return (
+                  <div key={item.id} className="relative">
+                    <div
+                      className="p-2 rounded-lg cursor-not-allowed opacity-60 text-gray-400"
+                      title={`${item.label} - Pronto`}
+                    >
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    {item.comingSoon && (
+                      <div className="absolute -top-1 -right-1 h-3 w-3 bg-orange-500 rounded-full"></div>
+                    )}
+                  </div>
+                )
+              }
+
               return (
                 <div key={item.id} className="relative">
                   <Link
