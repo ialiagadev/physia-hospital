@@ -8,9 +8,21 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
-import { FileText, Download, Copy, Loader2, User, Calendar, Phone, Mail, AlertTriangle, FileDown, AlertCircle } from 'lucide-react'
+import {
+  FileText,
+  Download,
+  Copy,
+  Loader2,
+  User,
+  Calendar,
+  Phone,
+  Mail,
+  AlertTriangle,
+  FileDown,
+  AlertCircle,
+} from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { ClinicalReportData } from "@/lib/actions/clinical-report-data"
+import type { ClinicalReportData } from "@/lib/actions/clinical-report-data"
 
 interface ClinicalReportModalProps {
   isOpen: boolean
@@ -20,17 +32,10 @@ interface ClinicalReportModalProps {
   error: string | null
 }
 
-export function ClinicalReportModal({
-  isOpen,
-  onClose,
-  reportData,
-  isLoading,
-  error,
-}: ClinicalReportModalProps) {
+export function ClinicalReportModal({ isOpen, onClose, reportData, isLoading, error }: ClinicalReportModalProps) {
   const [observaciones, setObservaciones] = useState("")
   const [isGenerating, setIsGenerating] = useState(false)
   const [generatedReport, setGeneratedReport] = useState("")
-  const [cleanedReport, setCleanedReport] = useState("")
   const { toast } = useToast()
 
   const calcularEdad = (fechaNacimiento: string | null) => {
@@ -65,38 +70,10 @@ export function ClinicalReportModal({
     }
   }
 
-  // Función mejorada para procesar y formatear el texto del informe
-  const processReportText = (text: string) => {
-    // Primero limpiar asteriscos
-    let cleaned = text
-      .replace(/\*\*([^*]+)\*\*/g, "$1")
-      .replace(/\*([^*]+)\*/g, "$1")
-      .replace(/^\*+\s*/gm, "")
-      .replace(/\s*\*+$/gm, "")
-      .replace(/^\*+$/gm, "")
-      .trim()
-
-    // Agregar saltos de línea donde deberían estar
-    cleaned = cleaned
-      // Agregar salto de línea antes de títulos numerados
-      .replace(/(\d+\.\s*[A-ZÁÉÍÓÚÑ\s]+)/g, "\n\n$1\n")
-      // Agregar salto de línea antes de elementos de lista
-      .replace(/(\s-\s)/g, "\n$1")
-      // Agregar salto de línea después de puntos seguidos de mayúscula
-      .replace(/(\.\s+)([A-ZÁÉÍÓÚÑ])/g, "$1\n$2")
-      // Limpiar espacios múltiples
-      .replace(/\s+/g, " ")
-      // Normalizar saltos de línea múltiples
-      .replace(/\n\s*\n\s*\n/g, "\n\n")
-      .trim()
-
-    return cleaned
-  }
-
   // Función para extraer alergias del historial médico
   const getAlergias = () => {
     if (!reportData?.historialMedico) return []
-    
+
     const alergias = []
     if (reportData.historialMedico.alergiasMedicamentosas) {
       alergias.push(reportData.historialMedico.alergiasMedicamentosas)
@@ -140,14 +117,13 @@ export function ClinicalReportModal({
 
     setIsGenerating(true)
     setGeneratedReport("")
-    setCleanedReport("")
 
     try {
       const pacienteData = {
         ...reportData.pacienteInfo,
         edad: calcularEdad(reportData.pacienteInfo.fechaNacimiento),
         ultimaVisita: reportData.metadatos.ultimaVisita,
-        proximaCita: "", // No disponible en la nueva estructura
+        proximaCita: "",
         notas: reportData.historialMedico?.observacionesAdicionales || "",
         alergias: getAlergias(),
         diagnosticos: getDiagnosticos(),
@@ -158,9 +134,10 @@ export function ClinicalReportModal({
         paciente: pacienteData,
         historialMedico: reportData.historialMedico,
         seguimientos: reportData.seguimientos,
-        citas: [], // No disponible en la nueva estructura
-        documentos: [], // No disponible en la nueva estructura
+        citas: [],
+        documentos: [],
         observaciones: observaciones.trim(),
+        historialCompleto: reportData.historialMedico,
       }
 
       const response = await fetch("/api/generate-clinical-report", {
@@ -178,12 +155,7 @@ export function ClinicalReportModal({
       }
 
       if (data.success && data.report) {
-        const rawReport = data.report
-        const processed = processReportText(rawReport)
-
-        setGeneratedReport(rawReport)
-        setCleanedReport(processed)
-
+        setGeneratedReport(data.report)
         toast({
           title: "Informe generado",
           description: "El informe clínico se ha generado correctamente",
@@ -205,7 +177,7 @@ export function ClinicalReportModal({
   }
 
   const handleCopyReport = () => {
-    navigator.clipboard.writeText(cleanedReport)
+    navigator.clipboard.writeText(generatedReport)
     toast({
       title: "Copiado",
       description: "Informe copiado al portapapeles",
@@ -214,9 +186,9 @@ export function ClinicalReportModal({
 
   const handleDownloadTXT = () => {
     if (!reportData) return
-    
+
     const element = document.createElement("a")
-    const file = new Blob([cleanedReport], { type: "text/plain;charset=utf-8" })
+    const file = new Blob([generatedReport], { type: "text/plain;charset=utf-8" })
     element.href = URL.createObjectURL(file)
     element.download = `Informe_Clinico_${reportData.pacienteInfo.nombre.replace(/\s+/g, "_")}_${new Date().toISOString().split("T")[0]}.txt`
     document.body.appendChild(element)
@@ -231,8 +203,6 @@ export function ClinicalReportModal({
 
   const handleDownloadWord = () => {
     if (!reportData) return
-    
-    const sections = cleanedReport.split(/\n\s*\n/).filter((section) => section.trim())
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -241,13 +211,27 @@ export function ClinicalReportModal({
         <meta charset="utf-8">
         <title>Informe Clínico - ${reportData.pacienteInfo.nombre}</title>
         <style>
-          body { font-family: 'Times New Roman', serif; font-size: 12pt; line-height: 1.6; margin: 2cm; }
-          .header { text-align: center; margin-bottom: 30pt; border-bottom: 2px solid #333; padding-bottom: 15pt; }
-          .header h1 { font-size: 18pt; font-weight: bold; margin: 0; }
-          .header p { margin: 5pt 0; }
-          .section-title { font-size: 14pt; font-weight: bold; margin-top: 20pt; margin-bottom: 10pt; color: #333; }
-          .content p { margin-bottom: 8pt; text-align: justify; }
-          .list-item { margin-left: 20pt; margin-bottom: 5pt; }
+          body { 
+            font-family: 'Times New Roman', serif; 
+            font-size: 12pt; 
+            line-height: 1.6; 
+            margin: 2cm; 
+            white-space: pre-line;
+          }
+          .header { 
+            text-align: center; 
+            margin-bottom: 30pt; 
+            border-bottom: 2px solid #333; 
+            padding-bottom: 15pt; 
+          }
+          .header h1 { 
+            font-size: 18pt; 
+            font-weight: bold; 
+            margin: 0; 
+          }
+          .header p { 
+            margin: 5pt 0; 
+          }
         </style>
       </head>
       <body>
@@ -257,23 +241,7 @@ export function ClinicalReportModal({
           <p><strong>Paciente:</strong> ${reportData.pacienteInfo.nombre}</p>
         </div>
         <div class="content">
-          ${sections
-            .map((section) => {
-              const lines = section.split("\n").filter((line) => line.trim())
-              return lines
-                .map((line) => {
-                  const trimmed = line.trim()
-                  if (trimmed.match(/^\d+\.\s*[A-ZÁÉÍÓÚÑ\s]+$/)) {
-                    return `<div class="section-title">${trimmed}</div>`
-                  } else if (trimmed.startsWith("-")) {
-                    return `<div class="list-item">${trimmed}</div>`
-                  } else {
-                    return `<p>${trimmed}</p>`
-                  }
-                })
-                .join("")
-            })
-            .join("")}
+          ${generatedReport}
         </div>
       </body>
       </html>
@@ -295,28 +263,60 @@ export function ClinicalReportModal({
 
   const handleDownloadPDF = async () => {
     if (!reportData) return
-    
-    try {
-      const sections = cleanedReport.split(/\n\s*\n/).filter((section) => section.trim())
 
+    try {
       const htmlContent = `
         <!DOCTYPE html>
         <html>
         <head>
           <meta charset="utf-8">
           <style>
-            body { font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.5; margin: 0; padding: 20px; }
-            .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 15px; }
-            .header h1 { font-size: 18pt; margin: 0; color: #333; }
-            .header p { margin: 5px 0; color: #666; }
-            .patient-info { background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
-            .patient-info table { width: 100%; border-collapse: collapse; }
-            .patient-info td { padding: 5px; border-bottom: 1px solid #eee; }
-            .patient-info td:first-child { font-weight: bold; width: 30%; }
-            .section-title { font-size: 14pt; font-weight: bold; color: #333; border-bottom: 1px solid #ccc; padding-bottom: 5px; margin: 20px 0 10px 0; }
-            .content p { margin-bottom: 8px; text-align: justify; }
-            .list-item { margin-left: 20px; margin-bottom: 5px; }
-            @media print { body { margin: 0; } }
+            body { 
+              font-family: Arial, sans-serif; 
+              font-size: 11pt; 
+              line-height: 1.5; 
+              margin: 0; 
+              padding: 20px; 
+              white-space: pre-line;
+            }
+            .header { 
+              text-align: center; 
+              margin-bottom: 30px; 
+              border-bottom: 2px solid #333; 
+              padding-bottom: 15px; 
+            }
+            .header h1 { 
+              font-size: 18pt; 
+              margin: 0; 
+              color: #333; 
+            }
+            .header p { 
+              margin: 5px 0; 
+              color: #666; 
+            }
+            .patient-info { 
+              background-color: #f8f9fa; 
+              padding: 15px; 
+              border-radius: 5px; 
+              margin-bottom: 20px; 
+            }
+            .patient-info table { 
+              width: 100%; 
+              border-collapse: collapse; 
+            }
+            .patient-info td { 
+              padding: 5px; 
+              border-bottom: 1px solid #eee; 
+            }
+            .patient-info td:first-child { 
+              font-weight: bold; 
+              width: 30%; 
+            }
+            @media print { 
+              body { 
+                margin: 0; 
+              } 
+            }
           </style>
         </head>
         <body>
@@ -329,30 +329,14 @@ export function ClinicalReportModal({
             <table>
               <tr><td>Paciente:</td><td>${reportData.pacienteInfo.nombre}</td></tr>
               <tr><td>Edad:</td><td>${calcularEdad(reportData.pacienteInfo.fechaNacimiento)} años</td></tr>
-              <tr><td>Teléfono:</td><td>${reportData.pacienteInfo.telefono || 'No registrado'}</td></tr>
-              <tr><td>Email:</td><td>${reportData.pacienteInfo.email || 'No registrado'}</td></tr>
+              <tr><td>Teléfono:</td><td>${reportData.pacienteInfo.telefono || "No registrado"}</td></tr>
+              <tr><td>Email:</td><td>${reportData.pacienteInfo.email || "No registrado"}</td></tr>
               <tr><td>Última visita:</td><td>${formatearFecha(reportData.metadatos.ultimaVisita)}</td></tr>
             </table>
           </div>
           
           <div class="content">
-            ${sections
-              .map((section) => {
-                const lines = section.split("\n").filter((line) => line.trim())
-                return lines
-                  .map((line) => {
-                    const trimmed = line.trim()
-                    if (trimmed.match(/^\d+\.\s*[A-ZÁÉÍÓÚÑ\s]+$/)) {
-                      return `<div class="section-title">${trimmed}</div>`
-                    } else if (trimmed.startsWith("-")) {
-                      return `<div class="list-item">${trimmed}</div>`
-                    } else {
-                      return `<p>${trimmed}</p>`
-                    }
-                  })
-                  .join("")
-              })
-              .join("")}
+            ${generatedReport}
           </div>
         </body>
         </html>
@@ -385,8 +369,18 @@ export function ClinicalReportModal({
   const handleClose = () => {
     setObservaciones("")
     setGeneratedReport("")
-    setCleanedReport("")
     onClose()
+  }
+
+  // Función para renderizar el informe con formato preservado
+  const renderFormattedReport = (report: string) => {
+    return (
+      <div className="space-y-4">
+        <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-gray-800 bg-white p-6 rounded-lg border">
+          {report}
+        </pre>
+      </div>
+    )
   }
 
   // Mostrar loading mientras se cargan los datos
@@ -444,9 +438,7 @@ export function ClinicalReportModal({
           </DialogHeader>
           <Alert>
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              No se encontraron datos del paciente para generar el informe.
-            </AlertDescription>
+            <AlertDescription>No se encontraron datos del paciente para generar el informe.</AlertDescription>
           </Alert>
           <div className="flex justify-end">
             <Button onClick={handleClose}>Cerrar</Button>
@@ -462,7 +454,7 @@ export function ClinicalReportModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-6xl max-h-[95vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl font-semibold">
             <FileText className="w-6 h-6 text-blue-600" />
@@ -495,12 +487,12 @@ export function ClinicalReportModal({
                   <div className="flex items-center gap-2 text-sm">
                     <Phone className="w-4 h-4 text-gray-500" />
                     <span className="font-medium">Teléfono:</span>
-                    <span>{reportData.pacienteInfo.telefono || 'No registrado'}</span>
+                    <span>{reportData.pacienteInfo.telefono || "No registrado"}</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     <Mail className="w-4 h-4 text-gray-500" />
                     <span className="font-medium">Email:</span>
-                    <span>{reportData.pacienteInfo.email || 'No registrado'}</span>
+                    <span>{reportData.pacienteInfo.email || "No registrado"}</span>
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -609,84 +601,64 @@ export function ClinicalReportModal({
           </div>
 
           {/* Informe generado */}
-          {cleanedReport && (
+          {generatedReport && (
             <Card className="mt-6">
-              <CardHeader>
+              <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b">
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <FileText className="w-5 h-5 text-green-600" />
                   Informe Clínico Generado
+                  <div className="ml-auto flex gap-2">
+                    <Button variant="outline" size="sm" onClick={handleCopyReport}>
+                      <Copy className="w-4 h-4 mr-1" />
+                      Copiar
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleDownloadTXT}>
+                      <Download className="w-4 h-4 mr-1" />
+                      TXT
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleDownloadWord}
+                      className="bg-blue-50 hover:bg-blue-100"
+                    >
+                      <FileDown className="w-4 h-4 mr-1" />
+                      Word
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleDownloadPDF}
+                      className="bg-red-50 hover:bg-red-100"
+                    >
+                      <FileDown className="w-4 h-4 mr-1" />
+                      PDF
+                    </Button>
+                  </div>
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="flex justify-end gap-2 mb-4 flex-wrap">
-                  <Button variant="outline" onClick={handleCopyReport}>
-                    <Copy className="w-4 h-4 mr-2" />
-                    Copiar
-                  </Button>
-                  <Button variant="outline" onClick={handleDownloadTXT}>
-                    <Download className="w-4 h-4 mr-2" />
-                    Texto
-                  </Button>
-                  <Button variant="outline" onClick={handleDownloadWord} className="bg-blue-50 hover:bg-blue-100">
-                    <FileDown className="w-4 h-4 mr-2" />
-                    Word
-                  </Button>
-                  <Button variant="outline" onClick={handleDownloadPDF} className="bg-red-50 hover:bg-red-100">
-                    <FileDown className="w-4 h-4 mr-2" />
-                    PDF
-                  </Button>
-                </div>
-                <div className="bg-white p-6 rounded-lg border max-h-96 overflow-y-auto shadow-inner">
-                  <div className="space-y-4">
-                    {cleanedReport
-                      .split(/\n\s*\n/)
-                      .filter((section) => section.trim())
-                      .map((section, sectionIndex) => {
-                        const lines = section.split("\n").filter((line) => line.trim())
-
-                        return (
-                          <div key={sectionIndex} className="mb-6">
-                            {lines.map((line, lineIndex) => {
-                              const trimmedLine = line.trim()
-
-                              // Títulos principales (números seguidos de punto y texto en mayúsculas)
-                              if (trimmedLine.match(/^\d+\.\s*[A-ZÁÉÍÓÚÑ\s]+$/)) {
-                                return (
-                                  <h2
-                                    key={lineIndex}
-                                    className="text-lg font-bold text-blue-800 border-b-2 border-blue-200 pb-2 mb-3 mt-6"
-                                  >
-                                    {trimmedLine}
-                                  </h2>
-                                )
-                              }
-
-                              // Elementos de lista (empiezan con guión)
-                              if (trimmedLine.startsWith("-")) {
-                                return (
-                                  <div key={lineIndex} className="ml-4 mb-2">
-                                    <p className="text-gray-700 leading-relaxed">
-                                      <span className="text-blue-600 font-medium">•</span>
-                                      <span className="ml-2">{trimmedLine.substring(1).trim()}</span>
-                                    </p>
-                                  </div>
-                                )
-                              }
-
-                              // Párrafos normales
-                              if (trimmedLine) {
-                                return (
-                                  <p key={lineIndex} className="text-gray-700 leading-relaxed mb-3 text-justify">
-                                    {trimmedLine}
-                                  </p>
-                                )
-                              }
-
-                              return null
-                            })}
-                          </div>
-                        )
+              <CardContent className="p-0">
+                <div className="bg-white border-2 border-gray-100 max-h-[600px] overflow-y-auto">
+                  {/* Header del informe */}
+                  <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 text-center">
+                    <h1 className="text-2xl font-bold mb-2">INFORME CLÍNICO</h1>
+                    <p className="text-blue-100">
+                      Fecha:{" "}
+                      {new Date().toLocaleDateString("es-ES", {
+                        day: "2-digit",
+                        month: "long",
+                        year: "numeric",
                       })}
+                    </p>
+                    <p className="text-blue-100">Paciente: {reportData.pacienteInfo.nombre}</p>
+                  </div>
+
+                  {/* Contenido del informe con formato preservado */}
+                  <div className="p-8">{renderFormattedReport(generatedReport)}</div>
+
+                  {/* Footer del informe */}
+                  <div className="bg-gray-50 border-t p-4 text-center text-sm text-gray-600">
+                    <p>Este informe ha sido generado automáticamente el {new Date().toLocaleString("es-ES")}</p>
                   </div>
                 </div>
               </CardContent>

@@ -227,11 +227,19 @@ export async function POST(request: NextRequest) {
       return texto
     }
 
-    // Construir el prompt mejorado
+    // Construir el prompt mejorado con instrucciones específicas de formato
     const prompt = `
 Eres un médico especialista y necesitas generar un informe clínico profesional y detallado.
 
-IMPORTANTE: NO uses asteriscos (*) ni símbolos de markdown para el formato. Usa texto plano limpio y profesional.
+INSTRUCCIONES CRÍTICAS DE FORMATO:
+- SIEMPRE usa saltos de línea dobles (\\n\\n) entre secciones principales
+- SIEMPRE usa saltos de línea simples (\\n) entre párrafos dentro de una sección
+- NUNCA uses asteriscos (*) ni símbolos de markdown
+- Usa texto plano limpio y profesional
+- Cada sección debe estar claramente separada
+- Los títulos de sección deben ser numerados (1. ENCABEZADO, 2. ANTECEDENTES, etc.)
+- Usa guiones (-) para listas cuando sea necesario
+- Mantén párrafos de longitud razonable (máximo 4-5 líneas)
 
 DATOS DEL PACIENTE:
 - Nombre: ${paciente.nombre || "No especificado"}
@@ -294,28 +302,101 @@ ${observaciones}`
     : ""
 }
 
-INSTRUCCIONES DE FORMATO:
-- NO uses asteriscos (*) ni símbolos de markdown
-- Usa texto plano limpio y profesional
-- Los títulos de sección deben ser numerados (1. ENCABEZADO, 2. ANTECEDENTES, etc.)
-- Usa guiones (-) para listas cuando sea necesario
-- Mantén un formato limpio y legible
-- Usa saltos de línea apropiados para separar secciones
-
-Genera un informe clínico profesional con las siguientes secciones:
+FORMATO REQUERIDO - EJEMPLO DE ESTRUCTURA:
 
 1. ENCABEZADO
+
+Paciente: [Nombre del paciente]
+Edad: [Edad] años
+Fecha del informe: [Fecha actual]
+
+
 2. ANTECEDENTES MÉDICOS
+
+Alergias conocidas:
+- [Lista de alergias si las hay]
+
+Enfermedades previas:
+- [Lista de enfermedades]
+
+Medicación habitual:
+- [Lista de medicamentos]
+
+
 3. EVOLUCIÓN CLÍNICA
+
+[Descripción de la evolución del paciente con párrafos bien separados]
+
+[Cada párrafo debe tener información específica y estar separado por saltos de línea]
+
+
 4. SITUACIÓN CLÍNICA ACTUAL
+
+Motivo de consulta:
+[Descripción del motivo]
+
+Síntomas actuales:
+- [Lista de síntomas]
+
+Exploración física:
+[Resultados de la exploración]
+
+
 5. ALERGIAS Y CONTRAINDICACIONES
+
+[Información sobre alergias y contraindicaciones]
+
+
 6. TRATAMIENTO ACTUAL
+
+Medicación prescrita:
+- [Lista de medicamentos con dosis]
+
+Recomendaciones no farmacológicas:
+- [Lista de recomendaciones]
+
+
 7. ANÁLISIS Y VALORACIÓN
+
+[Análisis profesional de la situación del paciente]
+
+[Valoración del estado actual]
+
+
 8. RECOMENDACIONES
+
+Recomendaciones inmediatas:
+- [Lista de recomendaciones]
+
+Recomendaciones a largo plazo:
+- [Lista de recomendaciones]
+
+
 9. PLAN DE SEGUIMIENTO
+
+Próxima cita: [Fecha recomendada]
+
+Controles necesarios:
+- [Lista de controles]
+
+Derivaciones:
+- [Si son necesarias]
+
+
 10. OBSERVACIONES FINALES
 
-El informe debe ser profesional, detallado y útil para otros profesionales médicos. Utiliza terminología médica apropiada pero asegúrate de que sea comprensible.
+[Observaciones adicionales del profesional]
+
+[Cualquier información relevante adicional]
+
+IMPORTANTE: 
+- Cada sección DEBE estar separada por DOS saltos de línea (\\n\\n)
+- Cada párrafo dentro de una sección DEBE estar separado por UN salto de línea (\\n)
+- NO uses asteriscos ni markdown
+- Mantén un formato limpio y profesional
+- Asegúrate de que el texto sea fácil de leer con espaciado adecuado
+
+Genera el informe siguiendo EXACTAMENTE esta estructura y formato.
 
 Fecha del informe: ${new Date().toLocaleDateString("es-ES", {
       day: "2-digit",
@@ -327,8 +408,8 @@ Fecha del informe: ${new Date().toLocaleDateString("es-ES", {
     const { text } = await generateText({
       model: openai("gpt-4o"),
       prompt: prompt,
-      maxTokens: 3500, // Aumentado para más contenido
-      temperature: 0.2,
+      maxTokens: 4000, // Aumentado para más contenido
+      temperature: 0.1, // Reducido para más consistencia en el formato
     })
 
     return NextResponse.json({
