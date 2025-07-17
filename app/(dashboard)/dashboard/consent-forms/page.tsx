@@ -286,8 +286,7 @@ export default function ConsentFormsPage() {
                 <div>
                   <h4 className="font-medium text-gray-900">Plantillas por Especialidad</h4>
                   <p className="text-sm text-gray-600">
-                    Cada especialidad médica tiene checkboxes específicos: General (3), Medicina/Cirugía/Estética/etc.
-                    (4 incluyendo tratamiento médico).
+                    Existen plantillas de diferentes espcialidades.
                   </p>
                 </div>
               </div>
