@@ -5,15 +5,15 @@ import { Button } from "@/components/ui/button"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Badge } from "@/components/ui/badge"
-import { Check, ChevronsUpDown, User, Shield, Eye } from "lucide-react"
+import { Check, ChevronsUpDown, User, Shield, Eye, Crown } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface OrganizationUser {
   id: string
   name: string | null
   email: string | null
-  role: string | null // 'admin' | 'user' | 'viewer'
-  organization_id: number | null // ✅ AGREGADO
+  role: string | null // 'admin' | 'user' | 'coordinador' | 'viewer'
+  organization_id: number | null
   created_at: string
 }
 
@@ -27,8 +27,10 @@ interface UserSelectorProps {
 export function UserSelector({ users, selectedUser, onSelectUser, currentUserId }: UserSelectorProps) {
   const [open, setOpen] = useState(false)
 
-  // Filtrar solo usuarios que pueden fichar (admin y user, no viewer)
-  const fichableUsers = users.filter((user) => user.role === "admin" || user.role === "user")
+  // ✅ CORREGIDO: Incluir coordinadores en usuarios que pueden fichar
+  const fichableUsers = users.filter(
+    (user) => user.role === "admin" || user.role === "user" || user.role === "coordinador", // ✅ AÑADIDO: Incluir coordinadores
+  )
 
   if (fichableUsers.length === 0) {
     return (
@@ -46,6 +48,13 @@ export function UserSelector({ users, selectedUser, onSelectUser, currentUserId 
           <Badge variant="secondary" className="text-xs">
             <Shield className="h-3 w-3 mr-1" />
             Admin
+          </Badge>
+        )
+      case "coordinador":
+        return (
+          <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-800 border-blue-200">
+            <Crown className="h-3 w-3 mr-1" />
+            Coordinador
           </Badge>
         )
       case "viewer":
@@ -68,7 +77,12 @@ export function UserSelector({ users, selectedUser, onSelectUser, currentUserId 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between h-auto p-3">
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between h-auto p-3 bg-transparent"
+        >
           <div className="flex items-center gap-2">
             <User className="h-4 w-4 text-muted-foreground" />
             <div className="text-left">

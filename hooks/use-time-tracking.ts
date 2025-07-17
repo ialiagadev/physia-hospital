@@ -271,6 +271,7 @@ export function useTimeTracking() {
     }
   }
 
+  // ✅ FUNCIÓN CORREGIDA: Excluir solo agentes de IA (type = 2)
   const getOrganizationUsers = async (): Promise<{ users: OrganizationUser[]; error?: string }> => {
     if (!userProfile || userProfile.role !== "admin") {
       return { users: [], error: "Sin permisos de administrador" }
@@ -281,6 +282,7 @@ export function useTimeTracking() {
         .from("users")
         .select("id, name, email, role, organization_id, created_at")
         .eq("organization_id", userProfile.organization_id)
+        .neq("type", 2) // ✅ EXCLUIR SOLO AGENTES DE IA (type = 2)
         .order("name")
 
       if (error) throw error

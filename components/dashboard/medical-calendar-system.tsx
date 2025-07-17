@@ -4,7 +4,7 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns"
 import { Button } from "@/components/ui/button"
-import { ChevronLeft, ChevronRight, Plus, Search, Clock, FileText } from "lucide-react"
+import { ChevronLeft, ChevronRight, Plus, Search, Clock, FileText, CalendarIcon } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CalendarSearch } from "@/components/calendar/calendar-search"
 import { ProfesionalesLegend } from "@/components/calendar/profesionales-legend"
@@ -800,11 +800,15 @@ const MedicalCalendarSystem: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Título de fecha único - AHORA CLICKEABLE */}
+                  {/* Título de fecha único - AHORA CON ICONO CLICKEABLE */}
                   <div className="px-4 py-3 border-b">
                     <Popover>
                       <PopoverTrigger asChild>
-                        <Button variant="ghost" className="text-xl font-medium capitalize hover:bg-muted/50 p-0 h-auto">
+                        <Button
+                          variant="ghost"
+                          className="text-xl font-medium capitalize hover:bg-muted/50 p-0 h-auto flex items-center gap-2"
+                        >
+                          <CalendarIcon className="h-5 w-5 text-muted-foreground" />
                           {getDateTitle()}
                         </Button>
                       </PopoverTrigger>
@@ -817,6 +821,7 @@ const MedicalCalendarSystem: React.FC = () => {
                               setCurrentDate(date)
                             }
                           }}
+                          weekStartsOn={1}
                           initialFocus
                         />
                       </PopoverContent>
