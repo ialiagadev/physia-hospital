@@ -202,6 +202,17 @@ export function HorarioViewDynamic({
     }
   }
 
+  // NUEVA FUNCIÓN: Verificar si el profesional tiene horarios configurados
+  const hasAnyScheduleConfigured = (profesionalId: number) => {
+    const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
+    if (!user) return false
+
+    // Verificar si tiene horarios en cualquier día de la semana
+    const userSchedules = workSchedules.filter((schedule) => schedule.user_id === user.id && schedule.is_active)
+
+    return userSchedules.length > 0
+  }
+
   // Calcular posiciones
   const calcularPosicionCita = (hora: string) => {
     const normalizedTime = normalizeTimeFormat(hora)
@@ -629,6 +640,9 @@ export function HorarioViewDynamic({
               const isOnVacation = isProfessionalOnVacation(profesional.id)
               const vacationInfo = getProfessionalVacationInfo(profesional.id)
 
+              // NUEVA LÓGICA: Verificar si tiene horarios configurados
+              const hasSchedules = hasAnyScheduleConfigured(profesional.id)
+
               // Obtener estilos de color dinámicos
               const colorStyles = getColorProfesional(profesional)
 
@@ -652,7 +666,8 @@ export function HorarioViewDynamic({
                           {getVacationIcon(vacationInfo?.type)} {getVacationLabel(vacationInfo?.type)}
                         </span>
                       )}
-                      {!isOnVacation && !isWorkingToday && (
+                      {!isOnVacation && !hasSchedules && <span className="text-xs text-red-500">Sin horarios</span>}
+                      {!isOnVacation && hasSchedules && !isWorkingToday && (
                         <span className="text-xs text-gray-500">No trabaja hoy</span>
                       )}
                       {!isOnVacation && isWorkingToday && workingHours.length > 0 && (
@@ -679,7 +694,54 @@ export function HorarioViewDynamic({
                       isWorkingToday && !isOnVacation ? (e) => handleContainerClick(e, profesional.id) : undefined
                     }
                   >
-                    {!isWorkingToday && !isOnVacation ? (
+                    {!hasSchedules && !isOnVacation ? (
+                      // NUEVA SECCIÓN: Instrucciones de configuración
+                      <div className="flex items-center justify-center h-full p-6">
+                        <div className="text-center max-w-sm">
+                          <div className="text-4xl mb-4">⚙️</div>
+                          <div className="text-lg font-semibold mb-4 text-gray-800">Configura los horarios</div>
+                          <div className="space-y-3 text-sm text-gray-600 mb-6">
+                            <div className="flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
+                              <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                                1
+                              </div>
+                              <span>
+                                Ve a la pestaña <strong>Usuarios</strong>
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
+                              <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                                2
+                              </div>
+                              <span>
+                                Haz clic en el icono del <strong>reloj ⏰</strong>
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
+                              <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                                3
+                              </div>
+                              <span>
+                                Configura los horarios y <strong>acepta</strong>
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
+                              <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                                4
+                              </div>
+                              <span>
+                                <strong>Recarga</strong> esta página
+                              </span>
+                            </div>
+                          </div>
+                          <div className="text-xs text-gray-500 bg-yellow-50 p-3 rounded-lg border border-yellow-200">
+                            💡 <strong>Tip:</strong> Una vez configurados los horarios, podrás crear citas arrastrando y
+                            haciendo clic en los espacios libres.
+                          </div>
+                        </div>
+                      </div>
+                    ) : !isWorkingToday && !isOnVacation && hasSchedules ? (
+                      // Día libre (tiene horarios pero no trabaja hoy)
                       <div className="flex items-center justify-center h-full text-gray-500">
                         <div className="text-center">
                           <div className="text-4xl mb-2">😴</div>
@@ -687,6 +749,7 @@ export function HorarioViewDynamic({
                         </div>
                       </div>
                     ) : isOnVacation ? (
+                      // De vacaciones
                       <div className="flex items-center justify-center h-full text-orange-600">
                         <div className="text-center p-4">
                           <div className="text-4xl mb-3">{getVacationIcon(vacationInfo?.type)}</div>
