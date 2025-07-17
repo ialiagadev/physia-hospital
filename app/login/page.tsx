@@ -2,13 +2,15 @@
 
 import type React from "react"
 import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import Image from "next/image"
+import Link from "next/link"
+import { useEffect } from "react"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -16,6 +18,15 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const [successMessage, setSuccessMessage] = useState("")
+
+  useEffect(() => {
+    const message = searchParams.get("message")
+    if (message) {
+      setSuccessMessage(message)
+    }
+  }, [])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -29,7 +40,11 @@ export default function LoginPage() {
       })
 
       if (error) {
-        setError(error.message)
+        if (error.message.includes("Email not confirmed")) {
+          setError("Por favor confirma tu email antes de iniciar sesión. Revisa tu bandeja de entrada.")
+        } else {
+          setError(error.message)
+        }
         return
       }
 
@@ -99,10 +114,16 @@ export default function LoginPage() {
               </div>
 
               <div className="text-left">
-                <a href="#" className="text-sm text-purple-600 hover:text-purple-700 font-medium">
+                <Link href="/forgot-password" className="text-sm text-purple-600 hover:text-purple-700 font-medium">
                   Forgot password?
-                </a>
+                </Link>
               </div>
+
+              {successMessage && (
+                <Alert className="border-green-200 bg-green-50 mb-4">
+                  <AlertDescription className="text-green-700">{successMessage}</AlertDescription>
+                </Alert>
+              )}
 
               {error && (
                 <Alert variant="destructive" className="border-red-200 bg-red-50">

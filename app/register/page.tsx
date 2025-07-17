@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { supabase } from "@/lib/supabase/client"
+import { modernSupabase } from "@/lib/supabase/modern-client"
+import { Loader2 } from "lucide-react"
 
 export default function RegisterPage() {
   const [email, setEmail] = useState("")
@@ -17,6 +18,7 @@ export default function RegisterPage() {
   const [organizationName, setOrganizationName] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
+  const [success, setSuccess] = useState(false)
   const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -27,83 +29,109 @@ export default function RegisterPage() {
     try {
       console.log("🔄 Iniciando proceso de registro...")
 
-      // 1. Crear usuario en Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
+      // Validaciones básicas
+      if (!email || !password || !name || !organizationName) {
+        setError("Todos los campos son obligatorios")
+        return
+      }
+
+      if (password.length < 6) {
+        setError("La contraseña debe tener al menos 6 caracteres")
+        return
+      }
+
+      // Crear usuario usando el cliente moderno con PKCE
+      const { data: authData, error: authError } = await modernSupabase.auth.signUp({
+        email: email.trim(),
         password,
         options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
           data: {
-            name,
-            organization_name: organizationName,
+            name: name.trim(),
+            organization_name: organizationName.trim(),
           },
         },
       })
 
       if (authError) {
         console.error("❌ Error en signUp:", authError)
-        setError(authError.message)
-        setIsLoading(false)
+        // Manejar errores específicos
+        if (authError.message.includes("already registered")) {
+          setError("Este email ya está registrado. ¿Quieres iniciar sesión?")
+        } else if (authError.message.includes("invalid email")) {
+          setError("El formato del email no es válido")
+        } else if (authError.message.includes("weak password")) {
+          setError("La contraseña es muy débil. Debe tener al menos 6 caracteres")
+        } else {
+          setError(authError.message)
+        }
         return
       }
 
-      console.log("✅ Usuario creado:", authData.user?.id)
-
       if (authData.user) {
-        // Esperar a que el trigger cree el usuario en public.users
-        await new Promise((resolve) => setTimeout(resolve, 2000))
+        console.log("✅ Usuario creado:", authData.user.email)
+        console.log("📧 Necesita confirmación:", !authData.session)
 
-        // 2. Crear organización usando la función personalizada
-        console.log("🏢 Creando organización con función personalizada...")
-
-        const { data: orgResult, error: orgError } = await supabase.rpc("create_organization_during_registration", {
-          p_name: organizationName,
-          p_email: email,
-          p_tax_id: "12345678A",
-          p_address: "Dirección temporal",
-          p_postal_code: "28001",
-          p_city: "Madrid",
-          p_province: "Madrid",
-          p_country: "España",
-        })
-
-        if (orgError) {
-          console.error("❌ Error creating organization:", orgError)
-          setError(`Error al crear la organización: ${orgError.message}`)
-          setIsLoading(false)
+        // Si el usuario necesita confirmar email
+        if (!authData.session) {
+          console.log("📧 Email de confirmación enviado")
+          setSuccess(true)
           return
         }
 
-        console.log("✅ Organización creada:", orgResult)
-
-        // 3. Actualizar perfil de usuario
-        console.log("👤 Actualizando perfil de usuario...")
-        const { error: userError } = await supabase
-          .from("users")
-          .update({
-            name: name,
-            organization_id: orgResult[0]?.id,
-            role: "admin",
-          })
-          .eq("id", authData.user.id)
-
-        if (userError) {
-          console.error("❌ Error updating user profile:", userError)
-          setError("Error al actualizar el perfil de usuario")
-          setIsLoading(false)
-          return
-        }
-
-        console.log("✅ Perfil de usuario actualizado")
-
-        // Redirigir al login
-        router.push("/login?message=Cuenta creada exitosamente")
+        // Si no necesita confirmación (caso raro), redirigir directamente
+        console.log("⚠️ Usuario confirmado automáticamente, redirigiendo...")
+        router.push("/auth/callback")
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("💥 Registration error:", err)
-      setError("Error inesperado durante el registro")
+      setError("Error inesperado durante el registro: " + (err.message || "Inténtalo de nuevo"))
     } finally {
       setIsLoading(false)
     }
+  }
+
+  if (success) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <Card className="w-[400px]">
+          <CardHeader>
+            <CardTitle className="text-2xl text-center text-green-600">¡Cuenta creada!</CardTitle>
+          </CardHeader>
+          <CardContent className="text-center space-y-4">
+            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+              <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <p className="text-gray-600">Hemos enviado un email de confirmación a:</p>
+            <p className="font-medium text-gray-900">{email}</p>
+            <p className="text-sm text-gray-500">
+              Haz clic en el enlace del email para confirmar tu cuenta. Una vez confirmada, crearemos automáticamente tu
+              organización <strong>{organizationName}</strong>.
+            </p>
+            <div className="pt-4 space-y-2">
+              <Link href="/login" className="text-blue-600 hover:underline block">
+                Ir al login
+              </Link>
+              <button
+                onClick={() => {
+                  setSuccess(false)
+                  setEmail("")
+                  setPassword("")
+                  setName("")
+                  setOrganizationName("")
+                  setError("")
+                }}
+                className="text-gray-600 hover:underline text-sm"
+              >
+                Registrar otra cuenta
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (
@@ -120,7 +148,7 @@ export default function RegisterPage() {
           )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">Email *</Label>
               <Input
                 id="email"
                 placeholder="tu@email.com"
@@ -128,21 +156,24 @@ export default function RegisterPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                disabled={isLoading}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Contraseña</Label>
+              <Label htmlFor="password">Contraseña *</Label>
               <Input
                 id="password"
                 type="password"
+                placeholder="Mínimo 6 caracteres"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 minLength={6}
+                disabled={isLoading}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="name">Tu nombre</Label>
+              <Label htmlFor="name">Tu nombre *</Label>
               <Input
                 id="name"
                 type="text"
@@ -150,10 +181,11 @@ export default function RegisterPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
+                disabled={isLoading}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="organizationName">Nombre de tu empresa</Label>
+              <Label htmlFor="organizationName">Nombre de tu empresa *</Label>
               <Input
                 id="organizationName"
                 type="text"
@@ -161,6 +193,7 @@ export default function RegisterPage() {
                 value={organizationName}
                 onChange={(e) => setOrganizationName(e.target.value)}
                 required
+                disabled={isLoading}
               />
             </div>
             <Button
@@ -168,7 +201,14 @@ export default function RegisterPage() {
               className="w-full"
               disabled={isLoading || !email || !password || !name || !organizationName}
             >
-              {isLoading ? "Creando cuenta..." : "Crear cuenta"}
+              {isLoading ? (
+                <div className="flex items-center">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Creando cuenta...
+                </div>
+              ) : (
+                "Crear cuenta"
+              )}
             </Button>
           </form>
           <div className="mt-4 text-center text-sm">
