@@ -110,15 +110,17 @@ export function AppointmentDetailsModal({
   const loadAvailableServices = async () => {
     try {
       const { data: services, error } = await supabase
-      .from("services")
-      .select("id, name, description, price, duration, color, category, active, organization_id, created_at, updated_at, vat_rate, irpf_rate, retention_rate")
-      .eq("organization_id", userProfile!.organization_id)
-      .eq("active", true)
-      .order("name")
+        .from("services")
+        .select(
+          "id, name, description, price, duration, color, category, active, organization_id, created_at, updated_at, vat_rate, irpf_rate, retention_rate",
+        )
+        .eq("organization_id", userProfile!.organization_id)
+        .eq("active", true)
+        .order("name")
 
       if (error) throw error
 
-        setAvailableServices(services || [])
+      setAvailableServices(services || [])
     } catch (error) {
       console.error("Error loading services:", error)
     }
@@ -260,10 +262,13 @@ export function AppointmentDetailsModal({
     try {
       await onDelete(appointment.id)
       setShowDeleteDialog(false)
+      onClose() // Cerrar el modal principal también
     } catch (error) {
       console.error("Error al eliminar la cita:", error)
+      // Resetear estados incluso si hay error
     } finally {
       setIsDeleting(false)
+      setShowDeleteDialog(false)
     }
   }
 

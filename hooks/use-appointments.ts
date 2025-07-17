@@ -82,11 +82,13 @@ export function useAppointments(
   const deleteAppointment = async (id: string) => {
     try {
       await AppointmentService.deleteAppointment(id)
-      await fetchAppointments()
       toast.success("Cita eliminada correctamente")
     } catch (err) {
       toast.error("Error al eliminar la cita")
       throw err
+    } finally {
+      // Siempre refrescar los datos, incluso si hay error
+      await fetchAppointments()
     }
   }
 

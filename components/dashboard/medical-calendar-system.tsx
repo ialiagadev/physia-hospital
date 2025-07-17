@@ -262,39 +262,39 @@ const MedicalCalendarSystem: React.FC = () => {
         return
       }
 
-    // Buscar cliente existente - VERIFICAR SI YA VIENE SELECCIONADO
-let clientId: number
+      // Buscar cliente existente - VERIFICAR SI YA VIENE SELECCIONADO
+      let clientId: number
 
-// Si ya hay un cliente seleccionado desde el modal, usarlo
-if (appointmentData.clienteEncontrado) {
-  clientId = appointmentData.clienteEncontrado.id
-} else {
-  // Buscar primero por teléfono (restricción única)
-  let existingClient = null
-  if (appointmentData.telefonoPaciente) {
-    existingClient = clients.find((c) => c.phone === appointmentData.telefonoPaciente)
-  }
+      // Si ya hay un cliente seleccionado desde el modal, usarlo
+      if (appointmentData.clienteEncontrado) {
+        clientId = appointmentData.clienteEncontrado.id
+      } else {
+        // Buscar primero por teléfono (restricción única)
+        let existingClient = null
+        if (appointmentData.telefonoPaciente) {
+          existingClient = clients.find((c) => c.phone === appointmentData.telefonoPaciente)
+        }
 
-  // Si no encuentra por teléfono, buscar por nombre
-  if (!existingClient) {
-    const fullName = `${appointmentData.nombrePaciente} ${appointmentData.apellidosPaciente || ""}`
-      .toLowerCase()
-      .trim()
-    existingClient = clients.find((c) => c.name.toLowerCase() === fullName)
-  }
+        // Si no encuentra por teléfono, buscar por nombre
+        if (!existingClient) {
+          const fullName = `${appointmentData.nombrePaciente} ${appointmentData.apellidosPaciente || ""}`
+            .toLowerCase()
+            .trim()
+          existingClient = clients.find((c) => c.name.toLowerCase() === fullName)
+        }
 
-  if (existingClient) {
-    clientId = existingClient.id
-  } else {
-    // Crear nuevo cliente solo si no existe
-    const newClient = await createClient({
-      name: `${appointmentData.nombrePaciente} ${appointmentData.apellidosPaciente || ""}`.trim(),
-      phone: appointmentData.telefonoPaciente,
-      organization_id: currentUser.organization_id,
-    })
-    clientId = newClient.id
-  }
-}
+        if (existingClient) {
+          clientId = existingClient.id
+        } else {
+          // Crear nuevo cliente solo si no existe
+          const newClient = await createClient({
+            name: `${appointmentData.nombrePaciente} ${appointmentData.apellidosPaciente || ""}`.trim(),
+            phone: appointmentData.telefonoPaciente,
+            organization_id: currentUser.organization_id,
+          })
+          clientId = newClient.id
+        }
+      }
       // Determinar el profesional
       let professionalUuid = currentUser.id
       if (appointmentData.profesionalId) {
@@ -374,10 +374,12 @@ if (appointmentData.clienteEncontrado) {
   const handleDeleteAppointment = async (appointmentId: string) => {
     try {
       await deleteAppointment(appointmentId)
+    } catch (error) {
+      console.error("Error al eliminar la cita:", error)
+    } finally {
+      // Siempre resetear los estados, incluso si hay error
       setSelectedAppointment(null)
       setShowDetailsModal(false)
-    } catch (error) {
-      // Error handling
     }
   }
 
@@ -783,8 +785,8 @@ if (appointmentData.clienteEncontrado) {
                           <Plus className="h-4 w-4" />
                         </Button>
 
-                        {/* ✅ BOTÓN FACTURAR DÍA MEJORADO  */}
-                        {vistaCalendario === "dia" && (
+                        {/* ✅ BOTÓN FACTURAR DÍA MEJORADO - Solo en vista día y si hay citas */}
+                        {vistaCalendario === "dia" && hasAppointmentsToday() && (
                           <Button
                             onClick={() => setShowDailyBillingModal(true)}
                             size="sm"
@@ -995,7 +997,7 @@ if (appointmentData.clienteEncontrado) {
       {/* Modales */}
       {showNewAppointmentModal && (
         <AppointmentFormModal
-        fecha={currentDate}
+          fecha={currentDate}
           hora="09:00"
           waitingListEntry={waitingListEntry}
           onClose={() => {
