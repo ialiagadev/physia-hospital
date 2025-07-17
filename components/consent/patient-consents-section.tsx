@@ -108,20 +108,35 @@ export function PatientConsentsSection({
   const getAcceptanceBadges = (consent: PatientConsentWithDetails) => {
     return (
       <div className="flex flex-wrap gap-1">
-        {consent.document_read_understood && (
+        {consent.document_read_understood ? (
           <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700">
             Leído
           </Badge>
+        ) : (
+          <Badge variant="outline" className="text-xs bg-red-50 text-red-700">
+            No leído
+          </Badge>
         )}
-        {consent.terms_accepted && (
+
+        {consent.terms_accepted ? (
           <Badge variant="outline" className="text-xs bg-green-50 text-green-700">
             Aceptado
           </Badge>
+        ) : (
+          <Badge variant="outline" className="text-xs bg-red-50 text-red-700">
+            Rechazado
+          </Badge>
         )}
-        {consent.marketing_notifications_accepted && (
+
+        {consent.marketing_notifications_accepted ? (
           <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700">
             <Mail className="w-3 h-3 mr-1" />
             Marketing
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="text-xs bg-red-50 text-red-700">
+            <Mail className="w-3 h-3 mr-1" />
+            Marketing rechazado
           </Badge>
         )}
       </div>
@@ -140,7 +155,7 @@ export function PatientConsentsSection({
   }
 
   const copyConsentLink = async (token: string) => {
-    const link = `https://facturas-physia.vercel.app/consentimiento/${token}`
+    const link = `${window.location.origin}/consentimiento/${token}`
     try {
       await navigator.clipboard.writeText(link)
       toast({
@@ -159,8 +174,12 @@ export function PatientConsentsSection({
 
   const downloadConsentDocument = async (consent: PatientConsentWithDetails) => {
     try {
-      // Limpiar el contenido del formulario para eliminar campos duplicados
-      let cleanContent = consent.consent_forms.content || "<p>Contenido del formulario no disponible</p>"
+      // Usar el contenido procesado si está disponible, sino usar el original
+      let cleanContent =
+        consent.consent_content || consent.consent_forms.content || "<p>Contenido del formulario no disponible</p>"
+
+      // Obtener datos de organización del consentimiento guardado
+      const organizationData = consent.organization_data
 
       // Remover líneas que contengan campos de datos del paciente duplicados
       cleanContent = cleanContent
@@ -171,163 +190,205 @@ export function PatientConsentsSection({
 
       // Crear un documento HTML completo con el consentimiento y la firma
       const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="UTF-8">
-          <title>Consentimiento Informado - ${consent.consent_forms.title}</title>
-          <style>
-            body { 
-              font-family: Arial, sans-serif; 
-              margin: 40px; 
-              line-height: 1.6; 
-              color: #333;
-            }
-            .header { 
-              text-align: center; 
-              margin-bottom: 30px; 
-              border-bottom: 2px solid #333; 
-              padding-bottom: 20px; 
-            }
-            .patient-info { 
-              background: #f5f5f5; 
-              padding: 15px; 
-              margin: 20px 0; 
-              border-radius: 5px; 
-            }
-            .content {
-              margin: 30px 0;
-              text-align: justify;
-            }
-            .signature-section { 
-              margin-top: 50px; 
-              border-top: 1px solid #ccc; 
-              padding-top: 30px; 
-            }
-            .signature-box { 
-              text-align: center; 
-              margin: 30px 0; 
-              border: 1px solid #ddd;
-              padding: 20px;
-              background: #fafafa;
-            }
-            .signature-img { 
-              max-width: 300px; 
-              border: 1px solid #ccc; 
-              padding: 10px; 
-              background: white;
-            }
-            .acceptance-section {
-              background: #f9f9f9;
-              padding: 20px;
-              margin: 20px 0;
-              border-left: 4px solid #4CAF50;
-            }
-            .acceptance-item {
-              margin: 10px 0;
-              display: flex;
-              align-items: center;
-            }
-            .acceptance-item .check {
-              color: #4CAF50;
-              font-weight: bold;
-              margin-right: 10px;
-            }
-            .metadata { 
-              font-size: 12px; 
-              color: #666; 
-              margin-top: 30px; 
-              border-top: 1px solid #eee; 
-              padding-top: 15px; 
-            }
-            .info-grid {
-              display: grid;
-              grid-template-columns: 1fr 1fr;
-              gap: 10px;
-              margin: 10px 0;
-            }
-            @media print {
-              body { margin: 20px; }
-              .signature-section { page-break-inside: avoid; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>${consent.consent_forms.title}</h1>
-            <p><strong>Documento de Consentimiento Informado</strong></p>
-            <p>Categoría: ${consent.consent_forms.category}</p>
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Consentimiento Informado - ${consent.consent_forms.title}</title>
+        <style>
+          body { 
+            font-family: Arial, sans-serif; 
+            margin: 40px; 
+            line-height: 1.6; 
+            color: #333;
+          }
+          .header { 
+            text-align: center; 
+            margin-bottom: 30px; 
+            border-bottom: 2px solid #333; 
+            padding-bottom: 20px; 
+          }
+          .organization-info {
+            background: #f0f8ff;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+            border-left: 4px solid #2563eb;
+          }
+          .patient-info { 
+            background: #f5f5f5; 
+            padding: 15px; 
+            margin: 20px 0; 
+            border-radius: 5px; 
+          }
+          .content {
+            margin: 30px 0;
+            text-align: justify;
+          }
+          .signature-section { 
+            margin-top: 50px; 
+            border-top: 1px solid #ccc; 
+            padding-top: 30px; 
+          }
+          .signature-box { 
+            text-align: center; 
+            margin: 30px 0; 
+            border: 1px solid #ddd;
+            padding: 20px;
+            background: #fafafa;
+          }
+          .signature-img { 
+            max-width: 300px; 
+            border: 1px solid #ccc; 
+            padding: 10px; 
+            background: white;
+          }
+          .acceptance-section {
+            background: #f9f9f9;
+            padding: 20px;
+            margin: 20px 0;
+            border-left: 4px solid #4CAF50;
+          }
+          .acceptance-item {
+            margin: 10px 0;
+            display: flex;
+            align-items: center;
+          }
+          .acceptance-item .check {
+            color: #4CAF50;
+            font-weight: bold;
+            margin-right: 10px;
+          }
+          .acceptance-item .reject {
+            color: #f44336;
+            font-weight: bold;
+            margin-right: 10px;
+          }
+          .metadata { 
+            font-size: 12px; 
+            color: #666; 
+            margin-top: 30px; 
+            border-top: 1px solid #eee; 
+            padding-top: 15px; 
+          }
+          .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin: 10px 0;
+          }
+          @media print {
+            body { margin: 20px; }
+            .signature-section { page-break-inside: avoid; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>${consent.consent_forms.title}</h1>
+          <p><strong>Documento de Consentimiento Informado</strong></p>
+          <p>Categoría: ${consent.consent_forms.category}</p>
+        </div>
+        
+        ${
+          organizationData
+            ? `
+        <div class="organization-info">
+          <h3>Información del Centro</h3>
+          <div class="info-grid">
+            <div><strong>Denominación:</strong> ${organizationData.name}</div>
+            <div><strong>CIF/NIF:</strong> ${organizationData.tax_id}</div>
+            <div><strong>Dirección:</strong> ${organizationData.address || "No especificada"}</div>
+            <div><strong>Ciudad:</strong> ${organizationData.city}</div>
+            <div><strong>Email:</strong> ${organizationData.email || "No especificado"}</div>
+            <div><strong>Teléfono:</strong> ${organizationData.phone || "No especificado"}</div>
           </div>
-          
-          <div class="patient-info">
-            <h3>Información del Paciente</h3>
-            <div class="info-grid">
-              <div><strong>Nombre:</strong> ${consent.patient_name}</div>
-              <div><strong>DNI/NIE:</strong> ${consent.patient_tax_id}</div>
-              <div><strong>Fecha de firma:</strong> ${formatDate(consent.signed_at)}</div>
-              <div><strong>Estado:</strong> ${consent.is_valid ? "Válido" : "Inválido"}</div>
-            </div>
+        </div>
+        `
+            : ""
+        }
+        
+        <div class="patient-info">
+          <h3>Información del Paciente</h3>
+          <div class="info-grid">
+            <div><strong>Nombre:</strong> ${consent.patient_name}</div>
+            <div><strong>DNI/NIE:</strong> ${consent.patient_tax_id}</div>
+            <div><strong>Fecha de firma:</strong> ${formatDate(consent.signed_at)}</div>
+            <div><strong>Estado:</strong> ${consent.is_valid ? "Válido" : "Inválido"}</div>
           </div>
-          
-          <div class="content">
-            ${cleanContent}
+        </div>
+        
+        <div class="content">
+          ${cleanContent}
+        </div>
+        
+        <div class="acceptance-section">
+          <h3>Registro de Aceptaciones y Rechazos</h3>
+          <div class="acceptance-item">
+            <span class="${consent.document_read_understood ? "check" : "reject"}">${consent.document_read_understood ? "✓" : "✗"}</span>
+            <span>He leído y entendido el documento completo</span>
+            ${consent.document_read_understood && consent.document_read_at ? `<span style="margin-left: auto; font-size: 11px; color: #666;">${formatDate(consent.document_read_at)}</span>` : ""}
+            ${!consent.document_read_understood && consent.document_rejected_at ? `<span style="margin-left: auto; font-size: 11px; color: #f44336;">Rechazado: ${formatDate(consent.document_rejected_at)}</span>` : ""}
           </div>
-          
-          <div class="acceptance-section">
-            <h3>Registro de Aceptaciones</h3>
-            <div class="acceptance-item">
-              <span class="check">${consent.document_read_understood ? "✓" : "✗"}</span>
-              <span>He leído y entendido el documento completo</span>
-              ${consent.document_read_at ? `<span style="margin-left: auto; font-size: 11px; color: #666;">${formatDate(consent.document_read_at)}</span>` : ""}
-            </div>
-            <div class="acceptance-item">
-              <span class="check">${consent.terms_accepted ? "✓" : "✗"}</span>
-              <span>Acepto los términos y condiciones del tratamiento</span>
-              ${consent.terms_accepted_at ? `<span style="margin-left: auto; font-size: 11px; color: #666;">${formatDate(consent.terms_accepted_at)}</span>` : ""}
-            </div>
-            <div class="acceptance-item">
-              <span class="check">${consent.marketing_notifications_accepted ? "✓" : "✗"}</span>
-              <span>Acepto recibir comunicaciones de marketing</span>
-              ${consent.marketing_accepted_at ? `<span style="margin-left: auto; font-size: 11px; color: #666;">${formatDate(consent.marketing_accepted_at)}</span>` : ""}
-            </div>
-            ${
-              consent.acceptance_text_version
-                ? `
-              <div style="margin-top: 15px; padding: 10px; background: white; border-radius: 3px; font-size: 12px;">
-                <strong>Texto de aceptación registrado:</strong><br>
-                <em>${consent.acceptance_text_version}</em>
-              </div>
-            `
-                : ""
-            }
+          <div class="acceptance-item">
+            <span class="${consent.terms_accepted ? "check" : "reject"}">${consent.terms_accepted ? "✓" : "✗"}</span>
+            <span>Acepto los términos y condiciones del tratamiento</span>
+            ${consent.terms_accepted && consent.terms_accepted_at ? `<span style="margin-left: auto; font-size: 11px; color: #666;">${formatDate(consent.terms_accepted_at)}</span>` : ""}
+            ${!consent.terms_accepted && consent.terms_rejected_at ? `<span style="margin-left: auto; font-size: 11px; color: #f44336;">Rechazado: ${formatDate(consent.terms_rejected_at)}</span>` : ""}
           </div>
-          
-          <div class="signature-section">
-            <h3>Firma Digital del Paciente</h3>
-            <div class="signature-box">
-              <img src="${consent.signature_base64}" alt="Firma del paciente" class="signature-img" />
-              <p><strong>${consent.patient_name}</strong></p>
-              <p>DNI/NIE: ${consent.patient_tax_id}</p>
-              <p>Firmado digitalmente el ${formatDate(consent.signed_at)}</p>
-            </div>
+          <div class="acceptance-item">
+            <span class="${consent.marketing_notifications_accepted ? "check" : "reject"}">${consent.marketing_notifications_accepted ? "✓" : "✗"}</span>
+            <span>Acepto recibir comunicaciones de marketing</span>
+            ${consent.marketing_notifications_accepted && consent.marketing_accepted_at ? `<span style="margin-left: auto; font-size: 11px; color: #666;">${formatDate(consent.marketing_accepted_at)}</span>` : ""}
+            ${!consent.marketing_notifications_accepted && consent.marketing_rejected_at ? `<span style="margin-left: auto; font-size: 11px; color: #f44336;">Rechazado: ${formatDate(consent.marketing_rejected_at)}</span>` : ""}
           </div>
-          
-          <div class="metadata">
-            <h4>Información de Verificación Digital</h4>
-            <div class="info-grid">
-              <div><strong>ID del documento:</strong> ${consent.id}</div>
-              <div><strong>IP de firma:</strong> ${consent.ip_address || "No disponible"}</div>
-              <div><strong>Verificación de identidad:</strong> ${consent.identity_verified ? "Verificado" : "Pendiente"}</div>
-              <div><strong>Navegador:</strong> ${consent.user_agent ? consent.user_agent.substring(0, 50) + "..." : "No disponible"}</div>
+          ${
+            consent.acceptance_text_version
+              ? `
+            <div style="margin-top: 15px; padding: 10px; background: white; border-radius: 3px; font-size: 12px;">
+              <strong>Texto de aceptación registrado:</strong><br>
+              <em>${consent.acceptance_text_version}</em>
             </div>
-            <p style="margin-top: 20px; font-style: italic; text-align: center;">
-              Este documento ha sido firmado digitalmente y es válido según la normativa vigente.
-              Todas las aceptaciones han sido registradas con timestamp para auditoría.
-            </p>
+          `
+              : ""
+          }
+        </div>
+        
+        <div class="signature-section">
+          <h3>Firma Digital del Paciente</h3>
+          <div class="signature-box">
+            <img src="${consent.signature_base64}" alt="Firma del paciente" class="signature-img" />
+            <p><strong>${consent.patient_name}</strong></p>
+            <p>DNI/NIE: ${consent.patient_tax_id}</p>
+            <p>Firmado digitalmente el ${formatDate(consent.signed_at)}</p>
           </div>
-        </body>
-        </html>
-      `
+        </div>
+        
+        <div class="metadata">
+          <h4>Información de Verificación Digital</h4>
+          <div class="info-grid">
+            <div><strong>ID del documento:</strong> ${consent.id}</div>
+            <div><strong>IP de firma:</strong> ${consent.ip_address || "No disponible"}</div>
+            <div><strong>Verificación de identidad:</strong> ${consent.identity_verified ? "Verificado" : "Pendiente"}</div>
+            <div><strong>Navegador:</strong> ${consent.user_agent ? consent.user_agent.substring(0, 50) + "..." : "No disponible"}</div>
+          </div>
+          ${
+            organizationData
+              ? `
+          <div style="margin-top: 15px; padding: 10px; background: #f0f8ff; border-radius: 3px;">
+            <strong>Documento procesado por:</strong> ${organizationData.name} - ${organizationData.tax_id}
+          </div>
+          `
+              : ""
+          }
+          <p style="margin-top: 20px; font-style: italic; text-align: center;">
+            Este documento ha sido firmado digitalmente y es válido según la normativa vigente.
+            Todas las aceptaciones y rechazos han sido registrados con timestamp para auditoría.
+          </p>
+        </div>
+      </body>
+      </html>
+    `
 
       // Crear y descargar el archivo HTML
       const blob = new Blob([htmlContent], { type: "text/html;charset=utf-8" })
@@ -342,7 +403,7 @@ export function PatientConsentsSection({
 
       toast({
         title: "Documento descargado",
-        description: "El consentimiento completo con firma y registro de aceptaciones se ha descargado correctamente",
+        description: `El consentimiento completo se ha descargado correctamente${organizationData ? ` con datos de ${organizationData.name}` : ""}`,
       })
     } catch (error) {
       console.error("Error downloading consent:", error)
@@ -656,39 +717,69 @@ export function PatientConsentsSection({
 
               {/* Registro de aceptaciones */}
               <div>
-                <h4 className="font-medium text-sm text-gray-500 mb-3">Registro de aceptaciones</h4>
+                <h4 className="font-medium text-sm text-gray-500 mb-3">Registro de aceptaciones y rechazos</h4>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
                     <div className="flex items-center gap-2">
                       <CheckCircle
-                        className={`w-4 h-4 ${selectedConsent.document_read_understood ? "text-green-600" : "text-gray-400"}`}
+                        className={`w-4 h-4 ${selectedConsent.document_read_understood ? "text-green-600" : "text-red-600"}`}
                       />
-                      <span className="text-sm">Documento leído y entendido</span>
+                      <span className="text-sm">
+                        Documento leído y entendido
+                        {!selectedConsent.document_read_understood && (
+                          <span className="text-red-600 ml-1">(Rechazado)</span>
+                        )}
+                      </span>
                     </div>
-                    {selectedConsent.document_read_at && (
+                    {selectedConsent.document_read_understood && selectedConsent.document_read_at && (
                       <span className="text-xs text-gray-500">{formatDate(selectedConsent.document_read_at)}</span>
                     )}
+                    {!selectedConsent.document_read_understood && selectedConsent.document_rejected_at && (
+                      <span className="text-xs text-red-500">
+                        Rechazado: {formatDate(selectedConsent.document_rejected_at)}
+                      </span>
+                    )}
                   </div>
+
                   <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
                     <div className="flex items-center gap-2">
                       <CheckCircle
-                        className={`w-4 h-4 ${selectedConsent.terms_accepted ? "text-green-600" : "text-gray-400"}`}
+                        className={`w-4 h-4 ${selectedConsent.terms_accepted ? "text-green-600" : "text-red-600"}`}
                       />
-                      <span className="text-sm">Términos aceptados</span>
+                      <span className="text-sm">
+                        Términos aceptados
+                        {!selectedConsent.terms_accepted && <span className="text-red-600 ml-1">(Rechazado)</span>}
+                      </span>
                     </div>
-                    {selectedConsent.terms_accepted_at && (
+                    {selectedConsent.terms_accepted && selectedConsent.terms_accepted_at && (
                       <span className="text-xs text-gray-500">{formatDate(selectedConsent.terms_accepted_at)}</span>
                     )}
+                    {!selectedConsent.terms_accepted && selectedConsent.terms_rejected_at && (
+                      <span className="text-xs text-red-500">
+                        Rechazado: {formatDate(selectedConsent.terms_rejected_at)}
+                      </span>
+                    )}
                   </div>
+
                   <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
                     <div className="flex items-center gap-2">
                       <Mail
-                        className={`w-4 h-4 ${selectedConsent.marketing_notifications_accepted ? "text-purple-600" : "text-gray-400"}`}
+                        className={`w-4 h-4 ${selectedConsent.marketing_notifications_accepted ? "text-purple-600" : "text-red-600"}`}
                       />
-                      <span className="text-sm">Marketing aceptado</span>
+                      <span className="text-sm">
+                        Marketing aceptado
+                        {!selectedConsent.marketing_notifications_accepted && (
+                          <span className="text-red-600 ml-1">(Rechazado)</span>
+                        )}
+                      </span>
                     </div>
-                    {selectedConsent.marketing_accepted_at && (
+                    {selectedConsent.marketing_notifications_accepted && selectedConsent.marketing_accepted_at && (
                       <span className="text-xs text-gray-500">{formatDate(selectedConsent.marketing_accepted_at)}</span>
+                    )}
+                    {!selectedConsent.marketing_notifications_accepted && selectedConsent.marketing_rejected_at && (
+                      <span className="text-xs text-red-500">
+                        Rechazado: {formatDate(selectedConsent.marketing_rejected_at)}
+                      </span>
                     )}
                   </div>
                 </div>

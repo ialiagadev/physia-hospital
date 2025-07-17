@@ -55,10 +55,13 @@ interface ClientAppointmentData {
     consultation_name: string
     notes: string | null
     service_price?: number
+    service_vat_rate?: number // ✅ NUEVO
+    service_irpf_rate?: number // ✅ NUEVO
+    service_retention_rate?: number // ✅ NUEVO
     status: string
     type?: "appointment" | "group_activity"
     activity_name?: string
-    is_invoiced?: boolean // ✅ NUEVO CAMPO para tracking granular
+    is_invoiced?: boolean
     invoice_info?: {
       invoice_number: string
       created_at: string
@@ -68,8 +71,8 @@ interface ClientAppointmentData {
   total_amount: number
   has_complete_data: boolean
   missing_fields: string[]
-  invoiceable_appointments: number // ✅ NUEVO: cantidad de citas que se pueden facturar
-  invoiced_appointments: number // ✅ NUEVO: cantidad de citas ya facturadas
+  invoiceable_appointments: number
+  invoiced_appointments: number
 }
 
 interface BillingProgress {
@@ -338,33 +341,36 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
       const { data: appointments, error } = await supabase
         .from("appointments")
         .select(`
-          id,
-          start_time,
-          end_time,
-          notes,
-          status,
-          client_id,
-          clients (
-            id,
-            name,
-            tax_id,
-            address,
-            postal_code,
-            city,
-            province,
-            email,
-            phone
-          ),
-          professional:users!appointments_professional_id_fkey (
-            name
-          ),
-          consultation:consultations (
-            name
-          ),
-          services (
-            price
-          )
-        `)
+    id,
+    start_time,
+    end_time,
+    notes,
+    status,
+    client_id,
+    clients (
+      id,
+      name,
+      tax_id,
+      address,
+      postal_code,
+      city,
+      province,
+      email,
+      phone
+    ),
+    professional:users!appointments_professional_id_fkey (
+      name
+    ),
+    consultation:consultations (
+      name
+    ),
+    services (
+      price,
+      vat_rate,
+      irpf_rate,
+      retention_rate
+    )
+  `)
         .eq("organization_id", userProfile!.organization_id)
         .eq("date", dateStr)
         .order("client_id")
@@ -409,7 +415,10 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
       // Cargar datos auxiliares para resolver en JS
       const [usersData, servicesData] = await Promise.all([
         supabase.from("users").select("id, name").eq("organization_id", userProfile!.organization_id),
-        supabase.from("services").select("id, name, price").eq("organization_id", userProfile!.organization_id),
+        supabase
+          .from("services")
+          .select("id, name, price, vat_rate, irpf_rate, retention_rate")
+          .eq("organization_id", userProfile!.organization_id),
       ])
 
       const users = usersData.data || []
@@ -462,6 +471,9 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           consultation_name: apt.consultation?.name || "Consulta general",
           notes: apt.notes,
           service_price: servicePrice,
+          service_vat_rate: apt.services?.vat_rate ?? 0, // ✅ NUEVO
+          service_irpf_rate: apt.services?.irpf_rate ?? 0, // ✅ NUEVO
+          service_retention_rate: apt.services?.retention_rate ?? 0, // ✅ NUEVO
           status: apt.status,
           type: "appointment",
         })
@@ -521,6 +533,9 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
             consultation_name: activity.name,
             notes: null,
             service_price: servicePrice,
+            service_vat_rate: service?.vat_rate ?? 0, // ✅ NUEVO
+            service_irpf_rate: service?.irpf_rate ?? 0, // ✅ NUEVO
+            service_retention_rate: service?.retention_rate ?? 0, // ✅ NUEVO
             status: participant.status,
             type: "group_activity",
             activity_name: activity.name,
@@ -662,9 +677,9 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
               quantity: 1,
               unit_price: apt.service_price || 50,
               discount_percentage: 0,
-              vat_rate: 21,
-              irpf_rate: 0,
-              retention_rate: 0,
+              vat_rate: apt.service_vat_rate ?? 0, // ✅ USAR EL IVA DEL SERVICIO
+              irpf_rate: apt.service_irpf_rate ?? 0, // ✅ USAR EL IRPF DEL SERVICIO
+              retention_rate: apt.service_retention_rate ?? 0, // ✅ USAR LA RETENCIÓN DEL SERVICIO
               line_amount: apt.service_price || 50,
               professional_id: null,
             }))

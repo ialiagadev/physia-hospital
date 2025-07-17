@@ -162,14 +162,12 @@ function EnhancedProgressBar({ progress }: { progress: BillingProgress }) {
               style={{ width: `${progressPercentage}%` }}
             />
           </div>
-
           <div className="flex justify-between text-xs">
             {["validating", "generating", "creating_pdfs", "creating_zip", "completed"].map((phase, index) => {
               const isActive = progress.phase === phase
               const isCompleted =
                 ["validating", "generating", "creating_pdfs", "creating_zip", "completed"].indexOf(progress.phase) >
                 index
-
               return (
                 <div
                   key={phase}
@@ -189,7 +187,6 @@ function EnhancedProgressBar({ progress }: { progress: BillingProgress }) {
               )
             })}
           </div>
-
           <div className="bg-white/70 rounded-lg p-3 border border-blue-100">
             <p className="text-sm text-gray-700 font-medium">{progress.message}</p>
             {progress.phase === "creating_zip" && (
@@ -199,7 +196,6 @@ function EnhancedProgressBar({ progress }: { progress: BillingProgress }) {
               </div>
             )}
           </div>
-
           {progress.errors.length > 0 && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3">
               <h4 className="text-sm font-medium text-red-800 mb-2 flex items-center gap-2">
@@ -234,7 +230,6 @@ export function GroupActivityBillingModal({
 }: GroupActivityBillingModalProps) {
   const { userProfile } = useAuth()
   const { toast } = useToast()
-
   const [participantsData, setParticipantsData] = useState<ParticipantBillingData[]>([])
   const [selectedParticipants, setSelectedParticipants] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
@@ -447,6 +442,11 @@ export function GroupActivityBillingModal({
             "normal",
           )
 
+          // ✅ CORREGIR: Usar valores por defecto para los impuestos con ??
+          const serviceVatRate = service.vat_rate ?? 0
+          const serviceIrpfRate = service.irpf_rate ?? 0
+          const serviceRetentionRate = service.retention_rate ?? 0
+
           // Preparar línea de factura para la actividad grupal
           const invoiceLines = [
             {
@@ -455,9 +455,9 @@ export function GroupActivityBillingModal({
               quantity: 1,
               unit_price: service.price,
               discount_percentage: 0,
-              vat_rate: 21,
-              irpf_rate: 0,
-              retention_rate: 0,
+              vat_rate: serviceVatRate, // ✅ USAR CON VALOR POR DEFECTO
+              irpf_rate: serviceIrpfRate, // ✅ USAR CON VALOR POR DEFECTO
+              retention_rate: serviceRetentionRate, // ✅ USAR CON VALOR POR DEFECTO
               line_amount: service.price,
               professional_id: null,
             },
@@ -467,9 +467,9 @@ export function GroupActivityBillingModal({
           const subtotalAmount = service.price
           const totalDiscountAmount = 0
           const baseAmount = subtotalAmount - totalDiscountAmount
-          const vatAmount = (baseAmount * 21) / 100
-          const irpfAmount = 0
-          const retentionAmount = 0
+          const vatAmount = (baseAmount * serviceVatRate) / 100 // ✅ USAR CON VALOR POR DEFECTO
+          const irpfAmount = (baseAmount * serviceIrpfRate) / 100 // ✅ USAR CON VALOR POR DEFECTO
+          const retentionAmount = (baseAmount * serviceRetentionRate) / 100 // ✅ USAR CON VALOR POR DEFECTO
           const totalAmount = baseAmount + vatAmount - irpfAmount - retentionAmount
 
           // Preparar notas de la factura
@@ -646,7 +646,6 @@ export function GroupActivityBillingModal({
 
         for (let i = 0; i < invoicesForZip.length; i++) {
           const invoice = invoicesForZip[i]
-
           setProgress((prev) => ({
             ...prev!,
             zipProgress: ((i + 1) / invoicesForZip.length) * 100,
@@ -657,7 +656,6 @@ export function GroupActivityBillingModal({
             .replace(/[^a-zA-Z0-9\s]/g, "")
             .replace(/\s+/g, "_")
             .substring(0, 30)
-
           const fileName = `${invoice.invoiceNumber}_${cleanClientName}.pdf`
           zip.file(fileName, invoice.pdfBlob)
 
@@ -739,7 +737,6 @@ export function GroupActivityBillingModal({
           .replace(/[^a-zA-Z0-9\s]/g, "")
           .replace(/\s+/g, "_")
           .substring(0, 30)
-
         const fileName = `${invoice.invoiceNumber}_${cleanClientName}.pdf`
         zip.file(fileName, invoice.pdfBlob)
       })
@@ -956,7 +953,6 @@ export function GroupActivityBillingModal({
                           }
                           className="mt-1"
                         />
-
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-2">
                             <h3 className="font-medium text-gray-900">{participant.client_name}</h3>

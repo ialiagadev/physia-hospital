@@ -26,6 +26,10 @@ export interface ConsentForm {
       email?: string
       phone?: string
       method?: string
+      processed_content?: string
+      organization_data?: any
+      placeholders_replaced?: boolean
+      organization_source?: string
     } | null
   }
   
@@ -48,7 +52,8 @@ export interface ConsentForm {
     } | null
     identity_verified: boolean
     is_valid: boolean
-    // Nuevos campos de aceptación
+  
+    // Campos de aceptación
     terms_accepted: boolean
     terms_accepted_at: string | null
     document_read_understood: boolean
@@ -56,6 +61,30 @@ export interface ConsentForm {
     marketing_notifications_accepted: boolean
     marketing_accepted_at: string | null
     acceptance_text_version: string | null
+  
+    // ✅ NUEVOS CAMPOS AGREGADOS
+    consent_content?: string | null
+    organization_data?: {
+      id: number
+      name: string
+      tax_id: string
+      address?: string
+      city: string
+      province?: string
+      postal_code?: string
+      email?: string
+      phone?: string
+      website?: string
+      logo_url?: string
+    } | null
+  
+    // Campos de rechazo
+    terms_rejected?: boolean
+    terms_rejected_at?: string | null
+    document_rejected?: boolean
+    document_rejected_at?: string | null
+    marketing_rejected?: boolean
+    marketing_rejected_at?: string | null
   }
   
   export interface ConsentTokenWithDetails extends ConsentToken {

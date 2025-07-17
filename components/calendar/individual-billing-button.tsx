@@ -88,9 +88,9 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
           quantity: 1,
           unit_price: servicePrice,
           discount_percentage: 0,
-          vat_rate: 21,
-          irpf_rate: 0,
-          retention_rate: 0,
+          vat_rate: serviceData!.vat_rate ?? 0, // Usar el IVA del servicio (0 si es null/undefined)
+          irpf_rate: serviceData!.irpf_rate ?? 0, // Usar el IRPF del servicio
+          retention_rate: serviceData!.retention_rate ?? 0, // Usar la retención del servicio
           line_amount: servicePrice,
           professional_id: null,
         },
@@ -112,7 +112,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
         const lineSubtotal = line.quantity * line.unit_price
         const lineDiscount = (lineSubtotal * line.discount_percentage) / 100
         const lineBase = lineSubtotal - lineDiscount
-        const lineVat = (lineBase * line.vat_rate) / 100
+        const lineVat = (lineBase * (line.vat_rate ?? 0)) / 100
         return sum + lineVat
       }, 0)
 
@@ -120,7 +120,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
         const lineSubtotal = line.quantity * line.unit_price
         const lineDiscount = (lineSubtotal * line.discount_percentage) / 100
         const lineBase = lineSubtotal - lineDiscount
-        const lineIrpf = (lineBase * line.irpf_rate) / 100
+        const lineIrpf = (lineBase * (line.irpf_rate ?? 0)) / 100
         return sum + lineIrpf
       }, 0)
 
@@ -128,7 +128,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
         const lineSubtotal = line.quantity * line.unit_price
         const lineDiscount = (lineSubtotal * line.discount_percentage) / 100
         const lineBase = lineSubtotal - lineDiscount
-        const lineRetention = (lineBase * line.retention_rate) / 100
+        const lineRetention = (lineBase * (line.retention_rate ?? 0)) / 100
         return sum + lineRetention
       }, 0)
 
@@ -147,7 +147,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
           organization_id: userProfile.organization_id,
           invoice_number: invoiceNumberFormatted,
           client_id: appointment.client_id,
-          appointment_id: appointment.id, // ✅ NUEVO CAMPO
+          appointment_id: appointment.id,
           issue_date: appointment.date,
           invoice_type: "normal",
           status: "sent",
@@ -165,7 +165,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
 
       if (invoiceError) throw invoiceError
 
-      // ✅ ACTUALIZACIÓN OPTIMISTA INMEDIATA
+      // Actualización optimista inmediata
       setExistingInvoice({
         invoice_number: invoiceNumberFormatted,
         created_at: invoiceData.created_at,
@@ -271,12 +271,13 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
         description: `Factura ${invoiceNumberFormatted} creada correctamente (${servicePrice}€)`,
       })
 
+      // Llamar al callback si existe
       if (onBillingComplete) {
         onBillingComplete()
       }
     } catch (error) {
       console.error("Error generating invoice:", error)
-      // ✅ REVERTIR ACTUALIZACIÓN OPTIMISTA EN CASO DE ERROR
+      // Revertir actualización optimista en caso de error
       setExistingInvoice(null)
       toast({
         title: "Error",
@@ -299,7 +300,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
         .from("invoices")
         .select("id, invoice_number, created_at")
         .eq("organization_id", userProfile.organization_id)
-        .eq("appointment_id", appointment.id) // ✅ CAMBIO: usar appointment_id en lugar de client_id + date
+        .eq("appointment_id", appointment.id)
         .order("created_at", { ascending: false })
         .limit(1)
 
@@ -319,7 +320,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
     checkExistingInvoice()
   }, [appointment.id, appointment.client_id, appointment.date, userProfile])
 
-  // ✅ SI NO HAY SERVICIO, MOSTRAR MENSAJE DE ERROR
+  // Si no hay servicio, mostrar mensaje de error
   if (!hasService) {
     return (
       <div className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded border border-red-200">
@@ -331,7 +332,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
     )
   }
 
-  // ✅ SI FALTAN DATOS DEL CLIENTE, MOSTRAR MENSAJE
+  // Si faltan datos del cliente, mostrar mensaje
   if (!clientValidation.isValid) {
     return (
       <div className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded border border-orange-200">
@@ -343,7 +344,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
     )
   }
 
-  // ✅ SI ESTÁ VERIFICANDO FACTURA EXISTENTE
+  // Si está verificando factura existente
   if (checkingInvoice) {
     return (
       <div className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded border border-gray-200">
@@ -355,7 +356,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
     )
   }
 
-  // ✅ SI YA EXISTE FACTURA
+  // Si ya existe factura
   if (existingInvoice) {
     return (
       <div className="flex items-center gap-2">
@@ -393,7 +394,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
     )
   }
 
-  // ✅ SI TODO ESTÁ BIEN, MOSTRAR BOTÓN DE FACTURAR
+  // Si todo está bien, mostrar botón de facturar
   return (
     <Button
       variant="outline"

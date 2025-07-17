@@ -28,15 +28,28 @@ interface GenerateConsentModalProps {
   clientName?: string
 }
 
+interface OrganizationData {
+  id: number
+  name: string
+  tax_id: string
+  address?: string
+  city: string
+  province?: string
+  postal_code?: string
+  email?: string
+  phone?: string
+  website?: string
+  logo_url?: string
+}
+
 export function GenerateConsentModal({ isOpen, onClose, clientId, clientName }: GenerateConsentModalProps) {
   const { toast } = useToast()
-  const { userProfile } = useAuth()
+  const { user, userProfile } = useAuth()
   const [loading, setLoading] = useState(false)
   const [forms, setForms] = useState<ConsentForm[]>([])
   const [loadingForms, setLoadingForms] = useState(false)
   const [generatedLink, setGeneratedLink] = useState<string>("")
-  const [organizationName, setOrganizationName] = useState<string>("")
-
+  const [organizationData, setOrganizationData] = useState<OrganizationData | null>(null) // ✅ CAMBIO: Datos completos
   const [formData, setFormData] = useState({
     consent_form_id: "",
     patient_name: clientName || "",
@@ -47,25 +60,46 @@ export function GenerateConsentModal({ isOpen, onClose, clientId, clientName }: 
   useEffect(() => {
     if (isOpen && userProfile?.organization_id) {
       loadConsentForms()
-      loadOrganizationName()
+      loadOrganizationData() // ✅ CAMBIO: Cargar datos completos
       setFormData((prev) => ({ ...prev, patient_name: clientName || "" }))
     }
   }, [isOpen, userProfile, clientName])
 
-  const loadOrganizationName = async () => {
+  // ✅ CAMBIO: Cargar datos completos de la organización
+  const loadOrganizationData = async () => {
     if (!userProfile?.organization_id) return
 
     try {
+      console.log("🔍 FRONTEND - Loading organization data for ID:", userProfile.organization_id)
+
       const { data, error } = await supabase
         .from("organizations")
-        .select("name")
+        .select("*")
         .eq("id", userProfile.organization_id)
         .single()
 
-      if (error) throw error
-      setOrganizationName(data?.name || "")
+      if (error) {
+        console.error("❌ FRONTEND - Error loading organization:", error)
+        throw error
+      }
+
+      console.log("✅ FRONTEND - Organization data loaded:", {
+        id: data.id,
+        name: data.name,
+        tax_id: data.tax_id,
+        hasAddress: !!data.address,
+        hasEmail: !!data.email,
+      })
+
+      setOrganizationData(data)
     } catch (error) {
-      console.error("Error loading organization name:", error)
+      console.error("❌ FRONTEND - Error loading organization data:", error)
+      toast({
+        title: "Advertencia",
+        description:
+          "No se pudieron cargar los datos de la organización. El consentimiento se generará sin personalizar.",
+        variant: "destructive",
+      })
     }
   }
 
@@ -74,16 +108,16 @@ export function GenerateConsentModal({ isOpen, onClose, clientId, clientName }: 
 
     setLoadingForms(true)
     try {
-      // Solo cargar formularios de la organización del usuario que estén activos
+      // Cargar tanto formularios globales (organization_id IS NULL) como específicos de la organización
       const { data, error } = await supabase
         .from("consent_forms")
         .select("*")
-        .eq("organization_id", userProfile.organization_id)
+        .or(`organization_id.is.null,organization_id.eq.${userProfile.organization_id}`)
         .eq("is_active", true)
+        .order("organization_id", { nullsFirst: true })
         .order("title")
 
       if (error) throw error
-
       setForms(data || [])
     } catch (error) {
       console.error("Error loading consent forms:", error)
@@ -97,17 +131,11 @@ export function GenerateConsentModal({ isOpen, onClose, clientId, clientName }: 
     }
   }
 
-  const validateFormAccess = (formId: string): boolean => {
-    if (!userProfile?.organization_id) return false
-    const form = forms.find((f) => f.id === formId)
-    return form ? form.organization_id === userProfile.organization_id : false
-  }
-
   const generateConsentLink = async () => {
-    if (!userProfile?.organization_id) {
+    if (!user || !userProfile?.organization_id) {
       toast({
-        title: "Error de organización",
-        description: "No se pudo identificar tu organización",
+        title: "Error de autenticación",
+        description: "No se pudo identificar tu usuario o organización",
         variant: "destructive",
       })
       return
@@ -122,50 +150,65 @@ export function GenerateConsentModal({ isOpen, onClose, clientId, clientName }: 
       return
     }
 
-    if (!validateFormAccess(formData.consent_form_id)) {
-      toast({
-        title: "Error de permisos",
-        description: "No tienes permisos para usar este formulario",
-        variant: "destructive",
-      })
-      return
-    }
-
     setLoading(true)
-
     try {
-      // Generar token único
-      const token = crypto.randomUUID()
-
-      // Crear registro en la base de datos
-      const { error } = await supabase.from("patient_consents").insert({
-        organization_id: userProfile.organization_id,
+      console.log("🔍 FRONTEND - Generating consent with organization data:", {
+        client_id: clientId ? Number(clientId) : null,
         consent_form_id: formData.consent_form_id,
-        patient_name: formData.patient_name.trim(),
-        patient_email: formData.patient_email.trim() || null,
-        client_id: clientId ? String(clientId) : null,
-        token,
-        status: "pending",
-        notes: formData.notes.trim() || null,
-        created_by: userProfile.id,
+        created_by: user.id,
+        organization_id: userProfile.organization_id,
+        has_organization_data: !!organizationData,
+        organization_name: organizationData?.name,
       })
 
-      if (error) throw error
-
-      // Generar enlace
-      const baseUrl = window.location.origin
-      const link = `${baseUrl}/consentimiento/${token}`
-      setGeneratedLink(link)
-
-      toast({
-        title: "Enlace generado",
-        description: "El enlace de consentimiento se ha generado correctamente",
+      const response = await fetch("/api/consent/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          client_id: clientId ? Number(clientId) : null,
+          consent_form_id: formData.consent_form_id,
+          expiration_days: 7,
+          delivery_method: "manual",
+          created_by: user.id,
+          organization_id: userProfile.organization_id,
+          organization_data: organizationData, // ✅ CAMBIO: Enviar datos completos
+        }),
       })
+
+      const result = await response.json()
+
+      // ✅ AGREGAR LOG COMPLETO
+      console.log("🔍 FULL GENERATE RESPONSE:", JSON.stringify(result, null, 2))
+
+      console.log("🔍 FRONTEND - Generate response:", {
+        success: result.success,
+        hasOrganization: !!result.data?.organization,
+        organizationName: result.data?.organization?.name,
+        placeholdersReplaced: result.data?.processing_info?.placeholders_replaced,
+      })
+
+      if (!response.ok) {
+        throw new Error(result.error || "Error al generar el enlace")
+      }
+
+      if (result.success && result.data?.link) {
+        setGeneratedLink(result.data.link)
+        toast({
+          title: "Enlace generado",
+          description: `El enlace de consentimiento se ha generado correctamente${
+            result.data.organization ? ` para ${result.data.organization.name}` : ""
+          }${result.data.processing_info?.placeholders_replaced ? " con datos personalizados" : ""}`,
+        })
+      } else {
+        throw new Error("Respuesta inválida del servidor")
+      }
     } catch (error) {
       console.error("Error generating consent link:", error)
       toast({
         title: "Error",
-        description: "No se pudo generar el enlace de consentimiento",
+        description: error instanceof Error ? error.message : "No se pudo generar el enlace de consentimiento",
         variant: "destructive",
       })
     } finally {
@@ -213,10 +256,15 @@ export function GenerateConsentModal({ isOpen, onClose, clientId, clientName }: 
           <DialogDescription>
             Crea un enlace personalizado para que el paciente firme el consentimiento informado
           </DialogDescription>
-          {organizationName && (
+          {organizationData && (
             <div className="flex items-center gap-2 mt-2">
               <Building2 className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">{organizationName}</span>
+              <span className="text-sm text-muted-foreground">{organizationData.name}</span>
+              {organizationData.tax_id && (
+                <Badge variant="outline" className="text-xs">
+                  {organizationData.tax_id}
+                </Badge>
+              )}
             </div>
           )}
         </DialogHeader>
@@ -236,9 +284,7 @@ export function GenerateConsentModal({ isOpen, onClose, clientId, clientName }: 
               ) : forms.length === 0 ? (
                 <div className="flex items-center gap-2 p-3 border rounded-md bg-yellow-50">
                   <AlertCircle className="h-4 w-4 text-yellow-600" />
-                  <span className="text-sm text-yellow-700">
-                    No hay formularios activos disponibles en tu organización
-                  </span>
+                  <span className="text-sm text-yellow-700">No hay formularios activos disponibles</span>
                 </div>
               ) : (
                 <Select
@@ -256,6 +302,11 @@ export function GenerateConsentModal({ isOpen, onClose, clientId, clientName }: 
                           <Badge variant="outline" className="text-xs">
                             {form.category}
                           </Badge>
+                          {!form.organization_id && (
+                            <Badge variant="secondary" className="text-xs">
+                              Global
+                            </Badge>
+                          )}
                         </div>
                       </SelectItem>
                     ))}
@@ -278,6 +329,16 @@ export function GenerateConsentModal({ isOpen, onClose, clientId, clientName }: 
                       <Badge variant="outline" className="text-xs">
                         {selectedForm.category}
                       </Badge>
+                      {!selectedForm.organization_id && (
+                        <Badge variant="secondary" className="text-xs">
+                          Plantilla Global
+                        </Badge>
+                      )}
+                      {organizationData && (
+                        <Badge variant="default" className="text-xs">
+                          ✓ Se personalizará con datos de {organizationData.name}
+                        </Badge>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -348,6 +409,11 @@ export function GenerateConsentModal({ isOpen, onClose, clientId, clientName }: 
                 <li>
                   • <strong>Formulario:</strong> {selectedForm?.title}
                 </li>
+                {organizationData && (
+                  <li>
+                    • <strong>Organización:</strong> {organizationData.name}
+                  </li>
+                )}
                 {formData.patient_email && (
                   <li>
                     • <strong>Email:</strong> {formData.patient_email}

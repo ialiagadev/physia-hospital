@@ -11,7 +11,7 @@ export interface AppointmentUpdate {
   client_id?: number
   appointment_type_id?: number
   consultation_id?: string
-  service_id?: number 
+  service_id?: number
   // 🆕 CAMPOS DE RECURRENCIA
   is_recurring?: boolean
   recurrence_type?: "weekly" | "monthly" | null
@@ -164,6 +164,10 @@ export interface Database {
           organization_id: number
           created_at: string
           updated_at: string
+          // ✅ CAMPOS DE IMPUESTOS AÑADIDOS
+          vat_rate: number
+          irpf_rate: number
+          retention_rate: number
         }
         Insert: {
           id?: number
@@ -177,6 +181,10 @@ export interface Database {
           organization_id: number
           created_at?: string
           updated_at?: string
+          // ✅ CAMPOS DE IMPUESTOS AÑADIDOS
+          vat_rate: number
+          irpf_rate: number
+          retention_rate: number
         }
         Update: {
           id?: number
@@ -190,6 +198,10 @@ export interface Database {
           organization_id?: number
           created_at?: string
           updated_at?: string
+          // ✅ CAMPOS DE IMPUESTOS AÑADIDOS
+          vat_rate?: number
+          irpf_rate?: number
+          retention_rate?: number
         }
       }
     }
@@ -257,6 +269,9 @@ export interface GroupActivity {
     id: number
     name: string
     color: string
+    vat_rate: number
+    irpf_rate: number
+    retention_rate: number
   }
   participants?: GroupActivityParticipant[]
 }
@@ -317,6 +332,7 @@ export interface GroupActivityFormData {
   max_participants: number
   color: string
 }
+
 export interface ClientMatch {
   id: number
   name: string
@@ -557,19 +573,23 @@ export interface AppointmentInsert {
   parent_appointment_id?: string | null
 }
 
-// Tipo para servicios
+// Tipo para servicios - ✅ ACTUALIZADO CON CAMPOS DE IMPUESTOS
 export interface Service {
   id: number
   name: string
-  description?: string | null
+  description: string | null
   price: number
   duration: number
   color: string
-  category?: string | null
+  category: string | null
   active: boolean
   organization_id: number
   created_at: string
   updated_at: string
+  // ✅ CAMPOS DE IMPUESTOS AÑADIDOS
+  vat_rate: number
+  irpf_rate: number
+  retention_rate: number
 }
 
 export interface ServiceInsert {
@@ -581,6 +601,10 @@ export interface ServiceInsert {
   category?: string | null
   active?: boolean
   organization_id: number
+  // ✅ CAMPOS DE IMPUESTOS AÑADIDOS
+  vat_rate?: number
+  irpf_rate?: number
+  retention_rate?: number
 }
 
 export interface ServiceUpdate {
@@ -591,6 +615,10 @@ export interface ServiceUpdate {
   color?: string
   category?: string | null
   active?: boolean
+  // ✅ CAMPOS DE IMPUESTOS AÑADIDOS
+  vat_rate?: number
+  irpf_rate?: number
+  retention_rate?: number
 }
 
 // Tipos para las vistas del calendario - EXACTAMENTE como se usan en el código

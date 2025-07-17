@@ -1,190 +1,196 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Separator } from "@/components/ui/separator"
+import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Shield, CheckCircle, AlertCircle, Building2, Mail, Phone, MapPin } from "lucide-react"
 import { SignaturePad } from "@/components/signature-pad"
-import { Loader2, CheckCircle, AlertTriangle, FileText, Shield, Clock } from "lucide-react"
-import type { ConsentForm, ConsentToken } from "@/types/consent"
 
-interface TokenData {
-  token: ConsentToken
-  consentForm: ConsentForm
-  client: {
+interface OrganizationData {
+  id: number
+  name: string
+  tax_id: string
+  address?: string
+  city: string
+  province?: string
+  postal_code?: string
+  email?: string
+  phone?: string
+  website?: string
+  logo_url?: string
+}
+
+interface ConsentData {
+  token: string
+  consent_form: {
+    id: number
+    title: string
+    content: string
+    category?: string
+  }
+  client?: {
     id: number
     name: string
-    tax_id: string
+    email?: string
+    phone?: string
+  }
+  organization?: OrganizationData
+  expires_at: string
+  is_signed: boolean
+  processing_info?: {
+    has_processed_content: boolean
+    placeholders_replaced: boolean
+    organization_source: string | null
   }
 }
 
 export default function ConsentPage({ params }: { params: { token: string } }) {
-  const router = useRouter()
-  const [isLoading, setIsLoading] = useState(true)
-  const [isSigning, setIsSigning] = useState(false)
+  const [consentData, setConsentData] = useState<ConsentData | null>(null)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState(false)
-  const [tokenData, setTokenData] = useState<TokenData | null>(null)
+  const [signing, setSigning] = useState(false)
+  const [signed, setSigned] = useState(false)
 
-  // Formulario
-  const [patientName, setPatientName] = useState("")
-  const [patientTaxId, setPatientTaxId] = useState("")
+  // Form data
+  const [fullName, setFullName] = useState("")
+  const [dni, setDni] = useState("")
   const [signature, setSignature] = useState<string | null>(null)
 
-  // Nuevos checkboxes con timestamps
-  const [documentReadUnderstood, setDocumentReadUnderstood] = useState(false)
-  const [documentReadAt, setDocumentReadAt] = useState<Date | null>(null)
+  // ✅ CHECKBOXES SEGÚN LA BASE DE DATOS
   const [termsAccepted, setTermsAccepted] = useState(false)
-  const [termsAcceptedAt, setTermsAcceptedAt] = useState<Date | null>(null)
-  const [marketingAccepted, setMarketingAccepted] = useState(false)
-  const [marketingAcceptedAt, setMarketingAcceptedAt] = useState<Date | null>(null)
+  const [documentReadUnderstood, setDocumentReadUnderstood] = useState(false)
+  const [marketingNotificationsAccepted, setMarketingNotificationsAccepted] = useState(false)
 
-  // Cargar datos del token
   useEffect(() => {
-    const loadTokenData = async () => {
-      try {
-        const response = await fetch(`/api/consent/validate-token`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token: params.token }),
-        })
+    validateToken()
+  }, [])
 
-        const result = await response.json()
+  const validateToken = async () => {
+    try {
+      console.log("🔍 FRONTEND DEBUG - Validating token:", params.token)
+      const response = await fetch("/api/consent/validate-token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ token: params.token }),
+      })
 
-        if (!response.ok) {
-          throw new Error(result.error || "Token inválido")
-        }
+      const data = await response.json()
+      console.log("🔍 FRONTEND DEBUG - Response data:", {
+        success: data.success,
+        hasOrganization: !!data.data?.organization,
+        organizationName: data.data?.organization?.name,
+        placeholdersReplaced: data.data?.processing_info?.placeholders_replaced,
+      })
 
-        setTokenData(result.data)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Error al cargar el consentimiento")
-      } finally {
-        setIsLoading(false)
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Token inválido")
       }
+
+      setConsentData(data.data)
+
+      // Pre-fill client data if available
+      if (data.data.client?.name) {
+        setFullName(data.data.client.name)
+      }
+    } catch (err) {
+      console.error("❌ FRONTEND DEBUG - Error validating token:", err)
+      setError(err instanceof Error ? err.message : "Error desconocido")
+    } finally {
+      setLoading(false)
     }
-
-    loadTokenData()
-  }, [params.token])
-
-  // Manejar cambios en checkboxes con timestamp
-  const handleDocumentReadChange = (checked: boolean) => {
-    setDocumentReadUnderstood(checked)
-    setDocumentReadAt(checked ? new Date() : null)
-  }
-
-  const handleTermsAcceptedChange = (checked: boolean) => {
-    setTermsAccepted(checked)
-    setTermsAcceptedAt(checked ? new Date() : null)
-  }
-
-  const handleMarketingChange = (checked: boolean) => {
-    setMarketingAccepted(checked)
-    setMarketingAcceptedAt(checked ? new Date() : null)
   }
 
   const handleSign = async () => {
-    if (!tokenData || !signature) return
-
-    // Validaciones
-    if (!patientName.trim()) {
-      setError("El nombre es obligatorio")
+    if (!fullName.trim() || !dni.trim() || !signature) {
+      setError("Por favor, complete todos los campos requeridos")
       return
     }
 
-    if (!patientTaxId.trim()) {
-      setError("El DNI/CIF es obligatorio")
+    // ✅ VALIDAR CHECKBOXES OBLIGATORIOS
+    if (!termsAccepted || !documentReadUnderstood) {
+      setError("Debe aceptar los consentimientos obligatorios marcados con *")
       return
     }
 
-    if (!documentReadUnderstood) {
-      setError("Debe confirmar que ha leído y entendido el documento")
-      return
-    }
-
-    if (!termsAccepted) {
-      setError("Debe aceptar los términos para continuar")
-      return
-    }
-
-    // Validar identidad básica (nombre y DNI deben coincidir)
-    const nameMatch = patientName.toLowerCase().trim() === tokenData.client.name.toLowerCase().trim()
-    const taxIdMatch = patientTaxId.toUpperCase().trim() === tokenData.client.tax_id?.toUpperCase().trim()
-
-    if (!nameMatch || !taxIdMatch) {
-      setError("Los datos introducidos no coinciden con los registros del paciente")
-      return
-    }
-
-    setIsSigning(true)
+    setSigning(true)
     setError(null)
 
     try {
-      // Texto de aceptación que vio el usuario
-      const acceptanceText = `
-        He leído y entendido el contenido de este consentimiento informado.
-        Acepto el tratamiento propuesto y confirmo que toda la información proporcionada es correcta.
-        ${marketingAccepted ? "Acepto recibir comunicaciones de marketing y promocionales." : "No deseo recibir comunicaciones de marketing."}
-      `.trim()
+      console.log("🔍 FRONTEND DEBUG - Signing consent:", {
+        token: params.token,
+        fullName,
+        dni,
+        hasSignature: !!signature,
+        termsAccepted,
+        documentReadUnderstood,
+        marketingNotificationsAccepted,
+      })
 
       const response = await fetch("/api/consent/sign", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           token: params.token,
-          patient_name: patientName,
-          patient_tax_id: patientTaxId,
-          signature_base64: signature,
-          // Nuevos campos de aceptación
+          full_name: fullName,
+          dni: dni,
+          signature: signature,
           terms_accepted: termsAccepted,
-          terms_accepted_at: termsAcceptedAt?.toISOString(),
           document_read_understood: documentReadUnderstood,
-          document_read_at: documentReadAt?.toISOString(),
-          marketing_notifications_accepted: marketingAccepted,
-          marketing_accepted_at: marketingAcceptedAt?.toISOString(),
-          acceptance_text_version: acceptanceText,
+          marketing_notifications_accepted: marketingNotificationsAccepted,
         }),
       })
 
-      const result = await response.json()
+      const data = await response.json()
+      console.log("🔍 FRONTEND DEBUG - Sign response:", {
+        success: data.success,
+        error: data.error,
+      })
 
-      if (!response.ok) {
-        throw new Error(result.error || "Error al firmar el consentimiento")
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Error al firmar el consentimiento")
       }
 
-      setSuccess(true)
+      setSigned(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al firmar el consentimiento")
+      console.error("❌ FRONTEND DEBUG - Error signing:", err)
+      setError(err instanceof Error ? err.message : "Error al firmar")
     } finally {
-      setIsSigning(false)
+      setSigning(false)
     }
   }
 
-  if (isLoading) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <Card className="w-full max-w-md">
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-blue-600 mb-4" />
-            <p className="text-gray-600">Cargando consentimiento...</p>
-          </CardContent>
-        </Card>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Validando enlace...</p>
+        </div>
       </div>
     )
   }
 
-  if (error && !tokenData) {
+  if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <AlertTriangle className="h-12 w-12 text-red-500 mb-4" />
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Enlace no válido</h2>
-            <p className="text-gray-600 text-center mb-4">{error}</p>
-            <p className="text-sm text-gray-500 text-center">
+          <CardHeader className="text-center">
+            <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+            <CardTitle className="text-red-600">Enlace no válido</CardTitle>
+            <CardDescription>{error}</CardDescription>
+          </CardHeader>
+          <CardContent className="text-center">
+            <p className="text-sm text-gray-600">
               El enlace puede haber expirado o ya haber sido utilizado. Contacte con su centro médico para obtener un
               nuevo enlace.
             </p>
@@ -194,210 +200,248 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
     )
   }
 
-  if (success) {
+  if (signed) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <CheckCircle className="h-12 w-12 text-green-500 mb-4" />
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">¡Consentimiento firmado!</h2>
-            <p className="text-gray-600 text-center mb-4">Su consentimiento ha sido registrado correctamente.</p>
-            <p className="text-sm text-gray-500 text-center">
-              Puede cerrar esta ventana. Su centro médico ha sido notificado.
-            </p>
+          <CardHeader className="text-center">
+            <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-4" />
+            <CardTitle className="text-green-600">Consentimiento Firmado</CardTitle>
+            <CardDescription>Su consentimiento ha sido registrado correctamente</CardDescription>
+          </CardHeader>
+          <CardContent className="text-center">
+            <p className="text-sm text-gray-600">Gracias por completar el proceso. Puede cerrar esta ventana.</p>
+            {consentData?.organization && (
+              <div className="mt-4 pt-4 border-t">
+                <p className="text-xs text-gray-500">Documento procesado por {consentData.organization.name}</p>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
     )
   }
 
-  if (!tokenData) return null
-
-  const { token, consentForm, client } = tokenData
-  const isExpired = new Date(token.expires_at) < new Date()
-
-  if (isExpired) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <Card className="w-full max-w-md">
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Clock className="h-12 w-12 text-orange-500 mb-4" />
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Enlace expirado</h2>
-            <p className="text-gray-600 text-center mb-4">Este enlace de consentimiento ha expirado.</p>
-            <p className="text-sm text-gray-500 text-center">
-              Contacte con su centro médico para obtener un nuevo enlace.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    )
+  if (!consentData) {
+    return null
   }
-
-  const canSign = signature && patientName && patientTaxId && documentReadUnderstood && termsAccepted
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-4xl mx-auto px-4">
+        {/* ✅ HEADER SIMPLIFICADO */}
         <div className="text-center mb-8">
-          <div className="flex items-center justify-center mb-4">
-            <Shield className="h-8 w-8 text-blue-600 mr-2" />
-            <h1 className="text-2xl font-bold text-gray-900">Consentimiento Informado</h1>
-          </div>
-          <p className="text-gray-600">
-            Paciente: <span className="font-medium">{client.name}</span>
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Documento */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5" />
-                {consentForm.title}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: consentForm.content }} />
-            </CardContent>
-          </Card>
-
-          {/* Formulario de firma */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Firmar consentimiento</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {error && (
-                <Alert variant="destructive">
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
+          <div className="flex items-center justify-center gap-3 mb-4">
+            {consentData.organization?.logo_url ? (
+              <img
+                src={consentData.organization.logo_url || "/placeholder.svg"}
+                alt={`Logo de ${consentData.organization.name}`}
+                className="h-12 w-auto"
+              />
+            ) : (
+              <Building2 className="h-8 w-8 text-blue-600" />
+            )}
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">{consentData.organization?.name || "Centro Médico"}</h1>
+              {consentData.organization?.tax_id && (
+                <p className="text-sm text-gray-600">CIF: {consentData.organization.tax_id}</p>
               )}
+            </div>
+          </div>
 
-              {/* Validación de identidad */}
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="patientName">Nombre completo</Label>
-                  <Input
-                    id="patientName"
-                    value={patientName}
-                    onChange={(e) => setPatientName(e.target.value)}
-                    placeholder="Introduzca su nombre completo"
-                    disabled={isSigning}
-                  />
-                </div>
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <Shield className="h-5 w-5 text-blue-600" />
+            <h2 className="text-lg font-semibold text-gray-800">Consentimiento Informado</h2>
+          </div>
 
-                <div>
-                  <Label htmlFor="patientTaxId">DNI/CIF</Label>
-                  <Input
-                    id="patientTaxId"
-                    value={patientTaxId}
-                    onChange={(e) => setPatientTaxId(e.target.value)}
-                    placeholder="Introduzca su DNI o CIF"
-                    disabled={isSigning}
-                  />
-                </div>
-              </div>
+          {consentData.client && (
+            <Badge variant="outline" className="mb-4">
+              Paciente: {consentData.client.name}
+            </Badge>
+          )}
 
-              {/* Firma */}
-              <div>
-                <Label>Firma digital</Label>
-                <div className="mt-2">
-                  <SignaturePad onSignatureChange={setSignature} disabled={isSigning} />
-                </div>
-                <p className="text-xs text-gray-500 mt-1">Firme en el recuadro superior usando su dedo o ratón</p>
-              </div>
-
-              {/* Checkboxes de aceptación - SEPARADOS */}
-              <div className="space-y-4 border-t pt-4">
-                <h3 className="text-sm font-medium text-gray-900 mb-3">Confirmaciones requeridas:</h3>
-
-                {/* Checkbox 1: Lectura y comprensión */}
-                <div className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
-                  <Checkbox
-                    id="documentRead"
-                    checked={documentReadUnderstood}
-                    onCheckedChange={handleDocumentReadChange}
-                    disabled={isSigning}
-                    className="mt-0.5"
-                  />
-                  <div className="flex-1">
-                    <Label htmlFor="documentRead" className="text-sm font-medium text-gray-900 cursor-pointer block">
-                      He leído y entendido completamente el contenido
-                    </Label>
-                    <p className="text-xs text-gray-600 mt-1">
-                      Confirmo que he leído todo el documento y comprendo su contenido
-                    </p>
-                  </div>
-                </div>
-
-                {/* Checkbox 2: Aceptación de términos */}
-                <div className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
-                  <Checkbox
-                    id="acceptTerms"
-                    checked={termsAccepted}
-                    onCheckedChange={handleTermsAcceptedChange}
-                    disabled={isSigning}
-                    className="mt-0.5"
-                  />
-                  <div className="flex-1">
-                    <Label htmlFor="acceptTerms" className="text-sm font-medium text-gray-900 cursor-pointer block">
-                      Acepto el tratamiento propuesto
-                    </Label>
-                    <p className="text-xs text-gray-600 mt-1">
-                      Confirmo que acepto el tratamiento y que toda la información es correcta
-                    </p>
-                  </div>
-                </div>
-
-                {/* Checkbox 3: Marketing (opcional) */}
-                <div className="flex items-start space-x-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                  <Checkbox
-                    id="marketingConsent"
-                    checked={marketingAccepted}
-                    onCheckedChange={handleMarketingChange}
-                    disabled={isSigning}
-                    className="mt-0.5"
-                  />
-                  <div className="flex-1">
-                    <Label
-                      htmlFor="marketingConsent"
-                      className="text-sm font-medium text-blue-900 cursor-pointer block"
-                    >
-                      Comunicaciones promocionales (opcional)
-                    </Label>
-                    <p className="text-xs text-blue-700 mt-1">
-                      Acepto recibir información sobre ofertas, promociones y novedades por email o SMS
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Botón de firma */}
-              <Button onClick={handleSign} disabled={!canSign || isSigning} className="w-full" size="lg">
-                {isSigning ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Firmando...
-                  </>
-                ) : (
-                  "Firmar consentimiento"
-                )}
-              </Button>
-
-              <p className="text-xs text-gray-500 text-center">
-                Al firmar, acepta que su firma digital tiene la misma validez legal que una firma manuscrita.
-              </p>
-            </CardContent>
-          </Card>
+          {consentData.processing_info?.placeholders_replaced && (
+            <Badge variant="secondary" className="text-xs">
+              ✓ Documento personalizado con datos de la organización
+            </Badge>
+          )}
         </div>
 
-        {/* Footer */}
-        <div className="text-center mt-8 text-xs text-gray-500">
-          <p>Este documento es confidencial y está protegido por la normativa de protección de datos.</p>
-          <p>Enlace válido hasta: {new Date(token.expires_at).toLocaleDateString("es-ES")}</p>
+        {/* ✅ LAYOUT SIMPLIFICADO - 2 COLUMNAS */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Consent Form Content - Más ancho */}
+          <div className="lg:col-span-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Shield className="h-5 w-5" />
+                  {consentData.consent_form.title}
+                </CardTitle>
+                {consentData.consent_form.category && (
+                  <Badge variant="outline">{consentData.consent_form.category}</Badge>
+                )}
+              </CardHeader>
+              <CardContent>
+                <div
+                  className="prose prose-sm max-w-none"
+                  dangerouslySetInnerHTML={{ __html: consentData.consent_form.content }}
+                />
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* ✅ FORMULARIO DE FIRMA SIMPLIFICADO */}
+          <div className="lg:col-span-1">
+            <Card className="sticky top-8">
+              <CardHeader>
+                <CardTitle className="text-lg">Firmar consentimiento</CardTitle>
+                <CardDescription>Complete los datos para firmar digitalmente</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Datos básicos */}
+                <div className="space-y-3">
+                  <div>
+                    <Label htmlFor="fullName" className="text-sm">
+                      Nombre completo
+                    </Label>
+                    <Input
+                      id="fullName"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="Nombre completo"
+                      className="mt-1"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="dni" className="text-sm">
+                      DNI/CIF
+                    </Label>
+                    <Input
+                      id="dni"
+                      value={dni}
+                      onChange={(e) => setDni(e.target.value)}
+                      placeholder="DNI o CIF"
+                      className="mt-1"
+                    />
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* ✅ CHECKBOXES SEGÚN BASE DE DATOS */}
+                <div className="space-y-3">
+                  <Label className="text-sm font-medium">Consentimientos requeridos:</Label>
+
+                  <div className="space-y-3">
+                    <div className="flex items-start space-x-2">
+                      <Checkbox
+                        id="terms"
+                        checked={termsAccepted}
+                        onCheckedChange={(checked) => setTermsAccepted(checked as boolean)}
+                      />
+                      <Label htmlFor="terms" className="text-xs leading-relaxed">
+                        <span className="text-red-500">*</span> Doy mi consentimiento para el tratamiento de mis datos
+                        conforme a las finalidades descritas.
+                      </Label>
+                    </div>
+
+                    <div className="flex items-start space-x-2">
+                      <Checkbox
+                        id="document"
+                        checked={documentReadUnderstood}
+                        onCheckedChange={(checked) => setDocumentReadUnderstood(checked as boolean)}
+                      />
+                      <Label htmlFor="document" className="text-xs leading-relaxed">
+                        <span className="text-red-500">*</span> Autorizo las comunicaciones automatizadas por asistente
+                        virtual de IA y el uso de los canales indicados.
+                      </Label>
+                    </div>
+
+                    <div className="flex items-start space-x-2">
+                      <Checkbox
+                        id="marketing"
+                        checked={marketingNotificationsAccepted}
+                        onCheckedChange={(checked) => setMarketingNotificationsAccepted(checked as boolean)}
+                      />
+                      <Label htmlFor="marketing" className="text-xs leading-relaxed">
+                        Doy mi consentimiento para recibir información comercial y promociones.
+                      </Label>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-gray-500">
+                    <span className="text-red-500">*</span> Campos obligatorios
+                  </p>
+                </div>
+
+                <Separator />
+
+                {/* Firma */}
+                <div>
+                  <Label className="text-sm">Firma digital</Label>
+                  <SignaturePad onSignatureChange={setSignature} />
+                  <p className="text-xs text-gray-500 mt-1">Firme usando su dedo o ratón</p>
+                  {signature && (
+                    <Button variant="outline" size="sm" onClick={() => setSignature(null)} className="mt-2">
+                      Borrar firma
+                    </Button>
+                  )}
+                </div>
+
+                {error && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                )}
+
+                <Button
+                  onClick={handleSign}
+                  disabled={
+                    signing ||
+                    !fullName.trim() ||
+                    !dni.trim() ||
+                    !signature ||
+                    !termsAccepted ||
+                    !documentReadUnderstood
+                  }
+                  className="w-full"
+                >
+                  {signing ? "Firmando..." : "Firmar consentimiento"}
+                </Button>
+
+                {/* ✅ INFO ORGANIZACIÓN SIMPLIFICADA */}
+                {consentData.organization && (
+                  <div className="pt-4 border-t">
+                    <div className="text-xs text-gray-600 space-y-1">
+                      <p className="font-medium">{consentData.organization.name}</p>
+                      {consentData.organization.address && (
+                        <div className="flex items-center gap-1">
+                          <MapPin className="h-3 w-3" />
+                          <span>
+                            {consentData.organization.address}, {consentData.organization.city}
+                          </span>
+                        </div>
+                      )}
+                      {consentData.organization.email && (
+                        <div className="flex items-center gap-1">
+                          <Mail className="h-3 w-3" />
+                          <span>{consentData.organization.email}</span>
+                        </div>
+                      )}
+                      {consentData.organization.phone && (
+                        <div className="flex items-center gap-1">
+                          <Phone className="h-3 w-3" />
+                          <span>{consentData.organization.phone}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
     </div>

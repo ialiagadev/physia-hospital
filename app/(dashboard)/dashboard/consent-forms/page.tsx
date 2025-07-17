@@ -1,15 +1,12 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Switch } from "@/components/ui/switch"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,102 +16,78 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import { supabase } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
+import { supabase } from "@/lib/supabase/client"
 import { useAuth } from "@/app/contexts/auth-context"
-import { FileText, Plus, Edit, Eye, Trash2, Search, Copy, RefreshCw, Building2, AlertCircle } from "lucide-react"
-import type { ConsentForm } from "@/types/consent"
-import { format } from "date-fns"
-import { es } from "date-fns/locale"
-import { EditConsentFormModal } from "@/components/consent/edit-consent-form-modal"
+import { Plus, Eye, Edit, Trash2, Copy, Globe, FileText, Search, Filter } from "lucide-react"
+import Link from "next/link"
+
+interface ConsentForm {
+  id: string
+  title: string
+  description: string | null
+  category: string
+  is_active: boolean
+  created_at: string
+  organization_id: number | null
+  version: number
+}
+
+const CATEGORIES = [
+  { value: "general", label: "General" },
+  { value: "fisioterapia", label: "Fisioterapia" },
+  { value: "odontologia", label: "Odontología" },
+  { value: "psicologia", label: "Psicología" },
+  { value: "datos", label: "Protección de Datos" },
+  { value: "cirugia", label: "Cirugía" },
+  { value: "estetica", label: "Estética" },
+]
 
 export default function ConsentFormsPage() {
-  const router = useRouter()
-  const { toast } = useToast()
-  const { userProfile, isLoading: authLoading } = useAuth()
+  const [globalTemplates, setGlobalTemplates] = useState<ConsentForm[]>([])
+  const [organizationForms, setOrganizationForms] = useState<ConsentForm[]>([])
   const [loading, setLoading] = useState(true)
-  const [forms, setForms] = useState<ConsentForm[]>([])
-  const [filteredForms, setFilteredForms] = useState<ConsentForm[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [categoryFilter, setCategoryFilter] = useState<string>("all")
-  const [statusFilter, setStatusFilter] = useState<string>("all")
-  const [previewForm, setPreviewForm] = useState<ConsentForm | null>(null)
-  const [editFormId, setEditFormId] = useState<string | null>(null)
-  const [deleteFormId, setDeleteFormId] = useState<string | null>(null)
-  const [categories, setCategories] = useState<string[]>([])
-  const [organizationName, setOrganizationName] = useState<string>("")
+  const [selectedForm, setSelectedForm] = useState<ConsentForm | null>(null)
+  const [previewContent, setPreviewContent] = useState("")
+  const { toast } = useToast()
+  const { user, userProfile } = useAuth()
 
-  // Cargar formularios cuando el usuario esté disponible
   useEffect(() => {
-    if (!authLoading && userProfile?.organization_id) {
-      loadForms()
-      loadOrganizationName()
+    if (userProfile?.organization_id) {
+      loadConsentForms()
     }
-  }, [userProfile, authLoading])
+  }, [userProfile?.organization_id])
 
-  // Aplicar filtros
-  useEffect(() => {
-    let filtered = [...forms]
-
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase()
-      filtered = filtered.filter(
-        (form) =>
-          form.title.toLowerCase().includes(term) ||
-          form.description?.toLowerCase().includes(term) ||
-          form.category.toLowerCase().includes(term),
-      )
-    }
-
-    if (categoryFilter !== "all") {
-      filtered = filtered.filter((form) => form.category === categoryFilter)
-    }
-
-    if (statusFilter !== "all") {
-      const isActive = statusFilter === "active"
-      filtered = filtered.filter((form) => form.is_active === isActive)
-    }
-
-    setFilteredForms(filtered)
-  }, [forms, searchTerm, categoryFilter, statusFilter])
-
-  const loadOrganizationName = async () => {
-    if (!userProfile?.organization_id) return
-
+  const loadConsentForms = async () => {
     try {
-      const { data, error } = await supabase
-        .from("organizations")
-        .select("name")
-        .eq("id", userProfile.organization_id)
-        .single()
+      setLoading(true)
 
-      if (error) throw error
-      setOrganizationName(data?.name || "")
-    } catch (error) {
-      console.error("Error loading organization name:", error)
-    }
-  }
-
-  const loadForms = async () => {
-    if (!userProfile?.organization_id) return
-
-    setLoading(true)
-    try {
-      // Filtrar solo por la organización del usuario
-      const { data, error } = await supabase
+      // Cargar plantillas globales (organization_id IS NULL)
+      const { data: globalData, error: globalError } = await supabase
         .from("consent_forms")
         .select("*")
-        .eq("organization_id", userProfile.organization_id)
+        .is("organization_id", null)
+        .eq("is_active", true)
+        .order("category", { ascending: true })
+        .order("title", { ascending: true })
+
+      if (globalError) throw globalError
+
+      // Cargar formularios de la organización
+      const { data: orgData, error: orgError } = await supabase
+        .from("consent_forms")
+        .select("*")
+        .eq("organization_id", userProfile?.organization_id)
         .order("created_at", { ascending: false })
 
-      if (error) throw error
+      if (orgError) throw orgError
 
-      setForms(data || [])
-
-      // Extraer categorías únicas de los formularios de esta organización
-      const uniqueCategories = Array.from(new Set((data || []).map((form) => form.category)))
-      setCategories(uniqueCategories)
+      setGlobalTemplates(globalData || [])
+      setOrganizationForms(orgData || [])
     } catch (error) {
       console.error("Error loading consent forms:", error)
       toast({
@@ -127,116 +100,53 @@ export default function ConsentFormsPage() {
     }
   }
 
-  const validateOrganizationAccess = (form: ConsentForm): boolean => {
-    if (!userProfile?.organization_id) return false
-    return form.organization_id === userProfile.organization_id
-  }
-
-  const toggleFormStatus = async (formId: string, currentStatus: boolean) => {
-    const form = forms.find((f) => f.id === formId)
-    if (!form || !validateOrganizationAccess(form)) {
-      toast({
-        title: "Error de permisos",
-        description: "No tienes permisos para modificar este formulario",
-        variant: "destructive",
-      })
-      return
-    }
-
+  const handlePreview = async (form: ConsentForm) => {
     try {
-      const { error } = await supabase
-        .from("consent_forms")
-        .update({ is_active: !currentStatus })
-        .eq("id", formId)
-        .eq("organization_id", userProfile!.organization_id) // Doble verificación
+      const { data, error } = await supabase.from("consent_forms").select("content").eq("id", form.id).single()
 
       if (error) throw error
 
-      setForms(forms.map((form) => (form.id === formId ? { ...form, is_active: !currentStatus } : form)))
-
-      toast({
-        title: "Estado actualizado",
-        description: `Formulario ${!currentStatus ? "activado" : "desactivado"} correctamente`,
-      })
+      setSelectedForm(form)
+      setPreviewContent(data.content)
     } catch (error) {
-      console.error("Error updating form status:", error)
+      console.error("Error loading form content:", error)
       toast({
         title: "Error",
-        description: "No se pudo actualizar el estado del formulario",
+        description: "No se pudo cargar el contenido del formulario",
         variant: "destructive",
       })
     }
   }
 
-  const confirmDeleteForm = async () => {
-    if (!deleteFormId || !userProfile?.organization_id) return
-
-    const form = forms.find((f) => f.id === deleteFormId)
-    if (!form || !validateOrganizationAccess(form)) {
-      toast({
-        title: "Error de permisos",
-        description: "No tienes permisos para eliminar este formulario",
-        variant: "destructive",
-      })
-      setDeleteFormId(null)
-      return
-    }
-
+  const handleDuplicate = async (form: ConsentForm) => {
     try {
-      const { error } = await supabase
+      const { data: sourceData, error: sourceError } = await supabase
         .from("consent_forms")
-        .delete()
-        .eq("id", deleteFormId)
-        .eq("organization_id", userProfile.organization_id) // Doble verificación
+        .select("content")
+        .eq("id", form.id)
+        .single()
 
-      if (error) throw error
+      if (sourceError) throw sourceError
 
-      setForms(forms.filter((form) => form.id !== deleteFormId))
-      setDeleteFormId(null)
-
-      toast({
-        title: "Formulario eliminado",
-        description: "El formulario se ha eliminado correctamente",
-      })
-    } catch (error) {
-      console.error("Error deleting form:", error)
-      toast({
-        title: "Error",
-        description: "No se pudo eliminar el formulario",
-        variant: "destructive",
-      })
-    }
-  }
-
-  const duplicateForm = async (form: ConsentForm) => {
-    if (!validateOrganizationAccess(form) || !userProfile?.organization_id) {
-      toast({
-        title: "Error de permisos",
-        description: "No tienes permisos para duplicar este formulario",
-        variant: "destructive",
-      })
-      return
-    }
-
-    try {
-      const { error } = await supabase.from("consent_forms").insert({
-        organization_id: userProfile.organization_id, // Usar la organización del usuario
+      const { error: insertError } = await supabase.from("consent_forms").insert({
+        organization_id: userProfile?.organization_id,
         title: `${form.title} (Copia)`,
-        content: form.content,
+        content: sourceData.content,
         description: form.description,
         category: form.category,
-        is_active: false,
-        created_by: userProfile.id,
+        is_active: true,
+        created_by: user?.id,
+        version: 1,
       })
 
-      if (error) throw error
-
-      await loadForms()
+      if (insertError) throw insertError
 
       toast({
-        title: "Formulario duplicado",
-        description: "Se ha creado una copia del formulario",
+        title: "Éxito",
+        description: "Formulario duplicado correctamente",
       })
+
+      loadConsentForms()
     } catch (error) {
       console.error("Error duplicating form:", error)
       toast({
@@ -247,343 +157,301 @@ export default function ConsentFormsPage() {
     }
   }
 
-  const handleEditForm = (formId: string) => {
-    const form = forms.find((f) => f.id === formId)
-    if (!form || !validateOrganizationAccess(form)) {
+  const handleDelete = async (formId: string) => {
+    try {
+      const { error } = await supabase
+        .from("consent_forms")
+        .delete()
+        .eq("id", formId)
+        .eq("organization_id", userProfile?.organization_id) // Solo permitir eliminar formularios propios
+
+      if (error) throw error
+
       toast({
-        title: "Error de permisos",
-        description: "No tienes permisos para editar este formulario",
+        title: "Éxito",
+        description: "Formulario eliminado correctamente",
+      })
+
+      loadConsentForms()
+    } catch (error) {
+      console.error("Error deleting form:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo eliminar el formulario",
         variant: "destructive",
       })
-      return
     }
-    setEditFormId(formId)
   }
 
-  const formatDate = (dateString: string) => {
-    return format(new Date(dateString), "dd/MM/yyyy HH:mm", { locale: es })
+  const filterForms = (forms: ConsentForm[]) => {
+    return forms.filter((form) => {
+      const matchesSearch =
+        form.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (form.description && form.description.toLowerCase().includes(searchTerm.toLowerCase()))
+      const matchesCategory = categoryFilter === "all" || form.category === categoryFilter
+      return matchesSearch && matchesCategory
+    })
   }
 
-  const handleEditSuccess = () => {
-    loadForms() // Recargar la lista después de editar
+  const getCategoryLabel = (category: string) => {
+    return CATEGORIES.find((cat) => cat.value === category)?.label || category
   }
 
-  // Mostrar loading mientras se carga la autenticación
-  if (authLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="w-8 h-8 mx-auto mb-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
-          <p className="text-gray-500">Cargando usuario...</p>
-        </div>
-      </div>
-    )
-  }
-
-  // Mostrar error si no hay usuario o organización
-  if (!userProfile?.organization_id) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold mb-2">Sin organización</h2>
-          <p className="text-gray-500">No tienes acceso a ninguna organización</p>
-        </div>
-      </div>
-    )
+  const getCategoryColor = (category: string) => {
+    const colors: Record<string, string> = {
+      general: "bg-blue-100 text-blue-800",
+      fisioterapia: "bg-green-100 text-green-800",
+      odontologia: "bg-purple-100 text-purple-800",
+      psicologia: "bg-orange-100 text-orange-800",
+      datos: "bg-red-100 text-red-800",
+      cirugia: "bg-yellow-100 text-yellow-800",
+      estetica: "bg-pink-100 text-pink-800",
+    }
+    return colors[category] || "bg-gray-100 text-gray-800"
   }
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="w-8 h-8 mx-auto mb-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
-          <p className="text-gray-500">Cargando formularios...</p>
+      <div className="container mx-auto p-6">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+            <p>Cargando formularios...</p>
+          </div>
         </div>
       </div>
     )
   }
 
+  const filteredGlobalTemplates = filterForms(globalTemplates)
+  const filteredOrganizationForms = filterForms(organizationForms)
+
   return (
-    <TooltipProvider>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Formularios de Consentimiento</h1>
-            <div className="flex items-center gap-2 mt-1">
-              <Building2 className="h-4 w-4 text-muted-foreground" />
-              <p className="text-muted-foreground">{organizationName || "Cargando organización..."}</p>
+    <div className="container mx-auto p-6 space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-3xl font-bold">Formularios de Consentimiento</h1>
+          <p className="text-muted-foreground">Gestiona plantillas globales y formularios personalizados</p>
+        </div>
+        <Link href="/dashboard/consent-forms/new">
+          <Button>
+            <Plus className="h-4 w-4 mr-2" />
+            Nuevo Formulario
+          </Button>
+        </Link>
+      </div>
+
+      {/* Filters */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                <Input
+                  placeholder="Buscar formularios..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+            </div>
+            <div className="sm:w-48">
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger>
+                  <Filter className="h-4 w-4 mr-2" />
+                  <SelectValue placeholder="Categoría" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas las categorías</SelectItem>
+                  {CATEGORIES.map((category) => (
+                    <SelectItem key={category.value} value={category.value}>
+                      {category.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
-          <div className="flex gap-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" onClick={loadForms}>
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Actualizar
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Recargar la lista de formularios</p>
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button onClick={() => router.push("/dashboard/consent-forms/new")}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Nuevo Formulario
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Crear un nuevo formulario de consentimiento</p>
-              </TooltipContent>
-            </Tooltip>
-          </div>
+        </CardContent>
+      </Card>
+
+      {/* Plantillas Globales */}
+      <div>
+        <div className="flex items-center gap-2 mb-4">
+          <Globe className="h-5 w-5 text-blue-600" />
+          <h2 className="text-xl font-semibold">Plantillas del Sistema</h2>
+          <Badge variant="secondary">{filteredGlobalTemplates.length}</Badge>
         </div>
 
-        {/* Filtros */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Filtros</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="text-sm font-medium mb-2 block">Buscar</label>
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
-                  <Input
-                    type="text"
-                    placeholder="Buscar por título o descripción"
-                    className="pl-8"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium mb-2 block">Categoría</label>
-                <select
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={categoryFilter}
-                  onChange={(e) => setCategoryFilter(e.target.value)}
-                >
-                  <option value="all">Todas las categorías</option>
-                  {categories.map((category) => (
-                    <option key={category} value={category}>
-                      {category.charAt(0).toUpperCase() + category.slice(1)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium mb-2 block">Estado</label>
-                <select
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                >
-                  <option value="all">Todos los estados</option>
-                  <option value="active">Activos</option>
-                  <option value="inactive">Inactivos</option>
-                </select>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Lista de formularios */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Formularios ({filteredForms.length})</CardTitle>
-            <CardDescription>Lista de plantillas de consentimiento informado de tu organización</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {filteredForms.length === 0 ? (
-              <div className="text-center py-12">
-                <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No hay formularios</h3>
-                <p className="text-gray-500 mb-4">
-                  {forms.length === 0
-                    ? `Aún no has creado ningún formulario de consentimiento para ${organizationName}.`
-                    : "No se encontraron formularios con los filtros seleccionados."}
+        {filteredGlobalTemplates.length === 0 ? (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-center py-8">
+                <Globe className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">
+                  {searchTerm || categoryFilter !== "all"
+                    ? "No se encontraron plantillas que coincidan con los filtros"
+                    : "No hay plantillas globales disponibles"}
                 </p>
-                <Button onClick={() => router.push("/dashboard/consent-forms/new")}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Crear primer formulario
-                </Button>
               </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Título</TableHead>
-                      <TableHead>Categoría</TableHead>
-                      <TableHead>Estado</TableHead>
-                      <TableHead>Creado</TableHead>
-                      <TableHead>Actualizado</TableHead>
-                      <TableHead className="text-right">Acciones</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredForms.map((form) => (
-                      <TableRow key={form.id}>
-                        <TableCell>
-                          <div>
-                            <div className="font-medium">{form.title}</div>
-                            {form.description && (
-                              <div className="text-sm text-gray-500 mt-1">
-                                {form.description.length > 60
-                                  ? `${form.description.substring(0, 60)}...`
-                                  : form.description}
-                              </div>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{form.category}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Switch
-                              checked={form.is_active}
-                              onCheckedChange={() => toggleFormStatus(form.id, form.is_active)}
-                            />
-                            <span className="text-sm">{form.is_active ? "Activo" : "Inactivo"}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm">{formatDate(form.created_at)}</span>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm">{formatDate(form.updated_at)}</span>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => setPreviewForm(form)}>
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Ver previsualización</p>
-                              </TooltipContent>
-                            </Tooltip>
-
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => handleEditForm(form.id)}>
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Editar formulario</p>
-                              </TooltipContent>
-                            </Tooltip>
-
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => duplicateForm(form)}>
-                                  <Copy className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Duplicar formulario</p>
-                              </TooltipContent>
-                            </Tooltip>
-
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setDeleteFormId(form.id)}
-                                  className="text-red-500 hover:text-red-700"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Eliminar formulario</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Modal de edición */}
-        <EditConsentFormModal
-          isOpen={!!editFormId}
-          onClose={() => setEditFormId(null)}
-          formId={editFormId}
-          onSuccess={handleEditSuccess}
-        />
-
-        {/* Modal de previsualización */}
-        <Dialog open={!!previewForm} onOpenChange={() => setPreviewForm(null)}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5" />
-                Previsualización: {previewForm?.title}
-              </DialogTitle>
-            </DialogHeader>
-            {previewForm && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <strong>Categoría:</strong> {previewForm.category}
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredGlobalTemplates.map((form) => (
+              <Card key={form.id} className="border-blue-200 bg-blue-50/30">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <Globe className="h-4 w-4 text-blue-600" />
+                        {form.title}
+                      </CardTitle>
+                      {form.description && <CardDescription className="mt-1">{form.description}</CardDescription>}
+                    </div>
                   </div>
-                  <div>
-                    <strong>Estado:</strong> {previewForm.is_active ? "Activo" : "Inactivo"}
+                  <div className="flex items-center gap-2 mt-2">
+                    <Badge className={getCategoryColor(form.category)}>{getCategoryLabel(form.category)}</Badge>
+                    <Badge variant="outline" className="text-blue-600 border-blue-600">
+                      Sistema
+                    </Badge>
                   </div>
-                  <div>
-                    <strong>Creado:</strong> {formatDate(previewForm.created_at)}
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => handlePreview(form)} className="flex-1">
+                      <Eye className="h-4 w-4 mr-1" />
+                      Ver
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => handleDuplicate(form)} className="flex-1">
+                      <Copy className="h-4 w-4 mr-1" />
+                      Duplicar
+                    </Button>
                   </div>
-                  <div>
-                    <strong>Actualizado:</strong> {formatDate(previewForm.updated_at)}
-                  </div>
-                </div>
-
-                <div className="border rounded-lg p-6 bg-white">
-                  <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: previewForm.content }} />
-                </div>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
-
-        {/* Dialog de confirmación de eliminación */}
-        <AlertDialog open={!!deleteFormId} onOpenChange={() => setDeleteFormId(null)}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>¿Eliminar formulario?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Esta acción no se puede deshacer. El formulario será eliminado permanentemente y no podrá ser
-                recuperado.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={confirmDeleteForm} className="bg-red-600 hover:bg-red-700">
-                Eliminar
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
-    </TooltipProvider>
+
+      {/* Formularios de la Organización */}
+      <div>
+        <div className="flex items-center gap-2 mb-4">
+          <FileText className="h-5 w-5 text-green-600" />
+          <h2 className="text-xl font-semibold">Mis Formularios</h2>
+          <Badge variant="secondary">{filteredOrganizationForms.length}</Badge>
+        </div>
+
+        {filteredOrganizationForms.length === 0 ? (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-center py-8">
+                <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground mb-4">
+                  {searchTerm || categoryFilter !== "all"
+                    ? "No se encontraron formularios que coincidan con los filtros"
+                    : "Aún no has creado formularios personalizados"}
+                </p>
+                {!searchTerm && categoryFilter === "all" && (
+                  <Link href="/dashboard/consent-forms/new">
+                    <Button>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Crear Primer Formulario
+                    </Button>
+                  </Link>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredOrganizationForms.map((form) => (
+              <Card key={form.id} className="border-green-200 bg-green-50/30">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-green-600" />
+                        {form.title}
+                      </CardTitle>
+                      {form.description && <CardDescription className="mt-1">{form.description}</CardDescription>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Badge className={getCategoryColor(form.category)}>{getCategoryLabel(form.category)}</Badge>
+                    <Badge
+                      variant={form.is_active ? "default" : "secondary"}
+                      className={form.is_active ? "bg-green-600" : ""}
+                    >
+                      {form.is_active ? "Activo" : "Inactivo"}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => handlePreview(form)}>
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                    <Link href={`/dashboard/consent-forms/${form.id}/edit`}>
+                      <Button variant="outline" size="sm">
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    </Link>
+                    <Button variant="outline" size="sm" onClick={() => handleDuplicate(form)}>
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 bg-transparent">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>¿Eliminar formulario?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Esta acción no se puede deshacer. El formulario será eliminado permanentemente.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => handleDelete(form.id)}
+                            className="bg-red-600 hover:bg-red-700"
+                          >
+                            Eliminar
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Preview Modal */}
+      <Dialog open={!!selectedForm} onOpenChange={() => setSelectedForm(null)}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {selectedForm?.organization_id === null ? (
+                <Globe className="h-5 w-5 text-blue-600" />
+              ) : (
+                <FileText className="h-5 w-5 text-green-600" />
+              )}
+              {selectedForm?.title}
+            </DialogTitle>
+            <DialogDescription>Vista previa del formulario de consentimiento</DialogDescription>
+          </DialogHeader>
+          <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: previewContent }} />
+        </DialogContent>
+      </Dialog>
+    </div>
   )
 }
