@@ -247,7 +247,7 @@ export function GenerateConsentModal({ isOpen, onClose, clientId, clientName }: 
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5" />
@@ -320,7 +320,7 @@ export function GenerateConsentModal({ isOpen, onClose, clientId, clientName }: 
               <div className="p-3 bg-blue-50 rounded-md">
                 <div className="flex items-start gap-2">
                   <FileText className="h-4 w-4 text-blue-600 mt-0.5" />
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-blue-900">{selectedForm.title}</p>
                     {selectedForm.description && (
                       <p className="text-xs text-blue-700 mt-1">{selectedForm.description}</p>
@@ -332,11 +332,6 @@ export function GenerateConsentModal({ isOpen, onClose, clientId, clientName }: 
                       {!selectedForm.organization_id && (
                         <Badge variant="secondary" className="text-xs">
                           Plantilla Global
-                        </Badge>
-                      )}
-                      {organizationData && (
-                        <Badge variant="default" className="text-xs">
-                          ✓ Se personalizará con datos de {organizationData.name}
                         </Badge>
                       )}
                     </div>

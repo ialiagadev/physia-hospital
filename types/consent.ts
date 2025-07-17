@@ -53,7 +53,7 @@ export interface ConsentForm {
     identity_verified: boolean
     is_valid: boolean
   
-    // Campos de aceptación
+    // Campos de aceptación básicos
     terms_accepted: boolean
     terms_accepted_at: string | null
     document_read_understood: boolean
@@ -62,7 +62,13 @@ export interface ConsentForm {
     marketing_accepted_at: string | null
     acceptance_text_version: string | null
   
-    // ✅ NUEVOS CAMPOS AGREGADOS
+    // ✅ CAMPOS DE TRATAMIENTO MÉDICO (OPCIONALES)
+    medical_treatment_accepted?: boolean
+    medical_treatment_accepted_at?: string | null
+    medical_treatment_rejected?: boolean
+    medical_treatment_rejected_at?: string | null
+  
+    // Campos de contenido procesado
     consent_content?: string | null
     organization_data?: {
       id: number
@@ -78,7 +84,7 @@ export interface ConsentForm {
       logo_url?: string
     } | null
   
-    // Campos de rechazo
+    // Campos de rechazo básicos
     terms_rejected?: boolean
     terms_rejected_at?: string | null
     document_rejected?: boolean
@@ -126,7 +132,7 @@ export interface ConsentForm {
     }
   }
   
-  // Para la validación en la página pública
+  // ✅ ACTUALIZADA PARA INCLUIR TRATAMIENTO MÉDICO
   export interface ConsentValidationData {
     patient_name: string
     patient_tax_id: string
@@ -134,5 +140,6 @@ export interface ConsentForm {
     terms_accepted: boolean
     document_read_understood: boolean
     marketing_notifications_accepted: boolean
+    medical_treatment_accepted?: boolean // ✅ OPCIONAL
   }
   

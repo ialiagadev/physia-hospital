@@ -9,7 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Shield, CheckCircle, AlertCircle, Building2, Mail, Phone, MapPin } from "lucide-react"
+import { Shield, CheckCircle, AlertCircle, Building2, Mail, Phone, MapPin, Stethoscope } from "lucide-react"
 import { SignaturePad } from "@/components/signature-pad"
 
 interface OrganizationData {
@@ -62,10 +62,11 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
   const [dni, setDni] = useState("")
   const [signature, setSignature] = useState<string | null>(null)
 
-  // ✅ CHECKBOXES SEGÚN LA BASE DE DATOS
+  // ✅ CHECKBOXES SEGÚN LA BASE DE DATOS Y CATEGORÍA
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [documentReadUnderstood, setDocumentReadUnderstood] = useState(false)
   const [marketingNotificationsAccepted, setMarketingNotificationsAccepted] = useState(false)
+  const [medicalTreatmentAccepted, setMedicalTreatmentAccepted] = useState(false) // ✅ NUEVO
 
   useEffect(() => {
     validateToken()
@@ -88,6 +89,7 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
         hasOrganization: !!data.data?.organization,
         organizationName: data.data?.organization?.name,
         placeholdersReplaced: data.data?.processing_info?.placeholders_replaced,
+        category: data.data?.consent_form?.category, // ✅ LOG CATEGORÍA
       })
 
       if (!response.ok || !data.success) {
@@ -108,15 +110,25 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
     }
   }
 
+  // ✅ FUNCIÓN PARA DETERMINAR SI REQUIERE TRATAMIENTO MÉDICO
+  const requiresMedicalTreatment = () => {
+    return consentData?.consent_form?.category !== "general"
+  }
+
   const handleSign = async () => {
     if (!fullName.trim() || !dni.trim() || !signature) {
       setError("Por favor, complete todos los campos requeridos")
       return
     }
 
-    // ✅ VALIDAR CHECKBOXES OBLIGATORIOS
-    if (!termsAccepted || !documentReadUnderstood) {
-      setError("Debe aceptar los consentimientos obligatorios marcados con *")
+    // ✅ VALIDAR CHECKBOXES OBLIGATORIOS (INCLUYENDO TRATAMIENTO SI ES NECESARIO)
+    const requiredCheckboxes = [termsAccepted, documentReadUnderstood]
+    if (requiresMedicalTreatment()) {
+      requiredCheckboxes.push(medicalTreatmentAccepted)
+    }
+
+    if (!requiredCheckboxes.every(Boolean)) {
+      setError("Debe aceptar todos los consentimientos obligatorios marcados con *")
       return
     }
 
@@ -132,22 +144,32 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
         termsAccepted,
         documentReadUnderstood,
         marketingNotificationsAccepted,
+        medicalTreatmentAccepted: requiresMedicalTreatment() ? medicalTreatmentAccepted : undefined, // ✅ CONDICIONAL
+        category: consentData?.consent_form?.category,
+        requiresMedicalTreatment: requiresMedicalTreatment(),
       })
+
+      const requestBody: any = {
+        token: params.token,
+        full_name: fullName,
+        dni: dni,
+        signature: signature,
+        terms_accepted: termsAccepted,
+        document_read_understood: documentReadUnderstood,
+        marketing_notifications_accepted: marketingNotificationsAccepted,
+      }
+
+      // ✅ AGREGAR TRATAMIENTO MÉDICO SOLO SI ES REQUERIDO
+      if (requiresMedicalTreatment()) {
+        requestBody.medical_treatment_accepted = medicalTreatmentAccepted
+      }
 
       const response = await fetch("/api/consent/sign", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          token: params.token,
-          full_name: fullName,
-          dni: dni,
-          signature: signature,
-          terms_accepted: termsAccepted,
-          document_read_understood: documentReadUnderstood,
-          marketing_notifications_accepted: marketingNotificationsAccepted,
-        }),
+        body: JSON.stringify(requestBody),
       })
 
       const data = await response.json()
@@ -329,7 +351,7 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
 
                 <Separator />
 
-                {/* ✅ CHECKBOXES SEGÚN BASE DE DATOS */}
+                {/* ✅ CHECKBOXES SEGÚN BASE DE DATOS Y CATEGORÍA */}
                 <div className="space-y-3">
                   <Label className="text-sm font-medium">Consentimientos requeridos:</Label>
 
@@ -358,6 +380,22 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
                       </Label>
                     </div>
 
+                    {/* ✅ CHECKBOX DE TRATAMIENTO MÉDICO CONDICIONAL */}
+                    {requiresMedicalTreatment() && (
+                      <div className="flex items-start space-x-2">
+                        <Checkbox
+                          id="medical-treatment"
+                          checked={medicalTreatmentAccepted}
+                          onCheckedChange={(checked) => setMedicalTreatmentAccepted(checked as boolean)}
+                        />
+                        <Label htmlFor="medical-treatment" className="text-xs leading-relaxed">
+                          <span className="text-red-500">*</span>
+                          <Stethoscope className="w-3 h-3 inline mx-1" />
+                          Doy mi consentimiento para el tratamiento médico específico descrito en este documento.
+                        </Label>
+                      </div>
+                    )}
+
                     <div className="flex items-start space-x-2">
                       <Checkbox
                         id="marketing"
@@ -372,6 +410,12 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
 
                   <p className="text-xs text-gray-500">
                     <span className="text-red-500">*</span> Campos obligatorios
+                    {requiresMedicalTreatment() && (
+                      <span className="block mt-1">
+                        <Stethoscope className="w-3 h-3 inline mr-1" />
+                        Incluye consentimiento para tratamiento médico específico
+                      </span>
+                    )}
                   </p>
                 </div>
 
@@ -404,7 +448,8 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
                     !dni.trim() ||
                     !signature ||
                     !termsAccepted ||
-                    !documentReadUnderstood
+                    !documentReadUnderstood ||
+                    (requiresMedicalTreatment() && !medicalTreatmentAccepted) // ✅ VALIDACIÓN CONDICIONAL
                   }
                   className="w-full"
                 >

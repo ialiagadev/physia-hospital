@@ -21,8 +21,9 @@ import {
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase/client"
 import { useAuth } from "@/app/contexts/auth-context"
-import { Plus, Eye, Edit, Trash2, Copy, Globe, FileText, Search, Filter } from "lucide-react"
+import { Plus, Eye, Edit, Trash2, Copy, Globe, FileText, Search, Filter, Sparkles } from "lucide-react"
 import Link from "next/link"
+import { EditConsentFormModal } from "@/components/consent/edit-consent-form-modal"
 
 interface ConsentForm {
   id: string
@@ -40,9 +41,11 @@ const CATEGORIES = [
   { value: "fisioterapia", label: "Fisioterapia" },
   { value: "odontologia", label: "Odontología" },
   { value: "psicologia", label: "Psicología" },
-  { value: "datos", label: "Protección de Datos" },
+  { value: "medicina", label: "Medicina" },
   { value: "cirugia", label: "Cirugía" },
   { value: "estetica", label: "Estética" },
+  { value: "pediatria", label: "Pediatría" },
+  { value: "datos", label: "Protección de Datos" },
 ]
 
 export default function ConsentFormsPage() {
@@ -53,6 +56,8 @@ export default function ConsentFormsPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all")
   const [selectedForm, setSelectedForm] = useState<ConsentForm | null>(null)
   const [previewContent, setPreviewContent] = useState("")
+  const [editingFormId, setEditingFormId] = useState<string | null>(null)
+  const [showEditModal, setShowEditModal] = useState(false)
   const { toast } = useToast()
   const { user, userProfile } = useAuth()
 
@@ -65,7 +70,6 @@ export default function ConsentFormsPage() {
   const loadConsentForms = async () => {
     try {
       setLoading(true)
-
       // Cargar plantillas globales (organization_id IS NULL)
       const { data: globalData, error: globalError } = await supabase
         .from("consent_forms")
@@ -116,6 +120,17 @@ export default function ConsentFormsPage() {
         variant: "destructive",
       })
     }
+  }
+
+  const handleEdit = (formId: string) => {
+    setEditingFormId(formId)
+    setShowEditModal(true)
+  }
+
+  const handleEditSuccess = () => {
+    loadConsentForms()
+    setShowEditModal(false)
+    setEditingFormId(null)
   }
 
   const handleDuplicate = async (form: ConsentForm) => {
@@ -203,9 +218,11 @@ export default function ConsentFormsPage() {
       fisioterapia: "bg-green-100 text-green-800",
       odontologia: "bg-purple-100 text-purple-800",
       psicologia: "bg-orange-100 text-orange-800",
-      datos: "bg-red-100 text-red-800",
+      medicina: "bg-red-100 text-red-800",
       cirugia: "bg-yellow-100 text-yellow-800",
       estetica: "bg-pink-100 text-pink-800",
+      pediatria: "bg-cyan-100 text-cyan-800",
+      datos: "bg-gray-100 text-gray-800",
     }
     return colors[category] || "bg-gray-100 text-gray-800"
   }
@@ -241,6 +258,71 @@ export default function ConsentFormsPage() {
           </Button>
         </Link>
       </div>
+
+      {/* Información del Sistema */}
+      <Card className="border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-blue-900">
+            <Sparkles className="h-5 w-5" />
+            Sistema Inteligente de Consentimientos
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="w-2 h-2 bg-green-500 rounded-full mt-2 flex-shrink-0"></div>
+                <div>
+                  <h4 className="font-medium text-gray-900">Personalización Automática</h4>
+                  <p className="text-sm text-gray-600">
+                    Los datos de tu organización (nombre, dirección, CIF, email, teléfono) se insertan automáticamente
+                    en todos los consentimientos usando placeholders como{" "}
+                    <code className="bg-gray-100 px-1 rounded text-xs">{"{ORGANIZATION_NAME}"}</code>
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="w-2 h-2 bg-purple-500 rounded-full mt-2 flex-shrink-0"></div>
+                <div>
+                  <h4 className="font-medium text-gray-900">Plantillas por Especialidad</h4>
+                  <p className="text-sm text-gray-600">
+                    Cada especialidad médica tiene checkboxes específicos: General (3), Medicina/Cirugía/Estética/etc.
+                    (4 incluyendo tratamiento médico).
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
+                <div>
+                  <h4 className="font-medium text-gray-900">Firma Digital Válida</h4>
+                  <p className="text-sm text-gray-600">
+                    Documentos con validez legal, firma digital, timestamps, IP tracking y descarga en HTML completo con
+                    todos los datos.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="w-2 h-2 bg-orange-500 rounded-full mt-2 flex-shrink-0"></div>
+                <div>
+                  <h4 className="font-medium text-gray-900">Gestión Completa</h4>
+                  <p className="text-sm text-gray-600">
+                    Genera enlaces únicos, envía por WhatsApp/Email, rastrea firmas y descarga documentos completos para
+                    auditorías.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 p-3 bg-blue-100 rounded-lg">
+            <p className="text-sm text-blue-800">
+              <strong>💡 Tip:</strong> Las plantillas del sistema ya incluyen todos los placeholders necesarios. Al
+              duplicarlas, se personalizarán automáticamente con los datos de tu organización.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Filters */}
       <Card>
@@ -395,11 +477,9 @@ export default function ConsentFormsPage() {
                     <Button variant="outline" size="sm" onClick={() => handlePreview(form)}>
                       <Eye className="h-4 w-4" />
                     </Button>
-                    <Link href={`/dashboard/consent-forms/${form.id}/edit`}>
-                      <Button variant="outline" size="sm">
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                    </Link>
+                    <Button variant="outline" size="sm" onClick={() => handleEdit(form.id)}>
+                      <Edit className="h-4 w-4" />
+                    </Button>
                     <Button variant="outline" size="sm" onClick={() => handleDuplicate(form)}>
                       <Copy className="h-4 w-4" />
                     </Button>
@@ -452,6 +532,17 @@ export default function ConsentFormsPage() {
           <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: previewContent }} />
         </DialogContent>
       </Dialog>
+
+      {/* Edit Modal */}
+      <EditConsentFormModal
+        isOpen={showEditModal}
+        onClose={() => {
+          setShowEditModal(false)
+          setEditingFormId(null)
+        }}
+        formId={editingFormId}
+        onSuccess={handleEditSuccess}
+      />
     </div>
   )
 }

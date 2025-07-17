@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -25,13 +24,14 @@ import { RichTextEditor } from "@/components/ui/rich-text-editor"
 
 const CONSENT_CATEGORIES = [
   { value: "general", label: "General" },
+  { value: "fisioterapia", label: "Fisioterapia" },
+  { value: "odontologia", label: "Odontología" },
+  { value: "psicologia", label: "Psicología" },
+  { value: "medicina", label: "Medicina" },
   { value: "cirugia", label: "Cirugía" },
-  { value: "anestesia", label: "Anestesia" },
-  { value: "tratamiento", label: "Tratamiento" },
-  { value: "diagnostico", label: "Diagnóstico" },
-  { value: "investigacion", label: "Investigación" },
+  { value: "estetica", label: "Estética" },
+  { value: "pediatria", label: "Pediatría" },
   { value: "datos", label: "Protección de Datos" },
-  { value: "otros", label: "Otros" },
 ]
 
 interface EditConsentFormModalProps {
@@ -48,7 +48,6 @@ export function EditConsentFormModal({ isOpen, onClose, formId, onSuccess }: Edi
   const [loadingForm, setLoadingForm] = useState(false)
   const [organizationName, setOrganizationName] = useState<string>("")
   const [hasAccess, setHasAccess] = useState(true)
-
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -75,6 +74,7 @@ export function EditConsentFormModal({ isOpen, onClose, formId, onSuccess }: Edi
         .single()
 
       if (error) throw error
+
       setOrganizationName(data?.name || "")
     } catch (error) {
       console.error("Error loading organization name:", error)
@@ -325,10 +325,19 @@ export function EditConsentFormModal({ isOpen, onClose, formId, onSuccess }: Edi
                 onChange={(value) => setFormData({ ...formData, content: value })}
                 placeholder="Escribe aquí el contenido del formulario de consentimiento..."
               />
-              <p className="text-xs text-gray-500">
-                Puedes incluir variables como {"{paciente_nombre}"}, {"{fecha}"}, {"{profesional_nombre}"} que se
-                reemplazarán automáticamente.
-              </p>
+              <div className="text-xs text-gray-500 space-y-1">
+                <p>
+                  <strong>Placeholders disponibles:</strong> Se reemplazan automáticamente con datos de tu organización
+                </p>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <code className="bg-gray-100 px-2 py-1 rounded text-xs">{"{ORGANIZATION_NAME}"}</code>
+                  <code className="bg-gray-100 px-2 py-1 rounded text-xs">{"{ORGANIZATION_TAX_ID}"}</code>
+                  <code className="bg-gray-100 px-2 py-1 rounded text-xs">{"{ORGANIZATION_EMAIL}"}</code>
+                  <code className="bg-gray-100 px-2 py-1 rounded text-xs">{"{ORGANIZATION_PHONE}"}</code>
+                  <code className="bg-gray-100 px-2 py-1 rounded text-xs">{"{ORGANIZATION_ADDRESS}"}</code>
+                  <code className="bg-gray-100 px-2 py-1 rounded text-xs">{"{ORGANIZATION_FULL_ADDRESS}"}</code>
+                </div>
+              </div>
             </div>
 
             <DialogFooter>

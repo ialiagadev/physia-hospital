@@ -7,7 +7,19 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { FileText, Plus, Eye, Clock, CheckCircle, Shield, Download, LinkIcon, FileDown, Mail } from "lucide-react"
+import {
+  FileText,
+  Plus,
+  Eye,
+  Clock,
+  CheckCircle,
+  Shield,
+  Download,
+  LinkIcon,
+  FileDown,
+  Mail,
+  Stethoscope,
+} from "lucide-react"
 import { supabase } from "@/lib/supabase/client"
 import { useToast } from "@/hooks/use-toast"
 import { GenerateConsentModal } from "./generate-consent-modal"
@@ -105,7 +117,10 @@ export function PatientConsentsSection({
     return <Badge variant="secondary">Pendiente verificación</Badge>
   }
 
+  // ✅ ACTUALIZADA PARA INCLUIR TRATAMIENTO MÉDICO
   const getAcceptanceBadges = (consent: PatientConsentWithDetails) => {
+    const requiresMedicalTreatment = consent.consent_forms.category !== "general"
+
     return (
       <div className="flex flex-wrap gap-1">
         {consent.document_read_understood ? (
@@ -127,6 +142,20 @@ export function PatientConsentsSection({
             Rechazado
           </Badge>
         )}
+
+        {/* ✅ BADGE DE TRATAMIENTO MÉDICO CONDICIONAL */}
+        {requiresMedicalTreatment &&
+          (consent.medical_treatment_accepted ? (
+            <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700">
+              <Stethoscope className="w-3 h-3 mr-1" />
+              Tratamiento
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-xs bg-red-50 text-red-700">
+              <Stethoscope className="w-3 h-3 mr-1" />
+              Tratamiento rechazado
+            </Badge>
+          ))}
 
         {consent.marketing_notifications_accepted ? (
           <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700">
@@ -180,6 +209,7 @@ export function PatientConsentsSection({
 
       // Obtener datos de organización del consentimiento guardado
       const organizationData = consent.organization_data
+      const requiresMedicalTreatment = consent.consent_forms.category !== "general"
 
       // Remover líneas que contengan campos de datos del paciente duplicados
       cleanContent = cleanContent
@@ -264,6 +294,10 @@ export function PatientConsentsSection({
             font-weight: bold;
             margin-right: 10px;
           }
+          .medical-treatment {
+            background: #e8f5e8;
+            border-left-color: #2e7d32;
+          }
           .metadata { 
             font-size: 12px; 
             color: #666; 
@@ -322,7 +356,7 @@ export function PatientConsentsSection({
           ${cleanContent}
         </div>
         
-        <div class="acceptance-section">
+        <div class="acceptance-section ${requiresMedicalTreatment ? "medical-treatment" : ""}">
           <h3>Registro de Aceptaciones y Rechazos</h3>
           <div class="acceptance-item">
             <span class="${consent.document_read_understood ? "check" : "reject"}">${consent.document_read_understood ? "✓" : "✗"}</span>
@@ -336,6 +370,18 @@ export function PatientConsentsSection({
             ${consent.terms_accepted && consent.terms_accepted_at ? `<span style="margin-left: auto; font-size: 11px; color: #666;">${formatDate(consent.terms_accepted_at)}</span>` : ""}
             ${!consent.terms_accepted && consent.terms_rejected_at ? `<span style="margin-left: auto; font-size: 11px; color: #f44336;">Rechazado: ${formatDate(consent.terms_rejected_at)}</span>` : ""}
           </div>
+          ${
+            requiresMedicalTreatment
+              ? `
+          <div class="acceptance-item">
+            <span class="${consent.medical_treatment_accepted ? "check" : "reject"}">${consent.medical_treatment_accepted ? "✓" : "✗"}</span>
+            <span>🩺 Acepto el tratamiento médico específico descrito</span>
+            ${consent.medical_treatment_accepted && consent.medical_treatment_accepted_at ? `<span style="margin-left: auto; font-size: 11px; color: #666;">${formatDate(consent.medical_treatment_accepted_at)}</span>` : ""}
+            ${!consent.medical_treatment_accepted && consent.medical_treatment_rejected_at ? `<span style="margin-left: auto; font-size: 11px; color: #f44336;">Rechazado: ${formatDate(consent.medical_treatment_rejected_at)}</span>` : ""}
+          </div>
+          `
+              : ""
+          }
           <div class="acceptance-item">
             <span class="${consent.marketing_notifications_accepted ? "check" : "reject"}">${consent.marketing_notifications_accepted ? "✓" : "✗"}</span>
             <span>Acepto recibir comunicaciones de marketing</span>
@@ -384,6 +430,7 @@ export function PatientConsentsSection({
           <p style="margin-top: 20px; font-style: italic; text-align: center;">
             Este documento ha sido firmado digitalmente y es válido según la normativa vigente.
             Todas las aceptaciones y rechazos han sido registrados con timestamp para auditoría.
+            ${requiresMedicalTreatment ? "<br><strong>Incluye consentimiento específico para tratamiento médico.</strong>" : ""}
           </p>
         </div>
       </body>
@@ -403,7 +450,7 @@ export function PatientConsentsSection({
 
       toast({
         title: "Documento descargado",
-        description: `El consentimiento completo se ha descargado correctamente${organizationData ? ` con datos de ${organizationData.name}` : ""}`,
+        description: `El consentimiento completo se ha descargado correctamente${organizationData ? ` con datos de ${organizationData.name}` : ""}${requiresMedicalTreatment ? " (incluye tratamiento médico)" : ""}`,
       })
     } catch (error) {
       console.error("Error downloading consent:", error)
@@ -520,9 +567,18 @@ export function PatientConsentsSection({
                         <TableCell>
                           <div>
                             <div className="font-medium">{consent.consent_forms.title}</div>
-                            <Badge variant="outline" className="text-xs mt-1">
-                              {consent.consent_forms.category}
-                            </Badge>
+                            <div className="flex items-center gap-1 mt-1">
+                              <Badge variant="outline" className="text-xs">
+                                {consent.consent_forms.category}
+                              </Badge>
+                              {/* ✅ INDICADOR DE TRATAMIENTO MÉDICO */}
+                              {consent.consent_forms.category !== "general" && (
+                                <Badge variant="secondary" className="text-xs">
+                                  <Stethoscope className="w-3 h-3 mr-1" />
+                                  Médico
+                                </Badge>
+                              )}
+                            </div>
                           </div>
                         </TableCell>
                         <TableCell>
@@ -622,9 +678,18 @@ export function PatientConsentsSection({
                         <TableCell>
                           <div>
                             <div className="font-medium">{token.consent_forms.title}</div>
-                            <Badge variant="outline" className="text-xs mt-1">
-                              {token.consent_forms.category}
-                            </Badge>
+                            <div className="flex items-center gap-1 mt-1">
+                              <Badge variant="outline" className="text-xs">
+                                {token.consent_forms.category}
+                              </Badge>
+                              {/* ✅ INDICADOR DE TRATAMIENTO MÉDICO EN PENDIENTES */}
+                              {token.consent_forms.category !== "general" && (
+                                <Badge variant="secondary" className="text-xs">
+                                  <Stethoscope className="w-3 h-3 mr-1" />
+                                  Médico
+                                </Badge>
+                              )}
+                            </div>
                           </div>
                         </TableCell>
                         <TableCell>
@@ -704,9 +769,17 @@ export function PatientConsentsSection({
                 <div>
                   <h4 className="font-medium text-sm text-gray-500">Documento</h4>
                   <p className="font-medium">{selectedConsent.consent_forms.title}</p>
-                  <Badge variant="outline" className="text-xs mt-1">
-                    {selectedConsent.consent_forms.category}
-                  </Badge>
+                  <div className="flex items-center gap-1 mt-1">
+                    <Badge variant="outline" className="text-xs">
+                      {selectedConsent.consent_forms.category}
+                    </Badge>
+                    {selectedConsent.consent_forms.category !== "general" && (
+                      <Badge variant="secondary" className="text-xs">
+                        <Stethoscope className="w-3 h-3 mr-1" />
+                        Médico
+                      </Badge>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <h4 className="font-medium text-sm text-gray-500">Paciente</h4>
@@ -760,6 +833,33 @@ export function PatientConsentsSection({
                       </span>
                     )}
                   </div>
+
+                  {/* ✅ TRATAMIENTO MÉDICO CONDICIONAL EN MODAL */}
+                  {selectedConsent.consent_forms.category !== "general" && (
+                    <div className="flex items-center justify-between p-2 bg-emerald-50 rounded border-l-4 border-emerald-200">
+                      <div className="flex items-center gap-2">
+                        <Stethoscope
+                          className={`w-4 h-4 ${selectedConsent.medical_treatment_accepted ? "text-emerald-600" : "text-red-600"}`}
+                        />
+                        <span className="text-sm">
+                          Tratamiento médico específico
+                          {!selectedConsent.medical_treatment_accepted && (
+                            <span className="text-red-600 ml-1">(Rechazado)</span>
+                          )}
+                        </span>
+                      </div>
+                      {selectedConsent.medical_treatment_accepted && selectedConsent.medical_treatment_accepted_at && (
+                        <span className="text-xs text-gray-500">
+                          {formatDate(selectedConsent.medical_treatment_accepted_at)}
+                        </span>
+                      )}
+                      {!selectedConsent.medical_treatment_accepted && selectedConsent.medical_treatment_rejected_at && (
+                        <span className="text-xs text-red-500">
+                          Rechazado: {formatDate(selectedConsent.medical_treatment_rejected_at)}
+                        </span>
+                      )}
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
                     <div className="flex items-center gap-2">
