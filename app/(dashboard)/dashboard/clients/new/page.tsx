@@ -13,6 +13,22 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
+// Componente personalizado para labels con asterisco rojo
+const RequiredLabel = ({
+  children,
+  htmlFor,
+  required = false,
+}: {
+  children: React.ReactNode
+  htmlFor?: string
+  required?: boolean
+}) => (
+  <Label htmlFor={htmlFor} className="flex items-center gap-1">
+    {children}
+    {required && <span className="text-red-500">*</span>}
+  </Label>
+)
+
 export default function NewClientPage() {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
@@ -49,7 +65,6 @@ export default function NewClientPage() {
         setFormData((prev) => ({ ...prev, organization_id: data[0].id.toString() }))
       }
     }
-
     fetchOrganizations()
   }, [])
 
@@ -94,7 +109,7 @@ export default function NewClientPage() {
           country: formData.country,
           client_type: formData.client_type,
           email: formData.email || null,
-          phone: formData.phone || null,
+          phone: formData.phone,
           birth_date: formData.birth_date || null, // Guardar fecha de nacimiento
           gender: formData.gender || null, // Guardar género
           medical_notes: formData.medical_notes || null, // Guardar notas médicas
@@ -119,7 +134,6 @@ export default function NewClientPage() {
   return (
     <div className="max-w-2xl mx-auto">
       <h1 className="text-3xl font-bold tracking-tight mb-6">Nuevo Cliente</h1>
-
       <form onSubmit={handleSubmit}>
         <Card>
           <CardHeader>
@@ -134,7 +148,9 @@ export default function NewClientPage() {
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="organization_id">Organización</Label>
+              <RequiredLabel htmlFor="organization_id" required>
+                Organización
+              </RequiredLabel>
               <Select
                 value={formData.organization_id}
                 onValueChange={(value) => handleSelectChange("organization_id", value)}
@@ -153,19 +169,23 @@ export default function NewClientPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="name">Nombre o Razón Social</Label>
+              <RequiredLabel htmlFor="name" required>
+                Nombre o Razón Social
+              </RequiredLabel>
               <Input id="name" name="name" value={formData.name} onChange={handleChange} required />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="tax_id">CIF/NIF</Label>
+              <RequiredLabel htmlFor="tax_id" required>
+                CIF/NIF
+              </RequiredLabel>
               <Input id="tax_id" name="tax_id" value={formData.tax_id} onChange={handleChange} required />
             </div>
 
             {/* Campos de información personal */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="birth_date">Fecha de Nacimiento</Label>
+                <RequiredLabel htmlFor="birth_date">Fecha de Nacimiento</RequiredLabel>
                 <Input
                   id="birth_date"
                   name="birth_date"
@@ -174,9 +194,8 @@ export default function NewClientPage() {
                   onChange={handleChange}
                 />
               </div>
-
               <div className="space-y-2">
-                <Label htmlFor="gender">Género</Label>
+                <RequiredLabel htmlFor="gender">Género</RequiredLabel>
                 <Select value={formData.gender} onValueChange={(value) => handleSelectChange("gender", value)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Seleccionar género" />
@@ -192,13 +211,17 @@ export default function NewClientPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="address">Dirección</Label>
+              <RequiredLabel htmlFor="address" required>
+                Dirección
+              </RequiredLabel>
               <Textarea id="address" name="address" value={formData.address} onChange={handleChange} required />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="postal_code">Código Postal</Label>
+                <RequiredLabel htmlFor="postal_code" required>
+                  Código Postal
+                </RequiredLabel>
                 <Input
                   id="postal_code"
                   name="postal_code"
@@ -207,40 +230,45 @@ export default function NewClientPage() {
                   required
                 />
               </div>
-
               <div className="space-y-2">
-                <Label htmlFor="city">Ciudad</Label>
+                <RequiredLabel htmlFor="city" required>
+                  Ciudad
+                </RequiredLabel>
                 <Input id="city" name="city" value={formData.city} onChange={handleChange} required />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="province">Provincia</Label>
+                <RequiredLabel htmlFor="province" required>
+                  Provincia
+                </RequiredLabel>
                 <Input id="province" name="province" value={formData.province} onChange={handleChange} required />
               </div>
-
               <div className="space-y-2">
-                <Label htmlFor="country">País</Label>
+                <RequiredLabel htmlFor="country" required>
+                  País
+                </RequiredLabel>
                 <Input id="country" name="country" value={formData.country} onChange={handleChange} required />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <RequiredLabel htmlFor="email">Email</RequiredLabel>
                 <Input id="email" name="email" type="email" value={formData.email} onChange={handleChange} />
               </div>
-
               <div className="space-y-2">
-                <Label htmlFor="phone">Teléfono</Label>
-                <Input id="phone" name="phone" value={formData.phone} onChange={handleChange} />
+                <RequiredLabel htmlFor="phone" required>
+                  Teléfono
+                </RequiredLabel>
+                <Input id="phone" name="phone" value={formData.phone} onChange={handleChange} required />
               </div>
             </div>
 
             {/* Campo de notas médicas */}
             <div className="space-y-2">
-              <Label htmlFor="medical_notes">Notas Médicas</Label>
+              <RequiredLabel htmlFor="medical_notes">Notas Médicas</RequiredLabel>
               <Textarea
                 id="medical_notes"
                 name="medical_notes"
@@ -252,7 +280,7 @@ export default function NewClientPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Tipo de Cliente</Label>
+              <RequiredLabel required>Tipo de Cliente</RequiredLabel>
               <RadioGroup
                 value={formData.client_type}
                 onValueChange={(value) => setFormData((prev) => ({ ...prev, client_type: value }))}
@@ -273,7 +301,9 @@ export default function NewClientPage() {
               <div className="space-y-4 border p-4 rounded-md">
                 <h3 className="font-medium">Códigos DIR3</h3>
                 <div className="space-y-2">
-                  <Label htmlFor="CentroGestor">Centro Gestor</Label>
+                  <RequiredLabel htmlFor="CentroGestor" required>
+                    Centro Gestor
+                  </RequiredLabel>
                   <Input
                     id="CentroGestor"
                     name="CentroGestor"
@@ -282,9 +312,10 @@ export default function NewClientPage() {
                     required
                   />
                 </div>
-
                 <div className="space-y-2">
-                  <Label htmlFor="UnidadTramitadora">Unidad Tramitadora</Label>
+                  <RequiredLabel htmlFor="UnidadTramitadora" required>
+                    Unidad Tramitadora
+                  </RequiredLabel>
                   <Input
                     id="UnidadTramitadora"
                     name="UnidadTramitadora"
@@ -293,9 +324,10 @@ export default function NewClientPage() {
                     required
                   />
                 </div>
-
                 <div className="space-y-2">
-                  <Label htmlFor="OficinaContable">Oficina Contable</Label>
+                  <RequiredLabel htmlFor="OficinaContable" required>
+                    Oficina Contable
+                  </RequiredLabel>
                   <Input
                     id="OficinaContable"
                     name="OficinaContable"

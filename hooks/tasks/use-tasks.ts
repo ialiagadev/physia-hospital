@@ -40,7 +40,7 @@ export function useTasks() {
         descripcion: task.descripcion || "",
         estado: (task.estado as EstadoTarea) || "pendiente",
         prioridad: (task.prioridad as PrioridadTarea) || "media",
-        asignadoA: task.assigned_to,
+        asignadosA: task.assigned_to ? (Array.isArray(task.assigned_to) ? task.assigned_to : [task.assigned_to]) : [],
         fechaVencimiento: task.fecha_vencimiento ? new Date(task.fecha_vencimiento) : undefined,
         fechaCreacion: task.fecha_creacion ? new Date(task.fecha_creacion) : new Date(),
         fechaCompletada: task.fecha_completada ? new Date(task.fecha_completada) : undefined,
@@ -59,7 +59,6 @@ export function useTasks() {
     } catch (err) {
       console.error("Error cargando tareas:", err)
       setError(err instanceof Error ? err.message : "Error desconocido")
-
       // Si las tablas no existen, mostrar mensaje específico
       if (err instanceof Error && err.message.includes("does not exist")) {
         setError("Las tablas de tareas no están creadas. Ejecuta los scripts SQL primero.")
@@ -78,7 +77,7 @@ export function useTasks() {
       titulo: string
       descripcion: string
       prioridad: PrioridadTarea
-      asignadoA?: string
+      asignadosA?: string[]
       fechaVencimiento?: string
       etiquetas?: string[]
     }) => {
@@ -87,6 +86,7 @@ export function useTasks() {
         const {
           data: { user },
         } = await supabase.auth.getUser()
+
         if (!user) throw new Error("Usuario no autenticado")
 
         // Obtener organización del usuario
@@ -111,7 +111,7 @@ export function useTasks() {
           .insert({
             organization_id: userData.organization_id,
             created_by: user.id,
-            assigned_to: nuevaTarea.asignadoA || null,
+            assigned_to: nuevaTarea.asignadosA && nuevaTarea.asignadosA.length > 0 ? nuevaTarea.asignadosA : null,
             titulo: nuevaTarea.titulo,
             descripcion: nuevaTarea.descripcion,
             estado: "pendiente",
@@ -127,7 +127,6 @@ export function useTasks() {
         // Recargar tareas
         await cargarTareas()
         toast.success("Tarea creada correctamente")
-
         return taskData
       } catch (err) {
         console.error("Error creando tarea:", err)
@@ -196,7 +195,7 @@ export function useTasks() {
             descripcion: tarea.descripcion,
             estado: tarea.estado,
             prioridad: tarea.prioridad,
-            assigned_to: tarea.asignadoA || null,
+            assigned_to: tarea.asignadosA && tarea.asignadosA.length > 0 ? tarea.asignadosA : null,
             fecha_vencimiento: tarea.fechaVencimiento?.toISOString() || null,
           })
           .eq("id", tarea.id)

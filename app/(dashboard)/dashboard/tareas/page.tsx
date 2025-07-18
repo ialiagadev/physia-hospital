@@ -25,6 +25,7 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Checkbox } from "@/components/ui/checkbox"
 import { toast } from "sonner"
 import {
   Plus,
@@ -41,6 +42,8 @@ import {
   Archive,
   GripVertical,
   Loader2,
+  Users,
+  X,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useTasks } from "@/hooks/tasks/use-tasks"
@@ -118,6 +121,23 @@ function DraggableTaskCard({
     const ahora = new Date()
     const diferencia = tarea.fechaVencimiento.getTime() - ahora.getTime()
     return diferencia > 0 && diferencia <= 24 * 60 * 60 * 1000
+  }
+
+  // Función para obtener nombres de múltiples usuarios asignados
+  const getNombresAsignados = () => {
+    if (!tarea.asignadosA || tarea.asignadosA.length === 0) {
+      return "Sin asignar"
+    }
+
+    if (tarea.asignadosA.length === 1) {
+      return getNombreUsuario(tarea.asignadosA[0])
+    }
+
+    if (tarea.asignadosA.length <= 2) {
+      return tarea.asignadosA.map((id) => getNombreUsuario(id)).join(", ")
+    }
+
+    return `${getNombreUsuario(tarea.asignadosA[0])} +${tarea.asignadosA.length - 1} más`
   }
 
   return (
@@ -203,8 +223,12 @@ function DraggableTaskCard({
           {/* Footer de la tarea */}
           <div className="flex flex-col gap-1 text-xs text-gray-500 pt-2 border-t ml-6">
             <div className="flex items-center gap-1">
-              <User className="h-3 w-3 flex-shrink-0" />
-              <span className="truncate">{getNombreUsuario(tarea.asignadoA)}</span>
+              {tarea.asignadosA && tarea.asignadosA.length > 1 ? (
+                <Users className="h-3 w-3 flex-shrink-0" />
+              ) : (
+                <User className="h-3 w-3 flex-shrink-0" />
+              )}
+              <span className="truncate">{getNombresAsignados()}</span>
             </div>
             {tarea.fechaVencimiento && (
               <div className="flex items-center gap-1">
@@ -267,6 +291,103 @@ function TaskColumn({
   )
 }
 
+// Componente para selector múltiple de usuarios
+function MultiUserSelector({
+  selectedUsers,
+  onSelectionChange,
+  usuarios,
+  placeholder = "Seleccionar usuarios",
+}: {
+  selectedUsers: string[]
+  onSelectionChange: (users: string[]) => void
+  usuarios: Usuario[]
+  placeholder?: string
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+
+  const toggleUser = (userId: string) => {
+    if (selectedUsers.includes(userId)) {
+      onSelectionChange(selectedUsers.filter((id) => id !== userId))
+    } else {
+      onSelectionChange([...selectedUsers, userId])
+    }
+  }
+
+  const removeUser = (userId: string) => {
+    onSelectionChange(selectedUsers.filter((id) => id !== userId))
+  }
+
+  const getSelectedUserNames = () => {
+    return selectedUsers.map((id) => {
+      const user = usuarios.find((u) => u.id === id)
+      return user?.name || "Usuario desconocido"
+    })
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="relative">
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full justify-between bg-transparent"
+          onClick={() => setIsOpen(!isOpen)}
+        >
+          <span className="truncate">
+            {selectedUsers.length === 0
+              ? placeholder
+              : selectedUsers.length === 1
+                ? getSelectedUserNames()[0]
+                : `${selectedUsers.length} usuarios seleccionados`}
+          </span>
+          <Users className="h-4 w-4 opacity-50" />
+        </Button>
+
+        {isOpen && (
+          <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-y-auto">
+            <div className="p-2">
+              {usuarios.map((user) => (
+                <div
+                  key={user.id}
+                  className="flex items-center space-x-2 p-2 hover:bg-gray-100 rounded cursor-pointer"
+                  onClick={() => toggleUser(user.id)}
+                >
+                  <Checkbox checked={selectedUsers.includes(user.id)} onChange={() => toggleUser(user.id)} />
+                  <span className="flex-1 truncate">{user.name}</span>
+                </div>
+              ))}
+              {usuarios.length === 0 && <div className="p-2 text-gray-500 text-sm">No hay usuarios disponibles</div>}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Mostrar usuarios seleccionados como badges */}
+      {selectedUsers.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {selectedUsers.map((userId) => {
+            const user = usuarios.find((u) => u.id === userId)
+            return (
+              <Badge key={userId} variant="secondary" className="flex items-center gap-1">
+                <span className="truncate max-w-20">{user?.name || "Usuario"}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-3 w-3 p-0 hover:bg-gray-300"
+                  onClick={() => removeUser(userId)}
+                >
+                  <X className="h-2 w-2" />
+                </Button>
+              </Badge>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function TareasPage() {
   const router = useRouter()
 
@@ -282,7 +403,6 @@ export default function TareasPage() {
     reordenarTareas,
     restaurarTarea,
   } = useTasks()
-
   const { usuarios, usuariosTipo1, loading: profesionalesLoading, getNombreUsuario } = useProfessionals()
 
   // Estados locales
@@ -300,11 +420,10 @@ export default function TareasPage() {
     titulo: "",
     descripcion: "",
     prioridad: "media" as PrioridadTarea,
-    asignadoA: undefined as string | undefined,
+    asignadosA: [] as string[],
     fechaVencimiento: "",
     etiquetas: [] as string[],
   })
-
   const [tareaEnEdicion, setTareaEnEdicion] = useState<Tarea | null>(null)
   const [mostrarModalEdicion, setMostrarModalEdicion] = useState(false)
 
@@ -430,7 +549,7 @@ export default function TareasPage() {
         titulo: "",
         descripcion: "",
         prioridad: "media",
-        asignadoA: undefined,
+        asignadosA: [],
         fechaVencimiento: "",
         etiquetas: [],
       })
@@ -476,13 +595,20 @@ export default function TareasPage() {
 
     if (!cumpleFiltroEstado) return false
 
-    const cumpleFiltroAsignado = filtroAsignado === "todos" || tarea.asignadoA === filtroAsignado
+    // Filtro por asignado - ahora maneja múltiples asignados
+    const cumpleFiltroAsignado =
+      filtroAsignado === "todos" ||
+      (tarea.asignadosA && tarea.asignadosA.includes(filtroAsignado)) ||
+      (!tarea.asignadosA && filtroAsignado === "sin_asignar")
+
     const cumpleFiltroPrioridad = filtroPrioridad === "todas" || tarea.prioridad === filtroPrioridad
+
     const cumpleBusqueda =
       !busqueda ||
       tarea.titulo.toLowerCase().includes(busqueda.toLowerCase()) ||
       tarea.descripcion.toLowerCase().includes(busqueda.toLowerCase()) ||
-      getNombreUsuario(tarea.asignadoA).toLowerCase().includes(busqueda.toLowerCase())
+      (tarea.asignadosA &&
+        tarea.asignadosA.some((id) => getNombreUsuario(id).toLowerCase().includes(busqueda.toLowerCase())))
 
     return cumpleFiltroAsignado && cumpleFiltroPrioridad && cumpleBusqueda
   })
@@ -548,7 +674,6 @@ export default function TareasPage() {
                   <span className="sm:hidden">Tareas</span>
                 </h1>
               </div>
-
               {/* Botón nueva tarea - Siempre visible */}
               <Button onClick={() => setMostrarFormulario(true)} size="sm" className="flex items-center gap-2">
                 <Plus className="h-4 w-4" />
@@ -569,7 +694,6 @@ export default function TareasPage() {
                   className="pl-10"
                 />
               </div>
-
               {/* Botón filtros */}
               <Button
                 variant="outline"
@@ -602,7 +726,7 @@ export default function TareasPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Asignar a (Solo Usuarios Tipo 1)</Label>
+                  <Label>Asignado a</Label>
                   <Select
                     value={filtroAsignado.toString()}
                     onValueChange={(value) => setFiltroAsignado(value === "todos" ? "todos" : value)}
@@ -612,6 +736,7 @@ export default function TareasPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="todos">Todos</SelectItem>
+                      <SelectItem value="sin_asignar">Sin asignar</SelectItem>
                       {usuariosTipo1.map((user) => (
                         <SelectItem key={user.id} value={user.id}>
                           {user.name}
@@ -743,8 +868,18 @@ export default function TareasPage() {
                             </div>
                             <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-xs text-gray-500">
                               <div className="flex items-center gap-1">
-                                <User className="h-3 w-3" />
-                                <span>{getNombreUsuario(tarea.asignadoA)}</span>
+                                {tarea.asignadosA && tarea.asignadosA.length > 1 ? (
+                                  <Users className="h-3 w-3" />
+                                ) : (
+                                  <User className="h-3 w-3" />
+                                )}
+                                <span>
+                                  {tarea.asignadosA && tarea.asignadosA.length > 0
+                                    ? tarea.asignadosA.length === 1
+                                      ? getNombreUsuario(tarea.asignadosA[0])
+                                      : `${tarea.asignadosA.length} usuarios`
+                                    : "Sin asignar"}
+                                </span>
                               </div>
                               {tarea.fechaVencimiento && (
                                 <div className="flex items-center gap-1">
@@ -862,35 +997,23 @@ export default function TareasPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Asignar a (Solo Usuarios Tipo 1)</Label>
-                  <Select
-                    value={nuevaTarea.asignadoA || "none"}
-                    onValueChange={(value) =>
-                      setNuevaTarea({ ...nuevaTarea, asignadoA: value === "none" ? undefined : value })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sin asignar" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Sin asignar</SelectItem>
-                      {usuariosTipo1.map((user) => (
-                        <SelectItem key={user.id} value={user.id}>
-                          {user.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="fechaVencimiento">Fecha de vencimiento</Label>
+                  <Input
+                    id="fechaVencimiento"
+                    type="date"
+                    value={nuevaTarea.fechaVencimiento}
+                    onChange={(e) => setNuevaTarea({ ...nuevaTarea, fechaVencimiento: e.target.value })}
+                  />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="fechaVencimiento">Fecha de vencimiento</Label>
-                <Input
-                  id="fechaVencimiento"
-                  type="date"
-                  value={nuevaTarea.fechaVencimiento}
-                  onChange={(e) => setNuevaTarea({ ...nuevaTarea, fechaVencimiento: e.target.value })}
+                <Label>Asignar a</Label>
+                <MultiUserSelector
+                  selectedUsers={nuevaTarea.asignadosA}
+                  onSelectionChange={(users) => setNuevaTarea({ ...nuevaTarea, asignadosA: users })}
+                  usuarios={usuariosTipo1}
+                  placeholder="Seleccionar usuarios"
                 />
               </div>
 
@@ -966,28 +1089,6 @@ export default function TareasPage() {
                     </Select>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label>Asignar a (Solo Usuarios Tipo 1)</Label>
-                    <Select
-                      value={tareaEnEdicion.asignadoA || "none"}
-                      onValueChange={(value) =>
-                        setTareaEnEdicion({ ...tareaEnEdicion, asignadoA: value === "none" ? undefined : value })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Sin asignar</SelectItem>
-                        {usuariosTipo1.map((user) => (
-                          <SelectItem key={user.id} value={user.id}>
-                            {user.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
                   <div className="space-y-2 md:col-span-2">
                     <Label htmlFor="fechaVencimiento">Fecha de vencimiento</Label>
                     <Input
@@ -1002,6 +1103,16 @@ export default function TareasPage() {
                       }
                     />
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Asignar a</Label>
+                  <MultiUserSelector
+                    selectedUsers={tareaEnEdicion.asignadosA || []}
+                    onSelectionChange={(users) => setTareaEnEdicion({ ...tareaEnEdicion, asignadosA: users })}
+                    usuarios={usuariosTipo1}
+                    placeholder="Seleccionar usuarios"
+                  />
                 </div>
 
                 <div className="space-y-2">

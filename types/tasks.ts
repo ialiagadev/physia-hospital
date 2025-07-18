@@ -45,7 +45,7 @@ export interface Tarea {
   descripcion: string
   estado: EstadoTarea
   prioridad: PrioridadTarea
-  asignadoA?: string // UUID del usuario asignado
+  asignadosA?: string[] // Array de UUIDs de usuarios asignados
   fechaVencimiento?: Date
   fechaCreacion: Date
   fechaCompletada?: Date
@@ -65,20 +65,20 @@ export interface PlantillaTarea {
   nombre: string
   descripcion: string
   prioridad: PrioridadTarea
-  asignadoA?: string
+  asignadosA?: string[]
   fechaVencimiento?: Date
   etiquetas: string[]
   categoria: string
 }
 
-// Interfaz actualizada para usuarios (antes Profesional)
+// Interfaz actualizada para usuarios
 export interface Usuario {
   id: string // UUID del usuario
   created_at?: Date
   email?: string
   organization_id?: number
   role?: "admin" | "user" | "viewer"
-  name: string // Nombre del usuario (antes 'nombre')
+  name: string // Nombre del usuario
   avatar_url?: string
   is_physia_admin?: boolean
   type: 1 | 2 // Tipo de usuario: 1 o 2
