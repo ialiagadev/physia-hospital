@@ -145,7 +145,8 @@ export function AppointmentFormModal({
     // 🔧 FECHA CORREGIDA - siempre como Date local
     fecha: citaExistente?.fecha ? ensureLocalDate(citaExistente.fecha) : ensureLocalDate(fecha),
     hora: citaExistente?.hora || hora,
-    duracion: citaExistente?.duracion || waitingListEntry?.estimated_duration || 45,
+    duracion:
+      citaExistente?.duracion || waitingListEntry?.estimated_duration || waitingListEntry?.service_duration || 45,
     notas: citaExistente?.notas || waitingListEntry?.notes || "",
     profesionalId: citaExistente?.profesionalId || profesionalId || waitingListEntry?.preferred_professional_id || 0,
     estado: citaExistente?.estado || ("pendiente" as EstadoCita),

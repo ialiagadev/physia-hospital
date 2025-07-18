@@ -82,14 +82,14 @@ export function WeekView({
   const weekStart = startOfWeek(date, { weekStartsOn: 1 })
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
 
-  // 🆕 NUEVA FUNCIÓN: Manejar clic en el día (área vacía)
-  const handleDayClick = (targetDate: Date, event: React.MouseEvent) => {
-    // Solo proceder si el clic fue en el contenedor del día, no en una cita
-    if (event.target === event.currentTarget) {
-      if (onDateSelect) {
-        onDateSelect(targetDate)
-        toast.success(`Cambiando a vista diaria: ${format(targetDate, "EEEE d 'de' MMMM", { locale: es })}`)
-      }
+  // Función para manejar clic en el header del día
+  const handleHeaderClick = (targetDate: Date, event: React.MouseEvent) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (onDateSelect) {
+      onDateSelect(targetDate)
+      toast.success(`Cambiando a vista diaria: ${format(targetDate, "EEEE d 'de' MMMM", { locale: es })}`)
     }
   }
 
@@ -172,23 +172,20 @@ export function WeekView({
           return (
             <div
               key={day.toISOString()}
-              className={`bg-white flex flex-col cursor-pointer hover:bg-gray-50/50 transition-colors ${
+              className={`bg-white flex flex-col transition-colors ${
                 isDayToday ? "bg-blue-50/30" : isWeekend ? "bg-gray-50/50" : "bg-white"
               } ${isDragOver ? "bg-blue-100/50 ring-2 ring-blue-300" : ""}`}
-              // 🆕 MODIFICADO: Usar la nueva función handleDayClick
-              onClick={(e) => handleDayClick(day, e)}
               onDragOver={(e) => handleDragOver(e, day)}
               onDragLeave={handleDragLeave}
               onDrop={(e) => handleDrop(e, day)}
             >
-              {/* Header del día */}
+              {/* Header del día - AHORA CLICKEABLE */}
               <div
-                className={`p-4 border-b border-gray-200 text-center ${isDayToday ? "bg-blue-100/50" : "bg-gray-50"}`}
-                // 🆕 AÑADIDO: Permitir clic en el header también
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleDayClick(day, e)
-                }}
+                className={`p-4 border-b border-gray-200 text-center cursor-pointer hover:bg-blue-100/30 transition-colors ${
+                  isDayToday ? "bg-blue-100/50" : "bg-gray-50"
+                }`}
+                onClick={(e) => handleHeaderClick(day, e)}
+                title={`Ir a vista diaria: ${format(day, "EEEE d 'de' MMMM", { locale: es })}`}
               >
                 <div className={`text-sm font-medium ${isDayToday ? "text-blue-600" : "text-gray-600"}`}>
                   {format(day, "EEE", { locale: es })}
@@ -207,16 +204,8 @@ export function WeekView({
               {/* Contenido del día */}
               <div className="flex-1 p-3 space-y-2 min-h-[500px]">
                 {citasDelDia.length === 0 ? (
-                  <div
-                    className="flex flex-col items-center justify-center h-32 text-gray-400"
-                    // 🆕 AÑADIDO: Permitir clic en área vacía
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleDayClick(day, e)
-                    }}
-                  >
+                  <div className="flex flex-col items-center justify-center h-32 text-gray-400">
                     <p className="text-sm">Sin citas</p>
-                    <p className="text-xs mt-1 opacity-75">Haz clic para ver detalles</p>
                     {isDragOver && draggedCita && <p className="text-xs text-blue-600 mt-2">Soltar aquí para mover</p>}
                   </div>
                 ) : (
@@ -298,16 +287,6 @@ export function WeekView({
                         <p className="text-xs text-blue-600">Soltar aquí para mover</p>
                       </div>
                     )}
-                    {/* 🆕 AÑADIDO: Área clickeable al final para días con citas */}
-                    <div
-                      className="flex-1 min-h-[100px] flex items-end justify-center pb-4 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleDayClick(day, e)
-                      }}
-                    >
-                      <p className="text-xs opacity-75">Haz clic para vista diaria</p>
-                    </div>
                   </>
                 )}
               </div>

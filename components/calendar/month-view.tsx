@@ -26,6 +26,7 @@ interface MonthViewProps {
   profesionalesSeleccionados: number[]
   onUpdateCita: (cita: any) => void
   onAddCita: (cita: any) => void
+  onDateSelect?: (date: Date) => void
   vacationRequests?: any[]
   isUserOnVacationDate?: (userId: string, date: Date | string) => boolean
   getUserVacationOnDate?: (userId: string, date: Date | string) => any
@@ -39,6 +40,7 @@ export function MonthView({
   profesionalesSeleccionados,
   onUpdateCita,
   onAddCita,
+  onDateSelect,
   vacationRequests = [],
   isUserOnVacationDate = () => false,
   getUserVacationOnDate = () => null,
@@ -66,6 +68,18 @@ export function MonthView({
         return "👤"
       default:
         return "😴"
+    }
+  }
+
+  const handleDayClick = (day: Date) => {
+    if (onDateSelect) {
+      onDateSelect(day)
+    } else {
+      // Fallback: crear nueva cita
+      onAddCita({
+        fecha: day,
+        hora: "09:00",
+      })
     }
   }
 
@@ -106,22 +120,18 @@ export function MonthView({
                 isToday(day) && "bg-blue-50",
               )}
             >
-              {/* Número del día */}
+              {/* Número del día - AHORA CLICKEABLE PARA CAMBIAR A VISTA DIARIA */}
               <div className="flex items-center justify-between mb-1">
                 <button
                   type="button"
                   className={classNames(
-                    "flex h-6 w-6 items-center justify-center rounded-full text-sm",
-                    isToday(day) && "bg-blue-600 font-semibold text-white",
-                    !isToday(day) && isSameMonth(day, firstDayCurrentMonth) && "text-gray-900 hover:bg-gray-100",
-                    !isToday(day) && !isSameMonth(day, firstDayCurrentMonth) && "text-gray-400",
+                    "flex h-6 w-6 items-center justify-center rounded-full text-sm cursor-pointer transition-colors",
+                    isToday(day) && "bg-blue-600 font-semibold text-white hover:bg-blue-700",
+                    !isToday(day) && isSameMonth(day, firstDayCurrentMonth) && "text-gray-900 hover:bg-blue-100",
+                    !isToday(day) && !isSameMonth(day, firstDayCurrentMonth) && "text-gray-400 hover:bg-gray-200",
                   )}
-                  onClick={() => {
-                    onAddCita({
-                      fecha: day,
-                      hora: "09:00",
-                    })
-                  }}
+                  onClick={() => handleDayClick(day)}
+                  title={`Ir a vista diaria: ${format(day, "EEEE d 'de' MMMM")}`}
                 >
                   <time dateTime={format(day, "yyyy-MM-dd")}>{format(day, "d")}</time>
                 </button>

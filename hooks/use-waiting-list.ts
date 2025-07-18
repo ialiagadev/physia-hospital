@@ -84,7 +84,7 @@ export function useWaitingList(organizationId: number) {
         client_phone: entry.clients?.phone || null,
         professional_name: entry.users?.name || null,
         service_name: entry.services?.name || "Servicio desconocido",
-        service_duration: entry.services?.duration || 30,
+        service_duration: entry.services?.duration || 0,
         service_color: entry.services?.color || "#3B82F6",
         service_category: entry.services?.category || null,
       }))

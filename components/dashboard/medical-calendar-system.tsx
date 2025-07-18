@@ -635,6 +635,13 @@ const MedicalCalendarSystem: React.FC = () => {
 
   const legacyUsers = convertUsersToLegacyFormat(users)
 
+  // Handler para cambiar a vista diaria
+  const handleDateSelect = (date: Date) => {
+    setCurrentDate(date)
+    setVistaCalendario("dia")
+    toast.success(`Cambiando a vista diaria: ${format(date, "EEEE d 'de' MMMM")}`)
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
       {/* Header simplificado */}
@@ -818,7 +825,7 @@ const MedicalCalendarSystem: React.FC = () => {
                           selected={currentDate}
                           onSelect={(date) => {
                             if (date) {
-                              setCurrentDate(date)
+                              handleDateSelect(date)
                             }
                           }}
                           weekStartsOn={1}
@@ -883,6 +890,7 @@ const MedicalCalendarSystem: React.FC = () => {
                             intervaloTiempo={intervaloTiempo}
                             onUpdateCita={handleUpdateLegacyAppointment}
                             onAddCita={handleAddAppointment}
+                            onDateSelect={handleDateSelect}
                             vacationRequests={vacationRequests}
                             isUserOnVacationDate={isUserOnVacationDate}
                             getUserVacationOnDate={getUserVacationOnDate}
@@ -903,6 +911,7 @@ const MedicalCalendarSystem: React.FC = () => {
                             })}
                             onUpdateCita={handleUpdateLegacyAppointment}
                             onAddCita={handleAddAppointment}
+                            onDateSelect={handleDateSelect}
                             vacationRequests={vacationRequests}
                             isUserOnVacationDate={isUserOnVacationDate}
                             getUserVacationOnDate={getUserVacationOnDate}
