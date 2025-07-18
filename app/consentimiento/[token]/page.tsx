@@ -368,16 +368,16 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
                       </Label>
                     </div>
 
-                    <div className="flex items-start space-x-2">
-  <Checkbox
-    id="document"
-    checked={documentReadUnderstood}
-    onCheckedChange={(checked) => setDocumentReadUnderstood(checked as boolean)}
-  />
-  <Label htmlFor="document" className="text-xs leading-relaxed">
-    Autorizo las comunicaciones automatizadas por asistente virtual de IA y el uso de los canales indicados. (opcional)
-  </Label>
-</div>
+                                            <div className="flex items-start space-x-2">
+                        <Checkbox
+                            id="document"
+                            checked={documentReadUnderstood}
+                            onCheckedChange={(checked) => setDocumentReadUnderstood(checked as boolean)}
+                        />
+                        <Label htmlFor="document" className="text-xs leading-relaxed">
+                            Autorizo las comunicaciones automatizadas por asistente virtual de IA y el uso de los canales indicados. 
+                        </Label>
+                        </div>
 
                     {/* ✅ CHECKBOX DE TRATAMIENTO MÉDICO CONDICIONAL */}
                     {requiresMedicalTreatment() && (
