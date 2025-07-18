@@ -952,7 +952,7 @@ export default function TareasPage() {
 
         {/* Modal de nueva tarea */}
         <Dialog open={mostrarFormulario} onOpenChange={setMostrarFormulario}>
-          <DialogContent className="max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-full max-w-4xl mx-auto max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Nueva Tarea</DialogTitle>
             </DialogHeader>
