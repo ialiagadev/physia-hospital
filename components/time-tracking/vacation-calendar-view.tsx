@@ -146,84 +146,81 @@ export function VacationCalendarView({
 
   return (
     <div className="space-y-6">
-      {/* Header con navegación */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold flex items-center gap-2">
-            <Calendar className="h-5 w-5" />
-            Calendario de Vacaciones
-          </h2>
-          <p className="text-sm text-muted-foreground">{format(currentDate, "MMMM yyyy", { locale: es })}</p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => navigateMonth("prev")}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Button variant="outline" size="sm" onClick={goToToday}>
-            <Home className="h-4 w-4" />
-            Hoy
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => navigateMonth("next")}>
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
+      {/* Header simplificado */}
+      <div>
+        <h2 className="text-xl font-semibold flex items-center gap-2">
+          <Calendar className="h-5 w-5" />
+          Calendario de Vacaciones
+        </h2>
+        <p className="text-sm text-muted-foreground">Gestiona y visualiza las vacaciones del equipo</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Calendario principal */}
         <div className="lg:col-span-3">
           <Card>
-            <CardHeader>
+            <CardHeader className="space-y-4">
+              {/* Título del mes con navegación */}
               <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">{format(currentDate, "MMMM yyyy", { locale: es })}</CardTitle>
-
-                {/* Filtros */}
                 <div className="flex items-center gap-2">
-                  <Filter className="h-4 w-4 text-muted-foreground" />
+                  <Button variant="outline" size="sm" onClick={() => navigateMonth("prev")} className="h-8 w-8 p-0">
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <CardTitle className="text-lg font-semibold">
+                    {format(currentDate, "MMMM yyyy", { locale: es })}
+                  </CardTitle>
+                  <Button variant="outline" size="sm" onClick={() => navigateMonth("next")} className="h-8 w-8 p-0">
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={goToToday} className="ml-2 bg-transparent">
+                    <Home className="h-4 w-4 mr-1" />
+                    Hoy
+                  </Button>
+                </div>
+              </div>
 
-                  {isAdmin && (
-                    <Select value={filters.user} onValueChange={(value) => setFilters({ ...filters, user: value })}>
-                      <SelectTrigger className="w-32">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todos</SelectItem>
-                        {organizationUsers.map((user) => (
-                          <SelectItem key={user.id} value={user.id}>
-                            {user.name?.split(" ")[0] || user.email.split("@")[0]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-
-                  <Select value={filters.type} onValueChange={(value) => setFilters({ ...filters, type: value })}>
+              {/* Filtros */}
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                {isAdmin && (
+                  <Select value={filters.user} onValueChange={(value) => setFilters({ ...filters, user: value })}>
                     <SelectTrigger className="w-32">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">Todos</SelectItem>
-                      {VACATION_TYPES.map((type) => (
-                        <SelectItem key={type.value} value={type.value}>
-                          {type.label}
+                      {organizationUsers.map((user) => (
+                        <SelectItem key={user.id} value={user.id}>
+                          {user.name?.split(" ")[0] || user.email.split("@")[0]}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-
-                  <Select value={filters.status} onValueChange={(value) => setFilters({ ...filters, status: value })}>
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todos</SelectItem>
-                      <SelectItem value="pending">Pendientes</SelectItem>
-                      <SelectItem value="approved">Aprobadas</SelectItem>
-                      <SelectItem value="rejected">Rechazadas</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                )}
+                <Select value={filters.type} onValueChange={(value) => setFilters({ ...filters, type: value })}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos</SelectItem>
+                    {VACATION_TYPES.map((type) => (
+                      <SelectItem key={type.value} value={type.value}>
+                        {type.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={filters.status} onValueChange={(value) => setFilters({ ...filters, status: value })}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos</SelectItem>
+                    <SelectItem value="pending">Pendientes</SelectItem>
+                    <SelectItem value="approved">Aprobadas</SelectItem>
+                    <SelectItem value="rejected">Rechazadas</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </CardHeader>
             <CardContent>
@@ -284,7 +281,6 @@ export function VacationCalendarView({
                             </div>
                           )
                         })}
-
                         {dayRequests.length > 2 && (
                           <div className="text-xs text-muted-foreground text-center">+{dayRequests.length - 2} más</div>
                         )}
@@ -339,7 +335,6 @@ export function VacationCalendarView({
                 <div className="text-2xl font-bold">{monthStats.totalDays}</div>
                 <p className="text-sm text-muted-foreground">Días totales</p>
               </div>
-
               <div className="space-y-2">
                 {VACATION_TYPES.filter((type) => monthStats.byType[type.value] > 0).map((type) => (
                   <div key={type.value} className="flex items-center justify-between">
