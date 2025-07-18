@@ -217,6 +217,33 @@ export default function NewInvoicePage() {
 
   const totalAmount = baseAmount + vatAmount - irpfAmount - retentionAmount
 
+  // AQUÍ ES DONDE AÑADES LA LÓGICA - useEffect para añadir nota automática cuando IVA = 0
+  useEffect(() => {
+    const notaIVAExenta =
+      "Operación exenta de IVA conforme al artículo 20. Uno. 3º de la Ley 37/1992 del Impuesto sobre el Valor Añadido, por tratarse de un servicio de asistencia sanitaria prestado por profesional titulado"
+
+    if (vatAmount === 0 && baseAmount > 0) {
+      // Solo añadir si no está ya presente
+      if (!formData.notes.includes(notaIVAExenta)) {
+        setFormData((prev) => ({
+          ...prev,
+          notes: prev.notes ? `${prev.notes}\n\n${notaIVAExenta}` : notaIVAExenta,
+        }))
+      }
+    } else if (vatAmount > 0) {
+      // Si hay IVA, quitar la nota automática si estaba
+      if (formData.notes.includes(notaIVAExenta)) {
+        setFormData((prev) => ({
+          ...prev,
+          notes: prev.notes
+            .replace(notaIVAExenta, "")
+            .replace(/\n\n\n/g, "\n\n")
+            .trim(),
+        }))
+      }
+    }
+  }, [vatAmount, baseAmount]) // Se ejecuta cuando cambia vatAmount o baseAmount
+
   useEffect(() => {
     const fetchData = async () => {
       try {

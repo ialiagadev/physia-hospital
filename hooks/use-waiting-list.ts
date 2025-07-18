@@ -23,6 +23,8 @@ export interface WaitingListEntry {
   service_duration: number
   service_color: string
   service_category: string | null
+  // 🔧 AÑADIDO: ID del profesional preferido para el formulario de citas
+  preferred_professional_id: string | null
 }
 
 export interface CreateWaitingListEntry {
@@ -55,6 +57,7 @@ export function useWaitingList(organizationId: number) {
             phone
           ),
           users!waiting_list_professional_id_fkey (
+            id,
             name
           ),
           services!waiting_list_service_id_fkey (
@@ -87,6 +90,8 @@ export function useWaitingList(organizationId: number) {
         service_duration: entry.services?.duration || 0,
         service_color: entry.services?.color || "#3B82F6",
         service_category: entry.services?.category || null,
+        // 🔧 CORREGIDO: Usar el ID del profesional para el formulario de citas
+        preferred_professional_id: entry.professional_id,
       }))
 
       setEntries(formattedEntries)

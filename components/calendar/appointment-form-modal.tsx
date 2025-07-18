@@ -127,6 +127,22 @@ export function AppointmentFormModal({
   const conflictCheckTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
   const consultationCheckTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
 
+  // 🔧 OBTENER PROFESIONAL ID DE LISTA DE ESPERA CORRECTAMENTE
+  const getWaitingListProfessionalId = useCallback(() => {
+    if (!waitingListEntry?.preferred_professional_id) {
+      return null
+    }
+
+    // Convertir el UUID a número usando los últimos 8 caracteres
+    const professionalUuid = waitingListEntry.preferred_professional_id
+    if (typeof professionalUuid === "string" && professionalUuid.length >= 8) {
+      const professionalId = Number.parseInt(professionalUuid.slice(-8), 16)
+      return professionalId > 0 ? professionalId : null
+    }
+
+    return null
+  }, [waitingListEntry])
+
   // Función para calcular hora fin
   const calcularHoraFin = useCallback((horaInicio: string, duracion: number) => {
     const [horas, minutos] = horaInicio.split(":").map(Number)
@@ -136,37 +152,41 @@ export function AppointmentFormModal({
     return `${nuevasHoras.toString().padStart(2, "0")}:${nuevosMinutos.toString().padStart(2, "0")}`
   }, [])
 
-  // 🔧 ESTADO DEL FORMULARIO CON FECHAS CORREGIDAS
-  const [formData, setFormData] = useState({
-    telefonoPaciente: citaExistente?.telefonoPaciente || waitingListEntry?.phone || "",
-    nombrePaciente: citaExistente?.nombrePaciente || waitingListEntry?.client_name?.split(" ")[0] || "",
-    apellidosPaciente:
-      citaExistente?.apellidosPaciente || waitingListEntry?.client_name?.split(" ").slice(1).join(" ") || "",
-    // 🔧 FECHA CORREGIDA - siempre como Date local
-    fecha: citaExistente?.fecha ? ensureLocalDate(citaExistente.fecha) : ensureLocalDate(fecha),
-    hora: citaExistente?.hora || hora,
-    duracion:
-      citaExistente?.duracion || waitingListEntry?.estimated_duration || waitingListEntry?.service_duration || 45,
-    notas: citaExistente?.notas || waitingListEntry?.notes || "",
-    profesionalId: citaExistente?.profesionalId || profesionalId || waitingListEntry?.preferred_professional_id || 0,
-    estado: citaExistente?.estado || ("pendiente" as EstadoCita),
-    consultationId:
-      citaExistente?.consultationId && citaExistente.consultationId !== "" ? citaExistente.consultationId : "none",
-    service_id: citaExistente?.service_id
-      ? Number(citaExistente.service_id)
-      : waitingListEntry?.service_id
-        ? Number(waitingListEntry.service_id)
-        : services.length > 0
-          ? services[0].id
-          : null,
-    // 🆕 CAMPOS PARA RECURRENCIA - Añadida opción "daily"
-    isRecurring: citaExistente?.isRecurring || false,
-    recurrenceType: citaExistente?.recurrenceType || "weekly",
-    recurrenceInterval: citaExistente?.recurrenceInterval || 1,
-    // 🔧 FECHA DE RECURRENCIA CORREGIDA
-    recurrenceEndDate: citaExistente?.recurrenceEndDate
-      ? ensureLocalDate(citaExistente.recurrenceEndDate)
-      : addMonths(ensureLocalDate(fecha), 3),
+  // 🔧 ESTADO DEL FORMULARIO CON FECHAS Y PROFESIONAL CORREGIDOS
+  const [formData, setFormData] = useState(() => {
+    const waitingListProfessionalId = getWaitingListProfessionalId()
+
+    return {
+      telefonoPaciente: citaExistente?.telefonoPaciente || waitingListEntry?.client_phone || "",
+      nombrePaciente: citaExistente?.nombrePaciente || waitingListEntry?.client_name?.split(" ")[0] || "",
+      apellidosPaciente:
+        citaExistente?.apellidosPaciente || waitingListEntry?.client_name?.split(" ").slice(1).join(" ") || "",
+      // 🔧 FECHA CORREGIDA - siempre como Date local
+      fecha: citaExistente?.fecha ? ensureLocalDate(citaExistente.fecha) : ensureLocalDate(fecha),
+      hora: citaExistente?.hora || hora,
+      duracion: citaExistente?.duracion || waitingListEntry?.service_duration || 45,
+      notas: citaExistente?.notas || waitingListEntry?.notes || "",
+      // 🔧 PROFESIONAL ID CORREGIDO - priorizar lista de espera
+      profesionalId: citaExistente?.profesionalId || waitingListProfessionalId || profesionalId || 0,
+      estado: citaExistente?.estado || ("pendiente" as EstadoCita),
+      consultationId:
+        citaExistente?.consultationId && citaExistente.consultationId !== "" ? citaExistente.consultationId : "none",
+      service_id: citaExistente?.service_id
+        ? Number(citaExistente.service_id)
+        : waitingListEntry?.service_id
+          ? Number(waitingListEntry.service_id)
+          : services.length > 0
+            ? services[0].id
+            : null,
+      // 🆕 CAMPOS PARA RECURRENCIA - Añadida opción "daily"
+      isRecurring: citaExistente?.isRecurring || false,
+      recurrenceType: citaExistente?.recurrenceType || "weekly",
+      recurrenceInterval: citaExistente?.recurrenceInterval || 1,
+      // 🔧 FECHA DE RECURRENCIA CORREGIDA
+      recurrenceEndDate: citaExistente?.recurrenceEndDate
+        ? ensureLocalDate(citaExistente.recurrenceEndDate)
+        : addMonths(ensureLocalDate(fecha), 3),
+    }
   })
 
   // 🆕 Efecto para generar preview de recurrencia
@@ -284,7 +304,7 @@ export function AppointmentFormModal({
     }
   }, [profesionalId, users.length, checkAppointmentConflicts])
 
-  // Filtrar usuarios - CORREGIDO y SIN console.log
+  // 🔧 FILTRAR USUARIOS CORREGIDO - No resetear profesional de lista de espera
   const updateFilteredUsers = useCallback(async () => {
     let usersToFilter = users.filter((user) => user.type === 1) // Solo profesionales
 
@@ -297,16 +317,32 @@ export function AppointmentFormModal({
     const availableUsers = getAvailableUsers(usersToFilter, formData.fecha)
     setFilteredUsers(availableUsers)
 
+    // 🔧 LÓGICA DE RESETEO CORREGIDA - considerar también lista de espera
+    const waitingListProfessionalId = getWaitingListProfessionalId()
+
     // Si el profesional seleccionado ya no está disponible, resetear
-    // PERO NO resetear si viene preseleccionado desde el calendario
+    // PERO NO resetear si viene preseleccionado desde el calendario O desde lista de espera
     if (
       formData.profesionalId &&
-      formData.profesionalId !== profesionalId && // ✅ No resetear si viene del calendario
+      formData.profesionalId !== profesionalId && // No resetear si viene del calendario
+      formData.profesionalId !== waitingListProfessionalId && // 🔧 No resetear si viene de lista de espera
       !availableUsers.find((user) => Number.parseInt(user.id.slice(-8), 16) === formData.profesionalId)
     ) {
-      setFormData((prev) => ({ ...prev, profesionalId: profesionalId || 0 }))
+      setFormData((prev) => ({
+        ...prev,
+        profesionalId: waitingListProfessionalId || profesionalId || 0,
+      }))
     }
-  }, [formData.service_id, formData.fecha, formData.profesionalId, users, getUsersByService, getAvailableUsers])
+  }, [
+    formData.service_id,
+    formData.fecha,
+    formData.profesionalId,
+    users,
+    getUsersByService,
+    getAvailableUsers,
+    profesionalId,
+    getWaitingListProfessionalId,
+  ])
 
   // Función para buscar clientes
   const searchClients = useCallback(
@@ -418,7 +454,7 @@ export function AppointmentFormModal({
         `${citaExistente.nombrePaciente} ${citaExistente.apellidosPaciente || ""}`.trim()
       setSearchTerm(searchValue)
     } else if (waitingListEntry) {
-      const searchValue = waitingListEntry.phone || waitingListEntry.client_name || ""
+      const searchValue = waitingListEntry.client_phone || waitingListEntry.client_name || ""
       setSearchTerm(searchValue)
     }
   }, [citaExistente, waitingListEntry])
@@ -494,7 +530,7 @@ export function AppointmentFormModal({
     setTimeout(() => setShowMatches(false), 200)
   }, [clienteEncontrado, searchTerm])
 
-  // Handler para manejar service_id como número o null - SIN console.log
+  // Handler para manejar service_id como número o null
   const handleServiceChange = useCallback(
     (value: string) => {
       const selectedService = services.find((s) => s.id.toString() === value)
@@ -569,7 +605,6 @@ export function AppointmentFormModal({
         if (!formData.recurrenceEndDate) {
           newErrors.recurrenceEndDate = "Debes seleccionar una fecha de finalización"
         }
-
         if (formData.recurrenceInterval < 1 || formData.recurrenceInterval > 12) {
           newErrors.recurrenceInterval = "El intervalo debe estar entre 1 y 12"
         }
@@ -673,9 +708,9 @@ export function AppointmentFormModal({
                   <div>
                     <strong>Cliente:</strong> {waitingListEntry.client_name}
                   </div>
-                  {waitingListEntry.phone && (
+                  {waitingListEntry.client_phone && (
                     <div>
-                      <strong>Teléfono:</strong> {waitingListEntry.phone}
+                      <strong>Teléfono:</strong> {waitingListEntry.client_phone}
                     </div>
                   )}
                   {waitingListEntry.service_name && (
@@ -683,9 +718,14 @@ export function AppointmentFormModal({
                       <strong>Servicio:</strong> {waitingListEntry.service_name}
                     </div>
                   )}
-                  {waitingListEntry.estimated_duration && (
+                  {waitingListEntry.professional_name && (
                     <div>
-                      <strong>Duración estimada:</strong> {waitingListEntry.estimated_duration} min
+                      <strong>Profesional preferido:</strong> {waitingListEntry.professional_name}
+                    </div>
+                  )}
+                  {waitingListEntry.service_duration && (
+                    <div>
+                      <strong>Duración estimada:</strong> {waitingListEntry.service_duration} min
                     </div>
                   )}
                   {waitingListEntry.notes && (
@@ -719,7 +759,9 @@ export function AppointmentFormModal({
                 onFocus={() => searchTerm && searchClients(searchTerm)}
                 placeholder="Buscar por teléfono (3+ dígitos), nombre o apellido..."
                 required
-                className={`w-full ${errors.telefono ? "border-red-500" : ""} ${clienteEncontrado ? "border-green-500" : ""}`}
+                className={`w-full ${errors.telefono ? "border-red-500" : ""} ${
+                  clienteEncontrado ? "border-green-500" : ""
+                }`}
               />
               {searchingClients && (
                 <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 animate-spin text-gray-400" />
@@ -1036,7 +1078,6 @@ export function AppointmentFormModal({
                       Se crearán <strong>{recurrencePreview.count}</strong> citas hasta el{" "}
                       <strong>{format(formData.recurrenceEndDate, "dd/MM/yyyy")}</strong>
                     </p>
-
                     {recurrencePreview.conflicts.length > 0 && (
                       <Alert className="mb-2">
                         <AlertTriangle className="h-4 w-4" />
@@ -1045,7 +1086,6 @@ export function AppointmentFormModal({
                         </AlertDescription>
                       </Alert>
                     )}
-
                     {showRecurrencePreview && (
                       <div className="max-h-32 overflow-y-auto">
                         <div className="grid grid-cols-3 gap-1 text-xs">
