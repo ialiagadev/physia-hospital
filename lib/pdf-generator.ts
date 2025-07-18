@@ -305,7 +305,7 @@ export async function generatePdf(
     const rightColumnX = 110
     const startY = yPosition
 
-    // Empresa (izquierda)
+    // Empresa (izquierda) - INCLUYENDO CIF/NIF
     if (validatedInvoice.organization) {
       doc.setFont("helvetica", "bold")
       doc.setFontSize(10)
@@ -313,6 +313,15 @@ export async function generatePdf(
       doc.setFont("helvetica", "normal")
       doc.setFontSize(9)
       yPosition += 5
+
+      // ✅ AÑADIR CIF/NIF DE LA EMPRESA
+      if (validatedInvoice.organization.tax_id) {
+        doc.setFont("helvetica", "bold")
+        doc.text(`CIF/NIF: ${validatedInvoice.organization.tax_id}`, leftColumnX, yPosition)
+        doc.setFont("helvetica", "normal")
+        yPosition += 4
+      }
+
       doc.text(validatedInvoice.organization.address, leftColumnX, yPosition)
       yPosition += 4
       doc.text(
@@ -328,7 +337,7 @@ export async function generatePdf(
       doc.text(validatedInvoice.organization.email, leftColumnX, yPosition)
     }
 
-    // Cliente (derecha)
+    // Cliente (derecha) - INCLUYENDO CIF/NIF
     let clientY = startY
     if (validatedInvoice.client_data) {
       doc.setFont("helvetica", "bold")
@@ -339,6 +348,15 @@ export async function generatePdf(
       clientY += 5
       doc.text(validatedInvoice.client_data.name, rightColumnX, clientY)
       clientY += 4
+
+      // ✅ AÑADIR CIF/NIF DEL CLIENTE
+      if (validatedInvoice.client_data.tax_id) {
+        doc.setFont("helvetica", "bold")
+        doc.text(`CIF/NIF: ${validatedInvoice.client_data.tax_id}`, rightColumnX, clientY)
+        doc.setFont("helvetica", "normal")
+        clientY += 4
+      }
+
       doc.text(validatedInvoice.client_data.address, rightColumnX, clientY)
       clientY += 4
       doc.text(

@@ -793,7 +793,7 @@ const MedicalCalendarSystem: React.FC = () => {
                         </Button>
 
                         {/* ✅ BOTÓN FACTURAR DÍA MEJORADO - Solo en vista día y si hay citas */}
-                        {vistaCalendario === "dia" && hasAppointmentsToday() && (
+                        {vistaCalendario === "dia" && (
                           <Button
                             onClick={() => setShowDailyBillingModal(true)}
                             size="sm"

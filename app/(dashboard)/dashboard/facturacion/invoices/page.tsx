@@ -53,6 +53,7 @@ export default function InvoicesPage() {
   const [showFilters, setShowFilters] = useState(false)
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
   const [isExportingCSV, setIsExportingCSV] = useState(false)
+  const [downloadingInvoices, setDownloadingInvoices] = useState<Set<number>>(new Set())
   const { toast } = useToast()
   const [generateModalOpen, setGenerateModalOpen] = useState(false)
   const [selectedDateString, setSelectedDateString] = useState<string>(new Date().toISOString().split("T")[0])
@@ -658,6 +659,139 @@ export default function InvoicesPage() {
     }
   }
 
+  const handleDownloadInvoice = async (invoiceId: number) => {
+    // Añadir el ID a la lista de facturas que se están descargando
+    setDownloadingInvoices((prev) => new Set([...prev, invoiceId]))
+
+    try {
+      // Obtener datos completos de la factura
+      const { data: invoiceData, error: invoiceError } = await supabase
+        .from("invoices")
+        .select(`
+          *,
+          clients (*),
+          organizations (*)
+        `)
+        .eq("id", invoiceId)
+        .single()
+
+      if (invoiceError || !invoiceData) {
+        throw new Error("No se pudo obtener la información de la factura")
+      }
+
+      // Obtener líneas de factura - IGUAL QUE BULKDOWNLOADBUTTON
+      const { data: invoiceLines, error: linesError } = await supabase
+        .from("invoice_lines")
+        .select("*")
+        .eq("invoice_id", invoiceId)
+
+      if (linesError) {
+        console.error("Error al obtener líneas:", linesError)
+        throw new Error("No se pudieron obtener las líneas de la factura")
+      }
+
+      // Importar la función generatePdf
+      const { generatePdf } = await import("@/lib/pdf-generator")
+
+      // Preparar los datos para el PDF
+      const invoiceForPdf = {
+        id: invoiceData.id,
+        invoice_number: invoiceData.invoice_number,
+        issue_date: invoiceData.issue_date,
+        invoice_type: invoiceData.invoice_type,
+        status: invoiceData.status,
+        base_amount: invoiceData.base_amount,
+        vat_amount: invoiceData.vat_amount,
+        irpf_amount: invoiceData.irpf_amount,
+        retention_amount: invoiceData.retention_amount,
+        total_amount: invoiceData.total_amount,
+        discount_amount: invoiceData.discount_amount || 0,
+        notes: invoiceData.notes,
+        signature: invoiceData.signature,
+        payment_method: invoiceData.payment_method,
+        payment_method_other: invoiceData.payment_method_other,
+        organization: {
+          name: invoiceData.organizations?.name || "",
+          tax_id: invoiceData.organizations?.tax_id,
+          address: invoiceData.organizations?.address,
+          postal_code: invoiceData.organizations?.postal_code,
+          city: invoiceData.organizations?.city,
+          province: invoiceData.organizations?.province,
+          country: invoiceData.organizations?.country,
+          email: invoiceData.organizations?.email,
+          phone: invoiceData.organizations?.phone,
+          invoice_prefix: invoiceData.organizations?.invoice_prefix,
+          logo_url: invoiceData.organizations?.logo_url,
+          logo_path: invoiceData.organizations?.logo_path,
+        },
+        client_data: {
+          name: invoiceData.clients?.name || "",
+          tax_id: invoiceData.clients?.tax_id,
+          address: invoiceData.clients?.address,
+          postal_code: invoiceData.clients?.postal_code,
+          city: invoiceData.clients?.city,
+          province: invoiceData.clients?.province,
+          country: invoiceData.clients?.country,
+          email: invoiceData.clients?.email,
+          phone: invoiceData.clients?.phone,
+          client_type: invoiceData.clients?.client_type,
+        },
+      }
+
+      // Preparar las líneas para el PDF - VALIDAR IGUAL QUE BULKDOWNLOADBUTTON
+      const linesForPdf = (invoiceLines || []).map((line) => ({
+        id: crypto.randomUUID(),
+        description: line.description,
+        quantity: line.quantity || 0,
+        unit_price: line.unit_price || 0,
+        discount_percentage: line.discount_percentage || 0,
+        vat_rate: line.vat_rate || 0,
+        irpf_rate: line.irpf_rate || 0,
+        retention_rate: line.retention_rate || 0,
+        line_amount: line.line_amount || 0,
+        professional_id: line.professional_id,
+      }))
+
+      // Generar el PDF
+      const filename = `factura-${invoiceData.invoice_number || invoiceId}.pdf`
+      const pdfBlob = await generatePdf(invoiceForPdf, linesForPdf, filename, false)
+
+      // Verificar que el PDF se generó correctamente
+      if (!pdfBlob) {
+        throw new Error("No se pudo generar el PDF")
+      }
+
+      // Descargar el PDF
+      const url = URL.createObjectURL(pdfBlob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+
+      toast({
+        title: "Descarga completada",
+        description: `La factura ${invoiceData.invoice_number} se ha descargado correctamente`,
+      })
+    } catch (error) {
+      console.error("Error al descargar factura:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo descargar la factura",
+        variant: "destructive",
+      })
+    } finally {
+      // Remover el ID de la lista de facturas que se están descargando
+      setDownloadingInvoices((prev) => {
+        const newSet = new Set(prev)
+        newSet.delete(invoiceId)
+        return newSet
+      })
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -903,9 +1037,20 @@ export default function InvoicesPage() {
                   </TableCell>
                   <TableCell className="text-right">{invoice.total_amount.toFixed(2)} €</TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" asChild className="transition-colors hover:bg-primary/10">
-                      <Link href={`/dashboard/facturacion/invoices/${invoice.id}`}>Ver</Link>
-                    </Button>
+                    <div className="flex gap-1 justify-end">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDownloadInvoice(invoice.id)}
+                        disabled={downloadingInvoices.has(invoice.id)}
+                        className="transition-colors hover:bg-primary/10"
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm" asChild className="transition-colors hover:bg-primary/10">
+                        <Link href={`/dashboard/facturacion/invoices/${invoice.id}`}>Ver</Link>
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))

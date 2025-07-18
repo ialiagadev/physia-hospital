@@ -143,7 +143,7 @@ export function ProfesionalesView({
   const handleEditProfesional = (profesional: Profesional) => {
     setEditForm({
       nombre: profesional.nombre || profesional.name || "",
-      especialidad: profesional.especialidad || "",
+      especialidad: profesional.especialidad || "", // Mantener pero no mostrar
       color: profesional.color || "#3B82F6",
     })
     setSelectedProfesional(profesional)
@@ -160,7 +160,7 @@ export function ProfesionalesView({
       if (realUser) {
         // Actualizar en la base de datos
         await UserService.updateProfessionalColor(realUser.id, editForm.color)
-        toast.success("Color actualizado correctamente")
+        toast.success("Profesional actualizado correctamente")
 
         // Refrescar usuarios si hay función disponible
         if (onRefreshUsers) {
@@ -172,7 +172,7 @@ export function ProfesionalesView({
           onUpdateProfesional({
             ...selectedProfesional,
             nombre: editForm.nombre,
-            especialidad: editForm.especialidad,
+            especialidad: selectedProfesional.especialidad, // Mantener especialidad existente
             name: editForm.nombre,
             color: editForm.color,
           })
@@ -270,7 +270,6 @@ export function ProfesionalesView({
             <h2 className="text-2xl font-bold">Gestión de Profesionales</h2>
             <p className="text-sm text-muted-foreground">No hay profesionales disponibles</p>
           </div>
-        
         </div>
 
         <div className="flex flex-col items-center justify-center h-64 text-center">
@@ -293,7 +292,6 @@ export function ProfesionalesView({
           <h2 className="text-2xl font-bold">Gestión de Profesionales</h2>
           <p className="text-sm text-muted-foreground">{filteredProfesionales.length} profesionales disponibles</p>
         </div>
-       
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -472,40 +470,17 @@ export function ProfesionalesView({
               />
             </div>
             <div>
-              <Label htmlFor="edit-especialidad">Especialidad</Label>
-              <Select
-                value={editForm.especialidad}
-                onValueChange={(value) => setEditForm({ ...editForm, especialidad: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona una especialidad" />
-                </SelectTrigger>
-                <SelectContent>
-                  {especialidades.map((esp) => (
-                    <SelectItem key={esp} value={esp}>
-                      {esp}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
               <Label htmlFor="edit-color">Color</Label>
-              <Select value={editForm.color} onValueChange={(value) => setEditForm({ ...editForm, color: value })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {COLORES_DISPONIBLES.map((color) => (
-                    <SelectItem key={color.value} value={color.value}>
-                      <div className="flex items-center gap-2">
-                        <div className="w-4 h-4 rounded border" style={{ backgroundColor: color.value }} />
-                        {color.label}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex items-center gap-3">
+                <input
+                  id="edit-color"
+                  type="color"
+                  value={editForm.color}
+                  onChange={(e) => setEditForm({ ...editForm, color: e.target.value })}
+                  className="w-12 h-9 rounded border border-input cursor-pointer"
+                />
+                <div className="text-sm text-muted-foreground">{editForm.color}</div>
+              </div>
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowEditModal(false)}>
@@ -521,8 +496,6 @@ export function ProfesionalesView({
       <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
         <DialogContent>
           <DialogHeader>
-
-
             <DialogTitle>Añadir Profesional</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
