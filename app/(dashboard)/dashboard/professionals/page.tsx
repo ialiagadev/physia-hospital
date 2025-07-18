@@ -1,9 +1,10 @@
 "use client"
+
 import type React from "react"
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
-import { Plus, Users, Mail, Calendar, Shield, RefreshCw, Eye, EyeOff, Shuffle, Edit2, Info } from "lucide-react"
+import { Plus, Users, Mail, Calendar, Shield, RefreshCw, Edit2, Info } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -49,10 +50,8 @@ export default function ProfessionalsPage() {
   const [createUserLoading, setCreateUserLoading] = useState(false)
   const [createUserError, setCreateUserError] = useState("")
   const [createUserResult, setCreateUserResult] = useState<any>(null)
-  const [showPassword, setShowPassword] = useState(false)
   const [userForm, setUserForm] = useState({
     email: "",
-    password: "",
     name: "",
     role: "user" as "user" | "admin" | "coordinador",
   })
@@ -162,17 +161,7 @@ export default function ProfessionalsPage() {
     }
   }
 
-  // Función para generar contraseña
-  const generatePassword = () => {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*"
-    let password = ""
-    for (let i = 0; i < 12; i++) {
-      password += chars.charAt(Math.floor(Math.random() * chars.length))
-    }
-    setUserForm((prev) => ({ ...prev, password }))
-  }
-
-  // Función para crear usuario
+  // Función para crear usuario (SOLO MAGIC LINK)
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault()
     setCreateUserLoading(true)
@@ -187,11 +176,9 @@ export default function ProfessionalsPage() {
         },
         body: JSON.stringify({
           email: userForm.email,
-          password: userForm.password,
           name: userForm.name,
           role: profile?.role === "admin" ? userForm.role : "user",
           organizationId: profile?.organization_id,
-          type: 1, // Asegurar que sea tipo 1
         }),
       })
 
@@ -202,7 +189,7 @@ export default function ProfessionalsPage() {
       }
 
       setCreateUserResult(data)
-      setUserForm({ email: "", password: "", name: "", role: "user" })
+      setUserForm({ email: "", name: "", role: "user" })
 
       // Recargar usuarios
       setUsersLoaded(false)
@@ -252,8 +239,7 @@ export default function ProfessionalsPage() {
   const resetCreateUserModal = () => {
     setCreateUserError("")
     setCreateUserResult(null)
-    setUserForm({ email: "", password: "", name: "", role: "user" })
-    setShowPassword(false)
+    setUserForm({ email: "", name: "", role: "user" })
   }
 
   // Función para resetear el modal de editar
@@ -325,15 +311,17 @@ export default function ProfessionalsPage() {
             <DialogTrigger asChild>
               <Button>
                 <Plus className="mr-2 h-4 w-4" />
-                Nuevo Usuario
+                Invitar Profesional
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[500px]">
               <DialogHeader>
-                <DialogTitle>Crear Nuevo Profesional</DialogTitle>
+                <DialogTitle>Invitar Nuevo Profesional</DialogTitle>
                 <DialogDescription>
-                  Crear profesional para:{" "}
+                  Se enviará un Magic Link al email para que el profesional pueda acceder y establecer su contraseña.
+                  <br />
                   <strong>
+                    Organización:{" "}
                     {organizations.find((org) => org.id === profile?.organization_id)?.name ||
                       `Organización ${profile?.organization_id}`}
                   </strong>
@@ -390,37 +378,6 @@ export default function ProfessionalsPage() {
                   </div>
                 )}
 
-                <div className="space-y-2">
-                  <Label htmlFor="user-password">Contraseña</Label>
-                  <div className="flex space-x-2">
-                    <div className="relative flex-1">
-                      <Input
-                        id="user-password"
-                        type={showPassword ? "text" : "password"}
-                        value={userForm.password}
-                        onChange={(e) => setUserForm((prev) => ({ ...prev, password: e.target.value }))}
-                        placeholder="Contraseña segura"
-                        required
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                        onClick={() => setShowPassword(!showPassword)}
-                      >
-                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </Button>
-                    </div>
-                    <Button type="button" variant="outline" onClick={generatePassword}>
-                      <Shuffle className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Usa el botón de generar para crear una contraseña segura automáticamente.
-                  </p>
-                </div>
-
                 {createUserError && (
                   <Alert variant="destructive">
                     <AlertDescription>{createUserError}</AlertDescription>
@@ -431,7 +388,7 @@ export default function ProfessionalsPage() {
                   <Alert>
                     <AlertDescription>
                       <div className="space-y-2">
-                        <p className="font-medium text-green-800">Profesional creado exitosamente:</p>
+                        <p className="font-medium text-green-800">¡Invitación enviada exitosamente!</p>
                         <div className="bg-white p-3 rounded border space-y-1 text-sm">
                           <p>
                             <strong>Email:</strong> {createUserResult.user.email}
@@ -440,16 +397,15 @@ export default function ProfessionalsPage() {
                             <strong>Nombre:</strong> {createUserResult.user.name}
                           </p>
                           <p>
-                            <strong>Rol:</strong> {getRoleLabel(userForm.role)}
+                            <strong>Rol:</strong> {getRoleLabel(createUserResult.user.role)}
                           </p>
                           <Separator className="my-2" />
-                          <p>
-                            <strong>Contraseña temporal:</strong>{" "}
-                            <code className="bg-gray-100 px-1 rounded">{userForm.password}</code>
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Asegúrate de compartir esta contraseña de forma segura con el profesional.
-                          </p>
+                          <div className="bg-blue-50 p-2 rounded">
+                            <p className="text-blue-800 font-medium">📧 Magic Link enviado</p>
+                            <p className="text-xs text-blue-600">
+                              El profesional recibirá un email con un enlace para acceder y establecer su contraseña.
+                            </p>
+                          </div>
                         </div>
                       </div>
                     </AlertDescription>
@@ -461,7 +417,7 @@ export default function ProfessionalsPage() {
                     Cancelar
                   </Button>
                   <Button type="submit" disabled={createUserLoading}>
-                    {createUserLoading ? "Creando..." : "Crear Profesional"}
+                    {createUserLoading ? "Enviando invitación..." : "Enviar Invitación"}
                   </Button>
                 </div>
               </form>
@@ -470,6 +426,7 @@ export default function ProfessionalsPage() {
         )}
       </div>
 
+      {/* Resto del componente igual... */}
       {/* Sección de información de roles */}
       <Card className="bg-blue-50 border-blue-200">
         <CardHeader>
@@ -619,7 +576,7 @@ export default function ProfessionalsPage() {
                   <h3 className="text-lg font-semibold mb-2">No hay profesionales</h3>
                   <p className="text-muted-foreground mb-4">
                     {profile?.role === "admin"
-                      ? "Comienza agregando tu primer profesional."
+                      ? "Comienza invitando tu primer profesional."
                       : "Aún no hay profesionales registrados en la organización."}
                   </p>
                   {profile?.role === "admin" && (
@@ -633,7 +590,7 @@ export default function ProfessionalsPage() {
                       <DialogTrigger asChild>
                         <Button>
                           <Plus className="mr-2 h-4 w-4" />
-                          Crear Primer Profesional
+                          Invitar Primer Profesional
                         </Button>
                       </DialogTrigger>
                     </Dialog>
@@ -696,7 +653,6 @@ export default function ProfessionalsPage() {
             <DialogTitle>Editar Profesional</DialogTitle>
             <DialogDescription>Modificar información del profesional</DialogDescription>
           </DialogHeader>
-
           {editingUser && (
             <form onSubmit={handleEditUser} className="space-y-4">
               <div className="space-y-2">

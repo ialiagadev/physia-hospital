@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { CheckCircle, AlertCircle } from "lucide-react"
+import { CheckCircle, AlertCircle, Mail } from "lucide-react"
 
 type Organization = {
   id: string
@@ -32,7 +32,6 @@ export function CreateUserForm() {
       try {
         setLoadingOrgs(true)
         const result = await getOrganizations()
-
         if (result.success) {
           console.log("Organizaciones cargadas:", result.organizations)
           setOrganizations(result.organizations)
@@ -64,6 +63,12 @@ export function CreateUserForm() {
     try {
       const result = await createUser(formData)
       setResult(result)
+
+      // Limpiar formulario si fue exitoso
+      if (result.success) {
+        const form = document.querySelector("form") as HTMLFormElement
+        form?.reset()
+      }
     } catch (error) {
       setResult({
         success: false,
@@ -77,30 +82,44 @@ export function CreateUserForm() {
   return (
     <Card className="w-full max-w-md mx-auto">
       <CardHeader>
-        <CardTitle>Crear nuevo usuario</CardTitle>
-        <CardDescription>Añade un nuevo usuario a tu organización</CardDescription>
+        <CardTitle className="flex items-center gap-2">
+          <Mail className="h-5 w-5" />
+          Invitar nuevo usuario
+        </CardTitle>
+        <CardDescription>
+          Se enviará un Magic Link al email para que el usuario pueda acceder y establecer su contraseña
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <form action={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="name">Nombre</Label>
-            <Input id="name" name="name" placeholder="Nombre completo" required />
+            <Label htmlFor="name">Nombre completo</Label>
+            <Input id="name" name="name" placeholder="Juan Pérez" required disabled={isPending} />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
-            <Input id="email" name="email" type="email" placeholder="usuario@ejemplo.com" required />
+            <Input id="email" name="email" type="email" placeholder="juan@empresa.com" required disabled={isPending} />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="password">Contraseña</Label>
-            <Input id="password" name="password" type="password" placeholder="••••••••" required />
+            <Label htmlFor="role">Rol</Label>
+            <select id="role" name="role" className="w-full p-2 border rounded-md bg-white" disabled={isPending}>
+              <option value="user">Usuario</option>
+              <option value="admin">Administrador</option>
+              <option value="coordinador">Coordinador</option>
+            </select>
           </div>
 
-          {/* Selector de organización - siempre visible */}
+          {/* Selector de organización */}
           <div className="space-y-2">
             <Label htmlFor="organization_id">Organización</Label>
-            <select id="organization_id" name="organization_id" className="w-full p-2 border rounded-md bg-white">
+            <select
+              id="organization_id"
+              name="organization_id"
+              className="w-full p-2 border rounded-md bg-white"
+              disabled={isPending}
+            >
               <option value="">Usar mi organización actual</option>
               {loadingOrgs ? (
                 <option disabled>Cargando organizaciones...</option>
@@ -121,8 +140,18 @@ export function CreateUserForm() {
             )}
           </div>
 
-          <Button type="submit" className="w-full" disabled={isPending}>
-            {isPending ? "Creando usuario..." : "Crear usuario"}
+          <Button type="submit" className="w-full" disabled={isPending || loadingOrgs}>
+            {isPending ? (
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Enviando invitación...
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Mail className="h-4 w-4" />
+                Enviar invitación
+              </div>
+            )}
           </Button>
         </form>
       </CardContent>
@@ -132,9 +161,10 @@ export function CreateUserForm() {
           {result.success ? (
             <Alert className="border-green-500 bg-green-50">
               <CheckCircle className="h-4 w-4 text-green-500" />
-              <AlertTitle>Usuario creado</AlertTitle>
+              <AlertTitle>¡Invitación enviada!</AlertTitle>
               <AlertDescription>
-                {result.message || `El usuario ${result.user?.email} ha sido creado exitosamente.`}
+                {result.message ||
+                  `Se ha enviado un Magic Link a ${result.user?.email}. El usuario recibirá un email para acceder.`}
               </AlertDescription>
             </Alert>
           ) : (
