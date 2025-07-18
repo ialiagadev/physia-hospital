@@ -255,6 +255,17 @@ export function GroupActivityBillingModal({
   // Agregar esta línea después de los otros useState (alrededor de la línea 200)
   const [initialSelectionDone, setInitialSelectionDone] = useState(false)
 
+  // useEffect para añadir nota automática cuando IVA = 0
+  useEffect(() => {
+    const notaIVAExenta =
+      "Operación exenta de IVA conforme al artículo 20. Uno. 3º de la Ley 37/1992 del Impuesto sobre el Valor Añadido, por tratarse de un servicio de asistencia sanitaria prestado por profesional titulado"
+
+    // Verificar si el servicio tiene IVA = 0
+    if (service && (service.vat_rate ?? 0) === 0 && service.price > 0) {
+      console.log(`Actividad grupal "${activity.name}" tendrá nota de IVA exento`)
+    }
+  }, [service, activity])
+
   // Cargar y procesar datos de participantes
   useEffect(() => {
     if (isOpen) {
@@ -525,7 +536,14 @@ export function GroupActivityBillingModal({
           // Preparar notas de la factura
           const clientInfoText = `Cliente: ${participantData.client_name}, CIF/NIF: ${participantData.client_tax_id}, Dirección: ${participantData.client_address}, ${participantData.client_postal_code} ${participantData.client_city}, ${participantData.client_province}`
           const additionalNotes = `Factura generada para actividad grupal "${activity.name}" del ${format(new Date(activity.date), "dd/MM/yyyy", { locale: es })}\nServicio: ${service.name} - ${service.price}€\nEstado del participante: ${participantData.status === "attended" ? "Asistió" : "Registrado"}\nMétodo de pago: ${getPaymentMethodText(participantData)}`
-          const fullNotes = clientInfoText + "\n\n" + additionalNotes
+
+          // Añadir nota de IVA exento automáticamente si vatAmount === 0
+          const notaIVAExenta =
+            vatAmount === 0 && baseAmount > 0
+              ? "\n\nOperación exenta de IVA conforme al artículo 20. Uno. 3º de la Ley 37/1992 del Impuesto sobre el Valor Añadido, por tratarse de un servicio de asistencia sanitaria prestado por profesional titulado"
+              : ""
+
+          const fullNotes = clientInfoText + "\n\n" + additionalNotes + notaIVAExenta
 
           // Crear factura en la base de datos
           const { data: invoiceData, error: invoiceError } = await supabase
@@ -537,7 +555,7 @@ export function GroupActivityBillingModal({
               group_activity_id: activity.id, // ✅ NUEVO CAMPO
               issue_date: format(new Date(activity.date), "yyyy-MM-dd"),
               invoice_type: "normal",
-              status: "sent",
+              status: "paid",
               base_amount: baseAmount,
               vat_amount: vatAmount,
               irpf_amount: irpfAmount,
@@ -614,7 +632,7 @@ export function GroupActivityBillingModal({
               invoice_number: invoiceNumberFormatted,
               issue_date: format(new Date(activity.date), "yyyy-MM-dd"),
               invoice_type: "normal" as const,
-              status: "sent",
+              status: "paid",
               base_amount: baseAmount,
               vat_amount: vatAmount,
               irpf_amount: irpfAmount,

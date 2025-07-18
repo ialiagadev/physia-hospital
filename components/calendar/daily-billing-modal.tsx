@@ -756,10 +756,15 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           const totalAmount = baseAmount + vatAmount - irpfAmount - retentionAmount
 
           const clientInfoText = `Cliente: ${clientData.client_name}, CIF/NIF: ${clientData.client_tax_id}, Dirección: ${clientData.client_address}, ${clientData.client_postal_code} ${clientData.client_city}, ${clientData.client_province}`
+          const additionalNotes = `Factura generada automáticamente para citas del ${format(selectedDate, "dd/MM/yyyy", { locale: es })}`
 
-          const additionalNotes = `Factura generada automáticamente para citas del ${format(selectedDate, "dd/MM/yyyy", { locale: es })} `
+          // Añadir nota de IVA exento automáticamente si vatAmount === 0
+          const notaIVAExenta =
+            vatAmount === 0 && baseAmount > 0
+              ? "\n\nOperación exenta de IVA conforme al artículo 20. Uno. 3º de la Ley 37/1992 del Impuesto sobre el Valor Añadido, por tratarse de un servicio de asistencia sanitaria prestado por profesional titulado"
+              : ""
 
-          const fullNotes = clientInfoText + "\n\n" + additionalNotes
+          const fullNotes = clientInfoText + "\n\n" + additionalNotes + notaIVAExenta
 
           // Incluir método de pago específico del cliente en la inserción
           const { data: invoiceData, error: invoiceError } = await supabase
@@ -775,7 +780,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
                   : null,
               issue_date: format(selectedDate, "yyyy-MM-dd"),
               invoice_type: "normal",
-              status: "sent",
+              status: "paid",
               base_amount: baseAmount,
               vat_amount: vatAmount,
               irpf_amount: irpfAmount,
@@ -834,7 +839,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
               invoice_number: invoiceNumberFormatted,
               issue_date: format(selectedDate, "yyyy-MM-dd"),
               invoice_type: "normal" as const,
-              status: "sent",
+              status: "paid",
               base_amount: baseAmount,
               vat_amount: vatAmount,
               irpf_amount: irpfAmount,
@@ -1179,6 +1184,33 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
       console.error("Error checking existing invoices:", error)
     }
   }
+
+  // useEffect para añadir nota automática cuando IVA = 0
+  useEffect(() => {
+    const notaIVAExenta =
+      "Operación exenta de IVA conforme al artículo 20. Uno. 3º de la Ley 37/1992 del Impuesto sobre el Valor Añadido, por tratarse de un servicio de asistencia sanitaria prestado por profesional titulado"
+
+    // Aplicar a todas las facturas que se van a generar
+    if (selectedClients.size > 0) {
+      const selectedClientsArray = Array.from(selectedClients)
+      selectedClientsArray.forEach((clientId) => {
+        const clientData = clientsData.find((c) => c.client_id === clientId)
+        if (clientData) {
+          const clientVatAmount = clientData.appointments.reduce((sum, apt) => {
+            const vatRate = apt.service_vat_rate ?? 0
+            const price = apt.service_price || 50
+            return sum + (price * vatRate) / 100
+          }, 0)
+
+          // Si el cliente tiene IVA = 0 y hay importe base > 0
+          if (clientVatAmount === 0 && clientData.total_amount > 0) {
+            // La nota se añadirá automáticamente en el proceso de generación
+            console.log(`Cliente ${clientData.client_name} tendrá nota de IVA exento`)
+          }
+        }
+      })
+    }
+  }, [selectedClients, clientsData])
 
   if (!isOpen) return null
 
