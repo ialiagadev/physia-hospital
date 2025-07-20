@@ -22,6 +22,13 @@ export function useUsers(organizationId?: number): UseUsersReturn {
   const [error, setError] = useState<string | null>(null)
   const { user, userProfile } = useAuth()
 
+  // NUEVO: Función para limpiar el estado
+  const clearState = useCallback(() => {
+    setUsers([])
+    setCurrentUser(null)
+    setError(null)
+  }, [])
+
   const fetchData = useCallback(async () => {
     try {
       setLoading(true)
@@ -33,8 +40,7 @@ export function useUsers(organizationId?: number): UseUsersReturn {
       }
 
       if (!organizationId) {
-        setUsers([])
-        setCurrentUser(null)
+        clearState()
         setLoading(false)
         return
       }
@@ -50,10 +56,11 @@ export function useUsers(organizationId?: number): UseUsersReturn {
       const errorMessage = err instanceof Error ? err.message : "Error fetching data"
       setError(errorMessage)
       console.error("Error in useUsers:", err)
+      clearState() // Limpiar en caso de error
     } finally {
       setLoading(false)
     }
-  }, [user, userProfile, organizationId])
+  }, [user, userProfile, organizationId, clearState])
 
   // SOLUCIÓN: Usar los usuarios ya cargados y filtrar por servicio
   const getUsersByService = useCallback(
@@ -98,18 +105,32 @@ export function useUsers(organizationId?: number): UseUsersReturn {
     [organizationId, users], // Agregar users como dependencia
   )
 
+  // MEJORADO: useEffect con mejor manejo de dependencias
   useEffect(() => {
-    if (user && userProfile && organizationId) {
-      fetchData()
-    } else if (!user) {
+    // Limpiar estado cuando cambia el usuario o la organización
+    if (!user || !userProfile) {
+      clearState()
       setLoading(false)
       setError("Usuario no autenticado")
-    } else if (!organizationId) {
-      setLoading(false)
-      setUsers([])
-      setCurrentUser(null)
+      return
     }
-  }, [fetchData])
+
+    if (!organizationId) {
+      clearState()
+      setLoading(false)
+      return
+    }
+
+    // Solo fetch si tenemos todos los datos necesarios
+    fetchData()
+  }, [user, userProfile, organizationId, fetchData, clearState]) // Dependencias específicas
+
+  // NUEVO: useEffect para limpiar cuando cambia la organización
+  useEffect(() => {
+    if (userProfile?.organization_id !== organizationId) {
+      clearState()
+    }
+  }, [userProfile?.organization_id, organizationId, clearState])
 
   return {
     users,

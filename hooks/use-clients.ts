@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { supabase } from "@/lib/supabase/client"
+import { useAuth } from "@/app/contexts/auth-context"
 import type { Client, ClientInsert, ClientUpdate } from "@/types/calendar"
 
 export interface UseClientsReturn {
@@ -20,14 +21,28 @@ export function useClients(organizationId?: number): UseClientsReturn {
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const { user, userProfile } = useAuth()
+
+  // NUEVO: Función para limpiar el estado
+  const clearState = useCallback(() => {
+    setClients([])
+    setError(null)
+  }, [])
 
   const fetchClients = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
 
+      // Verificar autenticación
+      if (!user || !userProfile) {
+        clearState()
+        setLoading(false)
+        return
+      }
+
       if (!organizationId) {
-        setClients([])
+        clearState()
         setLoading(false)
         return
       }
@@ -41,7 +56,7 @@ export function useClients(organizationId?: number): UseClientsReturn {
       if (fetchError) {
         console.error("Error fetching clients:", fetchError)
         setError(fetchError.message)
-        setClients([])
+        clearState()
       } else {
         setClients(data || [])
         setError(null)
@@ -49,24 +64,41 @@ export function useClients(organizationId?: number): UseClientsReturn {
     } catch (err) {
       console.error("Unexpected error fetching clients:", err)
       setError("Error inesperado al cargar clientes")
-      setClients([])
+      clearState()
     } finally {
       setLoading(false)
     }
-  }, [organizationId])
+  }, [organizationId, user, userProfile, clearState])
 
+  // MEJORADO: useEffect con mejor manejo de dependencias
   useEffect(() => {
-    if (organizationId) {
-      fetchClients()
-    } else {
+    // Limpiar estado cuando cambia el usuario
+    if (!user || !userProfile) {
+      clearState()
       setLoading(false)
-      setClients([])
+      return
     }
-  }, [fetchClients])
+
+    if (!organizationId) {
+      clearState()
+      setLoading(false)
+      return
+    }
+
+    fetchClients()
+  }, [user, userProfile, organizationId, fetchClients, clearState])
+
+  // NUEVO: useEffect para limpiar cuando cambia la organización
+  useEffect(() => {
+    if (userProfile?.organization_id !== organizationId) {
+      clearState()
+    }
+  }, [userProfile?.organization_id, organizationId, clearState])
 
   const searchClients = useCallback(
     (query: string): Client[] => {
       if (!query.trim()) return clients
+
       const searchTerm = query.toLowerCase().trim()
       return clients.filter(
         (client) =>

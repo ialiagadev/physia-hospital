@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { AppointmentFormModal } from "./appointment-form-modal"
 import { HoraPreviewTooltip } from "./hora-preview-tooltip"
@@ -130,28 +130,70 @@ export function HorarioViewDynamic({
   const [previewHora, setPreviewHora] = useState<string | null>(null)
   const [previewPosition, setPreviewPosition] = useState({ x: 0, y: 0 })
 
+  // NUEVO: Estado para controlar la carga inicial
+  const [isInitialLoad, setIsInitialLoad] = useState(true)
+
   const dayOfWeek = date.getDay()
-  const professionalUsers = users.filter((user) => user.type === 1)
 
-  const filteredProfesionales = profesionales.filter((profesional) => {
-    const correspondingUser = professionalUsers.find(
-      (user) => Number.parseInt(user.id.slice(-8), 16) === profesional.id,
-    )
-    return correspondingUser !== undefined
-  })
+  // MEJORADO: Usar useMemo para cálculos costosos y detectar cambios
+  const professionalUsers = useMemo(() => {
+    return users.filter((user) => user.type === 1)
+  }, [users])
 
-  const profesionalesFiltrados =
-    profesionalSeleccionado === "todos"
+  const filteredProfesionales = useMemo(() => {
+    return profesionales.filter((profesional) => {
+      const correspondingUser = professionalUsers.find(
+        (user) => Number.parseInt(user.id.slice(-8), 16) === profesional.id,
+      )
+      return correspondingUser !== undefined
+    })
+  }, [profesionales, professionalUsers])
+
+  const profesionalesFiltrados = useMemo(() => {
+    return profesionalSeleccionado === "todos"
       ? filteredProfesionales
       : filteredProfesionales.filter((prof) => prof.id === profesionalSeleccionado)
+  }, [profesionalSeleccionado, filteredProfesionales])
 
-  const usuariosActivos = professionalUsers.filter((user) =>
-    profesionalesFiltrados.some((prof) => Number.parseInt(user.id.slice(-8), 16) === prof.id),
-  )
+  const usuariosActivos = useMemo(() => {
+    return professionalUsers.filter((user) =>
+      profesionalesFiltrados.some((prof) => Number.parseInt(user.id.slice(-8), 16) === prof.id),
+    )
+  }, [professionalUsers, profesionalesFiltrados])
 
-  const timeSlots = generateTimeSlots(usuariosActivos, dayOfWeek, intervaloTiempo)
-  const { start: startMinutes, end: endMinutes } = getCalendarTimeRange(usuariosActivos, dayOfWeek)
+  const timeSlots = useMemo(() => {
+    if (usuariosActivos.length === 0 || workSchedules.length === 0) return []
+    return generateTimeSlots(usuariosActivos, dayOfWeek, intervaloTiempo)
+  }, [usuariosActivos, dayOfWeek, intervaloTiempo, workSchedules])
+
+  const { start: startMinutes, end: endMinutes } = useMemo(() => {
+    if (usuariosActivos.length === 0) return { start: 0, end: 1440 }
+    return getCalendarTimeRange(usuariosActivos, dayOfWeek)
+  }, [usuariosActivos, dayOfWeek])
+
   const duracionDia = endMinutes - startMinutes
+
+  // NUEVO: useEffect para manejar la carga inicial
+  useEffect(() => {
+    // Verificar si tenemos todos los datos necesarios
+    const hasRequiredData = users.length > 0 && profesionales.length > 0 && workSchedules.length >= 0
+
+    if (hasRequiredData && isInitialLoad) {
+      // Pequeño delay para asegurar que todos los cálculos se completen
+      const timer = setTimeout(() => {
+        setIsInitialLoad(false)
+      }, 100)
+
+      return () => clearTimeout(timer)
+    }
+  }, [users, profesionales, workSchedules, isInitialLoad])
+
+  // NUEVO: useEffect para detectar cambios en datos críticos
+  useEffect(() => {
+    if (!isInitialLoad) {
+      // Los datos han cambiado después de la inicialización
+    }
+  }, [users, profesionales, workSchedules, timeSlots, isInitialLoad])
 
   // Funciones de vacaciones
   const isProfessionalOnVacation = (profesionalId: number | string) => {
@@ -206,10 +248,8 @@ export function HorarioViewDynamic({
   const hasAnyScheduleConfigured = (profesionalId: number) => {
     const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
     if (!user) return false
-
     // Verificar si tiene horarios en cualquier día de la semana
     const userSchedules = workSchedules.filter((schedule) => schedule.user_id === user.id && schedule.is_active)
-
     return userSchedules.length > 0
   }
 
@@ -273,7 +313,6 @@ export function HorarioViewDynamic({
     if (!draggedCita) return
 
     setDragOverProfesional(profesionalId)
-
     const container = e.currentTarget as HTMLElement
     const rect = container.getBoundingClientRect()
     const y = e.clientY - rect.top
@@ -605,18 +644,38 @@ export function HorarioViewDynamic({
     return descansos
   }
 
-  if (timeSlots.length === 0) {
+  // MEJORADO: Condición más robusta para mostrar el estado de carga
+  if (isInitialLoad) {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="text-center">
-          <h3 className="text-lg font-semibold mb-2">Sin horarios configurados</h3>
-          <p className="text-gray-600">
-            Los profesionales seleccionados no tienen horarios configurados para{" "}
-            {["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"][dayOfWeek]}.
-          </p>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <h3 className="text-lg font-semibold mb-2">Cargando horarios...</h3>
+          <p className="text-gray-600">Preparando la vista del calendario</p>
         </div>
       </div>
     )
+  }
+
+  // MEJORADO: Verificación más específica para mostrar el mensaje de sin horarios
+  if (timeSlots.length === 0 && !isInitialLoad) {
+    // Verificar si realmente no hay horarios configurados o si es un problema de datos
+    const hasAnySchedules = workSchedules.some((schedule) => schedule.is_active)
+    const hasFilteredProfessionals = profesionalesFiltrados.length > 0
+
+    if (!hasAnySchedules || !hasFilteredProfessionals) {
+      return (
+        <div className="h-full flex items-center justify-center">
+          <div className="text-center">
+            <h3 className="text-lg font-semibold mb-2">Sin horarios configurados</h3>
+            <p className="text-gray-600">
+              Los profesionales seleccionados no tienen horarios configurados para{" "}
+              {["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"][dayOfWeek]}.
+            </p>
+          </div>
+        </div>
+      )
+    }
   }
 
   return (

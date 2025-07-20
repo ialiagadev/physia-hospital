@@ -1,8 +1,7 @@
 "use client"
 
 import type React from "react"
-
-import { createContext, useContext, useEffect, useState } from "react"
+import { createContext, useContext, useEffect, useState, useRef } from "react"
 import { supabase } from "@/lib/supabase/client"
 import type { User } from "@supabase/supabase-js"
 
@@ -37,13 +36,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
+  // Ref para rastrear el userId actual y evitar condiciones de carrera
+  const currentUserIdRef = useRef<string | null>(null)
+
   useEffect(() => {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        getUserProfile(session.user.id)
+      const newUser = session?.user ?? null
+      setUser(newUser)
+
+      if (newUser) {
+        currentUserIdRef.current = newUser.id
+        getUserProfile(newUser.id)
       } else {
+        currentUserIdRef.current = null
+        setUserProfile(null)
         setIsLoading(false)
       }
     })
@@ -52,10 +59,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        getUserProfile(session.user.id)
+      const newUser = session?.user ?? null
+      const newUserId = newUser?.id ?? null
+      const previousUserId = currentUserIdRef.current
+
+      setUser(newUser)
+
+      if (newUser && newUserId) {
+        // Si es un usuario diferente, limpiar el perfil anterior inmediatamente
+        if (newUserId !== previousUserId) {
+          setUserProfile(null)
+          setIsLoading(true)
+        }
+
+        currentUserIdRef.current = newUserId
+        getUserProfile(newUserId)
       } else {
+        // No hay usuario, limpiar todo
+        currentUserIdRef.current = null
         setUserProfile(null)
         setIsLoading(false)
       }
@@ -66,24 +87,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const getUserProfile = async (userId: string) => {
     try {
+      // Verificar que este userId sigue siendo el actual antes de hacer la petición
+      if (currentUserIdRef.current !== userId) {
+        return
+      }
+
+      setIsLoading(true)
+
       const { data, error } = await supabase.from("users").select("*").eq("id", userId).single()
+
+      // Verificar nuevamente que este userId sigue siendo el actual después de la petición
+      if (currentUserIdRef.current !== userId) {
+        return
+      }
 
       if (error) {
         console.error("Error fetching user profile:", error)
+        setUserProfile(null)
       } else {
         setUserProfile(data)
       }
     } catch (error) {
       console.error("Error fetching user profile:", error)
+      // Solo limpiar el perfil si este userId sigue siendo el actual
+      if (currentUserIdRef.current === userId) {
+        setUserProfile(null)
+      }
     } finally {
-      setIsLoading(false)
+      // Solo cambiar isLoading si este userId sigue siendo el actual
+      if (currentUserIdRef.current === userId) {
+        setIsLoading(false)
+      }
     }
   }
 
   const signOut = async () => {
-    await supabase.auth.signOut()
+    try {
+      await supabase.auth.signOut()
+    } catch (error) {
+      console.error("Error signing out:", error)
+    }
+
+    // Limpiar estado local
+    currentUserIdRef.current = null
     setUser(null)
     setUserProfile(null)
+    setIsLoading(false)
   }
 
   const value = {

@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft, ChevronRight, Plus, Search, Clock, FileText, CalendarIcon } from "lucide-react"
@@ -18,7 +18,7 @@ import { ServicesView } from "@/components/services/services-view"
 import { GroupActivityDetailsModal } from "@/components/group-activities/group-activity-details-modal"
 import { useUsers } from "@/hooks/use-users"
 import { useAppointments } from "@/hooks/use-appointments"
-import { useClients } from "@/hooks/use-clients"
+// ❌ REMOVIDO: import { useClients } from "@/hooks/use-clients"
 import { useConsultations } from "@/hooks/use-consultations"
 import { useServices } from "@/hooks/use-services"
 import { useVacations } from "@/hooks/use-vacations"
@@ -72,6 +72,72 @@ const mapStatusToEstado = (status: string): EstadoCita => {
   return mapping[status as keyof typeof mapping] || "confirmada"
 }
 
+// 🚀 SERVICIO SIMPLE PARA OPERACIONES DE CLIENTES BAJO DEMANDA
+const ClientService = {
+  async findOrCreateClient(organizationId: number, clientData: { name: string; phone?: string }) {
+    try {
+      // 1. Buscar cliente existente por teléfono primero
+      if (clientData.phone) {
+        const { data: existingByPhone } = await supabase
+          .from("clients")
+          .select("*")
+          .eq("organization_id", organizationId)
+          .eq("phone", clientData.phone)
+          .single()
+
+        if (existingByPhone) {
+          return existingByPhone
+        }
+      }
+
+      // 2. Buscar por nombre exacto
+      const { data: existingByName } = await supabase
+        .from("clients")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .ilike("name", clientData.name.trim())
+        .single()
+
+      if (existingByName) {
+        return existingByName
+      }
+
+      // 3. Crear nuevo cliente
+      const { data: newClient, error } = await supabase
+        .from("clients")
+        .insert({
+          name: clientData.name.trim(),
+          phone: clientData.phone || null,
+          organization_id: organizationId,
+        })
+        .select()
+        .single()
+
+      if (error) {
+        // Si es error de duplicado, intentar buscar de nuevo
+        if (error.code === "23505" && clientData.phone) {
+          const { data: duplicateClient } = await supabase
+            .from("clients")
+            .select("*")
+            .eq("organization_id", organizationId)
+            .eq("phone", clientData.phone)
+            .single()
+
+          if (duplicateClient) {
+            return duplicateClient
+          }
+        }
+        throw error
+      }
+
+      return newClient
+    } catch (error) {
+      console.error("Error en findOrCreateClient:", error)
+      throw error
+    }
+  },
+}
+
 const MedicalCalendarSystem: React.FC = () => {
   const { userProfile } = useAuth()
   const organizationId = userProfile?.organization_id ? Number(userProfile.organization_id) : undefined
@@ -98,6 +164,9 @@ const MedicalCalendarSystem: React.FC = () => {
   // Estado para datos de lista de espera
   const [waitingListEntry, setWaitingListEntry] = useState<any>(null)
 
+  // NUEVO: Estado para controlar la inicialización completa
+  const [isSystemReady, setIsSystemReady] = useState(false)
+
   // Función para eliminar entrada de lista de espera
   const removeFromWaitingList = async (entryId: string) => {
     try {
@@ -110,9 +179,9 @@ const MedicalCalendarSystem: React.FC = () => {
     }
   }
 
-  // Hooks de datos optimizados
+  // 🚀 HOOKS OPTIMIZADOS - SIN CLIENTES
   const { users, currentUser, loading: usersLoading, refetch: refetchUsers } = useUsers(organizationId)
-  const { clients, loading: clientsLoading, error: clientsError, createClient } = useClients(organizationId)
+  // ❌ REMOVIDO: const { clients, loading: clientsLoading, error: clientsError, createClient } = useClients(organizationId)
   const {
     consultations,
     loading: consultationsLoading,
@@ -138,6 +207,63 @@ const MedicalCalendarSystem: React.FC = () => {
 
   // Hook de horarios de trabajo
   const { schedules: allWorkSchedules, loading: schedulesLoading } = useWorkSchedules(organizationId?.toString())
+
+  // 🚀 MEJORADO: Verificación de datos críticos SIN clientes
+  const criticalDataReady = useMemo(() => {
+    return (
+      organizationId &&
+      !usersLoading &&
+      !schedulesLoading &&
+      // ❌ REMOVIDO: !clientsLoading &&
+      !consultationsLoading &&
+      !servicesLoading &&
+      !vacationLoading &&
+      users.length >= 0 &&
+      allWorkSchedules.length >= 0
+    )
+  }, [
+    organizationId,
+    usersLoading,
+    schedulesLoading,
+    // ❌ REMOVIDO: clientsLoading,
+    consultationsLoading,
+    servicesLoading,
+    vacationLoading,
+    users.length,
+    allWorkSchedules.length,
+  ])
+
+  // NUEVO: useEffect para resetear cuando cambia el usuario
+  useEffect(() => {
+    if (userProfile?.organization_id) {
+      setIsSystemReady(false)
+      setSelectedAppointment(null)
+      setShowDetailsModal(false)
+      setShowNewAppointmentModal(false)
+      setUsuariosSeleccionados([])
+
+      const timer = setTimeout(() => {
+        // El estado se actualizará automáticamente cuando los datos estén listos
+      }, 100)
+
+      return () => clearTimeout(timer)
+    }
+  }, [userProfile?.id, userProfile?.organization_id])
+
+  // MEJORADO: useEffect para controlar la inicialización del sistema
+  useEffect(() => {
+    if (criticalDataReady && !isSystemReady) {
+      const timer = setTimeout(() => {
+        setIsSystemReady(true)
+      }, 150)
+
+      return () => clearTimeout(timer)
+    }
+
+    if (!criticalDataReady && isSystemReady) {
+      setIsSystemReady(false)
+    }
+  }, [criticalDataReady, isSystemReady, organizationId])
 
   // Calcular rango de fechas para las citas
   const getDateRange = () => {
@@ -194,10 +320,10 @@ const MedicalCalendarSystem: React.FC = () => {
 
   // Inicializar con todos los usuarios seleccionados
   useEffect(() => {
-    if (users.length > 0) {
+    if (users.length > 0 && usuariosSeleccionados.length === 0) {
       setUsuariosSeleccionados(users.map((u) => u.id))
     }
-  }, [users])
+  }, [users, usuariosSeleccionados.length])
 
   // Navegación de fechas
   const navigateDate = (direction: "prev" | "next") => {
@@ -255,46 +381,30 @@ const MedicalCalendarSystem: React.FC = () => {
     }
   }
 
-  // Handlers de citas optimizados
+  // 🚀 HANDLER OPTIMIZADO PARA CREAR CITAS - USANDO SERVICIO SIMPLE
   const handleAddAppointment = async (appointmentData: any) => {
     try {
-      if (!currentUser) {
+      if (!currentUser || !organizationId) {
+        toast.error("Error: No se pudo obtener la información del usuario")
         return
       }
 
-      // Buscar cliente existente - VERIFICAR SI YA VIENE SELECCIONADO
       let clientId: number
 
       // Si ya hay un cliente seleccionado desde el modal, usarlo
       if (appointmentData.clienteEncontrado) {
         clientId = appointmentData.clienteEncontrado.id
       } else {
-        // Buscar primero por teléfono (restricción única)
-        let existingClient = null
-        if (appointmentData.telefonoPaciente) {
-          existingClient = clients.find((c) => c.phone === appointmentData.telefonoPaciente)
+        // 🚀 USAR EL SERVICIO SIMPLE
+        const clientData = {
+          name: `${appointmentData.nombrePaciente} ${appointmentData.apellidosPaciente || ""}`.trim(),
+          phone: appointmentData.telefonoPaciente,
         }
 
-        // Si no encuentra por teléfono, buscar por nombre
-        if (!existingClient) {
-          const fullName = `${appointmentData.nombrePaciente} ${appointmentData.apellidosPaciente || ""}`
-            .toLowerCase()
-            .trim()
-          existingClient = clients.find((c) => c.name.toLowerCase() === fullName)
-        }
-
-        if (existingClient) {
-          clientId = existingClient.id
-        } else {
-          // Crear nuevo cliente solo si no existe
-          const newClient = await createClient({
-            name: `${appointmentData.nombrePaciente} ${appointmentData.apellidosPaciente || ""}`.trim(),
-            phone: appointmentData.telefonoPaciente,
-            organization_id: currentUser.organization_id,
-          })
-          clientId = newClient.id
-        }
+        const client = await ClientService.findOrCreateClient(organizationId, clientData)
+        clientId = client.id
       }
+
       // Determinar el profesional
       let professionalUuid = currentUser.id
       if (appointmentData.profesionalId) {
@@ -377,7 +487,6 @@ const MedicalCalendarSystem: React.FC = () => {
     } catch (error) {
       console.error("Error al eliminar la cita:", error)
     } finally {
-      // Siempre resetear los estados, incluso si hay error
       setSelectedAppointment(null)
       setShowDetailsModal(false)
     }
@@ -398,13 +507,11 @@ const MedicalCalendarSystem: React.FC = () => {
 
   // Handler para citas en formato legacy - ACTUALIZADO
   const handleSelectLegacyAppointment = (cita: any) => {
-    // Si es actividad grupal, usar el handler específico
     if (cita.isGroupActivity) {
       handleSelectGroupActivity(cita)
       return
     }
 
-    // Para citas normales, mantener la lógica existente
     const originalAppointment = appointments.find((apt) => {
       const numericId = Number.parseInt(apt.id.slice(-8), 16)
       return numericId === cita.id
@@ -418,6 +525,7 @@ const MedicalCalendarSystem: React.FC = () => {
   // Handler para actualizar citas en formato legacy
   const handleUpdateLegacyAppointment = async (cita: any) => {
     const originalAppointment = appointments.find((apt) => Number.parseInt(apt.id.slice(-8), 16) === cita.id)
+
     if (originalAppointment) {
       const updatedAppointment = {
         ...originalAppointment,
@@ -460,6 +568,7 @@ const MedicalCalendarSystem: React.FC = () => {
       month: "long",
       day: "numeric",
     }
+
     switch (vistaCalendario) {
       case "dia":
         return currentDate.toLocaleDateString("es-ES", options)
@@ -520,7 +629,6 @@ const MedicalCalendarSystem: React.FC = () => {
       removeParticipant: removeGroupActivityParticipant,
     } = useGroupActivitiesContext()
 
-    // HANDLERS MEJORADOS PARA ACTIVIDADES GRUPALES
     const handleAddGroupActivityParticipant = async (activityId: string, clientId: number, notes?: string) => {
       try {
         await addGroupActivityParticipant(activityId, clientId, notes)
@@ -574,7 +682,6 @@ const MedicalCalendarSystem: React.FC = () => {
     return (
       <>
         {children}
-        {/* Modal de detalles de actividad grupal */}
         {showGroupActivityDetails && selectedGroupActivity && (
           <GroupActivityDetailsModal
             isOpen={showGroupActivityDetails}
@@ -596,36 +703,50 @@ const MedicalCalendarSystem: React.FC = () => {
     )
   }
 
-  // Mostrar loading si no tenemos organizationId o si los datos están cargando
-  if (
-    !organizationId ||
-    usersLoading ||
-    appointmentsLoading ||
-    consultationsLoading ||
-    clientsLoading ||
-    servicesLoading ||
-    vacationLoading ||
-    schedulesLoading
-  ) {
+  // 🚀 MEJORADO: Mostrar loading SIN clientes
+  if (!organizationId) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <h2 className="text-xl font-semibold mb-2">Cargando...</h2>
-          <p className="text-gray-600">Configurando tu calendario médico</p>
-          {!organizationId && <p className="text-sm text-gray-500 mt-2">Esperando información de organización...</p>}
+          <h2 className="text-xl font-semibold mb-2">Inicializando...</h2>
+          <p className="text-gray-600">Esperando información de organización...</p>
         </div>
       </div>
     )
   }
 
-  // Mostrar errores si los hay
-  if (clientsError || consultationsError || servicesError) {
+  if (!isSystemReady) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <h2 className="text-xl font-semibold mb-2">Cargando sistema...</h2>
+          <p className="text-gray-600">Configurando tu calendario médico</p>
+          <div className="mt-4 space-y-1 text-sm text-gray-500">
+            <div className={`flex items-center justify-center gap-2 ${!usersLoading ? "text-green-600" : ""}`}>
+              {!usersLoading ? "✓" : "⏳"} Usuarios ({users.length})
+            </div>
+            <div className={`flex items-center justify-center gap-2 ${!schedulesLoading ? "text-green-600" : ""}`}>
+              {!schedulesLoading ? "✓" : "⏳"} Horarios ({allWorkSchedules.length})
+            </div>
+            {/* ❌ REMOVIDO: Línea de clientes */}
+            <div className={`flex items-center justify-center gap-2 ${!appointmentsLoading ? "text-green-600" : ""}`}>
+              {!appointmentsLoading ? "✓" : "⏳"} Citas ({appointments.length})
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // 🚀 MEJORADO: Mostrar errores SIN clientes
+  if (consultationsError || servicesError) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <h2 className="text-xl font-semibold mb-2 text-red-600">Error al cargar datos</h2>
-          {clientsError && <p className="text-red-500">Clientes: {clientsError}</p>}
+          {/* ❌ REMOVIDO: clientsError */}
           {consultationsError && <p className="text-red-500">Consultas: {consultationsError}</p>}
           {servicesError && <p className="text-red-500">Servicios: {servicesError}</p>}
         </div>
@@ -839,7 +960,7 @@ const MedicalCalendarSystem: React.FC = () => {
                   <div className="flex-1 overflow-auto">
                     {subVistaCalendario === "horario" && (
                       <>
-                        {vistaCalendario === "dia" && !schedulesLoading && (
+                        {vistaCalendario === "dia" && (
                           <HorarioViewDynamic
                             date={currentDate}
                             citas={combinedAppointments.filter((cita) => {
@@ -875,16 +996,7 @@ const MedicalCalendarSystem: React.FC = () => {
                           />
                         )}
 
-                        {vistaCalendario === "dia" && schedulesLoading && (
-                          <div className="flex items-center justify-center h-full">
-                            <div className="text-center">
-                              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-                              <div className="text-sm text-gray-600">Cargando horarios...</div>
-                            </div>
-                          </div>
-                        )}
-
-                        {vistaCalendario === "semana" && !schedulesLoading && (
+                        {vistaCalendario === "semana" && (
                           <WeekView
                             date={currentDate}
                             citas={combinedAppointments}
@@ -907,16 +1019,7 @@ const MedicalCalendarSystem: React.FC = () => {
                           />
                         )}
 
-                        {vistaCalendario === "semana" && schedulesLoading && (
-                          <div className="flex items-center justify-center h-full">
-                            <div className="text-center">
-                              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-                              <div className="text-sm text-gray-600">Cargando horarios...</div>
-                            </div>
-                          </div>
-                        )}
-
-                        {vistaCalendario === "mes" && !schedulesLoading && (
+                        {vistaCalendario === "mes" && (
                           <MonthView
                             date={currentDate}
                             citas={combinedAppointments}
@@ -937,17 +1040,9 @@ const MedicalCalendarSystem: React.FC = () => {
                             getUserVacationOnDate={getUserVacationOnDate}
                           />
                         )}
-
-                        {vistaCalendario === "mes" && schedulesLoading && (
-                          <div className="flex items-center justify-center h-full">
-                            <div className="text-center">
-                              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-                              <div className="text-sm text-gray-600">Cargando horarios...</div>
-                            </div>
-                          </div>
-                        )}
                       </>
                     )}
+
                     {subVistaCalendario === "lista" && (
                       <ListView
                         citas={combinedAppointments}
