@@ -13,7 +13,7 @@ import { VacationCalendarView } from "@/components/time-tracking/vacation-calend
 import { useTimeTracking } from "@/hooks/use-time-tracking"
 import { useVacationRequests } from "@/hooks/use-vacation-requests"
 import { useToast } from "@/hooks/use-toast"
-import { Clock, Users, Calendar, Shield, Plane, CalendarDays } from 'lucide-react'
+import { Clock, Users, Calendar, Shield, Plane, CalendarDays } from "lucide-react"
 import { exportWorkSessionsCSV } from "@/lib/actions/time-tracking"
 
 export default function FichajePage() {
@@ -51,7 +51,6 @@ export default function FichajePage() {
         }
       }
     }
-
     loadUsers()
   }, [isAdmin, userProfile])
 
@@ -66,7 +65,6 @@ export default function FichajePage() {
   useEffect(() => {
     const loadWorkSessions = async () => {
       if (!userProfile?.organization_id) return
-
       setLoading(true)
       try {
         const result = await getWorkDays({
@@ -77,7 +75,6 @@ export default function FichajePage() {
           startDate,
           endDate,
         })
-
         if (result.sessions) {
           setWorkSessions(result.sessions)
           setTotalRecords(result.totalRecords)
@@ -89,7 +86,6 @@ export default function FichajePage() {
         setLoading(false)
       }
     }
-
     loadWorkSessions()
   }, [userProfile, currentPage, pageSize, isAdmin, selectedUser, startDate, endDate])
 
@@ -114,18 +110,15 @@ export default function FichajePage() {
 
   const handleExportData = async () => {
     if (!userProfile?.organization_id) return
-
     try {
       const result = await exportWorkSessionsCSV({
         userId: isAdmin ? selectedUser?.id : userProfile.id,
         startDate,
         endDate,
       })
-
       if (result.error) {
         throw new Error(result.error)
       }
-
       if (result.csvData) {
         const blob = new Blob([result.csvData], { type: "text/csv;charset=utf-8;" })
         const url = URL.createObjectURL(blob)
@@ -136,7 +129,6 @@ export default function FichajePage() {
         document.body.appendChild(link)
         link.click()
         document.body.removeChild(link)
-
         toast({
           title: "Exportación completada",
           description: "Los datos se han exportado correctamente",

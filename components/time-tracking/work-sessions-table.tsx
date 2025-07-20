@@ -8,6 +8,7 @@ import { Download, Calendar, Clock, User, MessageSquare } from "lucide-react"
 import { format, parseISO } from "date-fns"
 import { es } from "date-fns/locale"
 import { EditWorkSessionDialog } from "@/components/edit-work-session-dialog"
+import { RequestChangeDialog } from "@/components/request-change-dialog"
 import { useTimeTracking } from "@/hooks/use-time-tracking"
 
 interface WorkSession {
@@ -20,7 +21,7 @@ interface WorkSession {
   user_name: string | null
   user_email: string | null
   user_id: string
-  notes?: string | null // ✅ AGREGADO
+  notes?: string | null
 }
 
 interface WorkSessionsTableProps {
@@ -32,6 +33,7 @@ interface WorkSessionsTableProps {
   pageSize: number
   onPageChange: (page: number, pageSize: number) => void
   onExport: () => void
+  onSubmitChangeRequest?: (requestData: any) => Promise<void>
 }
 
 export function WorkSessionsTable({
@@ -43,6 +45,7 @@ export function WorkSessionsTable({
   pageSize,
   onPageChange,
   onExport,
+  onSubmitChangeRequest,
 }: WorkSessionsTableProps) {
   const { isAdmin, updateWorkSession, deleteWorkSession } = useTimeTracking()
 
@@ -57,7 +60,6 @@ export function WorkSessionsTable({
   }
 
   const handleRefresh = () => {
-    // Trigger a refresh of the data
     onPageChange(currentPage, pageSize)
   }
 
@@ -107,8 +109,8 @@ export function WorkSessionsTable({
                 <TableHead>Salida</TableHead>
                 <TableHead>Horas</TableHead>
                 <TableHead>Estado</TableHead>
-                <TableHead>Notas</TableHead> {/* ✅ NUEVA COLUMNA */}
-                {isAdmin && <TableHead className="w-[100px]">Acciones</TableHead>}
+                <TableHead>Notas</TableHead>
+                <TableHead className="w-[140px]">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -158,7 +160,6 @@ export function WorkSessionsTable({
                   <TableCell>
                     {getStatusBadge(session.status, session.local_clock_in, session.local_clock_out)}
                   </TableCell>
-                  {/* ✅ NUEVA CELDA PARA NOTAS */}
                   <TableCell className="max-w-[200px]">
                     {session.notes ? (
                       <div className="flex items-start gap-1">
@@ -171,16 +172,22 @@ export function WorkSessionsTable({
                       <span className="text-muted-foreground text-sm">-</span>
                     )}
                   </TableCell>
-                  {isAdmin && (
-                    <TableCell>
-                      <EditWorkSessionDialog
-                        session={session}
-                        onUpdate={updateWorkSession}
-                        onDelete={deleteWorkSession}
-                        onRefresh={handleRefresh}
-                      />
-                    </TableCell>
-                  )}
+                  <TableCell>
+                    <div className="flex gap-1">
+                      {isAdmin ? (
+                        <EditWorkSessionDialog
+                          session={session}
+                          onUpdate={updateWorkSession}
+                          onDelete={deleteWorkSession}
+                          onRefresh={handleRefresh}
+                        />
+                      ) : (
+                        onSubmitChangeRequest && (
+                          <RequestChangeDialog session={session} onSubmitRequest={onSubmitChangeRequest} />
+                        )
+                      )}
+                    </div>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
