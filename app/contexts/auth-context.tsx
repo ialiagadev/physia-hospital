@@ -38,12 +38,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Ref para rastrear el userId actual y evitar condiciones de carrera
   const currentUserIdRef = useRef<string | null>(null)
+  const currentUserRef = useRef<User | null>(null)
 
   useEffect(() => {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       const newUser = session?.user ?? null
       setUser(newUser)
+      currentUserRef.current = newUser
 
       if (newUser) {
         currentUserIdRef.current = newUser.id
@@ -62,23 +64,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const newUser = session?.user ?? null
       const newUserId = newUser?.id ?? null
       const previousUserId = currentUserIdRef.current
+      const previousUser = currentUserRef.current
 
-      setUser(newUser)
+      // Solo actualizar si realmente cambió el usuario
+      const userChanged = (!previousUser && newUser) || (previousUser && !newUser) || previousUser?.id !== newUser?.id
 
-      if (newUser && newUserId) {
-        // Si es un usuario diferente, limpiar el perfil anterior inmediatamente
-        if (newUserId !== previousUserId) {
+      if (userChanged) {
+        setUser(newUser)
+        currentUserRef.current = newUser
+
+        if (newUser && newUserId) {
+          // Si es un usuario diferente, limpiar el perfil anterior inmediatamente
+          if (newUserId !== previousUserId) {
+            setUserProfile(null)
+            setIsLoading(true)
+          }
+
+          currentUserIdRef.current = newUserId
+          getUserProfile(newUserId)
+        } else {
+          // No hay usuario, limpiar todo
+          currentUserIdRef.current = null
           setUserProfile(null)
-          setIsLoading(true)
+          setIsLoading(false)
         }
-
-        currentUserIdRef.current = newUserId
-        getUserProfile(newUserId)
-      } else {
-        // No hay usuario, limpiar todo
-        currentUserIdRef.current = null
-        setUserProfile(null)
-        setIsLoading(false)
       }
     })
 
@@ -130,6 +139,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Limpiar estado local
     currentUserIdRef.current = null
+    currentUserRef.current = null
     setUser(null)
     setUserProfile(null)
     setIsLoading(false)
