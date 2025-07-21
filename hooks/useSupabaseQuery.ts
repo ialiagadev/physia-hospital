@@ -15,7 +15,7 @@ export function useSupabaseQuery<T = any>(table: string, query = "*", options: Q
   const [error, setError] = useState<string | null>(null)
   const { user, isLoading: authLoading } = useAuth()
 
-  const { enabled = true, refetchOnWindowFocus = true } = options
+  const { enabled = true, refetchOnWindowFocus = false } = options
 
   const fetchData = useCallback(async () => {
     if (!enabled || authLoading || !user) {

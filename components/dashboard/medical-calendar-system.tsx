@@ -182,6 +182,7 @@ const MedicalCalendarSystem: React.FC = () => {
   // 🚀 HOOKS OPTIMIZADOS - SIN CLIENTES
   const { users, currentUser, loading: usersLoading, refetch: refetchUsers } = useUsers(organizationId)
   // ❌ REMOVIDO: const { clients, loading: clientsLoading, error: clientsError, createClient } = useClients(organizationId)
+
   const {
     consultations,
     loading: consultationsLoading,
@@ -189,6 +190,7 @@ const MedicalCalendarSystem: React.FC = () => {
     refetch: refetchConsultations,
     getFirstAvailableConsultation,
   } = useConsultations(organizationId)
+
   const {
     services,
     loading: servicesLoading,
@@ -268,6 +270,7 @@ const MedicalCalendarSystem: React.FC = () => {
   // Calcular rango de fechas para las citas
   const getDateRange = () => {
     let startDate: string, endDate: string
+
     switch (vistaCalendario) {
       case "dia":
         startDate = format(currentDate, "yyyy-MM-dd")
@@ -289,10 +292,12 @@ const MedicalCalendarSystem: React.FC = () => {
         startDate = format(currentDate, "yyyy-MM-dd")
         endDate = startDate
     }
+
     return { startDate, endDate }
   }
 
   const { startDate, endDate } = getDateRange()
+
   const {
     appointments,
     loading: appointmentsLoading,
@@ -328,6 +333,7 @@ const MedicalCalendarSystem: React.FC = () => {
   // Navegación de fechas
   const navigateDate = (direction: "prev" | "next") => {
     const newDate = new Date(currentDate)
+
     switch (vistaCalendario) {
       case "dia":
         newDate.setDate(newDate.getDate() + (direction === "next" ? 1 : -1))
@@ -339,6 +345,7 @@ const MedicalCalendarSystem: React.FC = () => {
         newDate.setMonth(newDate.getMonth() + (direction === "next" ? 1 : -1))
         break
     }
+
     setCurrentDate(newDate)
   }
 
@@ -375,6 +382,7 @@ const MedicalCalendarSystem: React.FC = () => {
         .single()
 
       if (error) throw error
+
       return newType.id
     } catch (error) {
       throw error
@@ -537,6 +545,7 @@ const MedicalCalendarSystem: React.FC = () => {
           users.find((u) => Number.parseInt(u.id.slice(-8), 16) === cita.profesionalId)?.id ||
           originalAppointment.professional_id,
       }
+
       await handleUpdateAppointment(updatedAppointment)
     }
   }
@@ -725,14 +734,13 @@ const MedicalCalendarSystem: React.FC = () => {
           <p className="text-gray-600">Configurando tu calendario médico</p>
           <div className="mt-4 space-y-1 text-sm text-gray-500">
             <div className={`flex items-center justify-center gap-2 ${!usersLoading ? "text-green-600" : ""}`}>
-              {!usersLoading ? "✓" : "⏳"} Usuarios ({users.length})
+              {!usersLoading ? "✓" : "⏳"} Usuarios
             </div>
             <div className={`flex items-center justify-center gap-2 ${!schedulesLoading ? "text-green-600" : ""}`}>
-              {!schedulesLoading ? "✓" : "⏳"} Horarios ({allWorkSchedules.length})
+              {!schedulesLoading ? "✓" : "⏳"} Horarios
             </div>
-            {/* ❌ REMOVIDO: Línea de clientes */}
             <div className={`flex items-center justify-center gap-2 ${!appointmentsLoading ? "text-green-600" : ""}`}>
-              {!appointmentsLoading ? "✓" : "⏳"} Citas ({appointments.length})
+              {!appointmentsLoading ? "✓" : "⏳"} Citas
             </div>
           </div>
         </div>
@@ -995,7 +1003,6 @@ const MedicalCalendarSystem: React.FC = () => {
                             getUserVacationOnDate={getUserVacationOnDate}
                           />
                         )}
-
                         {vistaCalendario === "semana" && (
                           <WeekView
                             date={currentDate}
@@ -1018,7 +1025,6 @@ const MedicalCalendarSystem: React.FC = () => {
                             getUserVacationOnDate={getUserVacationOnDate}
                           />
                         )}
-
                         {vistaCalendario === "mes" && (
                           <MonthView
                             date={currentDate}
@@ -1042,7 +1048,6 @@ const MedicalCalendarSystem: React.FC = () => {
                         )}
                       </>
                     )}
-
                     {subVistaCalendario === "lista" && (
                       <ListView
                         citas={combinedAppointments}
