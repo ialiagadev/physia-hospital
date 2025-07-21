@@ -45,13 +45,12 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
     vat_rate: "0",
     irpf_rate: "0",
     retention_rate: "0",
-    // ✅ ELIMINADO: category
     duration: "30",
     color: "#3B82F6",
     active: true,
   })
 
-  // ✅ CARGAR DATOS INICIALES CON MEJOR MANEJO DE ERRORES
+  // Cargar datos iniciales con mejor manejo de errores
   useEffect(() => {
     const fetchInitialData = async () => {
       setLoadingInitialData(true)
@@ -60,8 +59,6 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
       try {
         // Si estamos editando, cargar datos del servicio
         if (service) {
-          console.log("Cargando servicio para editar:", service) // Debug
-
           setFormData({
             name: service.name,
             description: service.description || "",
@@ -69,13 +66,10 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
             vat_rate: service.vat_rate.toString(),
             irpf_rate: service.irpf_rate.toString(),
             retention_rate: service.retention_rate.toString(),
-            // ✅ ELIMINADO: category
-            duration: service.duration.toString(), // ✅ ASEGURAR QUE SE ESTABLECE
+            duration: service.duration.toString(),
             color: service.color,
             active: service.active,
           })
-
-          console.log("Duración establecida:", service.duration.toString()) // Debug
 
           // Cargar usuarios asignados
           await fetchAssignedUsers(service.id.toString())
@@ -84,7 +78,6 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
         // Cargar usuarios para la organización
         await fetchUsers(organizationId)
       } catch (err) {
-        console.error("Error al cargar datos iniciales:", err)
         setError("Error al cargar datos iniciales")
       } finally {
         setLoadingInitialData(false)
@@ -94,7 +87,7 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
     fetchInitialData()
   }, [service, organizationId])
 
-  // ✅ FUNCIÓN PARA CARGAR USUARIOS CON MEJOR MANEJO DE ERRORES
+  // Función para cargar usuarios con mejor manejo de errores
   const fetchUsers = async (organizationId: number) => {
     setLoadingUsers(true)
     try {
@@ -108,14 +101,13 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
       if (error) throw error
       setUsers(data || [])
     } catch (error) {
-      console.error("Error al cargar usuarios:", error)
       setError("Error al cargar usuarios")
     } finally {
       setLoadingUsers(false)
     }
   }
 
-  // ✅ FUNCIÓN PARA CARGAR USUARIOS ASIGNADOS CON MEJOR MANEJO DE ERRORES
+  // Función para cargar usuarios asignados con mejor manejo de errores
   const fetchAssignedUsers = async (serviceId: string) => {
     try {
       const { data, error } = await supabase.from("user_services").select("user_id").eq("service_id", serviceId)
@@ -124,9 +116,7 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
 
       const assignedUserIds = data?.map((item) => item.user_id) || []
       setSelectedUsers(assignedUserIds)
-      console.log("Usuarios asignados cargados:", assignedUserIds) // Debug
     } catch (error) {
-      console.error("Error al cargar usuarios asignados:", error)
       // Error silencioso para no bloquear la carga
     }
   }
@@ -138,7 +128,6 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
 
   const handleSelectChange = (name: string, value: string) => {
     setFormData((prev) => ({ ...prev, [name]: value }))
-    console.log(`${name} cambiado a:`, value) // Debug
   }
 
   const handleSwitchChange = (checked: boolean) => {
@@ -160,7 +149,7 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
     }
   }
 
-  // ✅ SUBMIT CON MEJOR MANEJO DE ERRORES
+  // Submit con mejor manejo de errores
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
@@ -201,7 +190,6 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
         vat_rate: isNaN(vatRate) ? 0 : vatRate,
         irpf_rate: isNaN(irpfRate) ? 0 : irpfRate,
         retention_rate: isNaN(retentionRate) ? 0 : retentionRate,
-        // ✅ ELIMINADO: category
         duration: duration,
         color: formData.color,
         active: formData.active,
@@ -233,7 +221,6 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
         const { error: deleteError } = await supabase.from("user_services").delete().eq("service_id", serviceId)
 
         if (deleteError) {
-          console.error("Error al eliminar relaciones existentes:", deleteError)
           // No lanzar error, continuar con la operación
         }
       }
@@ -248,21 +235,19 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
         const { error: relationError } = await supabase.from("user_services").insert(userServiceRelations)
 
         if (relationError) {
-          console.error("Error al crear relaciones usuario-servicio:", relationError)
           // Error silencioso para no bloquear la operación principal
         }
       }
 
       onSuccess()
     } catch (err) {
-      console.error("Error en handleSubmit:", err)
       setError(err instanceof Error ? err.message : "Error al guardar el servicio")
     } finally {
       setIsLoading(false)
     }
   }
 
-  // ✅ MOSTRAR LOADING MIENTRAS SE CARGAN LOS DATOS INICIALES
+  // Mostrar loading mientras se cargan los datos iniciales
   if (loadingInitialData) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -303,8 +288,6 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
           rows={3}
         />
       </div>
-
-      {/* ✅ ELIMINADO: Campo de categoría */}
 
       {/* Usuarios Asignados - OBLIGATORIO */}
       <div className="space-y-2">
@@ -374,9 +357,8 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
         </div>
         <div className="space-y-2">
           <Label htmlFor="duration">Duración (min) *</Label>
-          {/* ✅ MEJORADO: Select con key para forzar re-render */}
           <Select
-            key={`duration-${formData.duration}`} // Forzar re-render cuando cambie
+            key={`duration-${formData.duration}`}
             value={formData.duration}
             onValueChange={(value) => handleSelectChange("duration", value)}
           >
