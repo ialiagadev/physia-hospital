@@ -101,7 +101,7 @@ export interface Database {
           created_at: string | null
           email: string | null
           organization_id: number | null
-          role: string | null // 'admin' | 'user' | 'viewer'
+          role: string | null
           name: string | null
           avatar_url: string | null
           is_physia_admin: boolean | null
@@ -133,7 +133,6 @@ export interface Database {
           prompt?: string | null
         }
       }
-      // TABLAS DE FICHAJE
       time_entries: {
         Row: {
           id: string
@@ -201,7 +200,6 @@ export interface Database {
           updated_at?: string | null
         }
       }
-      // TUS OTRAS TABLAS EXISTENTES...
       clients: {
         Row: {
           id: number
@@ -769,6 +767,71 @@ export interface Database {
           new_data?: Json | null
         }
       }
+      expenses: {
+        Row: {
+          id: number
+          created_at: string
+          updated_at: string
+          organization_id: number
+          user_id: string | null
+          description: string
+          amount: number
+          expense_date: string
+          receipt_path: string | null
+          receipt_url: string | null
+          notes: string | null
+          status: "pending" | "approved" | "rejected" | "paid"
+          payment_method: string | null
+          supplier_name: string | null
+          supplier_tax_id: string | null
+          is_deductible: boolean
+          vat_rate: number
+          vat_amount: number
+          created_by: string | null
+        }
+        Insert: {
+          id?: number
+          created_at?: string
+          updated_at?: string
+          organization_id: number
+          user_id?: string | null
+          description: string
+          amount: number
+          expense_date?: string
+          receipt_path?: string | null
+          receipt_url?: string | null
+          notes?: string | null
+          status?: "pending" | "approved" | "rejected" | "paid"
+          payment_method?: string | null
+          supplier_name?: string | null
+          supplier_tax_id?: string | null
+          is_deductible?: boolean
+          vat_rate?: number
+          vat_amount?: number
+          created_by?: string | null
+        }
+        Update: {
+          id?: number
+          created_at?: string
+          updated_at?: string
+          organization_id?: number
+          user_id?: string | null
+          description?: string
+          amount?: number
+          expense_date?: string
+          receipt_path?: string | null
+          receipt_url?: string | null
+          notes?: string | null
+          status?: "pending" | "approved" | "rejected" | "paid"
+          payment_method?: string | null
+          supplier_name?: string | null
+          supplier_tax_id?: string | null
+          is_deductible?: boolean
+          vat_rate?: number
+          vat_amount?: number
+          created_by?: string | null
+        }
+      }
     }
     Views: {
       time_entries_with_user: {
@@ -831,6 +894,6 @@ export interface Database {
   }
 }
 
-// Tipos simplificados para usar en la aplicación
 export type User = Database["public"]["Tables"]["users"]["Row"]
 export type Organization = Database["public"]["Tables"]["organizations"]["Row"]
+export type Expense = Database["public"]["Tables"]["expenses"]["Row"]

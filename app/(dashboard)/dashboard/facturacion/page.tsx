@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase/client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { FileText, Users, CreditCard } from "lucide-react"
+import { FileText, Users, CreditCard, Receipt } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { TrendIndicator } from "@/components/ui/trend-indicator"
@@ -15,12 +15,16 @@ interface DashboardStats {
   invoices: number
   totalRevenue: number
   averageTicket: number
+  totalExpenses: number
+  averageExpense: number
 }
 
 interface PeriodStats {
   revenue: number
   invoices: number
   clients: number
+  expenses: number
+  expenseCount: number
 }
 
 interface TrendData {
@@ -29,6 +33,8 @@ interface TrendData {
   totalRevenue: number
   averageTicket: number
   periodRevenue: number
+  totalExpenses: number
+  averageExpense: number
 }
 
 interface RecentInvoice {
@@ -48,9 +54,22 @@ interface RecentClient {
   created_at: string
 }
 
+interface RecentExpense {
+  id: number
+  description: string
+  amount: number
+  expense_date: string
+  status: string
+  supplier_name: string | null
+}
+
 interface InvoiceData {
   total_amount: number | null
   client_id: string | null
+}
+
+interface ExpenseData {
+  amount: number | null
 }
 
 export default function DashboardPage() {
@@ -60,6 +79,8 @@ export default function DashboardPage() {
     invoices: 0,
     totalRevenue: 0,
     averageTicket: 0,
+    totalExpenses: 0,
+    averageExpense: 0,
   })
   const [periodRevenue, setPeriodRevenue] = useState(0)
   const [selectedPeriod, setSelectedPeriod] = useState("month")
@@ -69,9 +90,12 @@ export default function DashboardPage() {
     totalRevenue: 0,
     averageTicket: 0,
     periodRevenue: 0,
+    totalExpenses: 0,
+    averageExpense: 0,
   })
   const [recentInvoices, setRecentInvoices] = useState<RecentInvoice[]>([])
   const [recentClients, setRecentClients] = useState<RecentClient[]>([])
+  const [recentExpenses, setRecentExpenses] = useState<RecentExpense[]>([])
   const [loading, setLoading] = useState(true)
   const { toast } = useToast()
 
@@ -102,6 +126,8 @@ export default function DashboardPage() {
   const animatedRevenueValue = useCountAnimation(stats.totalRevenue, 800, 200, formatCurrency)
   const animatedPeriodRevenueValue = useCountAnimation(periodRevenue, 800, 300, formatCurrency)
   const animatedTicketValue = useCountAnimation(stats.averageTicket, 800, 400, formatCurrency)
+  const animatedExpensesValue = useCountAnimation(stats.totalExpenses, 800, 500, formatCurrency)
+  const animatedAverageExpenseValue = useCountAnimation(stats.averageExpense, 800, 600, formatCurrency)
 
   // Decidir si usar valores animados o estáticos
   const clientsValue = showAnimations ? animatedClientsValue : stats.clients
@@ -109,6 +135,8 @@ export default function DashboardPage() {
   const revenueValue = showAnimations ? animatedRevenueValue : formatCurrency(stats.totalRevenue)
   const periodRevenueValue = showAnimations ? animatedPeriodRevenueValue : formatCurrency(periodRevenue)
   const ticketValue = showAnimations ? animatedTicketValue : formatCurrency(stats.averageTicket)
+  const expensesValue = showAnimations ? animatedExpensesValue : formatCurrency(stats.totalExpenses)
+  const averageExpenseValue = showAnimations ? animatedAverageExpenseValue : formatCurrency(stats.averageExpense)
 
   // Función para calcular el rango de fechas según el período seleccionado
   const getDateRange = (period: string) => {
@@ -185,30 +213,49 @@ export default function DashboardPage() {
         .lte("issue_date", endDate.toISOString().split("T")[0])
         .in("status", ["sent", "paid"]) // Solo facturas válidas
 
+      // Construir query base para gastos
+      let expensesQuery = supabase
+        .from("expenses")
+        .select("amount")
+        .gte("expense_date", startDate.toISOString().split("T")[0])
+        .lte("expense_date", endDate.toISOString().split("T")[0])
+      // Remover esta línea: .in("status", ["approved", "paid"])
+
       // Filtrar por organización del usuario
       if (userProfile?.organization_id) {
         invoicesQuery = invoicesQuery.eq("organization_id", userProfile.organization_id)
+        expensesQuery = expensesQuery.eq("organization_id", userProfile.organization_id)
       }
 
-      const { data: invoices, error: invoicesError } = await invoicesQuery
+      const [invoicesResult, expensesResult] = await Promise.all([invoicesQuery, expensesQuery])
 
-      if (invoicesError) {
-        console.error("Error fetching period invoices:", invoicesError)
-        return { revenue: 0, invoices: 0, clients: 0 }
+      if (invoicesResult.error) {
+        console.error("Error fetching period invoices:", invoicesResult.error)
       }
 
-      const revenue = invoices?.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0) || 0
-      const invoiceCount = invoices?.length || 0
-      const uniqueClients = new Set(invoices?.map((inv) => inv.client_id).filter(Boolean)).size
+      if (expensesResult.error) {
+        console.error("Error fetching period expenses:", expensesResult.error)
+      }
+
+      const invoices = invoicesResult.data || []
+      const expenses = expensesResult.data || []
+
+      const revenue = invoices.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0)
+      const invoiceCount = invoices.length
+      const uniqueClients = new Set(invoices.map((inv) => inv.client_id).filter(Boolean)).size
+      const totalExpenses = expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0)
+      const expenseCount = expenses.length
 
       return {
         revenue,
         invoices: invoiceCount,
         clients: uniqueClients,
+        expenses: totalExpenses,
+        expenseCount,
       }
     } catch (error) {
       console.error("Error in getPeriodStats:", error)
-      return { revenue: 0, invoices: 0, clients: 0 }
+      return { revenue: 0, invoices: 0, clients: 0, expenses: 0, expenseCount: 0 }
     }
   }
 
@@ -263,6 +310,14 @@ export default function DashboardPage() {
           return await invoicesQuery
         }
 
+        const getExpensesData = async () => {
+          let expensesQuery = supabase.from("expenses").select("amount")
+          if (userProfile?.organization_id) {
+            expensesQuery = expensesQuery.eq("organization_id", userProfile.organization_id)
+          }
+          return await expensesQuery
+        }
+
         const getRecentInvoices = async () => {
           let recentInvoicesQuery = supabase
             .from("invoices")
@@ -296,6 +351,19 @@ export default function DashboardPage() {
           return await recentClientsQuery
         }
 
+        const getRecentExpenses = async () => {
+          let recentExpensesQuery = supabase
+            .from("expenses")
+            .select("id, description, amount, expense_date, status, supplier_name")
+            .order("created_at", { ascending: false })
+            .limit(5)
+
+          if (userProfile?.organization_id) {
+            recentExpensesQuery = recentExpensesQuery.eq("organization_id", userProfile.organization_id)
+          }
+          return await recentExpensesQuery
+        }
+
         // Calcular fechas para estadísticas
         const currentMonth = new Date()
         const currentMonthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1)
@@ -310,29 +378,40 @@ export default function DashboardPage() {
         const [
           clientsResult,
           invoicesResult,
+          expensesResult,
           currentMonthStats,
           previousMonthStats,
           recentInvoicesResult,
           recentClientsResult,
+          recentExpensesResult,
         ] = await Promise.all([
           getClientsCount(),
           getInvoicesData(),
+          getExpensesData(),
           getPeriodStats(currentMonthStart, currentMonthEnd),
           getPeriodStats(previousMonthStart, previousMonthEnd),
           getRecentInvoices(),
           getRecentClients(),
+          getRecentExpenses(),
         ])
 
         // Procesar resultados
         const clientsCount = clientsResult?.count || 0
         const invoicesData = (invoicesResult?.data as InvoiceData[]) || []
+        const expensesData = (expensesResult?.data as ExpenseData[]) || []
         const recentInvoicesData = (recentInvoicesResult?.data || []) as unknown as RecentInvoice[]
         const recentClientsData = (recentClientsResult?.data as RecentClient[]) || []
+        const recentExpensesData = (recentExpensesResult?.data as RecentExpense[]) || []
 
         // Calcular métricas de facturas
         const totalRevenue = invoicesData.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0)
         const invoicesCount = invoicesData.length
         const averageTicket = invoicesCount > 0 ? totalRevenue / invoicesCount : 0
+
+        // Calcular métricas de gastos
+        const totalExpenses = expensesData.reduce((sum, expense) => sum + (expense.amount || 0), 0)
+        const expensesCount = expensesData.length
+        const averageExpense = expensesCount > 0 ? totalExpenses / expensesCount : 0
 
         // Actualizar estadísticas
         setStats({
@@ -340,6 +419,8 @@ export default function DashboardPage() {
           invoices: invoicesCount,
           totalRevenue,
           averageTicket,
+          totalExpenses,
+          averageExpense,
         })
 
         // Calcular tendencias reales usando los datos ya obtenidos
@@ -351,13 +432,18 @@ export default function DashboardPage() {
             currentMonthStats.invoices > 0 ? currentMonthStats.revenue / currentMonthStats.invoices : 0,
             previousMonthStats.invoices > 0 ? previousMonthStats.revenue / previousMonthStats.invoices : 0,
           ),
+          totalExpenses: calculateTrend(totalExpenses, previousMonthStats.expenses),
+          averageExpense: calculateTrend(
+            currentMonthStats.expenseCount > 0 ? currentMonthStats.expenses / currentMonthStats.expenseCount : 0,
+            previousMonthStats.expenseCount > 0 ? previousMonthStats.expenses / previousMonthStats.expenseCount : 0,
+          ),
           periodRevenue: 0, // Se calculará en el otro useEffect
         })
 
         // Actualizar datos recientes
         setRecentInvoices(recentInvoicesData)
         setRecentClients(recentClientsData)
-
+        setRecentExpenses(recentExpensesData)
         setLoading(false)
       } catch (error) {
         console.error("Error loading dashboard data:", error)
@@ -473,22 +559,22 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Segunda fila: Ingresos Totales, Ingresos del Período, Ticket Medio */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Card className="md:col-span-1 lg:col-span-1 border-l-4 border-l-blue-500">
+      {/* Segunda fila: Ingresos Totales, Ingresos del Período, Ticket Medio, Gastos Totales */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card className="border-l-4 border-l-blue-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Ingresos Totales</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex items-baseline justify-between mb-2">
-              <div className="text-3xl font-bold text-blue-600">{revenueValue}</div>
+              <div className="text-2xl font-bold text-blue-600">{revenueValue}</div>
               <TrendIndicator value={trends.totalRevenue} />
             </div>
             <p className="text-xs text-muted-foreground">Ingresos totales acumulados</p>
           </CardContent>
         </Card>
 
-        <Card className="md:col-span-1 lg:col-span-1 border-l-4 border-l-green-500">
+        <Card className="border-l-4 border-l-green-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">{getPeriodTitle()}</CardTitle>
             <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
@@ -505,14 +591,14 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="flex items-baseline justify-between mb-2">
-              <div className="text-3xl font-bold text-green-600">{periodRevenueValue}</div>
+              <div className="text-2xl font-bold text-green-600">{periodRevenueValue}</div>
               <TrendIndicator value={trends.periodRevenue} />
             </div>
             <p className="text-xs text-muted-foreground">Total de {getPeriodDescription()}</p>
           </CardContent>
         </Card>
 
-        <Card className="md:col-span-1 lg:col-span-1 border-l-4 border-l-cyan-500">
+        <Card className="border-l-4 border-l-cyan-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Ticket Medio</CardTitle>
             <CreditCard className="h-4 w-4 text-cyan-500" />
@@ -525,10 +611,24 @@ export default function DashboardPage() {
             <p className="text-xs text-muted-foreground">Promedio por factura</p>
           </CardContent>
         </Card>
+
+        <Card className="border-l-4 border-l-red-500">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Gastos Totales</CardTitle>
+            <Receipt className="h-4 w-4 text-red-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-baseline justify-between">
+              <div className="text-2xl font-bold text-red-600">{expensesValue}</div>
+              <TrendIndicator value={trends.totalExpenses} />
+            </div>
+            <p className="text-xs text-muted-foreground">Total de gastos</p>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Tercera fila: Facturas recientes, Clientes recientes */}
-      <div className="grid gap-4 md:grid-cols-2">
+      {/* Tercera fila: Facturas recientes, Clientes recientes, Gastos recientes */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <Card className="border-t-4 border-t-emerald-500">
           <CardHeader>
             <CardTitle>Facturas recientes</CardTitle>
@@ -583,6 +683,36 @@ export default function DashboardPage() {
               </div>
             ) : (
               <p className="text-muted-foreground">No hay clientes recientes</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-t-4 border-t-red-500">
+          <CardHeader>
+            <CardTitle>Gastos recientes</CardTitle>
+            <CardDescription>Últimos gastos registrados</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {recentExpenses && recentExpenses.length > 0 ? (
+              <div className="space-y-2">
+                {recentExpenses.map((expense) => (
+                  <div
+                    key={expense.id}
+                    className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 transition-colors"
+                  >
+                    <div>
+                      <p className="font-medium">{expense.description}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {new Date(expense.expense_date).toLocaleDateString()} -{" "}
+                        {expense.supplier_name || "Sin proveedor"}
+                      </p>
+                    </div>
+                    <div className="font-medium text-red-600">{formatCurrency(expense.amount || 0)}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-muted-foreground">No hay gastos recientes</p>
             )}
           </CardContent>
         </Card>
