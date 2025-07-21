@@ -35,6 +35,7 @@ interface TrendData {
   periodRevenue: number
   totalExpenses: number
   averageExpense: number
+  periodExpenses: number
 }
 
 interface RecentInvoice {
@@ -83,7 +84,9 @@ export default function DashboardPage() {
     averageExpense: 0,
   })
   const [periodRevenue, setPeriodRevenue] = useState(0)
-  const [selectedPeriod, setSelectedPeriod] = useState("month")
+  const [periodExpenses, setPeriodExpenses] = useState(0)
+  const [selectedRevenuePeriod, setSelectedRevenuePeriod] = useState("month")
+  const [selectedExpensesPeriod, setSelectedExpensesPeriod] = useState("month")
   const [trends, setTrends] = useState<TrendData>({
     clients: 0,
     invoices: 0,
@@ -92,6 +95,7 @@ export default function DashboardPage() {
     periodRevenue: 0,
     totalExpenses: 0,
     averageExpense: 0,
+    periodExpenses: 0,
   })
   const [recentInvoices, setRecentInvoices] = useState<RecentInvoice[]>([])
   const [recentClients, setRecentClients] = useState<RecentClient[]>([])
@@ -107,6 +111,7 @@ export default function DashboardPage() {
     const today = new Date().toDateString()
     const lastAnimationDate = localStorage.getItem("lastDashboardAnimationDate")
     const shouldShowAnimations = lastAnimationDate !== today
+
     setShowAnimations(shouldShowAnimations)
 
     // Si mostramos animaciones, actualizar la fecha en localStorage
@@ -128,6 +133,7 @@ export default function DashboardPage() {
   const animatedTicketValue = useCountAnimation(stats.averageTicket, 800, 400, formatCurrency)
   const animatedExpensesValue = useCountAnimation(stats.totalExpenses, 800, 500, formatCurrency)
   const animatedAverageExpenseValue = useCountAnimation(stats.averageExpense, 800, 600, formatCurrency)
+  const animatedPeriodExpensesValue = useCountAnimation(periodExpenses, 800, 700, formatCurrency)
 
   // Decidir si usar valores animados o estáticos
   const clientsValue = showAnimations ? animatedClientsValue : stats.clients
@@ -137,6 +143,7 @@ export default function DashboardPage() {
   const ticketValue = showAnimations ? animatedTicketValue : formatCurrency(stats.averageTicket)
   const expensesValue = showAnimations ? animatedExpensesValue : formatCurrency(stats.totalExpenses)
   const averageExpenseValue = showAnimations ? animatedAverageExpenseValue : formatCurrency(stats.averageExpense)
+  const periodExpensesValue = showAnimations ? animatedPeriodExpensesValue : formatCurrency(periodExpenses)
 
   // Función para calcular el rango de fechas según el período seleccionado
   const getDateRange = (period: string) => {
@@ -219,7 +226,6 @@ export default function DashboardPage() {
         .select("amount")
         .gte("expense_date", startDate.toISOString().split("T")[0])
         .lte("expense_date", endDate.toISOString().split("T")[0])
-      // Remover esta línea: .in("status", ["approved", "paid"])
 
       // Filtrar por organización del usuario
       if (userProfile?.organization_id) {
@@ -232,7 +238,6 @@ export default function DashboardPage() {
       if (invoicesResult.error) {
         console.error("Error fetching period invoices:", invoicesResult.error)
       }
-
       if (expensesResult.error) {
         console.error("Error fetching period expenses:", expensesResult.error)
       }
@@ -263,8 +268,8 @@ export default function DashboardPage() {
   useEffect(() => {
     async function loadPeriodRevenue() {
       try {
-        const { startDate, endDate } = getDateRange(selectedPeriod)
-        const { startDate: prevStartDate, endDate: prevEndDate } = getPreviousDateRange(selectedPeriod)
+        const { startDate, endDate } = getDateRange(selectedRevenuePeriod)
+        const { startDate: prevStartDate, endDate: prevEndDate } = getPreviousDateRange(selectedRevenuePeriod)
 
         // Obtener estadísticas del período actual y anterior
         const [currentStats, previousStats] = await Promise.all([
@@ -287,7 +292,37 @@ export default function DashboardPage() {
     if (!loading) {
       loadPeriodRevenue()
     }
-  }, [selectedPeriod, loading, userProfile])
+  }, [selectedRevenuePeriod, loading, userProfile])
+
+  // Cargar gastos del período seleccionado y calcular tendencias
+  useEffect(() => {
+    async function loadPeriodExpenses() {
+      try {
+        const { startDate, endDate } = getDateRange(selectedExpensesPeriod)
+        const { startDate: prevStartDate, endDate: prevEndDate } = getPreviousDateRange(selectedExpensesPeriod)
+
+        // Obtener estadísticas del período actual y anterior
+        const [currentStats, previousStats] = await Promise.all([
+          getPeriodStats(startDate, endDate),
+          getPeriodStats(prevStartDate, prevEndDate),
+        ])
+
+        setPeriodExpenses(currentStats.expenses)
+
+        // Calcular tendencias reales
+        setTrends((prev) => ({
+          ...prev,
+          periodExpenses: calculateTrend(currentStats.expenses, previousStats.expenses),
+        }))
+      } catch (error) {
+        console.error("Error loading period expenses:", error)
+      }
+    }
+
+    if (!loading) {
+      loadPeriodExpenses()
+    }
+  }, [selectedExpensesPeriod, loading, userProfile])
 
   useEffect(() => {
     async function loadDashboardData() {
@@ -438,12 +473,14 @@ export default function DashboardPage() {
             previousMonthStats.expenseCount > 0 ? previousMonthStats.expenses / previousMonthStats.expenseCount : 0,
           ),
           periodRevenue: 0, // Se calculará en el otro useEffect
+          periodExpenses: 0, // Se calculará en el otro useEffect
         })
 
         // Actualizar datos recientes
         setRecentInvoices(recentInvoicesData)
         setRecentClients(recentClientsData)
         setRecentExpenses(recentExpensesData)
+
         setLoading(false)
       } catch (error) {
         console.error("Error loading dashboard data:", error)
@@ -462,33 +499,39 @@ export default function DashboardPage() {
   }, [userProfile, toast])
 
   // Obtener el título y descripción del período para mostrar
-  const getPeriodTitle = () => {
-    switch (selectedPeriod) {
+  const getPeriodTitle = (type: "revenue" | "expenses") => {
+    const period = type === "revenue" ? selectedRevenuePeriod : selectedExpensesPeriod
+    const prefix = type === "revenue" ? "Ingresos" : "Gastos"
+
+    switch (period) {
       case "day":
-        return "Ingresos Diarios"
+        return `${prefix} Diarios`
       case "week":
-        return "Ingresos Semanales"
+        return `${prefix} Semanales`
       case "month":
-        return "Ingresos Mensuales"
+        return `${prefix} Mensuales`
       case "year":
-        return "Ingresos Anuales"
+        return `${prefix} Anuales`
       default:
-        return "Ingresos Mensuales"
+        return `${prefix} Mensuales`
     }
   }
 
-  const getPeriodDescription = () => {
-    switch (selectedPeriod) {
+  const getPeriodDescription = (type: "revenue" | "expenses") => {
+    const period = type === "revenue" ? selectedRevenuePeriod : selectedExpensesPeriod
+    const prefix = type === "revenue" ? "ingresos" : "gastos"
+
+    switch (period) {
       case "day":
-        return "ingresos del día actual"
+        return `${prefix} del día actual`
       case "week":
-        return "ingresos de la semana actual"
+        return `${prefix} de la semana actual`
       case "month":
-        return "ingresos del mes actual"
+        return `${prefix} del mes actual`
       case "year":
-        return "ingresos del año actual"
+        return `${prefix} del año actual`
       default:
-        return "ingresos del mes actual"
+        return `${prefix} del mes actual`
     }
   }
 
@@ -559,8 +602,8 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Segunda fila: Ingresos Totales, Ingresos del Período, Ticket Medio, Gastos Totales */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      {/* Segunda fila: Ingresos Totales, Ingresos del Período, Ticket Medio */}
+      <div className="grid gap-4 md:grid-cols-3">
         <Card className="border-l-4 border-l-blue-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Ingresos Totales</CardTitle>
@@ -576,8 +619,8 @@ export default function DashboardPage() {
 
         <Card className="border-l-4 border-l-green-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{getPeriodTitle()}</CardTitle>
-            <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
+            <CardTitle className="text-sm font-medium">{getPeriodTitle("revenue")}</CardTitle>
+            <Select value={selectedRevenuePeriod} onValueChange={setSelectedRevenuePeriod}>
               <SelectTrigger className="w-[130px] h-8">
                 <SelectValue placeholder="Seleccionar período" />
               </SelectTrigger>
@@ -594,7 +637,7 @@ export default function DashboardPage() {
               <div className="text-2xl font-bold text-green-600">{periodRevenueValue}</div>
               <TrendIndicator value={trends.periodRevenue} />
             </div>
-            <p className="text-xs text-muted-foreground">Total de {getPeriodDescription()}</p>
+            <p className="text-xs text-muted-foreground">Total de {getPeriodDescription("revenue")}</p>
           </CardContent>
         </Card>
 
@@ -611,7 +654,10 @@ export default function DashboardPage() {
             <p className="text-xs text-muted-foreground">Promedio por factura</p>
           </CardContent>
         </Card>
+      </div>
 
+      {/* Tercera fila: Gastos Totales, Gastos del Período */}
+      <div className="grid gap-4 md:grid-cols-2">
         <Card className="border-l-4 border-l-red-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Gastos Totales</CardTitle>
@@ -625,9 +671,33 @@ export default function DashboardPage() {
             <p className="text-xs text-muted-foreground">Total de gastos</p>
           </CardContent>
         </Card>
+
+        <Card className="border-l-4 border-l-orange-500">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">{getPeriodTitle("expenses")}</CardTitle>
+            <Select value={selectedExpensesPeriod} onValueChange={setSelectedExpensesPeriod}>
+              <SelectTrigger className="w-[130px] h-8">
+                <SelectValue placeholder="Seleccionar período" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="day">Diarios</SelectItem>
+                <SelectItem value="week">Semanales</SelectItem>
+                <SelectItem value="month">Mensuales</SelectItem>
+                <SelectItem value="year">Anuales</SelectItem>
+              </SelectContent>
+            </Select>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-baseline justify-between mb-2">
+              <div className="text-2xl font-bold text-orange-600">{periodExpensesValue}</div>
+              <TrendIndicator value={trends.periodExpenses} />
+            </div>
+            <p className="text-xs text-muted-foreground">Total de {getPeriodDescription("expenses")}</p>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Tercera fila: Facturas recientes, Clientes recientes, Gastos recientes */}
+      {/* Cuarta fila: Facturas recientes, Clientes recientes, Gastos recientes */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <Card className="border-t-4 border-t-emerald-500">
           <CardHeader>

@@ -5,8 +5,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { RevenueStats } from "@/components/dashboard/revenue-stats"
+import { ExpenseStats } from "@/components/dashboard/expense-stats"
 import { RevenueByProfessional } from "@/components/statistics/revenue-by-professional"
 import { RevenueByService } from "@/components/statistics/revenue-by-service"
+import { ExpensesByCategory } from "@/components/statistics/expenses-by-category"
+import { ExpensesBySupplier } from "@/components/statistics/expenses-by-supplier"
 import { CalendarDays } from "lucide-react"
 
 export default function StatisticsPage() {
@@ -16,7 +19,7 @@ export default function StatisticsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Estadísticas</h1>
-        <p className="text-muted-foreground">Análisis detallado de ingresos y rendimiento</p>
+        <p className="text-muted-foreground">Análisis detallado de ingresos, gastos y rendimiento</p>
       </div>
 
       <div className="flex items-center gap-2">
@@ -37,10 +40,12 @@ export default function StatisticsPage() {
       </div>
 
       <Tabs defaultValue="revenue" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="revenue">Ingresos</TabsTrigger>
+          <TabsTrigger value="expenses">Gastos</TabsTrigger>
           <TabsTrigger value="by-professional">Por Profesional</TabsTrigger>
           <TabsTrigger value="by-service">Por Servicio</TabsTrigger>
+          <TabsTrigger value="expenses-analysis">Análisis Gastos</TabsTrigger>
         </TabsList>
 
         <TabsContent value="revenue">
@@ -51,6 +56,18 @@ export default function StatisticsPage() {
             </CardHeader>
             <CardContent>
               <RevenueStats period={timePeriod} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="expenses">
+          <Card>
+            <CardHeader>
+              <CardTitle>Evolución de Gastos</CardTitle>
+              <CardDescription>Análisis de gastos en el período seleccionado</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ExpenseStats period={timePeriod} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -77,6 +94,30 @@ export default function StatisticsPage() {
               <RevenueByService period={timePeriod} />
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="expenses-analysis">
+          <div className="grid gap-6 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Gastos por Categoría</CardTitle>
+                <CardDescription>Distribución de gastos por categoría</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ExpensesByCategory period={timePeriod} />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Gastos por Proveedor</CardTitle>
+                <CardDescription>Principales proveedores por volumen de gastos</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ExpensesBySupplier period={timePeriod} />
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
