@@ -20,12 +20,7 @@ export default function MainDashboardLayout({
       <div className="flex flex-col flex-1 overflow-hidden">
         {/* Header */}
         <header className="border-b bg-background">
-          <div className="flex h-16 items-center px-4 gap-4 justify-between">
-            <h2 className="text-lg font-semibold">Sistema Integrado</h2>
-            <div className="flex items-center gap-4">
-              <UserNav />
-            </div>
-          </div>
+         
         </header>
 
         {/* Contenido de la página */}
