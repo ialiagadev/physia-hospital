@@ -16,29 +16,60 @@ export async function importClients(clientsData: ClientImportData[], organizatio
   let imported = 0
 
   try {
-    // Verificar duplicados en la base de datos
+    // Verificar duplicados en la base de datos por NIF/CIF
     const taxIds = clientsData.map((client) => client.tax_id)
-    const { data: existingClients } = await supabase.from("clients").select("tax_id, name").in("tax_id", taxIds)
+    const { data: existingClientsByTaxId } = await supabase.from("clients").select("tax_id, name").in("tax_id", taxIds)
 
-    const existingTaxIds = new Set(existingClients?.map((c) => c.tax_id) || [])
+    const existingTaxIds = new Set(existingClientsByTaxId?.map((c) => c.tax_id) || [])
+
+    // Verificar duplicados por teléfono (solo para teléfonos válidos)
+    const validPhones = clientsData.map((client) => client.phone).filter((phone) => phone && phone.length > 6)
+
+    let existingPhones = new Set<string>()
+    if (validPhones.length > 0) {
+      const { data: existingClientsByPhone } = await supabase
+        .from("clients")
+        .select("phone, name")
+        .in("phone", validPhones)
+
+      existingPhones = new Set(existingClientsByPhone?.map((c) => c.phone).filter(Boolean) || [])
+    }
 
     // Filtrar clientes que no existen
     const newClients = clientsData.filter((client) => {
+      // Verificar duplicado por NIF/CIF
       if (existingTaxIds.has(client.tax_id)) {
         duplicates.push(`${client.name} (${client.tax_id}) ya existe en la base de datos`)
         return false
       }
+
+      // Verificar duplicado por teléfono
+      if (client.phone && existingPhones.has(client.phone)) {
+        duplicates.push(`${client.name} (teléfono: ${client.phone}) ya existe en la base de datos`)
+        return false
+      }
+
       return true
     })
 
     // Verificar duplicados dentro del mismo archivo
     const seenTaxIds = new Set<string>()
+    const seenPhones = new Set<string>()
     const uniqueClients = newClients.filter((client) => {
       if (seenTaxIds.has(client.tax_id)) {
         duplicates.push(`${client.name} (${client.tax_id}) está duplicado en el archivo`)
         return false
       }
       seenTaxIds.add(client.tax_id)
+
+      if (client.phone && seenPhones.has(client.phone)) {
+        duplicates.push(`${client.name} (teléfono: ${client.phone}) está duplicado en el archivo`)
+        return false
+      }
+      if (client.phone) {
+        seenPhones.add(client.phone)
+      }
+
       return true
     })
 
@@ -59,7 +90,9 @@ export async function importClients(clientsData: ClientImportData[], organizatio
         email: client.email || null,
         phone: client.phone || null,
         client_type: client.client_type || "private",
-        dir3_codes: null, // Los códigos DIR3 se pueden añadir después manualmente si es necesario
+        birth_date: client.birth_date || null,
+        gender: client.gender || null,
+        dir3_codes: null,
       }))
 
       const { data, error } = await supabase.from("clients").insert(clientsToInsert).select("id")

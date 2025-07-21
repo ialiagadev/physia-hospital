@@ -15,8 +15,8 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Upload, FileSpreadsheet, AlertCircle, CheckCircle, Download } from "lucide-react"
-import { parseFile, type ParseResult, type ClientImportData } from "@/utils/file-parser"
+import { Upload, AlertCircle, CheckCircle, Download, Wand2 } from "lucide-react"
+import type { ClientImportData } from "@/utils/file-parser"
 import { useToast } from "@/hooks/use-toast"
 
 interface ImportClientsDialogProps {
@@ -33,7 +33,16 @@ interface ImportResult {
   duplicates: string[]
 }
 
-type Step = "upload" | "preview" | "importing" | "results"
+interface AIAnalysisResult {
+  mapping: Record<string, string | null>
+  data: ClientImportData[]
+  invalidCount: number
+  totalRows: number
+  errors?: string[]
+  duplicateCount?: number
+}
+
+type Step = "upload" | "preview" | "importing" | "results" | "ai-analyzing"
 
 export function ImportClientsDialog({
   open,
@@ -42,35 +51,81 @@ export function ImportClientsDialog({
   onImportComplete,
 }: ImportClientsDialogProps) {
   const [step, setStep] = useState<Step>("upload")
-  const [parseResult, setParseResult] = useState<ParseResult | null>(null)
+  const [aiAnalysisResult, setAiAnalysisResult] = useState<AIAnalysisResult | null>(null)
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
   const [progress, setProgress] = useState(0)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const { toast } = useToast()
+
+  const processWithAI = async (file: File) => {
+    try {
+      setStep("ai-analyzing")
+      setProgress(10)
+
+      // Crear FormData para enviar el archivo
+      const formData = new FormData()
+      formData.append("file", file)
+
+      // Simular progreso durante el análisis
+      const progressInterval = setInterval(() => {
+        setProgress((prev) => {
+          if (prev < 70) return prev + 5
+          return prev
+        })
+      }, 500)
+
+      // Enviar archivo a la API de IA
+      const response = await fetch("/api/ai-import", {
+        method: "POST",
+        body: formData,
+      })
+
+      clearInterval(progressInterval)
+      setProgress(80)
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Error al procesar con IA")
+      }
+
+      const result = await response.json()
+      setAiAnalysisResult(result)
+      setProgress(100)
+      setStep("preview")
+
+      // Mostrar toast de éxito
+      toast({
+        title: "Análisis completado",
+        description: `La IA ha mapeado ${Object.values(result.mapping).filter(Boolean).length} columnas y encontrado ${
+          result.data.length
+        } clientes válidos.`,
+      })
+
+      // Mostrar advertencias si hay errores
+      if (result.errors && result.errors.length > 0) {
+        toast({
+          title: "Advertencias encontradas",
+          description: `Se encontraron ${result.errors.length} registros con problemas. Revisa los detalles.`,
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      toast({
+        title: "Error en el análisis con IA",
+        description: error instanceof Error ? error.message : "Error desconocido",
+        variant: "destructive",
+      })
+      setStep("upload")
+    }
+  }
 
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {
       const file = acceptedFiles[0]
       if (!file) return
 
-      try {
-        setStep("preview")
-        const result = await parseFile(file)
-        setParseResult(result)
-
-        if (result.errors.length > 0) {
-          toast({
-            title: "Errores en el archivo",
-            description: `Se encontraron ${result.errors.length} errores. Revisa los detalles.`,
-            variant: "destructive",
-          })
-        }
-      } catch (error) {
-        toast({
-          title: "Error al procesar archivo",
-          description: error instanceof Error ? error.message : "Error desconocido",
-          variant: "destructive",
-        })
-      }
+      setSelectedFile(file)
+      await processWithAI(file)
     },
     [toast],
   )
@@ -85,7 +140,7 @@ export function ImportClientsDialog({
     maxFiles: 1,
   })
 
-  // Función de importación usando cliente directo (igual que tu formulario)
+  // Función de importación usando cliente directo
   const importClients = async (clientsData: ClientImportData[], organizationId: number): Promise<ImportResult> => {
     const errors: string[] = []
     const duplicates: string[] = []
@@ -94,41 +149,75 @@ export function ImportClientsDialog({
     try {
       console.log("Iniciando importación con organizationId:", organizationId)
 
-      // Verificar duplicados en la base de datos
+      // Verificar duplicados en la base de datos por Tax ID
       const taxIds = clientsData.map((client) => client.tax_id)
-      const { data: existingClients } = await supabase.from("clients").select("tax_id, name").in("tax_id", taxIds)
+      const { data: existingClientsByTaxId } = await supabase
+        .from("clients")
+        .select("tax_id, name")
+        .in("tax_id", taxIds)
 
-      const existingTaxIds = new Set(existingClients?.map((c) => c.tax_id) || [])
+      const existingTaxIds = new Set(existingClientsByTaxId?.map((c) => c.tax_id) || [])
+
+      // Verificar duplicados por teléfono (solo para teléfonos válidos)
+      const validPhones = clientsData.map((client) => client.phone).filter((phone) => phone && phone.length > 6)
+
+      let existingPhones = new Set<string>()
+      if (validPhones.length > 0) {
+        const { data: existingClientsByPhone } = await supabase
+          .from("clients")
+          .select("phone, name")
+          .in("phone", validPhones)
+
+        existingPhones = new Set(existingClientsByPhone?.map((c) => c.phone).filter(Boolean) || [])
+      }
 
       // Filtrar clientes que no existen
       const newClients = clientsData.filter((client) => {
+        // Verificar duplicado por Tax ID
         if (existingTaxIds.has(client.tax_id)) {
           duplicates.push(`${client.name} (${client.tax_id}) ya existe en la base de datos`)
           return false
         }
+
+        // Verificar duplicado por teléfono
+        if (client.phone && existingPhones.has(client.phone)) {
+          duplicates.push(`${client.name} (teléfono: ${client.phone}) ya existe en la base de datos`)
+          return false
+        }
+
         return true
       })
 
-      // Verificar duplicados dentro del mismo archivo
+      // Verificar duplicados dentro del mismo archivo (ya se hace en la API de IA, pero por seguridad)
       const seenTaxIds = new Set<string>()
+      const seenPhones = new Set<string>()
       const uniqueClients = newClients.filter((client) => {
         if (seenTaxIds.has(client.tax_id)) {
           duplicates.push(`${client.name} (${client.tax_id}) está duplicado en el archivo`)
           return false
         }
         seenTaxIds.add(client.tax_id)
+
+        if (client.phone && seenPhones.has(client.phone)) {
+          duplicates.push(`${client.name} (teléfono: ${client.phone}) está duplicado en el archivo`)
+          return false
+        }
+        if (client.phone) {
+          seenPhones.add(client.phone)
+        }
+
         return true
       })
 
       console.log("Clientes únicos a importar:", uniqueClients.length)
 
-      // Procesar en lotes de 50 (igual que tu formulario individual)
+      // Procesar en lotes de 50
       const batchSize = 50
       for (let i = 0; i < uniqueClients.length; i += batchSize) {
         const batch = uniqueClients.slice(i, i + batchSize)
 
         const clientsToInsert = batch.map((client) => ({
-          organization_id: organizationId, // Usar el organizationId pasado
+          organization_id: organizationId,
           name: client.name,
           tax_id: client.tax_id,
           address: client.address || null,
@@ -139,12 +228,13 @@ export function ImportClientsDialog({
           email: client.email || null,
           phone: client.phone || null,
           client_type: client.client_type || "private",
+          birth_date: client.birth_date || null,
+          gender: client.gender || null,
           dir3_codes: null,
         }))
 
         console.log(`Insertando lote ${Math.floor(i / batchSize) + 1}:`, clientsToInsert)
 
-        // Usar el mismo patrón que tu formulario
         const { data, error } = await supabase.from("clients").insert(clientsToInsert).select("id")
 
         if (error) {
@@ -169,22 +259,21 @@ export function ImportClientsDialog({
   }
 
   const handleImport = async () => {
-    if (!parseResult?.data.length) return
+    if (!aiAnalysisResult?.data.length) return
 
     setStep("importing")
     setProgress(0)
 
     try {
       console.log("Iniciando importación con organizationId:", organizationId)
-      console.log("Datos a importar:", parseResult.data.length, "clientes")
+      console.log("Datos a importar:", aiAnalysisResult.data.length, "clientes")
 
       // Simular progreso
       const progressInterval = setInterval(() => {
         setProgress((prev) => Math.min(prev + 10, 90))
       }, 200)
 
-      // Usar la función local en lugar del Server Action
-      const result = await importClients(parseResult.data, organizationId)
+      const result = await importClients(aiAnalysisResult.data, organizationId)
 
       console.log("Resultado de importación:", result)
 
@@ -212,10 +301,13 @@ export function ImportClientsDialog({
   }
 
   const downloadTemplate = () => {
-    const csvContent = `Nombre,CIF/NIF,Direccion,Codigo Postal,Ciudad,Provincia,Pais,Email,Telefono,Tipo Cliente
-Empresa Ejemplo,B12345678,Calle Mayor 123,28001,Madrid,Madrid,España,info@ejemplo.com,912345678,private
-Juan Perez,12345678Z,Avenida Sol 45,08001,Barcelona,Barcelona,España,juan@email.com,666123456,private
-Ayuntamiento Demo,P1234567A,Plaza Mayor 1,28002,Madrid,Madrid,España,contacto@ayto.es,913456789,public`
+    const csvContent = `Nombre,CIF/NIF,Direccion,Codigo Postal,Ciudad,Provincia,Pais,Email,Telefono,Tipo Cliente,Fecha Nacimiento,Genero
+Empresa Ejemplo,B12345678,Calle Mayor 123,28001,Madrid,Madrid,España,info@ejemplo.com,912345678,private,1980-05-15,male
+Juan Perez,12345678Z,Avenida Sol 45,08001,Barcelona,Barcelona,España,juan@email.com,666123456,private,1975-12-20,male
+Maria Garcia,87654321Y,Plaza Central 10,41001,Sevilla,Sevilla,España,maria@email.com,655987654,private,1990-03-08,female
+Ayuntamiento Demo,P1234567A,Plaza Mayor 1,28002,Madrid,Madrid,España,contacto@ayto.es,913456789,public,,
+John Smith,US123456789,123 Main Street,10001,New York,NY,Estados Unidos,john@email.com,+1234567890,private,1985-01-10,male
+Marie Dubois,FR987654321,Rue de la Paix 45,75001,Paris,Ile-de-France,Francia,marie@email.com,+33123456789,private,1992-06-25,female`
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
     const link = document.createElement("a")
@@ -226,9 +318,10 @@ Ayuntamiento Demo,P1234567A,Plaza Mayor 1,28002,Madrid,Madrid,España,contacto@a
 
   const resetDialog = () => {
     setStep("upload")
-    setParseResult(null)
+    setAiAnalysisResult(null)
     setImportResult(null)
     setProgress(0)
+    setSelectedFile(null)
   }
 
   const handleClose = () => {
@@ -236,12 +329,38 @@ Ayuntamiento Demo,P1234567A,Plaza Mayor 1,28002,Madrid,Madrid,España,contacto@a
     onOpenChange(false)
   }
 
+  const formatDate = (dateStr: string | null | undefined) => {
+    if (!dateStr) return "-"
+    try {
+      return new Date(dateStr).toLocaleDateString("es-ES")
+    } catch {
+      return dateStr
+    }
+  }
+
+  const formatGender = (gender: string | null | undefined) => {
+    if (!gender) return "-"
+    switch (gender) {
+      case "male":
+        return "Masculino"
+      case "female":
+        return "Femenino"
+      case "other":
+        return "Otro"
+      default:
+        return gender
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+      <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Importar Clientes</DialogTitle>
-          <DialogDescription>Importa múltiples clientes desde un archivo Excel o CSV</DialogDescription>
+          <DialogTitle>Importar Clientes con IA</DialogTitle>
+          <DialogDescription>
+            Sube cualquier archivo Excel o CSV. La IA analizará automáticamente las columnas y adaptará los datos al
+            formato requerido, incluyendo clientes internacionales.
+          </DialogDescription>
         </DialogHeader>
 
         {step === "upload" && (
@@ -272,59 +391,112 @@ Ayuntamiento Demo,P1234567A,Plaza Mayor 1,28002,Madrid,Madrid,España,contacto@a
             </div>
 
             <Alert>
-              <FileSpreadsheet className="h-4 w-4" />
+              <Wand2 className="h-4 w-4" />
               <AlertDescription>
-                <strong>Campos obligatorios:</strong> Nombre y CIF/NIF. El resto de campos son opcionales. Descarga la
-                plantilla para ver el formato correcto.
+                <strong>Importación inteligente:</strong> La IA detectará automáticamente las columnas, normalizará las
+                identificaciones fiscales (NIF/CIF/Tax ID), procesará fechas de nacimiento y género, y detectará
+                duplicados. Compatible con clientes nacionales e internacionales.
               </AlertDescription>
             </Alert>
           </div>
         )}
 
-        {step === "preview" && parseResult && (
+        {step === "ai-analyzing" && (
+          <div className="space-y-4 text-center py-8">
+            <div className="w-16 h-16 mx-auto mb-4 relative">
+              <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+            </div>
+            <h3 className="text-lg font-semibold">Analizando archivo con IA...</h3>
+            <Progress value={progress} className="w-full max-w-md mx-auto" />
+            <p className="text-sm text-gray-500">
+              La IA está identificando columnas, normalizando datos y detectando duplicados
+            </p>
+          </div>
+        )}
+
+        {step === "preview" && aiAnalysisResult && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold">Vista Previa</h3>
               <div className="text-sm text-gray-500">
-                {parseResult.data.length} clientes válidos de {parseResult.totalRows} filas
+                {aiAnalysisResult.data.length} clientes válidos de {aiAnalysisResult.totalRows} filas
               </div>
             </div>
 
-            {parseResult.errors.length > 0 && (
+            <Alert className="bg-blue-50 border-blue-200">
+              <Wand2 className="h-4 w-4 text-blue-500" />
+              <AlertDescription>
+                <div className="font-semibold mb-2">Mapeo de columnas detectado por IA:</div>
+                <div className="grid grid-cols-3 gap-2 text-sm">
+                  {Object.entries(aiAnalysisResult.mapping).map(([standardField, originalField]) => (
+                    <div key={standardField} className="flex items-center justify-between">
+                      <span className="font-medium">{standardField}:</span>
+                      <span className="text-blue-700">
+                        {originalField ? originalField : <em className="text-gray-500">No detectado</em>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {aiAnalysisResult.duplicateCount && aiAnalysisResult.duplicateCount > 0 && (
+                  <div className="mt-2 text-sm text-orange-700">
+                    <strong>Nota:</strong> Se detectaron y eliminaron {aiAnalysisResult.duplicateCount} duplicados
+                    automáticamente.
+                  </div>
+                )}
+              </AlertDescription>
+            </Alert>
+
+            {aiAnalysisResult.errors && aiAnalysisResult.errors.length > 0 && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>
-                  <div className="font-semibold mb-2">Errores encontrados:</div>
-                  <ul className="list-disc list-inside space-y-1 max-h-32 overflow-y-auto">
-                    {parseResult.errors.map((error, index) => (
-                      <li key={index} className="text-sm">
-                        {error}
-                      </li>
+                  <div className="font-semibold mb-2">Registros con problemas:</div>
+                  <ul className="list-disc list-inside space-y-1 max-h-32 overflow-y-auto text-sm">
+                    {aiAnalysisResult.errors.map((error, index) => (
+                      <li key={index}>{error}</li>
                     ))}
                   </ul>
                 </AlertDescription>
               </Alert>
             )}
 
-            {parseResult.data.length > 0 && (
+            {aiAnalysisResult.data.length > 0 && (
               <div className="border rounded-lg max-h-96 overflow-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Nombre</TableHead>
-                      <TableHead>CIF/NIF</TableHead>
+                      <TableHead>ID Fiscal</TableHead>
+                      <TableHead>Dirección</TableHead>
+                      <TableHead>CP</TableHead>
                       <TableHead>Ciudad</TableHead>
+                      <TableHead>Provincia</TableHead>
+                      <TableHead>País</TableHead>
                       <TableHead>Email</TableHead>
+                      <TableHead>Teléfono</TableHead>
+                      <TableHead>Fecha Nac.</TableHead>
+                      <TableHead>Género</TableHead>
                       <TableHead>Tipo</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {parseResult.data.slice(0, 10).map((client, index) => (
+                    {aiAnalysisResult.data.slice(0, 10).map((client, index) => (
                       <TableRow key={index}>
                         <TableCell className="font-medium">{client.name}</TableCell>
-                        <TableCell>{client.tax_id}</TableCell>
+                        <TableCell className="font-mono text-sm">{client.tax_id}</TableCell>
+                        <TableCell className="max-w-32 truncate" title={client.address || ""}>
+                          {client.address || "-"}
+                        </TableCell>
+                        <TableCell>{client.postal_code || "-"}</TableCell>
                         <TableCell>{client.city || "-"}</TableCell>
-                        <TableCell>{client.email || "-"}</TableCell>
+                        <TableCell>{client.province || "-"}</TableCell>
+                        <TableCell>{client.country || "-"}</TableCell>
+                        <TableCell className="max-w-32 truncate" title={client.email || ""}>
+                          {client.email || "-"}
+                        </TableCell>
+                        <TableCell>{client.phone || "-"}</TableCell>
+                        <TableCell>{formatDate(client.birth_date)}</TableCell>
+                        <TableCell>{formatGender(client.gender)}</TableCell>
                         <TableCell>
                           <span
                             className={`px-2 py-1 rounded-full text-xs ${
@@ -340,9 +512,9 @@ Ayuntamiento Demo,P1234567A,Plaza Mayor 1,28002,Madrid,Madrid,España,contacto@a
                     ))}
                   </TableBody>
                 </Table>
-                {parseResult.data.length > 10 && (
+                {aiAnalysisResult.data.length > 10 && (
                   <div className="p-2 text-center text-sm text-gray-500 border-t">
-                    ... y {parseResult.data.length - 10} clientes más
+                    ... y {aiAnalysisResult.data.length - 10} clientes más
                   </div>
                 )}
               </div>
@@ -357,7 +529,7 @@ Ayuntamiento Demo,P1234567A,Plaza Mayor 1,28002,Madrid,Madrid,España,contacto@a
             </div>
             <h3 className="text-lg font-semibold">Importando clientes...</h3>
             <Progress value={progress} className="w-full max-w-md mx-auto" />
-            <p className="text-sm text-gray-500">Procesando {parseResult?.data.length || 0} clientes</p>
+            <p className="text-sm text-gray-500">Procesando {aiAnalysisResult?.data.length || 0} clientes</p>
           </div>
         )}
 
@@ -425,8 +597,8 @@ Ayuntamiento Demo,P1234567A,Plaza Mayor 1,28002,Madrid,Madrid,España,contacto@a
               <Button variant="outline" onClick={() => setStep("upload")}>
                 Volver
               </Button>
-              <Button onClick={handleImport} disabled={!parseResult?.data.length}>
-                Importar {parseResult?.data.length || 0} Clientes
+              <Button onClick={handleImport} disabled={!aiAnalysisResult?.data.length}>
+                Importar {aiAnalysisResult?.data.length || 0} Clientes
               </Button>
             </>
           )}
