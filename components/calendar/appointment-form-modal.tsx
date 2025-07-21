@@ -28,6 +28,7 @@ import {
 } from "lucide-react"
 import { useClients } from "@/hooks/use-clients"
 import { useUsers } from "@/hooks/use-users"
+import { useUserServices } from "../services/use-user-services"
 import { useConsultations } from "@/hooks/use-consultations"
 import { useServices } from "@/hooks/use-services"
 import { useVacations } from "@/hooks/use-vacations"
@@ -100,8 +101,9 @@ export function AppointmentFormModal({
 
   // Hooks centralizados
   const { clients } = useClients(organizationId)
-  const { users, getUsersByService } = useUsers(organizationId)
-  const { consultations, loading: consultationsLoading, getAvailableConsultations } = useConsultations(organizationId)
+  const { users } = useUsers(organizationId)
+  const { getServicesByUser, loading: userServicesLoading, error: userServicesError } = useUserServices(organizationId!)
+    const { consultations, loading: consultationsLoading, getAvailableConsultations } = useConsultations(organizationId)
   const { services, loading: servicesLoading } = useServices(organizationId)
   const { getAvailableUsers } = useVacations(organizationId)
   const { conflicts, loading: conflictsLoading, checkConflicts } = useAppointmentConflicts(organizationId)
@@ -109,6 +111,7 @@ export function AppointmentFormModal({
   // Estados simplificados
   const [availableConsultations, setAvailableConsultations] = useState<typeof consultations>([])
   const [filteredUsers, setFilteredUsers] = useState<any[]>([])
+  const [filteredServices, setFilteredServices] = useState<any[]>([]) // ✅ NUEVO: servicios filtrados por profesional
   const [searchTerm, setSearchTerm] = useState("")
   const [clientMatches, setClientMatches] = useState<ClientMatch[]>([])
   const [showMatches, setShowMatches] = useState(false)
@@ -132,14 +135,12 @@ export function AppointmentFormModal({
     if (!waitingListEntry?.preferred_professional_id) {
       return null
     }
-
     // Convertir el UUID a número usando los últimos 8 caracteres
     const professionalUuid = waitingListEntry.preferred_professional_id
     if (typeof professionalUuid === "string" && professionalUuid.length >= 8) {
       const professionalId = Number.parseInt(professionalUuid.slice(-8), 16)
       return professionalId > 0 ? professionalId : null
     }
-
     return null
   }, [waitingListEntry])
 
@@ -155,7 +156,6 @@ export function AppointmentFormModal({
   // 🔧 ESTADO DEL FORMULARIO CON FECHAS Y PROFESIONAL CORREGIDOS
   const [formData, setFormData] = useState(() => {
     const waitingListProfessionalId = getWaitingListProfessionalId()
-
     return {
       telefonoPaciente: citaExistente?.telefonoPaciente || waitingListEntry?.client_phone || "",
       nombrePaciente: citaExistente?.nombrePaciente || waitingListEntry?.client_name?.split(" ")[0] || "",
@@ -175,9 +175,7 @@ export function AppointmentFormModal({
         ? Number(citaExistente.service_id)
         : waitingListEntry?.service_id
           ? Number(waitingListEntry.service_id)
-          : services.length > 0
-            ? services[0].id
-            : null,
+          : null, // ✅ CAMBIO: no seleccionar servicio por defecto
       // 🆕 CAMPOS PARA RECURRENCIA - Añadida opción "daily"
       isRecurring: citaExistente?.isRecurring || false,
       recurrenceType: citaExistente?.recurrenceType || "weekly",
@@ -215,12 +213,49 @@ export function AppointmentFormModal({
     formData.fecha,
   ])
 
+  // ✅ NUEVA FUNCIÓN: Actualizar servicios basados en el profesional seleccionado
+  const updateServices = useCallback(
+    async (professionalId: number) => {
+      if (!professionalId || professionalId === 0) {
+        setFilteredServices([])
+        return
+      }
+
+      // Encontrar el UUID del profesional
+      const professionalUuid = users.find((u) => Number.parseInt(u.id.slice(-8), 16) === professionalId)?.id
+      if (!professionalUuid) {
+        setFilteredServices([])
+        return
+      }
+
+      try {
+        const professionalServices = await getServicesByUser(professionalUuid)
+        setFilteredServices(professionalServices)
+      } catch (error) {
+        console.error("Error fetching professional services:", error)
+        setFilteredServices([])
+      }
+    },
+    [users, getServicesByUser],
+  )
+
+// ✅ EFECTO: Actualizar servicios cuando cambie el profesional
+useEffect(() => {
+  const professionalIdNumber = typeof formData.profesionalId === 'string' 
+    ? Number.parseInt(formData.profesionalId) 
+    : formData.profesionalId;
+    
+  if (professionalIdNumber && professionalIdNumber !== 0) {
+    updateServices(professionalIdNumber)
+  } else {
+    setFilteredServices([])
+  }
+}, [formData.profesionalId, updateServices])
   // Verificar consultas disponibles
   const checkConsultationAvailability = useCallback(async () => {
     if (!formData.hora || !formData.duracion || consultationsLoading) {
       return
     }
-
     try {
       const endTime = calcularHoraFin(formData.hora, formData.duracion)
       // 🔧 USAR FECHA LOCAL CORRECTAMENTE
@@ -231,9 +266,7 @@ export function AppointmentFormModal({
         endTime,
         citaExistente?.id ? citaExistente.id.toString() : undefined,
       )
-
       setAvailableConsultations(available)
-
       if (
         formData.consultationId &&
         formData.consultationId !== "none" &&
@@ -262,13 +295,11 @@ export function AppointmentFormModal({
     if (!formData.fecha || !formData.hora || !formData.duracion) {
       return
     }
-
     // If no professional is selected yet, clear conflicts and return
     if (!formData.profesionalId) {
       // We can't directly call setConflicts, so we'll let the hook handle empty results
       return
     }
-
     const professionalUuid = users.find((u) => Number.parseInt(u.id.slice(-8), 16) === formData.profesionalId)?.id
     if (!professionalUuid) return
 
@@ -304,14 +335,9 @@ export function AppointmentFormModal({
     }
   }, [profesionalId, users.length, checkAppointmentConflicts])
 
-  // 🔧 FILTRAR USUARIOS CORREGIDO - No resetear profesional de lista de espera
+  // ✅ ACTUALIZAR USUARIOS FILTRADOS - SIMPLIFICADO (ya no filtra por servicio)
   const updateFilteredUsers = useCallback(async () => {
-    let usersToFilter = users.filter((user) => user.type === 1) // Solo profesionales
-
-    // Siempre filtrar por servicio ya que es obligatorio
-    if (formData.service_id) {
-      usersToFilter = await getUsersByService(formData.service_id)
-    }
+    const usersToFilter = users.filter((user) => user.type === 1) // Solo profesionales
 
     // Filtrar por vacaciones
     const availableUsers = getAvailableUsers(usersToFilter, formData.fecha)
@@ -319,7 +345,6 @@ export function AppointmentFormModal({
 
     // 🔧 LÓGICA DE RESETEO CORREGIDA - considerar también lista de espera
     const waitingListProfessionalId = getWaitingListProfessionalId()
-
     // Si el profesional seleccionado ya no está disponible, resetear
     // PERO NO resetear si viene preseleccionado desde el calendario O desde lista de espera
     if (
@@ -333,16 +358,7 @@ export function AppointmentFormModal({
         profesionalId: waitingListProfessionalId || profesionalId || 0,
       }))
     }
-  }, [
-    formData.service_id,
-    formData.fecha,
-    formData.profesionalId,
-    users,
-    getUsersByService,
-    getAvailableUsers,
-    profesionalId,
-    getWaitingListProfessionalId,
-  ])
+  }, [formData.fecha, formData.profesionalId, users, getAvailableUsers, profesionalId, getWaitingListProfessionalId])
 
   // Función para buscar clientes
   const searchClients = useCallback(
@@ -530,17 +546,17 @@ export function AppointmentFormModal({
     setTimeout(() => setShowMatches(false), 200)
   }, [clienteEncontrado, searchTerm])
 
-  // Handler para manejar service_id como número o null
+  // ✅ NUEVO HANDLER: Para cambio de servicio (ahora más simple)
   const handleServiceChange = useCallback(
     (value: string) => {
-      const selectedService = services.find((s) => s.id.toString() === value)
+      const selectedService = filteredServices.find((s) => s.id.toString() === value)
       setFormData((prev) => ({
         ...prev,
         service_id: Number(value),
         duracion: selectedService ? selectedService.duration : prev.duracion,
       }))
     },
-    [services],
+    [filteredServices],
   )
 
   // 🆕 Manejar cambio de recurrencia
@@ -608,14 +624,12 @@ export function AppointmentFormModal({
         if (formData.recurrenceInterval < 1 || formData.recurrenceInterval > 12) {
           newErrors.recurrenceInterval = "El intervalo debe estar entre 1 y 12"
         }
-
         // Validar usando el servicio de recurrencia
         const config: RecurrenceConfig = {
           type: formData.recurrenceType as "daily" | "weekly" | "monthly", // ✅ Añadida "daily"
           interval: formData.recurrenceInterval,
           endDate: formData.recurrenceEndDate,
         }
-
         const validationErrors = RecurrenceService.validateRecurrenceConfig(config)
         if (validationErrors.length > 0) {
           newErrors.recurrence = validationErrors.join(", ")
@@ -759,9 +773,7 @@ export function AppointmentFormModal({
                 onFocus={() => searchTerm && searchClients(searchTerm)}
                 placeholder="Buscar por teléfono (3+ dígitos), nombre o apellido..."
                 required
-                className={`w-full ${errors.telefono ? "border-red-500" : ""} ${
-                  clienteEncontrado ? "border-green-500" : ""
-                }`}
+                className={`w-full ${errors.telefono ? "border-red-500" : ""} ${clienteEncontrado ? "border-green-500" : ""}`}
               />
               {searchingClients && (
                 <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 animate-spin text-gray-400" />
@@ -843,7 +855,6 @@ export function AppointmentFormModal({
               />
               {errors.nombre && <p className="text-sm text-red-600">{errors.nombre}</p>}
             </div>
-
             <div className="space-y-2">
               <Label htmlFor="apellidosPaciente" className="text-sm font-medium">
                 Apellidos
@@ -874,23 +885,65 @@ export function AppointmentFormModal({
             />
           </div>
 
-          {/* Servicio */}
+          {/* ✅ PROFESIONAL PRIMERO - MOVIDO ANTES DEL SERVICIO */}
+          <div className="space-y-2">
+            <Label htmlFor="profesional" className="flex items-center gap-2 text-sm font-medium">
+              Profesional *
+            </Label>
+            <Select
+              value={formData.profesionalId.toString()}
+              onValueChange={(value) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  profesionalId: Number.parseInt(value),
+                  service_id: null, // ✅ Reset service when professional changes
+                }))
+              }
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Selecciona un profesional *" />
+              </SelectTrigger>
+              <SelectContent>
+                {filteredUsers.map((user) => (
+                  <SelectItem key={user.id} value={Number.parseInt(user.id.slice(-8), 16).toString()}>
+                    <div className="flex items-center gap-2 w-full">
+                      <span className="truncate">{user.name || user.email}</span>
+                      <span className="text-xs text-gray-500 flex-shrink-0">({user.role})</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {errors.profesional && <p className="text-sm text-red-600">{errors.profesional}</p>}
+          </div>
+
+          {/* ✅ SERVICIO SEGUNDO - FILTRADO POR PROFESIONAL */}
           <div className="space-y-2">
             <Label htmlFor="service" className="flex items-center gap-2 text-sm font-medium">
               <Briefcase className="h-4 w-4" />
-              Servicio *{servicesLoading && <Loader2 className="h-3 w-3 animate-spin" />}
+              Servicio *{userServicesLoading && <Loader2 className="h-3 w-3 animate-spin" />}
             </Label>
             <Select
               value={formData.service_id ? formData.service_id.toString() : ""}
               onValueChange={handleServiceChange}
-              disabled={servicesLoading}
+              disabled={!formData.profesionalId || userServicesLoading}
               required
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder={servicesLoading ? "Cargando servicios..." : "Selecciona un servicio"} />
+                <SelectValue
+                  placeholder={
+                    !formData.profesionalId
+                      ? "Primero selecciona un profesional"
+                      : userServicesLoading
+                        ? "Cargando servicios..."
+                        : filteredServices.length === 0
+                          ? "No hay servicios disponibles"
+                          : "Selecciona un servicio"
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
-                {services.map((service) => (
+                {filteredServices.map((service) => (
                   <SelectItem key={service.id} value={service.id.toString()}>
                     <div className="flex items-center gap-2 w-full">
                       <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: service.color }} />
@@ -906,6 +959,28 @@ export function AppointmentFormModal({
                 ))}
               </SelectContent>
             </Select>
+
+            {/* Loading indicator */}
+            {userServicesLoading && formData.profesionalId && (
+              <div className="flex items-center gap-2 text-sm text-blue-600">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Cargando servicios del profesional...
+              </div>
+            )}
+
+            {/* Error message */}
+            {userServicesError && <p className="text-sm text-red-600">{userServicesError}</p>}
+
+            {/* Status messages */}
+            {formData.profesionalId && !userServicesLoading && filteredServices.length === 0 && (
+              <p className="text-sm text-amber-600">Este profesional no tiene servicios asignados</p>
+            )}
+            {formData.profesionalId && !userServicesLoading && filteredServices.length > 0 && (
+              <p className="text-sm text-blue-600">
+                {filteredServices.length} servicio(s) disponible(s) para este profesional
+              </p>
+            )}
+
             {errors.service && <p className="text-sm text-red-600">{errors.service}</p>}
           </div>
 
@@ -926,7 +1001,6 @@ export function AppointmentFormModal({
                 className="w-full"
               />
             </div>
-
             <div className="space-y-2">
               <Label htmlFor="hora" className="flex items-center gap-2 text-sm font-medium">
                 <Clock className="h-4 w-4" />
@@ -941,7 +1015,6 @@ export function AppointmentFormModal({
                 className="w-full"
               />
             </div>
-
             <div className="space-y-2">
               <Label htmlFor="duracion" className="text-sm font-medium">
                 Duración (min)
@@ -1004,7 +1077,6 @@ export function AppointmentFormModal({
                       </SelectContent>
                     </Select>
                   </div>
-
                   <div>
                     <Label htmlFor="recurrenceInterval">
                       Cada{" "}
@@ -1219,43 +1291,6 @@ export function AppointmentFormModal({
             )}
           </div>
 
-          {/* Profesional */}
-          <div className="space-y-2">
-            <Label htmlFor="profesional" className="flex items-center gap-2 text-sm font-medium">
-              Profesional *
-            </Label>
-            <Select
-              value={formData.profesionalId.toString()}
-              onValueChange={(value) => setFormData({ ...formData, profesionalId: Number.parseInt(value) })}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Selecciona un profesional *" />
-              </SelectTrigger>
-              <SelectContent>
-                {filteredUsers.map((user) => (
-                  <SelectItem key={user.id} value={Number.parseInt(user.id.slice(-8), 16).toString()}>
-                    <div className="flex items-center gap-2 w-full">
-                      <span className="truncate">{user.name || user.email}</span>
-                      <span className="text-xs text-gray-500 flex-shrink-0">({user.role})</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {errors.profesional && <p className="text-sm text-red-600">{errors.profesional}</p>}
-            {formData.service_id && filteredUsers.length === 0 && (
-              <p className="text-sm text-amber-600">No hay profesionales asignados a este servicio</p>
-            )}
-            {formData.service_id && filteredUsers.length > 0 && (
-              <p className="text-sm text-blue-600">
-                Mostrando {filteredUsers.length} profesional(es) asignado(s) al servicio
-              </p>
-            )}
-            {!formData.service_id && (
-              <p className="text-sm text-gray-500">Mostrando todos los profesionales disponibles</p>
-            )}
-          </div>
-
           {/* Estado */}
           <div className="space-y-2">
             <Label htmlFor="estado" className="text-sm font-medium">
@@ -1300,7 +1335,7 @@ export function AppointmentFormModal({
               <strong>Consejos:</strong>
             </p>
             <p>• Busca por teléfono (3+ dígitos), nombre o apellido para encontrar clientes existentes</p>
-            <p>• Selecciona un servicio para filtrar profesionales específicos</p>
+            <p>• Selecciona un profesional para ver sus servicios disponibles</p>
             <p>• Las consultas son opcionales - puedes crear citas sin asignar consulta</p>
             <p>• El sistema verificará automáticamente conflictos de horario</p>
             {formData.isRecurring && <p>• Las citas recurrentes se crean todas de una vez</p>}

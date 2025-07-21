@@ -36,6 +36,7 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
   const [users, setUsers] = useState<User[]>([])
   const [selectedUsers, setSelectedUsers] = useState<string[]>([])
   const [loadingUsers, setLoadingUsers] = useState(false)
+  const [loadingInitialData, setLoadingInitialData] = useState(false)
 
   const [formData, setFormData] = useState({
     name: "",
@@ -44,18 +45,23 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
     vat_rate: "0",
     irpf_rate: "0",
     retention_rate: "0",
-    category: "",
+    // ✅ ELIMINADO: category
     duration: "30",
     color: "#3B82F6",
     active: true,
   })
 
-  // Cargar datos iniciales
+  // ✅ CARGAR DATOS INICIALES CON MEJOR MANEJO DE ERRORES
   useEffect(() => {
     const fetchInitialData = async () => {
+      setLoadingInitialData(true)
+      setError(null)
+
       try {
         // Si estamos editando, cargar datos del servicio
         if (service) {
+          console.log("Cargando servicio para editar:", service) // Debug
+
           setFormData({
             name: service.name,
             description: service.description || "",
@@ -63,11 +69,13 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
             vat_rate: service.vat_rate.toString(),
             irpf_rate: service.irpf_rate.toString(),
             retention_rate: service.retention_rate.toString(),
-            category: service.category || "",
-            duration: service.duration.toString(),
+            // ✅ ELIMINADO: category
+            duration: service.duration.toString(), // ✅ ASEGURAR QUE SE ESTABLECE
             color: service.color,
             active: service.active,
           })
+
+          console.log("Duración establecida:", service.duration.toString()) // Debug
 
           // Cargar usuarios asignados
           await fetchAssignedUsers(service.id.toString())
@@ -76,14 +84,17 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
         // Cargar usuarios para la organización
         await fetchUsers(organizationId)
       } catch (err) {
+        console.error("Error al cargar datos iniciales:", err)
         setError("Error al cargar datos iniciales")
+      } finally {
+        setLoadingInitialData(false)
       }
     }
 
     fetchInitialData()
   }, [service, organizationId])
 
-  // Función para cargar usuarios según la organización
+  // ✅ FUNCIÓN PARA CARGAR USUARIOS CON MEJOR MANEJO DE ERRORES
   const fetchUsers = async (organizationId: number) => {
     setLoadingUsers(true)
     try {
@@ -97,22 +108,26 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
       if (error) throw error
       setUsers(data || [])
     } catch (error) {
+      console.error("Error al cargar usuarios:", error)
       setError("Error al cargar usuarios")
     } finally {
       setLoadingUsers(false)
     }
   }
 
-  // Función para cargar usuarios asignados al servicio
+  // ✅ FUNCIÓN PARA CARGAR USUARIOS ASIGNADOS CON MEJOR MANEJO DE ERRORES
   const fetchAssignedUsers = async (serviceId: string) => {
     try {
       const { data, error } = await supabase.from("user_services").select("user_id").eq("service_id", serviceId)
 
       if (error) throw error
+
       const assignedUserIds = data?.map((item) => item.user_id) || []
       setSelectedUsers(assignedUserIds)
+      console.log("Usuarios asignados cargados:", assignedUserIds) // Debug
     } catch (error) {
-      // Error silencioso
+      console.error("Error al cargar usuarios asignados:", error)
+      // Error silencioso para no bloquear la carga
     }
   }
 
@@ -123,6 +138,7 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
 
   const handleSelectChange = (name: string, value: string) => {
     setFormData((prev) => ({ ...prev, [name]: value }))
+    console.log(`${name} cambiado a:`, value) // Debug
   }
 
   const handleSwitchChange = (checked: boolean) => {
@@ -144,17 +160,18 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
     }
   }
 
+  // ✅ SUBMIT CON MEJOR MANEJO DE ERRORES
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
 
     try {
-      if (!formData.name) {
+      if (!formData.name.trim()) {
         throw new Error("El nombre del servicio es obligatorio")
       }
 
-      // 🔥 NUEVA VALIDACIÓN: Verificar que al menos un usuario esté seleccionado
+      // Verificar que al menos un usuario esté seleccionado
       if (selectedUsers.length === 0) {
         throw new Error("Debes asignar al menos un usuario al servicio")
       }
@@ -165,6 +182,12 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
         throw new Error("El precio debe ser un número válido mayor o igual a cero")
       }
 
+      // Validar duración
+      const duration = Number.parseInt(formData.duration)
+      if (isNaN(duration) || duration <= 0) {
+        throw new Error("La duración debe ser un número válido mayor a cero")
+      }
+
       // Parsear valores numéricos correctamente
       const vatRate = Number.parseInt(formData.vat_rate)
       const irpfRate = Number.parseInt(formData.irpf_rate)
@@ -172,14 +195,14 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
 
       const serviceData = {
         organization_id: organizationId,
-        name: formData.name,
-        description: formData.description || null,
+        name: formData.name.trim(),
+        description: formData.description.trim() || null,
         price: price,
         vat_rate: isNaN(vatRate) ? 0 : vatRate,
         irpf_rate: isNaN(irpfRate) ? 0 : irpfRate,
         retention_rate: isNaN(retentionRate) ? 0 : retentionRate,
-        category: formData.category || null,
-        duration: Number.parseInt(formData.duration) || 30,
+        // ✅ ELIMINADO: category
+        duration: duration,
         color: formData.color,
         active: formData.active,
       }
@@ -207,27 +230,46 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
       // Actualizar relaciones usuario-servicio
       if (service) {
         // Eliminar relaciones existentes
-        await supabase.from("user_services").delete().eq("service_id", serviceId)
+        const { error: deleteError } = await supabase.from("user_services").delete().eq("service_id", serviceId)
+
+        if (deleteError) {
+          console.error("Error al eliminar relaciones existentes:", deleteError)
+          // No lanzar error, continuar con la operación
+        }
       }
 
-      // Crear nuevas relaciones (ahora siempre habrá al menos una)
-      const userServiceRelations = selectedUsers.map((userId) => ({
-        user_id: userId,
-        service_id: serviceId,
-      }))
+      // Crear nuevas relaciones
+      if (selectedUsers.length > 0) {
+        const userServiceRelations = selectedUsers.map((userId) => ({
+          user_id: userId,
+          service_id: serviceId,
+        }))
 
-      const { error: relationError } = await supabase.from("user_services").insert(userServiceRelations)
+        const { error: relationError } = await supabase.from("user_services").insert(userServiceRelations)
 
-      if (relationError) {
-        // Error silencioso para no bloquear la operación principal
+        if (relationError) {
+          console.error("Error al crear relaciones usuario-servicio:", relationError)
+          // Error silencioso para no bloquear la operación principal
+        }
       }
 
       onSuccess()
     } catch (err) {
+      console.error("Error en handleSubmit:", err)
       setError(err instanceof Error ? err.message : "Error al guardar el servicio")
     } finally {
       setIsLoading(false)
     }
+  }
+
+  // ✅ MOSTRAR LOADING MIENTRAS SE CARGAN LOS DATOS INICIALES
+  if (loadingInitialData) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-6 w-6 animate-spin mr-2" />
+        <span>Cargando datos del servicio...</span>
+      </div>
+    )
   }
 
   return (
@@ -239,8 +281,15 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
       )}
 
       <div className="space-y-2">
-        <Label htmlFor="name">Nombre del Servicio</Label>
-        <Input id="name" name="name" value={formData.name} onChange={handleChange} required />
+        <Label htmlFor="name">Nombre del Servicio *</Label>
+        <Input
+          id="name"
+          name="name"
+          value={formData.name}
+          onChange={handleChange}
+          required
+          placeholder="Ej: Consulta médica, Fisioterapia..."
+        />
       </div>
 
       <div className="space-y-2">
@@ -251,21 +300,13 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
           value={formData.description}
           onChange={handleChange}
           placeholder="Descripción detallada del servicio"
+          rows={3}
         />
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="category">Categoría</Label>
-        <Input
-          id="category"
-          name="category"
-          value={formData.category}
-          onChange={handleChange}
-          placeholder="Ej: Fisioterapia, Masaje, Pilates..."
-        />
-      </div>
+      {/* ✅ ELIMINADO: Campo de categoría */}
 
-      {/* 🔥 USUARIOS ASIGNADOS - AHORA OBLIGATORIO */}
+      {/* Usuarios Asignados - OBLIGATORIO */}
       <div className="space-y-2">
         <Label className="flex items-center gap-2">
           Usuarios Asignados *{loadingUsers && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -319,7 +360,7 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
 
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="price">Precio (€)</Label>
+          <Label htmlFor="price">Precio (€) *</Label>
           <Input
             id="price"
             name="price"
@@ -331,20 +372,27 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
             required
           />
         </div>
-
-        <div>
-          <Label htmlFor="duration">Duración (min)</Label>
-          <Select value={formData.duration} onValueChange={(value) => setFormData({ ...formData, duration: value })}>
+        <div className="space-y-2">
+          <Label htmlFor="duration">Duración (min) *</Label>
+          {/* ✅ MEJORADO: Select con key para forzar re-render */}
+          <Select
+            key={`duration-${formData.duration}`} // Forzar re-render cuando cambie
+            value={formData.duration}
+            onValueChange={(value) => handleSelectChange("duration", value)}
+          >
             <SelectTrigger>
-              <SelectValue />
+              <SelectValue placeholder="Seleccionar duración" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="15">15 min</SelectItem>
               <SelectItem value="30">30 min</SelectItem>
               <SelectItem value="45">45 min</SelectItem>
               <SelectItem value="60">60 min</SelectItem>
+              <SelectItem value="75">75 min</SelectItem>
               <SelectItem value="90">90 min</SelectItem>
               <SelectItem value="120">120 min</SelectItem>
+              <SelectItem value="150">150 min</SelectItem>
+              <SelectItem value="180">180 min</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -352,7 +400,23 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
 
       <div className="space-y-2">
         <Label htmlFor="color">Color</Label>
-        <Input id="color" name="color" type="color" value={formData.color} onChange={handleChange} />
+        <div className="flex items-center gap-3">
+          <Input
+            id="color"
+            name="color"
+            type="color"
+            value={formData.color}
+            onChange={handleChange}
+            className="w-16 h-10 p-1 border rounded cursor-pointer"
+          />
+          <div className="flex items-center gap-2">
+            <div
+              className="w-6 h-6 rounded-full border-2 border-gray-300"
+              style={{ backgroundColor: formData.color }}
+            />
+            <span className="text-sm font-mono text-gray-600">{formData.color.toUpperCase()}</span>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-4">
@@ -369,7 +433,6 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
             required
           />
         </div>
-
         <div className="space-y-2">
           <Label htmlFor="irpf_rate">IRPF (%)</Label>
           <Input
@@ -382,7 +445,6 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
             onChange={handleChange}
           />
         </div>
-
         <div className="space-y-2">
           <Label htmlFor="retention_rate">Retención (%)</Label>
           <Input
@@ -408,7 +470,7 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
             Cancelar
           </Button>
         )}
-        <Button type="submit" disabled={isLoading}>
+        <Button type="submit" disabled={isLoading || selectedUsers.length === 0}>
           {isLoading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />

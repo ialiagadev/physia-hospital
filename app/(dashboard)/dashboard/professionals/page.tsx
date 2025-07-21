@@ -4,7 +4,7 @@ import type React from "react"
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
-import { Plus, Users, Mail, Calendar, Shield, RefreshCw, Edit2, Info } from "lucide-react"
+import { Plus, Users, Mail, Calendar, Shield, RefreshCw, Edit2, Info, AlertTriangle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -299,7 +299,6 @@ export default function ProfessionalsPage() {
               : "Lista de profesionales de tu organización"}
           </p>
         </div>
-
         {profile?.role === "admin" && (
           <Dialog
             open={showCreateUserModal}
@@ -406,6 +405,19 @@ export default function ProfessionalsPage() {
                               El profesional recibirá un email con un enlace para acceder y establecer su contraseña.
                             </p>
                           </div>
+                          {/* NUEVO AVISO SOBRE SERVICIOS */}
+                          <div className="bg-amber-50 p-2 rounded border border-amber-200">
+                            <div className="flex items-start gap-2">
+                              <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                              <div>
+                                <p className="text-amber-800 font-medium text-xs">⚠️ Recordatorio importante</p>
+                                <p className="text-xs text-amber-700">
+                                  No olvides asignar los servicios correspondientes a este profesional en la sección de
+                                  configuración.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </AlertDescription>
@@ -426,7 +438,18 @@ export default function ProfessionalsPage() {
         )}
       </div>
 
-      {/* Resto del componente igual... */}
+      {/* OPCIÓN ALTERNATIVA: Aviso general en la parte superior */}
+      {profile?.role === "admin" && (
+        <Alert className="border-amber-200 bg-amber-50">
+          <AlertTriangle className="h-4 w-4 text-amber-600" />
+          <AlertDescription className="text-amber-800">
+            <strong>Recordatorio:</strong> Después de crear nuevos profesionales, asegúrate de asignarles los servicios
+            correspondientes en la sección de configuración para que puedan acceder a todas las funcionalidades
+            necesarias.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Sección de información de roles */}
       <Card className="bg-blue-50 border-blue-200">
         <CardHeader>

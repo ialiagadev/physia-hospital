@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import {
   Dialog,
   DialogContent,
@@ -19,9 +19,9 @@ import { cn } from "@/lib/utils"
 import { useConsultations } from "@/hooks/use-consultations"
 import type { GroupActivity } from "@/hooks/use-group-activities"
 import { useServices } from "@/hooks/use-services"
-import { useUsers } from "@/hooks/use-users"
+import { useUserServices } from "../services/use-user-services"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AlertTriangle, Clock, Users, Palette, RotateCcw } from "lucide-react"
+import { AlertTriangle, Clock, Users, Palette, RotateCcw, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { useAppointmentConflicts } from "@/hooks/use-appointment-conflicts"
 import { RecurrenceConfigComponent } from "@/components/recurrence-config"
@@ -66,7 +66,7 @@ export function GroupActivityFormModal({
 }: GroupActivityFormModalProps) {
   const { consultations } = useConsultations(organizationId)
   const { services, loading: servicesLoading } = useServices(organizationId)
-  const { getUsersByService } = useUsers(organizationId)
+  const { getServicesByUser, loading: userServicesLoading, error: userServicesError } = useUserServices(organizationId)
 
   const [formData, setFormData] = useState({
     name: "",
@@ -82,9 +82,8 @@ export function GroupActivityFormModal({
     recurrence: null as any,
   })
 
-  const [filteredProfessionals, setFilteredProfessionals] = useState<any[]>([])
+  const [filteredServices, setFilteredServices] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
-  const [showCalendar, setShowCalendar] = useState(false)
   const [recurrenceEnabled, setRecurrenceEnabled] = useState(false)
 
   const isEditing = !!activity
@@ -128,36 +127,45 @@ export function GroupActivityFormModal({
     }
   }, [activity])
 
-  useEffect(() => {
-    const updateProfessionals = async () => {
-      if (formData.service_id) {
-        const serviceUsers = await getUsersByService(Number(formData.service_id))
-        setFilteredProfessionals(serviceUsers)
-      } else {
-        // Si no hay servicio seleccionado, mostrar todos los profesionales
-        const allProfessionals = users.filter((user) => user.type === 1)
-        setFilteredProfessionals(allProfessionals)
+  // ✅ MEMOIZAR LA FUNCIÓN DE ACTUALIZACIÓN DE SERVICIOS
+  const updateServices = useCallback(
+    async (professionalId: string) => {
+      if (!professionalId) {
+        setFilteredServices([])
+        return
       }
-    }
-    updateProfessionals()
-  }, [formData.service_id, getUsersByService, users])
 
-  // ✅ VERIFICACIÓN DE CONFLICTOS MEJORADA - INCLUIR ACTIVIDADES GRUPALES
+      try {
+        const professionalServices = await getServicesByUser(professionalId)
+        setFilteredServices(professionalServices)
+      } catch (error) {
+        console.error("Error fetching professional services:", error)
+        setFilteredServices([])
+        toast.error("Error al cargar los servicios del profesional")
+      }
+    },
+    [getServicesByUser],
+  )
+
+  // ✅ OBTENER SERVICIOS DEL PROFESIONAL SELECCIONADO - ARREGLADO
+  useEffect(() => {
+    updateServices(formData.professional_id)
+  }, [formData.professional_id, updateServices])
+
+  // ✅ VERIFICACIÓN DE CONFLICTOS MEJORADA
   useEffect(() => {
     if (formData.date && formData.start_time && formData.end_time && formData.professional_id) {
       const timeoutId = setTimeout(() => {
-        // Calcular duración usando la función auxiliar
         const duration = calculateDurationInMinutes(formData.start_time, formData.end_time)
 
-        // Solo verificar conflictos si la duración es válida
         if (duration > 0) {
           checkConflicts(
-            formData.date, // string
-            formData.start_time, // string
-            duration, // number (minutos)
-            formData.professional_id, // string
-            undefined, // excludeAppointmentId - no aplica para actividades grupales
-            isEditing ? activity?.id : undefined, // ✅ NUEVO: excludeGroupActivityId
+            formData.date,
+            formData.start_time,
+            duration,
+            formData.professional_id,
+            undefined,
+            isEditing ? activity?.id : undefined,
           )
         }
       }, 500)
@@ -171,25 +179,25 @@ export function GroupActivityFormModal({
     formData.professional_id,
     checkConflicts,
     isEditing,
-    activity?.id, // ✅ AGREGAR como dependencia
+    activity?.id,
   ])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    // Validaciones mejoradas
+    // Validaciones
     if (!formData.name.trim()) {
       toast.error("El nombre de la actividad es obligatorio")
       return
     }
 
-    if (!formData.service_id) {
-      toast.error("Debe seleccionar un servicio")
+    if (!formData.professional_id) {
+      toast.error("Debe seleccionar un profesional")
       return
     }
 
-    if (!formData.professional_id) {
-      toast.error("Debe seleccionar un profesional")
+    if (!formData.service_id) {
+      toast.error("Debe seleccionar un servicio")
       return
     }
 
@@ -203,7 +211,6 @@ export function GroupActivityFormModal({
       return
     }
 
-    // Verificar conflictos antes de enviar
     if (conflicts.length > 0) {
       toast.error("Hay conflictos de horario. Por favor, revise las citas existentes.")
       return
@@ -214,7 +221,7 @@ export function GroupActivityFormModal({
       const submitData = {
         ...formData,
         service_id: Number(formData.service_id),
-        date: formData.date, // Mantener como string
+        date: formData.date,
         consultation_id: formData.consultation_id === "none" ? null : formData.consultation_id || null,
         recurrence: recurrenceEnabled && formData.recurrence ? formData.recurrence : null,
       }
@@ -234,7 +241,6 @@ export function GroupActivityFormModal({
     setFormData((prev) => {
       const newData = { ...prev, [field]: value }
 
-      // Auto-adjust end time if start time changes
       if (field === "start_time") {
         const [hours, minutes] = value.split(":").map(Number)
         const endHours = hours + 1
@@ -253,7 +259,6 @@ export function GroupActivityFormModal({
     }))
   }
 
-  // Función para resetear a color por defecto
   const resetToDefaultColor = () => {
     setFormData((prev) => ({ ...prev, color: "#3B82F6" }))
   }
@@ -286,24 +291,55 @@ export function GroupActivityFormModal({
             />
           </div>
 
-          {/* Service Selection */}
+          {/* Professional - PRIMERO */}
+          <div className="space-y-2">
+            <Label>Profesional responsable *</Label>
+            <Select
+              value={formData.professional_id}
+              onValueChange={(value) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  professional_id: value,
+                  service_id: "", // Reset service when professional changes
+                }))
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar profesional" />
+              </SelectTrigger>
+              <SelectContent>
+                {professionals.map((professional) => (
+                  <SelectItem key={professional.id} value={professional.id}>
+                    {professional.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Service Selection - SEGUNDO */}
           <div className="space-y-2">
             <Label htmlFor="service">Servicio *</Label>
             <Select
               value={formData.service_id}
-              onValueChange={(value) => {
-                setFormData((prev) => ({
-                  ...prev,
-                  service_id: value,
-                  professional_id: "", // Reset professional when service changes
-                }))
-              }}
+              onValueChange={(value) => setFormData((prev) => ({ ...prev, service_id: value }))}
+              disabled={!formData.professional_id || userServicesLoading}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Seleccionar servicio" />
+                <SelectValue
+                  placeholder={
+                    !formData.professional_id
+                      ? "Primero seleccione un profesional"
+                      : userServicesLoading
+                        ? "Cargando servicios..."
+                        : filteredServices.length === 0
+                          ? "No hay servicios disponibles"
+                          : "Seleccionar servicio"
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
-                {services.map((service) => (
+                {filteredServices.map((service) => (
                   <SelectItem key={service.id} value={service.id.toString()}>
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 rounded-full" style={{ backgroundColor: service.color }} />
@@ -314,6 +350,27 @@ export function GroupActivityFormModal({
                 ))}
               </SelectContent>
             </Select>
+
+            {/* Loading indicator */}
+            {userServicesLoading && formData.professional_id && (
+              <div className="flex items-center gap-2 text-sm text-blue-600">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Cargando servicios del profesional...
+              </div>
+            )}
+
+            {/* Error message */}
+            {userServicesError && <p className="text-sm text-red-600">{userServicesError}</p>}
+
+            {/* Status messages */}
+            {formData.professional_id && !userServicesLoading && filteredServices.length === 0 && (
+              <p className="text-sm text-amber-600">Este profesional no tiene servicios asignados</p>
+            )}
+            {formData.professional_id && !userServicesLoading && filteredServices.length > 0 && (
+              <p className="text-sm text-blue-600">
+                {filteredServices.length} servicio(s) disponible(s) para este profesional
+              </p>
+            )}
           </div>
 
           {/* Description */}
@@ -328,7 +385,7 @@ export function GroupActivityFormModal({
             />
           </div>
 
-          {/* Date - Simple date input */}
+          {/* Date */}
           <div className="space-y-2">
             <Label htmlFor="date">Fecha *</Label>
             <Input
@@ -341,7 +398,7 @@ export function GroupActivityFormModal({
             />
           </div>
 
-          {/* Time - Improved with icons */}
+          {/* Time */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="start_time">Hora de inicio *</Label>
@@ -373,40 +430,7 @@ export function GroupActivityFormModal({
             </div>
           </div>
 
-          {/* Professional */}
-          <div className="space-y-2">
-            <Label>Profesional responsable *</Label>
-            <Select
-              value={formData.professional_id}
-              onValueChange={(value) => setFormData((prev) => ({ ...prev, professional_id: value }))}
-              disabled={filteredProfessionals.length === 0}
-            >
-              <SelectTrigger>
-                <SelectValue
-                  placeholder={
-                    filteredProfessionals.length === 0 ? "No hay profesionales disponibles" : "Seleccionar profesional"
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {filteredProfessionals.map((professional) => (
-                  <SelectItem key={professional.id} value={professional.id}>
-                    {professional.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {formData.service_id && filteredProfessionals.length === 0 && (
-              <p className="text-sm text-amber-600">No hay profesionales asignados a este servicio</p>
-            )}
-            {formData.service_id && filteredProfessionals.length > 0 && (
-              <p className="text-sm text-blue-600">
-                {filteredProfessionals.length} profesional(es) disponible(s) para este servicio
-              </p>
-            )}
-          </div>
-
-          {/* Alertas de conflictos - MEJORADO PARA MOSTRAR TIPOS */}
+          {/* Conflicts Alert */}
           {conflicts.length > 0 && (
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
@@ -465,7 +489,7 @@ export function GroupActivityFormModal({
             </Select>
           </div>
 
-          {/* Max Participants - Improved with icon */}
+          {/* Max Participants */}
           <div className="space-y-2">
             <Label htmlFor="max_participants">Máximo de participantes *</Label>
             <div className="relative">
@@ -485,14 +509,13 @@ export function GroupActivityFormModal({
             </div>
           </div>
 
-          {/* Color Picker - NUEVA IMPLEMENTACIÓN */}
+          {/* Color Picker */}
           <div className="space-y-3">
             <Label className="flex items-center gap-2">
               <Palette className="h-4 w-4" />
               Color de la actividad
             </Label>
 
-            {/* Color Picker Principal */}
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-3">
                 <Input
@@ -511,7 +534,6 @@ export function GroupActivityFormModal({
                 </div>
               </div>
 
-              {/* Botón para resetear */}
               <Button
                 type="button"
                 variant="outline"
@@ -524,7 +546,6 @@ export function GroupActivityFormModal({
               </Button>
             </div>
 
-            {/* Colores rápidos predefinidos */}
             <div className="space-y-2">
               <Label className="text-xs text-gray-500">Colores rápidos:</Label>
               <div className="flex flex-wrap gap-2">
@@ -538,7 +559,7 @@ export function GroupActivityFormModal({
                         ? "border-gray-900 ring-2 ring-gray-400 ring-offset-1"
                         : "border-gray-300 hover:border-gray-500",
                     )}
-                    style={{ backgroundColor: option.value }} // ✅ Cambiar option.color por option.value
+                    style={{ backgroundColor: option.value }}
                     title={option.label}
                     onClick={() => setFormData((prev) => ({ ...prev, color: option.value }))}
                   />
@@ -547,7 +568,7 @@ export function GroupActivityFormModal({
             </div>
           </div>
 
-          {/* Recurrencia - Solo para nuevas actividades */}
+          {/* Recurrence */}
           {!isEditing && (
             <div>
               <RecurrenceConfigComponent
