@@ -1,10 +1,10 @@
 "use client"
+
 import Link from "next/link"
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
 
 export default function OrganizationsPage() {
   const [organizations, setOrganizations] = useState<any[]>([])
@@ -95,10 +95,7 @@ export default function OrganizationsPage() {
       </div>
 
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-        
-        </div>
-
+        <div className="flex items-center justify-between"></div>
         <div className="rounded-md border">
           <Table>
             <TableHeader>
@@ -107,31 +104,24 @@ export default function OrganizationsPage() {
                 <TableHead>CIF/NIF</TableHead>
                 <TableHead>Ciudad</TableHead>
                 <TableHead>Email</TableHead>
-                <TableHead>Estado</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {organizations && organizations.length > 0 ? (
                 organizations.map((org) => (
-                  <TableRow key={org.id}>
-                    <TableCell className="font-medium">{org.name}</TableCell>
-                    <TableCell>{org.tax_id}</TableCell>
-                    <TableCell>{org.city || "-"}</TableCell>
-                    <TableCell>{org.email || "-"}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={org.active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}
-                      >
-                        {org.active ? "Activa" : "Inactiva"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="sm" asChild>
-                        <Link href={`/dashboard/organizations/${org.id}`}>Ver</Link>
-                      </Button>
-                    </TableCell>
+                  <TableRow key={org.id} className="cursor-pointer hover:bg-muted/50 transition-colors">
+                    <Link href={`/dashboard/organizations/${org.id}`} className="contents">
+                      <TableCell className="font-medium">{org.name}</TableCell>
+                      <TableCell>{org.tax_id}</TableCell>
+                      <TableCell>{org.city || "-"}</TableCell>
+                      <TableCell>{org.email || "-"}</TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="sm">
+                          Ver
+                        </Button>
+                      </TableCell>
+                    </Link>
                   </TableRow>
                 ))
               ) : (
