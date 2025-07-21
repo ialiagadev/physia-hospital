@@ -7,9 +7,8 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { modernSupabase } from "@/lib/supabase/modern-client"
-import { Loader2 } from "lucide-react"
+import { Loader2, CheckCircle } from "lucide-react"
 
 export default function RegisterPage() {
   const [email, setEmail] = useState("")
@@ -93,132 +92,168 @@ export default function RegisterPage() {
 
   if (success) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Card className="w-[400px]">
-          <CardHeader>
-            <CardTitle className="text-2xl text-center text-green-600">¡Cuenta creada!</CardTitle>
-          </CardHeader>
-          <CardContent className="text-center space-y-4">
-            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
-              <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <p className="text-gray-600">Hemos enviado un email de confirmación a:</p>
-            <p className="font-medium text-gray-900">{email}</p>
-            <p className="text-sm text-gray-500">
-              Haz clic en el enlace del email para confirmar tu cuenta. Una vez confirmada, crearemos automáticamente tu
-              organización <strong>{organizationName}</strong>.
+      <div className="min-h-screen bg-white flex items-center justify-center p-4">
+        <div className="max-w-md w-full text-center space-y-8">
+          <div className="w-32 h-32 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+            <CheckCircle className="w-16 h-16 text-green-600" />
+          </div>
+
+          <div className="space-y-4">
+            <h1 className="text-2xl font-semibold text-gray-900">¡Cuenta creada!</h1>
+            <p className="text-gray-600">
+              Revisa tu email <span className="font-medium text-gray-900">{email}</span> para confirmar tu cuenta
             </p>
-            <div className="pt-4 space-y-2">
-              <Link href="/login" className="text-blue-600 hover:underline block">
-                Ir al login
-              </Link>
-              <button
-                onClick={() => {
-                  setSuccess(false)
-                  setEmail("")
-                  setPassword("")
-                  setName("")
-                  setOrganizationName("")
-                  setError("")
-                }}
-                className="text-gray-600 hover:underline text-sm"
-              >
-                Registrar otra cuenta
-              </button>
-            </div>
-          </CardContent>
-        </Card>
+          </div>
+
+          <div className="space-y-3">
+            <Link
+              href="/login"
+              className="block w-full py-3 px-4 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-all duration-200 font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+            >
+              Ir al login
+            </Link>
+            <button
+              onClick={() => {
+                setSuccess(false)
+                setEmail("")
+                setPassword("")
+                setName("")
+                setOrganizationName("")
+                setError("")
+              }}
+              className="block w-full py-3 px-4 text-gray-600 hover:text-gray-900 transition-colors"
+            >
+              Registrar otra cuenta
+            </button>
+          </div>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <Card className="w-[400px]">
-        <CardHeader>
-          <CardTitle className="text-2xl text-center">Crear cuenta</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {error && (
-            <div className="p-4 mb-4 text-sm text-red-800 rounded-lg bg-red-50" role="alert">
-              <span className="font-medium">Error:</span> {error}
+    <div className="min-h-screen bg-white">
+      {/* Header con alegría */}
+      <div className="text-center pt-16 pb-12">
+        <h1 className="text-5xl font-bold bg-gradient-to-r from-purple-600 via-purple-700 to-purple-800 bg-clip-text text-transparent tracking-tight">
+          ¡Bienvenido a Physia! ✨
+        </h1>
+      </div>
+
+      <div className="flex items-center justify-center px-4 pb-12">
+        <div className="w-full max-w-6xl grid lg:grid-cols-2 gap-20 items-center">
+          {/* Imagen - Protagonista */}
+          <div className="flex justify-center lg:justify-end order-2 lg:order-1">
+            <div className="w-full max-w-lg">
+              <img src="/images/physia-mascot.png" alt="Physia" className="w-full h-auto" />
             </div>
-          )}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email *</Label>
-              <Input
-                id="email"
-                placeholder="tu@email.com"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                disabled={isLoading}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Contraseña *</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Mínimo 6 caracteres"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={6}
-                disabled={isLoading}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="name">Tu nombre *</Label>
-              <Input
-                id="name"
-                type="text"
-                placeholder="Juan Pérez"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                disabled={isLoading}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="organizationName">Nombre de tu empresa *</Label>
-              <Input
-                id="organizationName"
-                type="text"
-                placeholder="Mi Empresa S.L."
-                value={organizationName}
-                onChange={(e) => setOrganizationName(e.target.value)}
-                required
-                disabled={isLoading}
-              />
-            </div>
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={isLoading || !email || !password || !name || !organizationName}
-            >
-              {isLoading ? (
-                <div className="flex items-center">
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Creando cuenta...
-                </div>
-              ) : (
-                "Crear cuenta"
-              )}
-            </Button>
-          </form>
-          <div className="mt-4 text-center text-sm">
-            ¿Ya tienes cuenta?{" "}
-            <Link href="/login" className="text-blue-600 hover:underline">
-              Inicia sesión
-            </Link>
           </div>
-        </CardContent>
-      </Card>
+
+          {/* Formulario Integrado */}
+          <div className="flex justify-center lg:justify-start order-1 lg:order-2">
+            <div className="w-full max-w-sm">
+              <div className="mb-8">
+                <h2 className="text-2xl font-semibold text-gray-900 mb-2">Crear cuenta</h2>
+              </div>
+
+              {error && (
+                <div className="mb-6 p-4 text-sm text-red-600 bg-red-50 rounded-xl border border-red-100">{error}</div>
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="space-y-2">
+                  <Label htmlFor="name" className="text-sm font-medium text-gray-700">
+                    Nombre completo
+                  </Label>
+                  <Input
+                    id="name"
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
+                    disabled={isLoading}
+                    className="h-12 px-4 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:ring-0 transition-all duration-200 bg-white hover:border-gray-300"
+                    placeholder="Dr. Juan Pérez"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="email" className="text-sm font-medium text-gray-700">
+                    Correo electrónico
+                  </Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    disabled={isLoading}
+                    className="h-12 px-4 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:ring-0 transition-all duration-200 bg-white hover:border-gray-300"
+                    placeholder="tu@email.com"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="password" className="text-sm font-medium text-gray-700">
+                    Contraseña
+                  </Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    disabled={isLoading}
+                    className="h-12 px-4 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:ring-0 transition-all duration-200 bg-white hover:border-gray-300"
+                    placeholder="Mínimo 6 caracteres"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="organizationName" className="text-sm font-medium text-gray-700">
+                    Nombre de tu clínica
+                  </Label>
+                  <Input
+                    id="organizationName"
+                    type="text"
+                    value={organizationName}
+                    onChange={(e) => setOrganizationName(e.target.value)}
+                    required
+                    disabled={isLoading}
+                    className="h-12 px-4 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:ring-0 transition-all duration-200 bg-white hover:border-gray-300"
+                    placeholder="Clínica San Rafael"
+                  />
+                </div>
+
+                <Button
+                  type="submit"
+                  className="w-full h-12 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-semibold rounded-xl transition-all duration-200 transform hover:-translate-y-0.5 mt-8"
+                  disabled={isLoading || !email || !password || !name || !organizationName}
+                >
+                  {isLoading ? (
+                    <div className="flex items-center">
+                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                      Creando cuenta...
+                    </div>
+                  ) : (
+                    "Crear cuenta"
+                  )}
+                </Button>
+              </form>
+
+              <div className="mt-8 text-center">
+                <p className="text-sm text-gray-500">
+                  ¿Ya tienes cuenta?{" "}
+                  <Link href="/login" className="text-purple-600 hover:text-purple-700 font-semibold transition-colors">
+                    Inicia sesión
+                  </Link>
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

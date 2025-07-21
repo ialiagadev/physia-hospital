@@ -61,30 +61,30 @@ function LoginForm() {
   return (
     <div className="min-h-screen bg-white flex items-center justify-center px-4 sm:px-6 lg:px-8">
       <div className="max-w-5xl w-full">
-        <div className="flex items-center justify-center lg:justify-between lg:gap-16 xl:gap-24">
+        <div className="flex items-center justify-center lg:justify-center lg:gap-8">
           {/* Left Side - Login Form */}
-          <div className="w-full max-w-md">
+          <div className="w-full max-w-lg">
             {/* Logo centrado arriba */}
             <div className="flex justify-center mb-8">
               <Image
                 src="/images/physia-logo.png"
                 alt="PHYSIA Logo"
-                width={100}
-                height={100}
-                className="w-20 h-20 lg:w-24 lg:h-24"
+                width={150}
+                height={150}
+                className="w-32 h-32 lg:w-36 lg:h-36"
                 priority
               />
             </div>
 
             <div className="mb-8 text-center">
-              <h1 className="text-4xl font-bold text-gray-900 mb-2">Sign in</h1>
-              <p className="text-gray-600 text-sm">Welcome back to PHYSIA Medical System</p>
+              <h1 className="text-5xl font-bold text-gray-900 mb-2">Iniciar Sesión</h1>
+              <p className="text-gray-600 text-sm">Bienvenido de vuelta al Sistema Médico PHYSIA</p>
             </div>
 
-            <form onSubmit={handleLogin} className="space-y-6">
+            <form onSubmit={handleLogin} className="space-y-8">
               <div>
                 <Label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                  Email address
+                  Correo electrónico
                 </Label>
                 <Input
                   id="email"
@@ -92,14 +92,14 @@ function LoginForm() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="w-full h-12 px-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
+                  className="w-full h-14 px-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
                   placeholder=""
                 />
               </div>
 
               <div>
                 <Label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-                  Password
+                  Contraseña
                 </Label>
                 <Input
                   id="password"
@@ -107,14 +107,14 @@ function LoginForm() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="w-full h-12 px-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
+                  className="w-full h-14 px-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white"
                   placeholder=""
                 />
               </div>
 
               <div className="text-left">
                 <Link href="/forgot-password" className="text-sm text-purple-600 hover:text-purple-700 font-medium">
-                  Forgot password?
+                  ¿Olvidaste tu contraseña?
                 </Link>
               </div>
 
@@ -133,38 +133,38 @@ function LoginForm() {
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full h-12 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors duration-200"
+                className="w-full h-14 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors duration-200"
               >
                 {loading ? (
                   <div className="flex items-center justify-center">
                     <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                    Signing in...
+                    Iniciando sesión...
                   </div>
                 ) : (
-                  "Sign in"
+                  "Iniciar Sesión"
                 )}
               </Button>
             </form>
 
             <div className="mt-8 text-center">
               <p className="text-sm text-gray-600">
-                Don't have an account?{" "}
+                ¿No tienes una cuenta?{" "}
                 <a href="/register" className="text-purple-600 hover:text-purple-700 font-medium">
-                  Sign up
+                  Regístrate
                 </a>
               </p>
             </div>
           </div>
 
-          {/* Right Side - Illustration */}
+          {/* Right Side - Mascot Illustration */}
           <div className="hidden lg:block lg:flex-shrink-0">
             <div className="flex justify-center items-center">
               <Image
-                src="/images/medical-ai-illustration.png"
-                alt="Medical AI System Illustration"
-                width={450}
-                height={450}
-                className="w-full max-w-md h-auto"
+                src="/images/mascota-physia2.png"
+                alt="Mascota PHYSIA"
+                width={600}
+                height={600}
+                className="w-full max-w-lg h-auto"
                 priority
               />
             </div>
