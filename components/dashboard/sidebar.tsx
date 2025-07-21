@@ -166,6 +166,17 @@ export function Sidebar({ className }: SidebarProps) {
       hoverColor: "bg-emerald-50/50",
       activeColor: "#10B981",
     },
+    {
+      id: "expenses",
+      label: "Gastos",
+      href: "/dashboard/facturacion/gastos",
+      icon: <ClipboardList />,
+      matchPattern: "/dashboard/facturacion/gastos",
+      iconColor: "#F59E0B",
+      bgColor: "bg-amber-50",
+      hoverColor: "bg-amber-50/50",
+      activeColor: "#F59E0B",
+    },
    
   
     {
@@ -179,6 +190,8 @@ export function Sidebar({ className }: SidebarProps) {
       hoverColor: "bg-rose-50/50",
       activeColor: "#F43F5E",
     }
+
+  
    
      
   ]
