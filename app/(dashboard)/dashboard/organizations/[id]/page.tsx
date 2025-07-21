@@ -453,7 +453,6 @@ export default function EditOrganizationPage({ params }: { params: { id: string 
       <Tabs defaultValue="general" className="space-y-6">
         <TabsList>
           <TabsTrigger value="general">Información General</TabsTrigger>
-          <TabsTrigger value="centers">Centros</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general">
