@@ -41,6 +41,14 @@ export default function FichajePage() {
   const [startDate, setStartDate] = useState<string | undefined>()
   const [endDate, setEndDate] = useState<string | undefined>()
 
+  // Añadir un estado simple para controlar la actualización de registros:
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  // Crear una función simple para refrescar los datos:
+  const refreshWorkSessions = () => {
+    setRefreshKey((prev) => prev + 1)
+  }
+
   // Cargar usuarios de la organización si es admin
   useEffect(() => {
     const loadUsers = async () => {
@@ -87,7 +95,7 @@ export default function FichajePage() {
       }
     }
     loadWorkSessions()
-  }, [userProfile, currentPage, pageSize, isAdmin, selectedUser, startDate, endDate])
+  }, [userProfile, currentPage, pageSize, isAdmin, selectedUser, startDate, endDate, refreshKey])
 
   const handlePageChange = (page: number, newPageSize: number) => {
     setCurrentPage(page)
@@ -231,7 +239,7 @@ export default function FichajePage() {
 
             {/* Reloj de fichaje */}
             <div className={isAdmin ? "lg:col-span-2" : "lg:col-span-3"}>
-              <TimeClockContainer selectedUser={selectedUser} />
+              <TimeClockContainer selectedUser={selectedUser} onClockSuccess={refreshWorkSessions} />
             </div>
           </div>
         </TabsContent>

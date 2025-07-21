@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase/client"
 import type { User } from "@supabase/supabase-js"
+import { setAuditContext } from "@/lib/actions/time-tracking-audit"
 
 interface UserProfile {
   id: string
@@ -23,8 +24,8 @@ interface TimeEntry {
 interface WorkSession {
   id: string
   work_date: string
-  local_clock_in: string | null // Mantener como string para compatibilidad
-  local_clock_out: string | null // Mantener como string para compatibilidad
+  local_clock_in: string | null
+  local_clock_out: string | null
   total_hours: number | null
   status: string | null
   user_name: string | null
@@ -61,7 +62,6 @@ export function useTimeTracking() {
       } = await supabase.auth.getUser()
 
       if (authError) throw authError
-
       setUser(user)
 
       if (user) {
@@ -73,7 +73,6 @@ export function useTimeTracking() {
 
         if (profileError) throw profileError
         setUserProfile(profile)
-
         await getLastEntry(user.id)
       }
     } catch (err) {
@@ -83,22 +82,30 @@ export function useTimeTracking() {
     }
   }
 
-  const getLastEntry = async (userId?: string) => {
-    if (!user && !userId) return null
-
-    const targetUserId = userId || user?.id
-    if (!targetUserId) return null
+  const getLastEntry = async (userId?: string): Promise<TimeEntry | null> => {
+    // Validar que el userId sea una cadena válida y no esté vacía
+    if (!userId || typeof userId !== "string" || userId.trim() === "") {
+      console.log("getLastEntry: ID de usuario inválido o vacío")
+      return null
+    }
 
     try {
       const { data, error } = await supabase
         .from("time_entries_with_user")
         .select("*")
-        .eq("user_id", targetUserId)
+        .eq("user_id", userId)
         .order("timestamp", { ascending: false })
         .limit(1)
         .single()
 
-      if (error && error.code !== "PGRST116") throw error
+      if (error) {
+        // PGRST116 es el código cuando no hay resultados, no es un error real
+        if (error.code !== "PGRST116") {
+          console.error("Error getting last entry:", error)
+        }
+        return null
+      }
+
       setLastEntry(data)
       return data
     } catch (err) {
@@ -107,11 +114,45 @@ export function useTimeTracking() {
     }
   }
 
-  const clockInOut = async (userId: string, organizationId: number, entryType: "entrada" | "salida") => {
+  const clockInOut = async (
+    userId: string,
+    organizationId: number,
+    entryType: "entrada" | "salida",
+    isAdminAction = false,
+  ) => {
+    // Validar que el userId sea una cadena válida y no esté vacía
+    if (!userId || typeof userId !== "string" || userId.trim() === "") {
+      return { success: false, error: "ID de usuario inválido" }
+    }
+
     setLoading(true)
     setError(null)
 
     try {
+      // Verificar el último entry para validar la secuencia
+      const lastEntry = await getLastEntry(userId)
+
+      // Validación de secuencia - mantener la validación pero permitir ciclos completos
+      if (entryType === "entrada" && lastEntry?.entry_type === "entrada") {
+        throw new Error("Ya tienes una entrada registrada. Debes fichar salida primero.")
+      }
+
+      if (entryType === "salida" && (!lastEntry || lastEntry.entry_type === "salida")) {
+        throw new Error("No tienes una entrada registrada. Debes fichar entrada primero.")
+      }
+
+      // Establecer el contexto de auditoría antes de la operación
+      if (user) {
+        await setAuditContext(user.id, {
+          isAdminAction,
+          reason: isAdminAction ? `Fichaje ${entryType} para usuario ${userId} por administrador` : undefined,
+          details: {
+            entry_type: entryType,
+            target_user_id: userId,
+          },
+        })
+      }
+
       const { data, error: insertError } = await supabase
         .from("time_entries")
         .insert({
@@ -119,12 +160,14 @@ export function useTimeTracking() {
           organization_id: organizationId,
           entry_type: entryType,
           timestamp: new Date().toISOString(),
+          notes: isAdminAction ? `Fichaje realizado por administrador: ${userProfile?.name || user?.email}` : null,
         })
         .select()
         .single()
 
       if (insertError) throw insertError
 
+      // Actualizar el último entry después de un fichaje exitoso
       await getLastEntry(userId)
 
       return { success: true, data }
@@ -137,7 +180,6 @@ export function useTimeTracking() {
     }
   }
 
-  // ✅ FUNCIÓN ACTUALIZADA: Ahora incluye notes
   const updateWorkSession = async (
     sessionId: string,
     updates: {
@@ -145,12 +187,25 @@ export function useTimeTracking() {
       clock_out_time?: string | null
       notes?: string | null
     },
+    reason?: string,
   ) => {
     if (!userProfile || userProfile.role !== "admin") {
       return { success: false, error: "Sin permisos de administrador" }
     }
 
     try {
+      // Establecer el contexto de auditoría antes de la operación
+      if (user) {
+        await setAuditContext(user.id, {
+          isAdminAction: true,
+          reason: reason || "Actualización manual de jornada por administrador",
+          details: {
+            session_id: sessionId,
+            updates,
+          },
+        })
+      }
+
       const { data, error } = await supabase
         .from("work_sessions")
         .update(updates)
@@ -168,12 +223,23 @@ export function useTimeTracking() {
     }
   }
 
-  const deleteWorkSession = async (sessionId: string) => {
+  const deleteWorkSession = async (sessionId: string, reason?: string) => {
     if (!userProfile || userProfile.role !== "admin") {
       return { success: false, error: "Sin permisos de administrador" }
     }
 
     try {
+      // Establecer el contexto de auditoría antes de la operación
+      if (user) {
+        await setAuditContext(user.id, {
+          isAdminAction: true,
+          reason: reason || "Eliminación manual de jornada por administrador",
+          details: {
+            session_id: sessionId,
+          },
+        })
+      }
+
       const { error } = await supabase
         .from("work_sessions")
         .delete()
@@ -189,18 +255,33 @@ export function useTimeTracking() {
     }
   }
 
-  const createWorkSession = async (sessionData: {
-    user_id: string
-    work_date: string
-    clock_in_time?: string | null
-    clock_out_time?: string | null
-    notes?: string | null
-  }) => {
+  const createWorkSession = async (
+    sessionData: {
+      user_id: string
+      work_date: string
+      clock_in_time?: string | null
+      clock_out_time?: string | null
+      notes?: string | null
+    },
+    reason?: string,
+  ) => {
     if (!userProfile || userProfile.role !== "admin") {
       return { success: false, error: "Sin permisos de administrador" }
     }
 
     try {
+      // Establecer el contexto de auditoría antes de la operación
+      if (user) {
+        await setAuditContext(user.id, {
+          isAdminAction: true,
+          reason: reason || "Creación manual de jornada por administrador",
+          details: {
+            user_id: sessionData.user_id,
+            work_date: sessionData.work_date,
+          },
+        })
+      }
+
       const { data, error } = await supabase
         .from("work_sessions")
         .insert({
@@ -271,7 +352,6 @@ export function useTimeTracking() {
     }
   }
 
-  // ✅ FUNCIÓN CORREGIDA: Excluir solo agentes de IA (type = 2)
   const getOrganizationUsers = async (): Promise<{ users: OrganizationUser[]; error?: string }> => {
     if (!userProfile || userProfile.role !== "admin") {
       return { users: [], error: "Sin permisos de administrador" }
@@ -282,7 +362,7 @@ export function useTimeTracking() {
         .from("users")
         .select("id, name, email, role, organization_id, created_at")
         .eq("organization_id", userProfile.organization_id)
-        .neq("type", 2) // ✅ EXCLUIR SOLO AGENTES DE IA (type = 2)
+        .neq("type", 2)
         .order("name")
 
       if (error) throw error
@@ -294,7 +374,11 @@ export function useTimeTracking() {
   }
 
   const refreshLastEntry = (userId?: string) => {
-    getLastEntry(userId)
+    if (userId) {
+      getLastEntry(userId)
+    } else if (user) {
+      getLastEntry(user.id)
+    }
   }
 
   return {
@@ -307,7 +391,7 @@ export function useTimeTracking() {
     isAdmin: userProfile?.role === "admin",
     canManageUsers: userProfile?.role === "admin",
     canViewReports: userProfile?.role === "admin" || userProfile?.role === "viewer",
-    // Funciones existentes
+    // Funciones principales
     getLastEntry,
     clockInOut,
     getWorkDays,
