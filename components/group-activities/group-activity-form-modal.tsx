@@ -21,7 +21,7 @@ import type { GroupActivity } from "@/hooks/use-group-activities"
 import { useServices } from "@/hooks/use-services"
 import { useUsers } from "@/hooks/use-users"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AlertTriangle, Clock, Users, Palette } from "lucide-react"
+import { AlertTriangle, Clock, Users, Palette, RotateCcw } from "lucide-react"
 import { toast } from "sonner"
 import { useAppointmentConflicts } from "@/hooks/use-appointment-conflicts"
 import { RecurrenceConfigComponent } from "@/components/recurrence-config"
@@ -39,22 +39,21 @@ interface GroupActivityFormModalProps {
 function calculateDurationInMinutes(startTime: string, endTime: string): number {
   const [startHours, startMinutes] = startTime.split(":").map(Number)
   const [endHours, endMinutes] = endTime.split(":").map(Number)
-
   const startTotalMinutes = startHours * 60 + startMinutes
   const endTotalMinutes = endHours * 60 + endMinutes
-
   return endTotalMinutes - startTotalMinutes
 }
 
-const colorOptions = [
-  { value: "#3B82F6", label: "Azul", color: "#3B82F6" },
-  { value: "#10B981", label: "Verde", color: "#10B981" },
-  { value: "#F59E0B", label: "Amarillo", color: "#F59E0B" },
-  { value: "#EF4444", label: "Rojo", color: "#EF4444" },
-  { value: "#8B5CF6", label: "Púrpura", color: "#8B5CF6" },
-  { value: "#06B6D4", label: "Cian", color: "#06B6D4" },
-  { value: "#84CC16", label: "Lima", color: "#84CC16" },
-  { value: "#F97316", label: "Naranja", color: "#F97316" },
+// Colores predefinidos para acceso rápido
+const quickColorOptions = [
+  { value: "#3B82F6", label: "Azul" },
+  { value: "#10B981", label: "Verde" },
+  { value: "#F59E0B", label: "Amarillo" },
+  { value: "#EF4444", label: "Rojo" },
+  { value: "#8B5CF6", label: "Púrpura" },
+  { value: "#06B6D4", label: "Cian" },
+  { value: "#84CC16", label: "Lima" },
+  { value: "#F97316", label: "Naranja" },
 ]
 
 export function GroupActivityFormModal({
@@ -87,6 +86,7 @@ export function GroupActivityFormModal({
   const [loading, setLoading] = useState(false)
   const [showCalendar, setShowCalendar] = useState(false)
   const [recurrenceEnabled, setRecurrenceEnabled] = useState(false)
+
   const isEditing = !!activity
 
   // Hook para detectar conflictos
@@ -139,7 +139,6 @@ export function GroupActivityFormModal({
         setFilteredProfessionals(allProfessionals)
       }
     }
-
     updateProfessionals()
   }, [formData.service_id, getUsersByService, users])
 
@@ -252,6 +251,11 @@ export function GroupActivityFormModal({
       ...prev,
       recurrence: config,
     }))
+  }
+
+  // Función para resetear a color por defecto
+  const resetToDefaultColor = () => {
+    setFormData((prev) => ({ ...prev, color: "#3B82F6" }))
   }
 
   // Filtrar solo profesionales médicos (type === 1)
@@ -481,26 +485,65 @@ export function GroupActivityFormModal({
             </div>
           </div>
 
-          {/* Color - Improved design */}
-          <div className="space-y-2">
+          {/* Color Picker - NUEVA IMPLEMENTACIÓN */}
+          <div className="space-y-3">
             <Label className="flex items-center gap-2">
               <Palette className="h-4 w-4" />
               Color de la actividad
             </Label>
-            <div className="flex flex-wrap gap-2">
-              {colorOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={cn(
-                    "w-8 h-8 rounded-full border-2 transition-all",
-                    formData.color === option.value ? "border-gray-900 scale-110" : "border-gray-300 hover:scale-105",
-                  )}
-                  style={{ backgroundColor: option.color }}
-                  title={option.label}
-                  onClick={() => setFormData((prev) => ({ ...prev, color: option.value }))}
+
+            {/* Color Picker Principal */}
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
+                <Input
+                  type="color"
+                  value={formData.color}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, color: e.target.value }))}
+                  className="w-12 h-10 p-1 border rounded cursor-pointer"
+                  title="Seleccionar color personalizado"
                 />
-              ))}
+                <div className="flex items-center gap-2">
+                  <div
+                    className="w-6 h-6 rounded-full border-2 border-gray-300"
+                    style={{ backgroundColor: formData.color }}
+                  />
+                  <span className="text-sm font-mono text-gray-600">{formData.color.toUpperCase()}</span>
+                </div>
+              </div>
+
+              {/* Botón para resetear */}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={resetToDefaultColor}
+                className="flex items-center gap-1 bg-transparent"
+              >
+                <RotateCcw className="h-3 w-3" />
+                Reset
+              </Button>
+            </div>
+
+            {/* Colores rápidos predefinidos */}
+            <div className="space-y-2">
+              <Label className="text-xs text-gray-500">Colores rápidos:</Label>
+              <div className="flex flex-wrap gap-2">
+                {quickColorOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={cn(
+                      "w-8 h-8 rounded-full border-2 transition-all hover:scale-110",
+                      formData.color === option.value
+                        ? "border-gray-900 ring-2 ring-gray-400 ring-offset-1"
+                        : "border-gray-300 hover:border-gray-500",
+                    )}
+                    style={{ backgroundColor: option.value }} // ✅ Cambiar option.color por option.value
+                    title={option.label}
+                    onClick={() => setFormData((prev) => ({ ...prev, color: option.value }))}
+                  />
+                ))}
+              </div>
             </div>
           </div>
 
