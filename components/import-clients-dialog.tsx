@@ -394,8 +394,8 @@ Marie Dubois,FR987654321,Rue de la Paix 45,75001,Paris,Ile-de-France,Francia,mar
               <Wand2 className="h-4 w-4" />
               <AlertDescription>
                 <strong>Importación inteligente:</strong> La IA detectará automáticamente las columnas, normalizará las
-                identificaciones fiscales (NIF/CIF/Tax ID), procesará fechas de nacimiento y género, y detectará
-                duplicados. Compatible con clientes nacionales e internacionales.
+                identificaciones fiscales (NIF/CIF/Tax ID) y detectará duplicados. 
+                Compatible con clientes nacionales e internacionales. ID fiscal y teléfono obligatorios.
               </AlertDescription>
             </Alert>
           </div>
