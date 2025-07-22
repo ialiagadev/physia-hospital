@@ -102,6 +102,22 @@ const isTimeInBreak = (timeInMinutes: number, userSchedules: WorkSchedule[]) => 
   })
 }
 
+// 🚀 NUEVA FUNCIÓN: Generar timeSlots por defecto cuando no hay horarios
+const generateDefaultTimeSlots = (intervaloTiempo: IntervaloTiempo): string[] => {
+  const slots: string[] = []
+  const startHour = 8 // 8:00 AM
+  const endHour = 18 // 6:00 PM
+
+  for (let hour = startHour; hour < endHour; hour++) {
+    for (let minute = 0; minute < 60; minute += intervaloTiempo) {
+      const timeString = `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`
+      slots.push(timeString)
+    }
+  }
+
+  return slots
+}
+
 export function HorarioViewDynamic({
   date,
   citas,
@@ -161,15 +177,41 @@ export function HorarioViewDynamic({
     )
   }, [professionalUsers, profesionalesFiltrados])
 
+  // 🚀 MODIFICADO: timeSlots ahora siempre tiene valores por defecto
   const timeSlots = useMemo(() => {
-    if (usuariosActivos.length === 0 || workSchedules.length === 0) return []
-    return generateTimeSlots(usuariosActivos, dayOfWeek, intervaloTiempo)
+    if (usuariosActivos.length === 0) {
+      return generateDefaultTimeSlots(intervaloTiempo)
+    }
+
+    if (workSchedules.length === 0) {
+      return generateDefaultTimeSlots(intervaloTiempo)
+    }
+
+    const generatedSlots = generateTimeSlots(usuariosActivos, dayOfWeek, intervaloTiempo)
+
+    // Si no se generaron slots (sin horarios configurados), usar por defecto
+    if (generatedSlots.length === 0) {
+      return generateDefaultTimeSlots(intervaloTiempo)
+    }
+
+    return generatedSlots
   }, [usuariosActivos, dayOfWeek, intervaloTiempo, workSchedules])
 
+  // 🚀 MODIFICADO: Calcular rango por defecto cuando no hay horarios
   const { start: startMinutes, end: endMinutes } = useMemo(() => {
-    if (usuariosActivos.length === 0) return { start: 0, end: 1440 }
-    return getCalendarTimeRange(usuariosActivos, dayOfWeek)
-  }, [usuariosActivos, dayOfWeek])
+    if (usuariosActivos.length === 0 || workSchedules.length === 0) {
+      return { start: timeToMinutes("08:00"), end: timeToMinutes("18:00") }
+    }
+
+    const range = getCalendarTimeRange(usuariosActivos, dayOfWeek)
+
+    // Si no hay rango válido, usar por defecto
+    if (range.start >= range.end) {
+      return { start: timeToMinutes("08:00"), end: timeToMinutes("18:00") }
+    }
+
+    return range
+  }, [usuariosActivos, dayOfWeek, workSchedules])
 
   const duracionDia = endMinutes - startMinutes
 
@@ -177,13 +219,11 @@ export function HorarioViewDynamic({
   useEffect(() => {
     // Verificar si tenemos todos los datos necesarios
     const hasRequiredData = users.length > 0 && profesionales.length > 0 && workSchedules.length >= 0
-
     if (hasRequiredData && isInitialLoad) {
       // Pequeño delay para asegurar que todos los cálculos se completen
       const timer = setTimeout(() => {
         setIsInitialLoad(false)
       }, 100)
-
       return () => clearTimeout(timer)
     }
   }, [users, profesionales, workSchedules, isInitialLoad])
@@ -285,6 +325,13 @@ export function HorarioViewDynamic({
     const normalizedTime = normalizeTimeFormat(hora)
     const timeInMinutes = timeToMinutes(normalizedTime)
 
+    // 🚀 MODIFICADO: Si no hay horarios configurados, permitir crear citas en horario por defecto
+    if (!hasAnyScheduleConfigured(profesionalId)) {
+      const defaultStart = timeToMinutes("08:00")
+      const defaultEnd = timeToMinutes("18:00")
+      return timeInMinutes >= defaultStart && timeInMinutes < defaultEnd
+    }
+
     // Verificar si está en horario de trabajo básico
     if (!isUserWorkingAt(user, dayOfWeek, timeInMinutes)) {
       return false
@@ -313,6 +360,7 @@ export function HorarioViewDynamic({
     if (!draggedCita) return
 
     setDragOverProfesional(profesionalId)
+
     const container = e.currentTarget as HTMLElement
     const rect = container.getBoundingClientRect()
     const y = e.clientY - rect.top
@@ -420,7 +468,14 @@ export function HorarioViewDynamic({
     const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
     if (!user) return []
 
-    const workingHours = getWorkingHoursForDay(user, dayOfWeek)
+    // 🚀 MODIFICADO: Si no tiene horarios configurados, usar horario por defecto
+    let workingHours
+    if (!hasAnyScheduleConfigured(profesionalId)) {
+      workingHours = [{ start: timeToMinutes("08:00"), end: timeToMinutes("18:00") }]
+    } else {
+      workingHours = getWorkingHoursForDay(user, dayOfWeek)
+    }
+
     const userSchedules = getUserWorkSchedulesForDay(user.id, dayOfWeek, workSchedules)
     const huecos: JSX.Element[] = []
 
@@ -433,7 +488,6 @@ export function HorarioViewDynamic({
 
       // Crear segmentos de tiempo entre descansos
       const segmentos: { start: number; end: number }[] = []
-
       if (descansos.length === 0) {
         // Sin descansos, todo el horario es un segmento
         segmentos.push({ start: hours.start, end: hours.end })
@@ -444,7 +498,6 @@ export function HorarioViewDynamic({
         )
 
         let inicioSegmento = hours.start
-
         for (const descanso of descansosOrdenados) {
           const inicioDescanso = timeToMinutes(descanso.start_time)
           const finDescanso = timeToMinutes(descanso.end_time)
@@ -657,26 +710,8 @@ export function HorarioViewDynamic({
     )
   }
 
-  // MEJORADO: Verificación más específica para mostrar el mensaje de sin horarios
-  if (timeSlots.length === 0 && !isInitialLoad) {
-    // Verificar si realmente no hay horarios configurados o si es un problema de datos
-    const hasAnySchedules = workSchedules.some((schedule) => schedule.is_active)
-    const hasFilteredProfessionals = profesionalesFiltrados.length > 0
-
-    if (!hasAnySchedules || !hasFilteredProfessionals) {
-      return (
-        <div className="h-full flex items-center justify-center">
-          <div className="text-center">
-            <h3 className="text-lg font-semibold mb-2">Sin horarios configurados</h3>
-            <p className="text-gray-600">
-              Los profesionales seleccionados no tienen horarios configurados para{" "}
-              {["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"][dayOfWeek]}.
-            </p>
-          </div>
-        </div>
-      )
-    }
-  }
+  // 🚀 REMOVIDO: La condición que impedía mostrar el grid cuando no había timeSlots
+  // Ahora timeSlots siempre tiene valores por defecto
 
   return (
     <div className="flex flex-col h-full">
@@ -692,8 +727,22 @@ export function HorarioViewDynamic({
 
               // Obtener usuario correspondiente
               const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesional.id)
-              const workingHours = user ? getWorkingHoursForDay(user, dayOfWeek) : []
-              const isWorkingToday = workingHours.length > 0
+
+              // 🚀 MODIFICADO: Calcular workingHours considerando horarios por defecto
+              let workingHours: { start: number; end: number }[]
+              let isWorkingToday: boolean
+
+              if (!hasAnyScheduleConfigured(profesional.id)) {
+                // Sin horarios configurados, usar horario por defecto
+                workingHours = [{ start: timeToMinutes("08:00"), end: timeToMinutes("18:00") }]
+                isWorkingToday = true
+              } else if (user) {
+                workingHours = getWorkingHoursForDay(user, dayOfWeek)
+                isWorkingToday = workingHours.length > 0
+              } else {
+                workingHours = []
+                isWorkingToday = false
+              }
 
               // Verificar vacaciones
               const isOnVacation = isProfessionalOnVacation(profesional.id)
@@ -753,10 +802,20 @@ export function HorarioViewDynamic({
                       isWorkingToday && !isOnVacation ? (e) => handleContainerClick(e, profesional.id) : undefined
                     }
                   >
-                    {!hasSchedules && !isOnVacation ? (
-                      // NUEVA SECCIÓN: Instrucciones de configuración
-                      <div className="flex items-center justify-center h-full p-6">
-                        <div className="text-center max-w-sm">
+                    {/* 🚀 MODIFICADO: Siempre mostrar el grid con las líneas de hora */}
+                    {/* Líneas de hora - SIEMPRE SE MUESTRAN */}
+                    {timeSlots.map((hora, index) => (
+                      <div
+                        key={hora}
+                        className="absolute w-full border-t border-gray-200"
+                        style={{ top: `${(index / (timeSlots.length - 1)) * 100}%` }}
+                      />
+                    ))}
+
+                    {/* 🚀 NUEVO: Overlay de instrucciones SOBRE el grid cuando no hay horarios */}
+                    {!hasSchedules && !isOnVacation && (
+                      <div className="absolute inset-0 bg-white bg-opacity-95 flex items-center justify-center z-20">
+                        <div className="text-center max-w-sm p-6">
                           <div className="text-4xl mb-4">⚙️</div>
                           <div className="text-lg font-semibold mb-4 text-gray-800">Configura los horarios</div>
                           <div className="space-y-3 text-sm text-gray-600 mb-6">
@@ -799,17 +858,19 @@ export function HorarioViewDynamic({
                           </div>
                         </div>
                       </div>
-                    ) : !isWorkingToday && !isOnVacation && hasSchedules ? (
-                      // Día libre (tiene horarios pero no trabaja hoy)
-                      <div className="flex items-center justify-center h-full text-gray-500">
+                    )}
+
+                    {!isWorkingToday && !isOnVacation && hasSchedules ? (
+                      // Día libre (tiene horarios pero no trabaja hoy) - SOBRE el grid
+                      <div className="absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center z-15">
                         <div className="text-center">
                           <div className="text-4xl mb-2">😴</div>
                           <div className="text-sm">Día libre</div>
                         </div>
                       </div>
                     ) : isOnVacation ? (
-                      // De vacaciones
-                      <div className="flex items-center justify-center h-full text-orange-600">
+                      // De vacaciones - SOBRE el grid
+                      <div className="absolute inset-0 bg-orange-50 bg-opacity-95 flex items-center justify-center z-15">
                         <div className="text-center p-4">
                           <div className="text-4xl mb-3">{getVacationIcon(vacationInfo?.type)}</div>
                           <div className="text-lg font-semibold mb-2">{getVacationLabel(vacationInfo?.type)}</div>
@@ -821,21 +882,13 @@ export function HorarioViewDynamic({
                         </div>
                       </div>
                     ) : (
+                      // Contenido normal cuando tiene horarios y trabaja
                       <>
-                        {/* Líneas de hora */}
-                        {timeSlots.map((hora, index) => (
-                          <div
-                            key={hora}
-                            className="absolute w-full border-t border-gray-200"
-                            style={{ top: `${(index / (timeSlots.length - 1)) * 100}%` }}
-                          />
-                        ))}
-
                         {/* Períodos de descanso - MEJORADOS PARA DESCANSOS PEQUEÑOS */}
-                        {descansos}
+                        {hasSchedules ? descansos : []}
 
-                        {/* Huecos libres - solo en horario de trabajo y sin vacaciones */}
-                        {huecosLibres}
+                        {/* Huecos libres - solo cuando hay horarios configurados */}
+                        {hasSchedules ? huecosLibres : []}
 
                         {/* Citas */}
                         <TooltipProvider>

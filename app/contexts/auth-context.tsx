@@ -41,9 +41,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const currentUserRef = useRef<User | null>(null)
 
   useEffect(() => {
+    console.log("🔄 AuthProvider iniciado")
+
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       const newUser = session?.user ?? null
+      console.log("📋 Sesión inicial:", newUser?.email || "sin usuario")
+
       setUser(newUser)
       currentUserRef.current = newUser
 
@@ -70,12 +74,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userChanged = (!previousUser && newUser) || (previousUser && !newUser) || previousUser?.id !== newUser?.id
 
       if (userChanged) {
+        console.log("🔄 Usuario cambió:", {
+          de: previousUser?.email || "null",
+          a: newUser?.email || "null",
+        })
+
         setUser(newUser)
         currentUserRef.current = newUser
 
         if (newUser && newUserId) {
           // Si es un usuario diferente, limpiar el perfil anterior inmediatamente
           if (newUserId !== previousUserId) {
+            console.log("🧹 Limpiando perfil anterior")
             setUserProfile(null)
             setIsLoading(true)
           }
@@ -98,32 +108,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       // Verificar que este userId sigue siendo el actual antes de hacer la petición
       if (currentUserIdRef.current !== userId) {
+        console.log("⚠️ Cancelando petición obsoleta")
         return
       }
 
       setIsLoading(true)
+      console.log("📡 Obteniendo perfil...")
 
       const { data, error } = await supabase.from("users").select("*").eq("id", userId).single()
 
       // Verificar nuevamente que este userId sigue siendo el actual después de la petición
       if (currentUserIdRef.current !== userId) {
+        console.log("⚠️ Ignorando resultado obsoleto")
         return
       }
 
       if (error) {
-        console.error("Error fetching user profile:", error)
+        console.error("❌ Error obteniendo perfil:", error)
         setUserProfile(null)
       } else {
+        console.log("✅ Perfil obtenido:", data?.name)
         setUserProfile(data)
       }
     } catch (error) {
-      console.error("Error fetching user profile:", error)
-      // Solo limpiar el perfil si este userId sigue siendo el actual
+      console.error("💥 Error inesperado:", error)
       if (currentUserIdRef.current === userId) {
         setUserProfile(null)
       }
     } finally {
-      // Solo cambiar isLoading si este userId sigue siendo el actual
       if (currentUserIdRef.current === userId) {
         setIsLoading(false)
       }
@@ -131,10 +143,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const signOut = async () => {
+    console.log("🚪 Cerrando sesión...")
     try {
       await supabase.auth.signOut()
     } catch (error) {
-      console.error("Error signing out:", error)
+      console.error("❌ Error en logout:", error)
     }
 
     // Limpiar estado local
