@@ -5,7 +5,6 @@ import type React from "react"
 import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase/client"
-import { useAuth } from "@/app/contexts/auth-context"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -26,7 +25,6 @@ export default function InviteCallback() {
   const router = useRouter()
   const hasProcessed = useRef(false)
   const [userInfo, setUserInfo] = useState<any>(null)
-  const { refreshUserProfile } = useAuth()
 
   useEffect(() => {
     if (hasProcessed.current) return
@@ -34,7 +32,8 @@ export default function InviteCallback() {
 
     const handleInviteCallback = async () => {
       try {
-        
+        console.log("🔄 Procesando invitación de usuario...")
+        console.log("🔍 URL:", window.location.href)
 
         setMessage("Confirmando invitación...")
 
@@ -164,10 +163,6 @@ export default function InviteCallback() {
 
         console.log("✅ INVITACIÓN PROCESADA CORRECTAMENTE")
 
-        // FORZAR REFRESH DEL AUTH CONTEXT
-        console.log("🔄 Actualizando contexto de autenticación...")
-        await refreshUserProfile()
-
         // MOSTRAR FORMULARIO DE CONTRASEÑA
         setStatus("set-password")
         setMessage("¡Bienvenido al equipo! Ahora establece tu contraseña.")
@@ -180,7 +175,7 @@ export default function InviteCallback() {
     }
 
     handleInviteCallback()
-  }, [router, refreshUserProfile])
+  }, [router])
 
   const handleSetPassword = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -211,15 +206,12 @@ export default function InviteCallback() {
 
       console.log("✅ Contraseña establecida correctamente")
 
-      // FORZAR REFRESH FINAL DEL AUTH CONTEXT
-      console.log("🔄 Refresh final del contexto...")
-      await refreshUserProfile()
-
       setStatus("success")
-      setMessage("¡Contraseña establecida! Redirigiendo al login...")
+      setMessage("¡Contraseña establecida! Redirigiendo al dashboard...")
 
       setTimeout(() => {
-        router.push("/login")
+        console.log("🚀 REDIRIGIENDO A DASHBOARD...")
+        router.push("/dashboard")
       }, 2000)
     } catch (error: any) {
       setPasswordError("Error al establecer contraseña: " + error.message)
