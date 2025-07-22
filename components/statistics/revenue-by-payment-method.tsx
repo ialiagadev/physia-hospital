@@ -3,9 +3,10 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts"
-import { CreditCard, Banknote, Smartphone, Building2, MoreHorizontal } from "lucide-react"
+import { CreditCard, Banknote, Smartphone, Building2, MoreHorizontal, FileText } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 interface PaymentMethodData {
   method: string
@@ -17,15 +18,15 @@ interface PaymentMethodData {
 
 interface RevenueByPaymentMethodProps {
   period: string
+  organizationId: string
 }
 
-// Actualizar las constantes para reflejar los valores reales del enum
 const paymentMethodIcons = {
   tarjeta: CreditCard,
   efectivo: Banknote,
   transferencia: Building2,
   bizum: Smartphone,
-  cheque: Building2,
+  cheque: FileText,
   no_especificado: MoreHorizontal,
 }
 
@@ -38,76 +39,76 @@ const paymentMethodLabels = {
   no_especificado: "No Especificado",
 }
 
-export function RevenueByPaymentMethod({ period }: RevenueByPaymentMethodProps) {
+export function RevenueByPaymentMethod({ period, organizationId }: RevenueByPaymentMethodProps) {
   const [data, setData] = useState<PaymentMethodData[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [totalRevenue, setTotalRevenue] = useState(0)
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true)
-      try {
-        // Simular datos - en producción esto vendría de tu API
-        // Actualizar los datos de ejemplo para usar valores válidos del enum
-        const mockData: PaymentMethodData[] = [
-          {
-            method: "tarjeta",
-            amount: 15420.5,
-            count: 89,
-            percentage: 65.2,
-            color: "hsl(var(--chart-1))",
-          },
-          {
-            method: "efectivo",
-            amount: 4230.0,
-            count: 34,
-            percentage: 17.9,
-            color: "hsl(var(--chart-2))",
-          },
-          {
-            method: "transferencia",
-            amount: 2890.75,
-            count: 12,
-            percentage: 12.2,
-            color: "hsl(var(--chart-3))",
-          },
-          {
-            method: "bizum",
-            amount: 890.25,
-            count: 8,
-            percentage: 3.8,
-            color: "hsl(var(--chart-4))",
-          },
-          {
-            method: "no_especificado",
-            amount: 210.5,
-            count: 3,
-            percentage: 0.9,
-            color: "hsl(var(--muted))",
-          },
-        ]
+      setError(null)
 
-        const total = mockData.reduce((sum, item) => sum + item.amount, 0)
+      try {
+        const response = await fetch(
+          `/api/analytics/revenue-by-payment-method?organizationId=${organizationId}&period=${period}`,
+        )
+
+        if (!response.ok) {
+          throw new Error("Error al cargar los datos")
+        }
+
+        const result = await response.json()
+
+        const total = result.reduce((sum: number, item: PaymentMethodData) => sum + item.amount, 0)
         setTotalRevenue(total)
-        setData(mockData)
+        setData(result)
       } catch (error) {
         console.error("Error fetching payment method data:", error)
+        setError(error instanceof Error ? error.message : "Error desconocido")
       } finally {
         setLoading(false)
       }
     }
 
-    fetchData()
-  }, [period])
+    if (organizationId) {
+      fetchData()
+    }
+  }, [period, organizationId])
 
   if (loading) {
     return (
       <div className="space-y-4">
         <div className="h-8 bg-muted animate-pulse rounded" />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-20 bg-muted animate-pulse rounded" />
+          ))}
+        </div>
         <div className="h-64 bg-muted animate-pulse rounded" />
       </div>
     )
   }
+
+  if (error) {
+    return (
+      <Alert variant="destructive">
+        <AlertDescription>Error al cargar los datos: {error}</AlertDescription>
+      </Alert>
+    )
+  }
+
+  if (data.length === 0) {
+    return (
+      <Alert>
+        <AlertDescription>No hay datos de facturación para el período seleccionado.</AlertDescription>
+      </Alert>
+    )
+  }
+
+  const totalInvoices = data.reduce((sum, item) => sum + item.count, 0)
+  const averageTicket = totalInvoices > 0 ? totalRevenue / totalInvoices : 0
 
   return (
     <div className="space-y-6">
@@ -115,20 +116,22 @@ export function RevenueByPaymentMethod({ period }: RevenueByPaymentMethodProps) 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-4">
-            <div className="text-2xl font-bold">€{totalRevenue.toLocaleString()}</div>
+            <div className="text-2xl font-bold">
+              €{totalRevenue.toLocaleString("es-ES", { minimumFractionDigits: 2 })}
+            </div>
             <p className="text-xs text-muted-foreground">Total Ingresos</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
-            <div className="text-2xl font-bold">{data.reduce((sum, item) => sum + item.count, 0)}</div>
+            <div className="text-2xl font-bold">{totalInvoices}</div>
             <p className="text-xs text-muted-foreground">Total Facturas</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
             <div className="text-2xl font-bold">
-              €{(totalRevenue / data.reduce((sum, item) => sum + item.count, 0)).toFixed(0)}
+              €{averageTicket.toLocaleString("es-ES", { minimumFractionDigits: 2 })}
             </div>
             <p className="text-xs text-muted-foreground">Ticket Medio</p>
           </CardContent>
@@ -159,7 +162,7 @@ export function RevenueByPaymentMethod({ period }: RevenueByPaymentMethodProps) 
                 <YAxis tickFormatter={(value) => `€${value.toLocaleString()}`} />
                 <Tooltip
                   formatter={(value: number, name: string) => [
-                    `€${value.toLocaleString()}`,
+                    `€${value.toLocaleString("es-ES", { minimumFractionDigits: 2 })}`,
                     paymentMethodLabels[name as keyof typeof paymentMethodLabels],
                   ]}
                   labelFormatter={(label) => paymentMethodLabels[label as keyof typeof paymentMethodLabels]}
@@ -196,7 +199,7 @@ export function RevenueByPaymentMethod({ period }: RevenueByPaymentMethodProps) 
                 </Pie>
                 <Tooltip
                   formatter={(value: number, name: string) => [
-                    `€${value.toLocaleString()}`,
+                    `€${value.toLocaleString("es-ES", { minimumFractionDigits: 2 })}`,
                     paymentMethodLabels[name as keyof typeof paymentMethodLabels],
                   ]}
                 />
@@ -209,6 +212,8 @@ export function RevenueByPaymentMethod({ period }: RevenueByPaymentMethodProps) 
           <div className="space-y-4">
             {data.map((item) => {
               const Icon = paymentMethodIcons[item.method as keyof typeof paymentMethodIcons]
+              const ticketMedio = item.count > 0 ? item.amount / item.count : 0
+
               return (
                 <Card key={item.method}>
                   <CardContent className="p-4">
@@ -225,14 +230,16 @@ export function RevenueByPaymentMethod({ period }: RevenueByPaymentMethodProps) 
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="text-2xl font-bold">€{item.amount.toLocaleString()}</div>
+                        <div className="text-2xl font-bold">
+                          €{item.amount.toLocaleString("es-ES", { minimumFractionDigits: 2 })}
+                        </div>
                         <Badge variant="secondary">{item.percentage}%</Badge>
                       </div>
                     </div>
                     <div className="mt-3">
                       <div className="flex justify-between text-sm text-muted-foreground mb-1">
                         <span>Ticket medio</span>
-                        <span>€{(item.amount / item.count).toFixed(2)}</span>
+                        <span>€{ticketMedio.toLocaleString("es-ES", { minimumFractionDigits: 2 })}</span>
                       </div>
                       <div className="w-full bg-muted rounded-full h-2">
                         <div

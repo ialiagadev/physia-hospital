@@ -12,15 +12,74 @@ import { ExpensesByCategory } from "@/components/statistics/expenses-by-category
 import { ExpensesBySupplier } from "@/components/statistics/expenses-by-supplier"
 import { RevenueByPaymentMethod } from "@/components/statistics/revenue-by-payment-method"
 import { CalendarDays } from "lucide-react"
-
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useAuth } from "@/app/contexts/auth-context"
 export default function StatisticsPage() {
   const [timePeriod, setTimePeriod] = useState("month")
+  const { userProfile, isLoading } = useAuth()
+
+  const getPeriodInDays = (period: string): string => {
+    switch (period) {
+      case "day":
+        return "1"
+      case "week":
+        return "7"
+      case "month":
+        return "30"
+      case "quarter":
+        return "90"
+      case "semester":
+        return "180"
+      case "year":
+        return "365"
+      default:
+        return "30"
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Estadísticas</h1>
+          <p className="text-muted-foreground">Cargando datos...</p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-20 bg-muted animate-pulse rounded" />
+          ))}
+        </div>
+        <div className="h-64 bg-muted animate-pulse rounded" />
+      </div>
+    )
+  }
+
+  if (!userProfile) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Estadísticas</h1>
+          <p className="text-muted-foreground">Análisis detallado de ingresos, gastos y rendimiento</p>
+        </div>
+        <Alert variant="destructive">
+          <AlertDescription>
+            No se pudo cargar el perfil del usuario. Por favor, inicia sesión nuevamente.
+          </AlertDescription>
+        </Alert>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Estadísticas</h1>
         <p className="text-muted-foreground">Análisis detallado de ingresos, gastos y rendimiento</p>
+        {process.env.NODE_ENV === "development" && (
+          <p className="text-xs text-muted-foreground">
+            Organization ID: {userProfile.organization_id} | User: {userProfile.name}
+          </p>
+        )}
       </div>
 
       <div className="flex items-center gap-2">
@@ -40,7 +99,7 @@ export default function StatisticsPage() {
         </Select>
       </div>
 
-      <Tabs defaultValue="revenue" className="w-full">
+      <Tabs defaultValue="by-payment" className="w-full">
         <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="revenue">Ingresos</TabsTrigger>
           <TabsTrigger value="expenses">Gastos</TabsTrigger>
@@ -105,7 +164,10 @@ export default function StatisticsPage() {
               <CardDescription>Distribución de ingresos por método de pago utilizado</CardDescription>
             </CardHeader>
             <CardContent>
-              <RevenueByPaymentMethod period={timePeriod} />
+              <RevenueByPaymentMethod
+                period={getPeriodInDays(timePeriod)}
+                organizationId={userProfile.organization_id.toString()}
+              />
             </CardContent>
           </Card>
         </TabsContent>

@@ -1,10 +1,7 @@
 import { createClient } from "@supabase/supabase-js"
 import { NextResponse } from "next/server"
 
-// Cliente normal para enviar Magic Link
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
-
-// Cliente admin para operaciones posteriores
+// Cliente admin para invitar usuarios
 const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
   auth: {
     autoRefreshToken: false,
@@ -26,34 +23,38 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Rol inválido." }, { status: 400 })
     }
 
-    console.log("🔄 Enviando Magic Link para nuevo usuario:", { email, name, organizationId, role })
+    console.log("🔄 Enviando invitación para nuevo usuario:", {
+      email,
+      name,
+      organizationId,
+      role,
+    })
 
-    // 1. ENVIAR MAGIC LINK con callback específico para invitaciones
-    const { data, error } = await supabase.auth.signInWithOtp({
-      email: email,
-      options: {
-        emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/auth/invite-callback`, // ← Callback específico
-        data: {
-          full_name: name,
-          organization_id: organizationId,
-          role: role,
-          invite_type: "user_invitation", // ← Marcador para distinguir
-        },
+    // 1. ENVIAR INVITACIÓN con inviteUserByEmail
+    const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+      data: {
+        full_name: name,
+        organization_id: organizationId,
+        role: role,
+        invite_type: "user_invitation",
       },
+      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/auth/invite-callback`,
     })
 
     if (error) {
-      console.error("❌ Error enviando Magic Link:", error)
+      console.error("❌ Error enviando invitación:", error)
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
-    console.log("✅ Magic Link enviado exitosamente")
+    console.log("✅ Invitación enviada exitosamente")
     console.log("📧 Email enviado a:", email)
+    console.log("👤 Usuario creado con ID:", data.user?.id)
 
     return NextResponse.json({
       success: true,
-      message: `Magic Link enviado a ${email}. El usuario recibirá un email para acceder y unirse a la organización.`,
+      message: `Invitación enviada a ${email}. El usuario recibirá un email para establecer su contraseña y unirse a la organización.`,
       user: {
+        id: data.user?.id,
         email: email,
         name: name,
         role: role,
