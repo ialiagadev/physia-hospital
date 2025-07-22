@@ -10,7 +10,7 @@ import { es } from "date-fns/locale"
 import { EditWorkSessionDialog } from "@/components/edit-work-session-dialog"
 import { RequestChangeDialog } from "@/components/request-change-dialog"
 import { useTimeTracking } from "@/hooks/use-time-tracking"
-import { useMemo } from "react"
+import { useMemo, useState, useEffect } from "react"
 
 interface WorkSession {
   id: string
@@ -28,6 +28,13 @@ interface WorkSession {
   organization_id?: number
   total_pause_minutes?: number | null
   pause_count?: number | null
+}
+
+interface PauseDetail {
+  pause_number: number
+  local_pause_start: string
+  local_pause_end: string | null
+  duration_minutes: number | null
 }
 
 interface WorkSessionsTableProps {
@@ -54,6 +61,50 @@ export function WorkSessionsTable({
   onSubmitChangeRequest,
 }: WorkSessionsTableProps) {
   const { isAdmin, updateWorkSession, deleteWorkSession } = useTimeTracking()
+  const [pauseDetails, setPauseDetails] = useState<Record<string, PauseDetail[]>>({})
+
+  // Cargar detalles de pausas para todas las sesiones
+  useEffect(() => {
+    const loadAllPauseDetails = async () => {
+      if (sessions.length === 0) return
+
+      const { supabase } = await import("@/lib/supabase/client")
+      const sessionsWithPauses = sessions.filter((s) => s.pause_count && s.pause_count > 0)
+
+      if (sessionsWithPauses.length === 0) return
+
+      try {
+        const { data, error } = await supabase
+          .from("work_pauses_with_user")
+          .select("user_id, work_date, pause_number, local_pause_start, local_pause_end, duration_minutes")
+          .in(
+            "user_id",
+            sessionsWithPauses.map((s) => s.user_id),
+          )
+          .in(
+            "work_date",
+            sessionsWithPauses.map((s) => s.work_date),
+          )
+          .order("pause_number")
+
+        if (error) throw error
+
+        // Agrupar por user_id + work_date
+        const grouped: Record<string, PauseDetail[]> = {}
+        data?.forEach((pause) => {
+          const key = `${pause.user_id}-${pause.work_date}`
+          if (!grouped[key]) grouped[key] = []
+          grouped[key].push(pause)
+        })
+
+        setPauseDetails(grouped)
+      } catch (err) {
+        console.error("Error loading pause details:", err)
+      }
+    }
+
+    loadAllPauseDetails()
+  }, [sessions])
 
   const getStatusBadge = useMemo(
     () => (status: string | null, clockIn: string | null, clockOut: string | null) => {
@@ -71,7 +122,7 @@ export function WorkSessionsTable({
     [],
   )
 
-  const formatMinutes = (minutes: number | null) => {
+  const formatMinutes = (minutes: number | null | undefined) => {
     if (!minutes || minutes === 0) return "-"
     const hours = Math.floor(Math.abs(minutes) / 60)
     const mins = Math.abs(minutes) % 60
@@ -88,25 +139,67 @@ export function WorkSessionsTable({
     }
   }
 
-  const formatPauses = (pauseCount: number | null, totalPauseMinutes: number | null) => {
-    if (!pauseCount || pauseCount === 0) {
+  const renderPauseDetails = (session: WorkSession) => {
+    if (!session.pause_count || session.pause_count === 0) {
       return <span className="text-muted-foreground text-sm">Sin pausas</span>
     }
 
+    const key = `${session.user_id}-${session.work_date}`
+    const details = pauseDetails[key] || []
+
+    if (details.length === 0) {
+      return (
+        <div className="flex items-center gap-1">
+          <Coffee className="h-4 w-4 text-orange-600" />
+          <span className="font-mono text-sm">
+            {session.pause_count} pausa{session.pause_count > 1 ? "s" : ""} (
+            {formatMinutes(session.total_pause_minutes ?? null)})
+          </span>
+        </div>
+      )
+    }
+
     return (
-      <div className="flex items-center gap-1">
-        <Coffee className="h-4 w-4 text-orange-600" />
-        <span className="font-mono text-sm">
-          {pauseCount} pausa{pauseCount > 1 ? "s" : ""} ({formatMinutes(totalPauseMinutes)})
-        </span>
+      <div className="space-y-1">
+        {details.map((pause) => (
+          <div key={pause.pause_number} className="flex items-center gap-1 text-xs">
+            <Coffee className="h-3 w-3 text-orange-600" />
+            <span className="font-mono">
+              {formatTime(pause.local_pause_start)}-{formatTime(pause.local_pause_end)}(
+              {formatMinutes(pause.duration_minutes ?? null)})
+            </span>
+          </div>
+        ))}
+        {details.length > 1 && (
+          <div className="text-xs text-muted-foreground font-medium">
+            Total: {formatMinutes(session.total_pause_minutes ?? null)}
+          </div>
+        )}
       </div>
     )
   }
 
-  const calculateNetTime = (totalMinutes: number | null, pauseMinutes: number | null) => {
-    if (!totalMinutes) return null
-    const pauseTime = pauseMinutes || 0
-    return totalMinutes + pauseTime // total_minutes ya debería ser neto, pero por si acaso
+  const calculateNetTime = (session: WorkSession) => {
+    // El total_minutes ya debería ser el tiempo neto (descontando pausas)
+    // Si no, calculamos: tiempo bruto - tiempo pausas
+    if (!session.clock_in_time || !session.clock_out_time) {
+      return null
+    }
+
+    if (session.total_minutes) {
+      return session.total_minutes
+    }
+
+    // Calcular tiempo bruto si no tenemos total_minutes
+    try {
+      const startTime = new Date(session.clock_in_time)
+      const endTime = new Date(session.clock_out_time)
+      const grossMinutes = Math.floor((endTime.getTime() - startTime.getTime()) / (1000 * 60))
+      const pauseMinutes = session.total_pause_minutes ?? 0
+      return grossMinutes - pauseMinutes
+    } catch {
+      return null
+    }
   }
 
   const handleRefresh = () => {
@@ -172,86 +265,90 @@ export function WorkSessionsTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sessions.map((session) => (
-                <TableRow key={session.id}>
-                  <TableCell className="font-medium">
-                    {format(parseISO(session.work_date), "dd MMM yyyy", { locale: es })}
-                  </TableCell>
-                  {isAdmin && (
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <User className="h-4 w-4 text-muted-foreground" />
-                        <div>
-                          <div className="font-medium text-sm">{session.user_name || "Sin nombre"}</div>
-                          <div className="text-xs text-muted-foreground">{session.user_email}</div>
+              {sessions.map((session) => {
+                const netTime = calculateNetTime(session)
+
+                return (
+                  <TableRow key={session.id}>
+                    <TableCell className="font-medium">
+                      {format(parseISO(session.work_date), "dd MMM yyyy", { locale: es })}
+                    </TableCell>
+                    {isAdmin && (
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <User className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <div className="font-medium text-sm">{session.user_name || "Sin nombre"}</div>
+                            <div className="text-xs text-muted-foreground">{session.user_email}</div>
+                          </div>
                         </div>
+                      </TableCell>
+                    )}
+                    <TableCell>
+                      {session.clock_in_time ? (
+                        <div className="flex items-center gap-1">
+                          <Clock className="h-4 w-4 text-green-600" />
+                          <span className="font-mono">{formatTime(session.clock_in_time)}</span>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {session.clock_out_time ? (
+                        <div className="flex items-center gap-1">
+                          <Clock className="h-4 w-4 text-red-600" />
+                          <span className="font-mono">{formatTime(session.clock_out_time)}</span>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="min-w-[150px]">{renderPauseDetails(session)}</TableCell>
+                    <TableCell>
+                      {netTime ? (
+                        <div className="flex items-center gap-1">
+                          <Pause className="h-4 w-4 text-blue-600" />
+                          <span className="font-mono font-medium">{formatMinutes(netTime)}</span>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {getStatusBadge(session.status, session.clock_in_time, session.clock_out_time)}
+                    </TableCell>
+                    <TableCell className="max-w-[200px]">
+                      {session.notes ? (
+                        <div className="flex items-start gap-1">
+                          <MessageSquare className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                          <span className="text-sm text-muted-foreground truncate" title={session.notes}>
+                            {session.notes}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        {isAdmin ? (
+                          <EditWorkSessionDialog
+                            session={session}
+                            onUpdate={updateWorkSession}
+                            onDelete={deleteWorkSession}
+                            onRefresh={handleRefresh}
+                          />
+                        ) : (
+                          onSubmitChangeRequest && (
+                            <RequestChangeDialog session={session} onSubmitRequest={onSubmitChangeRequest} />
+                          )
+                        )}
                       </div>
                     </TableCell>
-                  )}
-                  <TableCell>
-                    {session.clock_in_time ? (
-                      <div className="flex items-center gap-1">
-                        <Clock className="h-4 w-4 text-green-600" />
-                        <span className="font-mono">{formatTime(session.clock_in_time)}</span>
-                      </div>
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {session.clock_out_time ? (
-                      <div className="flex items-center gap-1">
-                        <Clock className="h-4 w-4 text-red-600" />
-                        <span className="font-mono">{formatTime(session.clock_out_time)}</span>
-                      </div>
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {formatPauses(session.pause_count ?? null, session.total_pause_minutes ?? null)}
-                  </TableCell>
-                  <TableCell>
-                    {session.total_minutes ? (
-                      <div className="flex items-center gap-1">
-                        <Pause className="h-4 w-4 text-blue-600" />
-                        <span className="font-mono font-medium">{formatMinutes(session.total_minutes)}</span>
-                      </div>
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell>{getStatusBadge(session.status, session.clock_in_time, session.clock_out_time)}</TableCell>
-                  <TableCell className="max-w-[200px]">
-                    {session.notes ? (
-                      <div className="flex items-start gap-1">
-                        <MessageSquare className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
-                        <span className="text-sm text-muted-foreground truncate" title={session.notes}>
-                          {session.notes}
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="text-muted-foreground text-sm">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      {isAdmin ? (
-                        <EditWorkSessionDialog
-                          session={session}
-                          onUpdate={updateWorkSession}
-                          onDelete={deleteWorkSession}
-                          onRefresh={handleRefresh}
-                        />
-                      ) : (
-                        onSubmitChangeRequest && (
-                          <RequestChangeDialog session={session} onSubmitRequest={onSubmitChangeRequest} />
-                        )
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
         </div>
