@@ -4,7 +4,7 @@ import type React from "react"
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
-import { Plus, Users, Mail, Calendar, Shield, RefreshCw, Edit2, Info, AlertTriangle } from "lucide-react"
+import { Plus, Users, Mail, Calendar, Shield, RefreshCw, Edit2, Info, AlertTriangle, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -61,6 +61,12 @@ export default function ProfessionalsPage() {
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [editUserLoading, setEditUserLoading] = useState(false)
   const [editUserError, setEditUserError] = useState("")
+
+  // Estados para el modal de eliminar usuario
+  const [showDeleteUserModal, setShowDeleteUserModal] = useState(false)
+  const [deletingUser, setDeletingUser] = useState<User | null>(null)
+  const [deleteUserLoading, setDeleteUserLoading] = useState(false)
+  const [deleteUserError, setDeleteUserError] = useState("")
 
   useEffect(() => {
     // Obtener usuario actual
@@ -141,7 +147,8 @@ export default function ProfessionalsPage() {
         .from("users")
         .select("*")
         .eq("organization_id", userProfile.organization_id)
-        .eq("type", 1)
+        .eq("type", 1) // Solo usuarios activos
+        .neq("type", 5) // Excluir desactivados
         .order("created_at", { ascending: false })
 
       if (usersError) {
@@ -235,6 +242,39 @@ export default function ProfessionalsPage() {
     }
   }
 
+  // Función para desactivar usuario (cambiar type a 5)
+  const handleDeactivateUser = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!deletingUser) return
+
+    setDeleteUserLoading(true)
+    setDeleteUserError("")
+
+    try {
+      const { data, error } = await supabase
+        .from("users")
+        .update({
+          type: 5, // Marcar como desactivado
+        })
+        .eq("id", deletingUser.id)
+        .select()
+        .single()
+
+      if (error) {
+        throw new Error(error.message)
+      }
+
+      // Remover de la lista local
+      setUsers(users.filter((u) => u.id !== deletingUser.id))
+      setShowDeleteUserModal(false)
+      setDeletingUser(null)
+    } catch (err: any) {
+      setDeleteUserError(err.message)
+    } finally {
+      setDeleteUserLoading(false)
+    }
+  }
+
   // Función para resetear el modal de crear
   const resetCreateUserModal = () => {
     setCreateUserError("")
@@ -248,10 +288,22 @@ export default function ProfessionalsPage() {
     setEditingUser(null)
   }
 
+  // Función para resetear el modal de eliminar
+  const resetDeleteUserModal = () => {
+    setDeleteUserError("")
+    setDeletingUser(null)
+  }
+
   // Función para abrir modal de edición
   const openEditModal = (user: User) => {
     setEditingUser({ ...user })
     setShowEditUserModal(true)
+  }
+
+  // Función para abrir modal de eliminación
+  const openDeleteModal = (user: User) => {
+    setDeletingUser({ ...user })
+    setShowDeleteUserModal(true)
   }
 
   const getRoleBadgeColor = (role: string) => {
@@ -669,9 +721,19 @@ export default function ProfessionalsPage() {
                           {new Date(user.created_at).toLocaleDateString()}
                         </div>
                         {profile?.role === "admin" && (
-                          <Button variant="ghost" size="sm" onClick={() => openEditModal(user)} className="ml-2">
-                            <Edit2 className="h-4 w-4" />
-                          </Button>
+                          <>
+                            <Button variant="ghost" size="sm" onClick={() => openEditModal(user)} className="ml-2">
+                              <Edit2 className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openDeleteModal(user)}
+                              className="ml-1 text-red-600 hover:text-red-700 hover:bg-red-50"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -754,6 +816,71 @@ export default function ProfessionalsPage() {
                 </Button>
               </div>
             </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de eliminar usuario */}
+      <Dialog
+        open={showDeleteUserModal}
+        onOpenChange={(open) => {
+          setShowDeleteUserModal(open)
+          if (!open) resetDeleteUserModal()
+        }}
+      >
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="text-red-600">Desactivar Profesional</DialogTitle>
+            <DialogDescription>
+              ¿Estás seguro de que quieres desactivar este profesional? Esta acción ocultará al usuario de la lista pero
+              no eliminará sus datos.
+            </DialogDescription>
+          </DialogHeader>
+
+          {deletingUser && (
+            <div className="space-y-4">
+              <div className="bg-red-50 p-4 rounded-lg border border-red-200">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                    <span className="text-sm font-medium text-red-700">
+                      {deletingUser.name
+                        ?.split(" ")
+                        .map((n) => n[0])
+                        .join("")
+                        .toUpperCase() || "U"}
+                    </span>
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-red-900">{deletingUser.name || "Sin nombre"}</h4>
+                    <p className="text-sm text-red-700">{deletingUser.email}</p>
+                    <Badge className={getRoleBadgeColor(deletingUser.role)}>{getRoleLabel(deletingUser.role)}</Badge>
+                  </div>
+                </div>
+              </div>
+
+              <Alert className="border-amber-200 bg-amber-50">
+                <AlertTriangle className="h-4 w-4 text-amber-600" />
+                <AlertDescription className="text-amber-800">
+                  <strong>Importante:</strong> El usuario será desactivado pero sus datos se conservarán. Podrás
+                  reactivarlo más tarde si es necesario.
+                </AlertDescription>
+              </Alert>
+
+              {deleteUserError && (
+                <Alert variant="destructive">
+                  <AlertDescription>{deleteUserError}</AlertDescription>
+                </Alert>
+              )}
+
+              <div className="flex justify-end space-x-2 pt-4">
+                <Button type="button" variant="outline" onClick={() => setShowDeleteUserModal(false)}>
+                  Cancelar
+                </Button>
+                <Button type="button" variant="destructive" onClick={handleDeactivateUser} disabled={deleteUserLoading}>
+                  {deleteUserLoading ? "Desactivando..." : "Desactivar Usuario"}
+                </Button>
+              </div>
+            </div>
           )}
         </DialogContent>
       </Dialog>

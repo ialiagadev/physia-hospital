@@ -288,9 +288,79 @@ export function useTimeTracking() {
         }
       }
 
+      // Primero obtenemos la sesión actual para tener todos los datos
+      const { data: currentSession, error: fetchError } = await supabase
+        .from("work_sessions")
+        .select("*")
+        .eq("id", sessionId)
+        .eq("organization_id", userProfile.organization_id)
+        .single()
+
+      if (fetchError) throw fetchError
+
+      // Preparar los updates con los campos calculados
+      const finalUpdates: any = { ...updates }
+
+      // Si se están actualizando los horarios, recalcular total_minutes y status
+      if (updates.clock_in_time !== undefined || updates.clock_out_time !== undefined) {
+        const clockIn = updates.clock_in_time !== undefined ? updates.clock_in_time : currentSession.clock_in_time
+        const clockOut = updates.clock_out_time !== undefined ? updates.clock_out_time : currentSession.clock_out_time
+
+        if (clockIn && clockOut) {
+          // Convertir las horas a timestamps completos para el cálculo
+          const workDate = currentSession.work_date
+          const startTime = new Date(`${workDate}T${clockIn}`)
+          const endTime = new Date(`${workDate}T${clockOut}`)
+
+          // Calcular tiempo bruto en minutos
+          const grossMinutes = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60))
+
+          // Obtener pausas del día para calcular tiempo neto
+          const { data: pauses, error: pausesError } = await supabase
+            .from("work_pauses")
+            .select("pause_start, pause_end")
+            .eq("user_id", currentSession.user_id)
+            .eq("work_date", workDate)
+            .not("pause_end", "is", null)
+
+          if (pausesError) {
+            console.warn("Error obteniendo pausas:", pausesError)
+          }
+
+          // Calcular tiempo total de pausas
+          let totalPauseMinutes = 0
+          if (pauses && pauses.length > 0) {
+            totalPauseMinutes = pauses.reduce((total, pause) => {
+              if (pause.pause_start && pause.pause_end) {
+                const pauseStart = new Date(`${workDate}T${pause.pause_start}`)
+                const pauseEnd = new Date(`${workDate}T${pause.pause_end}`)
+                const pauseMinutes = Math.round((pauseEnd.getTime() - pauseStart.getTime()) / (1000 * 60))
+                return total + pauseMinutes
+              }
+              return total
+            }, 0)
+          }
+
+          // Tiempo neto = tiempo bruto - pausas
+          const netMinutes = Math.max(0, grossMinutes - totalPauseMinutes)
+
+          // Actualizar los campos calculados
+          finalUpdates.total_minutes = netMinutes
+          finalUpdates.status = "complete" // Usar el valor en inglés que espera la BD
+        } else if (clockIn && !clockOut) {
+          finalUpdates.status = "incomplete"
+          finalUpdates.total_minutes = 0
+        } else if (!clockIn && !clockOut) {
+          finalUpdates.status = "incomplete"
+          finalUpdates.total_minutes = 0
+        }
+      }
+
+      console.log("Final updates:", finalUpdates)
+
       const { data, error } = await supabase
         .from("work_sessions")
-        .update(updates)
+        .update(finalUpdates)
         .eq("id", sessionId)
         .eq("organization_id", userProfile.organization_id)
         .select()
@@ -300,6 +370,7 @@ export function useTimeTracking() {
       return { success: true, data }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Error al actualizar registro"
+      console.error("Error updating work session:", err)
       return { success: false, error: errorMessage }
     }
   }
