@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Upload, AlertCircle, CheckCircle, Download, Wand2 } from "lucide-react"
+import { Upload, AlertCircle, CheckCircle, Download, FileSpreadsheet } from "lucide-react"
 import type { ClientImportData } from "@/utils/file-parser"
 import { useToast } from "@/hooks/use-toast"
 
@@ -40,9 +40,10 @@ interface AIAnalysisResult {
   totalRows: number
   errors?: string[]
   duplicateCount?: number
+  errorCSV?: string
 }
 
-type Step = "upload" | "preview" | "importing" | "results" | "ai-analyzing"
+type Step = "upload" | "preview" | "importing" | "results" | "analyzing"
 
 export function ImportClientsDialog({
   open,
@@ -59,7 +60,7 @@ export function ImportClientsDialog({
 
   const processWithAI = async (file: File) => {
     try {
-      setStep("ai-analyzing")
+      setStep("analyzing")
       setProgress(10)
 
       // Crear FormData para enviar el archivo
@@ -74,7 +75,7 @@ export function ImportClientsDialog({
         })
       }, 500)
 
-      // Enviar archivo a la API de IA
+      // Enviar archivo a la API
       const response = await fetch("/api/ai-import", {
         method: "POST",
         body: formData,
@@ -85,7 +86,7 @@ export function ImportClientsDialog({
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || "Error al procesar con IA")
+        throw new Error(errorData.error || "Error al procesar el archivo")
       }
 
       const result = await response.json()
@@ -96,9 +97,7 @@ export function ImportClientsDialog({
       // Mostrar toast de éxito
       toast({
         title: "Análisis completado",
-        description: `La IA ha mapeado ${Object.values(result.mapping).filter(Boolean).length} columnas y encontrado ${
-          result.data.length
-        } clientes válidos.`,
+        description: `Se han mapeado ${Object.values(result.mapping).filter(Boolean).length} columnas y encontrado ${result.data.length} clientes válidos.`,
       })
 
       // Mostrar advertencias si hay errores
@@ -111,7 +110,7 @@ export function ImportClientsDialog({
       }
     } catch (error) {
       toast({
-        title: "Error en el análisis con IA",
+        title: "Error en el análisis",
         description: error instanceof Error ? error.message : "Error desconocido",
         variant: "destructive",
       })
@@ -160,8 +159,8 @@ export function ImportClientsDialog({
 
       // Verificar duplicados por teléfono (solo para teléfonos válidos)
       const validPhones = clientsData.map((client) => client.phone).filter((phone) => phone && phone.length > 6)
-
       let existingPhones = new Set<string>()
+
       if (validPhones.length > 0) {
         const { data: existingClientsByPhone } = await supabase
           .from("clients")
@@ -188,7 +187,7 @@ export function ImportClientsDialog({
         return true
       })
 
-      // Verificar duplicados dentro del mismo archivo (ya se hace en la API de IA, pero por seguridad)
+      // Verificar duplicados dentro del mismo archivo (ya se hace en la API, pero por seguridad)
       const seenTaxIds = new Set<string>()
       const seenPhones = new Set<string>()
       const uniqueClients = newClients.filter((client) => {
@@ -215,7 +214,6 @@ export function ImportClientsDialog({
       const batchSize = 50
       for (let i = 0; i < uniqueClients.length; i += batchSize) {
         const batch = uniqueClients.slice(i, i + batchSize)
-
         const clientsToInsert = batch.map((client) => ({
           organization_id: organizationId,
           name: client.name,
@@ -274,7 +272,6 @@ export function ImportClientsDialog({
       }, 200)
 
       const result = await importClients(aiAnalysisResult.data, organizationId)
-
       console.log("Resultado de importación:", result)
 
       clearInterval(progressInterval)
@@ -301,19 +298,34 @@ export function ImportClientsDialog({
   }
 
   const downloadTemplate = () => {
-    const csvContent = `Nombre,CIF/NIF,Direccion,Codigo Postal,Ciudad,Provincia,Pais,Email,Telefono,Tipo Cliente,Fecha Nacimiento,Genero
-Empresa Ejemplo,B12345678,Calle Mayor 123,28001,Madrid,Madrid,España,info@ejemplo.com,912345678,private,1980-05-15,male
-Juan Perez,12345678Z,Avenida Sol 45,08001,Barcelona,Barcelona,España,juan@email.com,666123456,private,1975-12-20,male
-Maria Garcia,87654321Y,Plaza Central 10,41001,Sevilla,Sevilla,España,maria@email.com,655987654,private,1990-03-08,female
-Ayuntamiento Demo,P1234567A,Plaza Mayor 1,28002,Madrid,Madrid,España,contacto@ayto.es,913456789,public,,
-John Smith,US123456789,123 Main Street,10001,New York,NY,Estados Unidos,john@email.com,+1234567890,private,1985-01-10,male
-Marie Dubois,FR987654321,Rue de la Paix 45,75001,Paris,Ile-de-France,Francia,marie@email.com,+33123456789,private,1992-06-25,female`
+    const csvContent = `Nombre,Apellidos,CIF/NIF,Direccion,Codigo Postal,Ciudad,Provincia,Pais,Email,Telefono,Tipo Cliente,Fecha Nacimiento,Genero
+Empresa Ejemplo,,B12345678,Calle Mayor 123,28001,Madrid,Madrid,España,info@ejemplo.com,912345678,private,1980-05-15,male
+Juan,Perez,12345678Z,Avenida Sol 45,08001,Barcelona,Barcelona,España,juan@email.com,666123456,private,1975-12-20,male
+Maria,Garcia,87654321Y,Plaza Central 10,41001,Sevilla,Sevilla,España,maria@email.com,655987654,private,1990-03-08,female
+Ayuntamiento Demo,,P1234567A,Plaza Mayor 1,28002,Madrid,Madrid,España,contacto@ayto.es,913456789,public,,
+John,Smith,US123456789,123 Main Street,10001,New York,NY,Estados Unidos,john@email.com,+1234567890,private,1985-01-10,male
+Marie,Dubois,FR987654321,Rue de la Paix 45,75001,Paris,Ile-de-France,Francia,marie@email.com,+33123456789,private,1992-06-25,female`
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
     const link = document.createElement("a")
     link.href = URL.createObjectURL(blob)
     link.download = "plantilla_clientes.csv"
     link.click()
+  }
+
+  const downloadErrorCSV = () => {
+    if (!aiAnalysisResult?.errorCSV) return
+
+    const blob = new Blob([aiAnalysisResult.errorCSV], { type: "text/csv;charset=utf-8;" })
+    const link = document.createElement("a")
+    link.href = URL.createObjectURL(blob)
+    link.download = "errores_importacion.csv"
+    link.click()
+
+    toast({
+      title: "CSV descargado",
+      description: "Se ha descargado el archivo con los registros que presentaron errores.",
+    })
   }
 
   const resetDialog = () => {
@@ -356,10 +368,10 @@ Marie Dubois,FR987654321,Rue de la Paix 45,75001,Paris,Ile-de-France,Francia,mar
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Importar Clientes con IA</DialogTitle>
+          <DialogTitle>Importar Clientes</DialogTitle>
           <DialogDescription>
-            Sube cualquier archivo Excel o CSV. La IA analizará automáticamente las columnas y adaptará los datos al
-            formato requerido, incluyendo clientes internacionales.
+            Sube cualquier archivo Excel o CSV. El sistema analizará automáticamente las columnas y adaptará los datos
+            al formato requerido, incluyendo clientes internacionales.
           </DialogDescription>
         </DialogHeader>
 
@@ -391,26 +403,24 @@ Marie Dubois,FR987654321,Rue de la Paix 45,75001,Paris,Ile-de-France,Francia,mar
             </div>
 
             <Alert>
-              <Wand2 className="h-4 w-4" />
+              <FileSpreadsheet className="h-4 w-4" />
               <AlertDescription>
-                <strong>Importación inteligente:</strong> La IA detectará automáticamente las columnas, normalizará las
-                identificaciones fiscales (NIF/CIF/Tax ID) y detectará duplicados. 
-                Compatible con clientes nacionales e internacionales. ID fiscal y teléfono obligatorios.
+                <strong>Importación inteligente:</strong> El sistema detectará automáticamente las columnas, normalizará
+                las identificaciones fiscales (NIF/CIF/Tax ID) y detectará duplicados. Compatible con clientes
+                nacionales e internacionales. ID fiscal y teléfono obligatorios.
               </AlertDescription>
             </Alert>
           </div>
         )}
 
-        {step === "ai-analyzing" && (
+        {step === "analyzing" && (
           <div className="space-y-4 text-center py-8">
             <div className="w-16 h-16 mx-auto mb-4 relative">
               <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
             </div>
-            <h3 className="text-lg font-semibold">Analizando archivo con IA...</h3>
+            <h3 className="text-lg font-semibold">Analizando archivo...</h3>
             <Progress value={progress} className="w-full max-w-md mx-auto" />
-            <p className="text-sm text-gray-500">
-              La IA está identificando columnas, normalizando datos y detectando duplicados
-            </p>
+            <p className="text-sm text-gray-500">Identificando columnas, normalizando datos y detectando duplicados</p>
           </div>
         )}
 
@@ -424,9 +434,9 @@ Marie Dubois,FR987654321,Rue de la Paix 45,75001,Paris,Ile-de-France,Francia,mar
             </div>
 
             <Alert className="bg-blue-50 border-blue-200">
-              <Wand2 className="h-4 w-4 text-blue-500" />
+              <FileSpreadsheet className="h-4 w-4 text-blue-500" />
               <AlertDescription>
-                <div className="font-semibold mb-2">Mapeo de columnas detectado por IA:</div>
+                <div className="font-semibold mb-2">Mapeo de columnas detectado:</div>
                 <div className="grid grid-cols-3 gap-2 text-sm">
                   {Object.entries(aiAnalysisResult.mapping).map(([standardField, originalField]) => (
                     <div key={standardField} className="flex items-center justify-between">
@@ -450,11 +460,22 @@ Marie Dubois,FR987654321,Rue de la Paix 45,75001,Paris,Ile-de-France,Francia,mar
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>
-                  <div className="font-semibold mb-2">Registros con problemas:</div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="font-semibold">Registros con problemas:</div>
+                    {aiAnalysisResult.errorCSV && (
+                      <Button variant="outline" size="sm" onClick={downloadErrorCSV}>
+                        <Download className="w-4 h-4 mr-2" />
+                        Descargar Errores CSV
+                      </Button>
+                    )}
+                  </div>
                   <ul className="list-disc list-inside space-y-1 max-h-32 overflow-y-auto text-sm">
-                    {aiAnalysisResult.errors.map((error, index) => (
+                    {aiAnalysisResult.errors.slice(0, 10).map((error, index) => (
                       <li key={index}>{error}</li>
                     ))}
+                    {aiAnalysisResult.errors.length > 10 && (
+                      <li className="text-gray-600">... y {aiAnalysisResult.errors.length - 10} errores más</li>
+                    )}
                   </ul>
                 </AlertDescription>
               </Alert>

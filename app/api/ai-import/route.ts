@@ -4,9 +4,10 @@ import { openai } from "@ai-sdk/openai"
 import { z } from "zod"
 import * as XLSX from "xlsx"
 
-// Schema para validar el mapeo de columnas
+// Schema para validar el mapeo de columnas (añadido last_name)
 const ColumnMappingSchema = z.object({
   name: z.string().nullable(),
+  last_name: z.string().nullable(), // Nuevo campo para apellidos
   tax_id: z.string().nullable(),
   address: z.string().nullable(),
   postal_code: z.string().nullable(),
@@ -171,6 +172,31 @@ function isValidPhone(phone: string): boolean {
   return cleanPhone.length >= 6 && cleanPhone.length <= 20 && /^\+?[\d]+$/.test(cleanPhone)
 }
 
+// Función para generar CSV de errores
+function generateErrorCSV(invalidRows: string[], headers: string[], originalData: string[][]): string {
+  const csvHeaders = ["Fila", "Error", ...headers]
+  const csvRows = [csvHeaders.join(",")]
+
+  invalidRows.forEach((error) => {
+    const rowMatch = error.match(/Fila (\d+):/)
+    if (rowMatch) {
+      const rowNumber = Number.parseInt(rowMatch[1])
+      const originalRowIndex = rowNumber - 2 // Ajustar índice
+      const originalRow = originalData[originalRowIndex] || []
+      const errorDescription = error.replace(/Fila \d+: /, "")
+
+      const csvRow = [
+        rowNumber.toString(),
+        `"${errorDescription}"`,
+        ...originalRow.map((cell) => `"${cleanText(cell?.toString() || "")}"`),
+      ]
+      csvRows.push(csvRow.join(","))
+    }
+  })
+
+  return csvRows.join("\n")
+}
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
@@ -226,7 +252,8 @@ Muestra de datos:
 ${sampleRows}
 
 Mapea cada cabecera a uno de estos campos estándar (o null si no corresponde):
-- name: Nombre del cliente, empresa, razón social, nombre completo
+- name: Nombre del cliente, empresa, razón social, nombre (sin apellidos)
+- last_name: Apellidos, apellido, surname, last name
 - tax_id: CIF, NIF, DNI, identificación fiscal, documento de identidad, tax ID, VAT number
 - address: Dirección, domicilio, calle
 - postal_code: Código postal, CP, ZIP code
@@ -238,6 +265,8 @@ Mapea cada cabecera a uno de estos campos estándar (o null si no corresponde):
 - client_type: Tipo de cliente (private/public), sector (público/privado)
 - birth_date: Fecha de nacimiento, nacimiento, fecha nac, birth date, date of birth
 - gender: Género, sexo, gender, sex (masculino/femenino/otro)
+
+IMPORTANTE: Si hay campos separados para nombre y apellidos, mapéalos por separado. Si hay un campo de nombre completo, mapéalo solo a 'name'.
 
 Devuelve el mapeo de cada campo estándar a la cabecera original correspondiente.
 Si una cabecera puede corresponder a múltiples campos, elige el más apropiado.
@@ -302,6 +331,16 @@ Si una cabecera puede corresponder a múltiples campos, elige el más apropiado.
           }
         }
       })
+
+      // Combinar nombre y apellidos si ambos existen
+      if (client.name && client.last_name) {
+        client.name = `${client.name} ${client.last_name}`.trim()
+        delete client.last_name // Eliminar el campo apellidos después de combinarlo
+      } else if (client.last_name && !client.name) {
+        // Si solo hay apellidos, usarlos como nombre
+        client.name = client.last_name
+        delete client.last_name
+      }
 
       // Validar campos obligatorios
       if (!client.name || !client.tax_id) {
@@ -424,7 +463,7 @@ IMPORTANTE: Solo incluye códigos postales que reconozcas con alta certeza.
             // Intentar extraer manualmente si el JSON está mal formateado
             try {
               const lines = text.split("\n")
-              const jsonLine = lines.find((line) => line.trim().startsWith("{"))
+              const jsonLine = lines.find((line: string) => line.trim().startsWith("{"))
               if (jsonLine) {
                 cityMapping = JSON.parse(jsonLine.trim())
               }
@@ -448,6 +487,12 @@ IMPORTANTE: Solo incluye códigos postales que reconozcas con alta certeza.
       }
     }
 
+    // Generar CSV de errores si hay errores
+    let errorCSV = null
+    if (invalidRows.length > 0) {
+      errorCSV = generateErrorCSV(invalidRows, headers, dataRows)
+    }
+
     return NextResponse.json({
       mapping,
       data: processedData,
@@ -456,14 +501,14 @@ IMPORTANTE: Solo incluye códigos postales que reconozcas con alta certeza.
       headers,
       errors: invalidRows,
       duplicateCount,
+      errorCSV, // Nuevo campo para el CSV de errores
     })
   } catch (error) {
     return NextResponse.json(
       {
-        error: `Error al procesar el archivo con IA: ${error instanceof Error ? error.message : "Error desconocido"}`,
+        error: `Error al procesar el archivo: ${error instanceof Error ? error.message : "Error desconocido"}`,
       },
       { status: 500 },
     )
   }
 }
-    
