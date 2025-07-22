@@ -172,6 +172,7 @@ export function useTimeTracking() {
 
       // Validaciones de secuencia
       if (entryType === "entrada") {
+        // Solo validar si la última entrada no tiene salida
         if (lastEntry?.entry_type === "entrada") {
           throw new Error("Ya tienes una entrada registrada. Debes fichar salida primero.")
         }

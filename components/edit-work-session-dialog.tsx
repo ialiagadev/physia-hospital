@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -53,6 +53,13 @@ export function EditWorkSessionDialog({ session, onUpdate, onDelete, onRefresh }
 
   const { toast } = useToast()
 
+  useEffect(() => {
+    setClockIn(session.clock_in_time ? format(parseISO(session.clock_in_time), "HH:mm") : "")
+    setClockOut(session.clock_out_time ? format(parseISO(session.clock_out_time), "HH:mm") : "")
+    setNotes(session.notes || "")
+    setReason("")
+  }, [session])
+
   const handleSave = async () => {
     setLoading(true)
     try {
@@ -103,7 +110,11 @@ export function EditWorkSessionDialog({ session, onUpdate, onDelete, onRefresh }
           title: "✅ Registro actualizado",
           description: "Los cambios se han guardado correctamente",
         })
+
+        // Cerrar el modal inmediatamente
         setOpen(false)
+
+        // Llamar onRefresh para actualizar la tabla
         onRefresh()
       } else {
         throw new Error(result.error)
@@ -134,7 +145,11 @@ export function EditWorkSessionDialog({ session, onUpdate, onDelete, onRefresh }
           title: "✅ Registro eliminado",
           description: "El registro se ha eliminado correctamente",
         })
+
+        // Cerrar el modal inmediatamente
         setOpen(false)
+
+        // Llamar onRefresh para actualizar la tabla
         onRefresh()
       } else {
         throw new Error(result.error)

@@ -97,13 +97,15 @@ export function TimeClock({ user, lastEntry, activePause, onClockInOut, isLoadin
 
   const getActionButton = () => {
     if (nextAction === "entrada") {
+      const isNewSession = lastEntry?.entry_type === "salida"
       return (
         <Button onClick={() => onClockInOut("entrada")} disabled={isLoading} className="w-full" variant="default">
           {isLoading ? (
             "Procesando..."
           ) : (
             <>
-              <LogIn className="mr-2 h-4 w-4" /> Fichar entrada
+              <LogIn className="mr-2 h-4 w-4" />
+              {isNewSession ? "Nueva entrada" : "Fichar entrada"}
             </>
           )}
         </Button>
@@ -172,7 +174,7 @@ export function TimeClock({ user, lastEntry, activePause, onClockInOut, isLoadin
       case "entrada":
         return "Trabajando"
       case "salida":
-        return "Jornada finalizada"
+        return "Disponible para nueva entrada" // Cambiar texto
       case "pausa_inicio":
         return "En pausa"
       case "pausa_fin":

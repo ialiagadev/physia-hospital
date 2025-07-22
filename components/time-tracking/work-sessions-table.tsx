@@ -46,6 +46,7 @@ interface WorkSessionsTableProps {
   pageSize: number
   onPageChange: (page: number, pageSize: number) => void
   onExport: () => void
+  onRefresh: () => void // Hacer obligatorio
   onSubmitChangeRequest?: (requestData: any) => Promise<void>
 }
 
@@ -58,6 +59,7 @@ export function WorkSessionsTable({
   pageSize,
   onPageChange,
   onExport,
+  onRefresh,
   onSubmitChangeRequest,
 }: WorkSessionsTableProps) {
   const { isAdmin, updateWorkSession, deleteWorkSession } = useTimeTracking()
@@ -202,10 +204,6 @@ export function WorkSessionsTable({
     }
   }
 
-  const handleRefresh = () => {
-    onPageChange(currentPage, pageSize)
-  }
-
   if (loading) {
     return (
       <Card>
@@ -267,7 +265,6 @@ export function WorkSessionsTable({
             <TableBody>
               {sessions.map((session) => {
                 const netTime = calculateNetTime(session)
-
                 return (
                   <TableRow key={session.id}>
                     <TableCell className="font-medium">
@@ -337,7 +334,7 @@ export function WorkSessionsTable({
                             session={session}
                             onUpdate={updateWorkSession}
                             onDelete={deleteWorkSession}
-                            onRefresh={handleRefresh}
+                            onRefresh={onRefresh}
                           />
                         ) : (
                           onSubmitChangeRequest && (

@@ -14,7 +14,8 @@ import { useTimeTracking } from "@/hooks/use-time-tracking"
 import { useVacationRequests } from "@/hooks/use-vacation-requests"
 import { useToast } from "@/hooks/use-toast"
 import { Clock, Users, Calendar, Shield, Plane, CalendarDays } from "lucide-react"
-import { exportWorkSessionsCSV } from "@/lib/actions/time-tracking"
+import { format, parseISO } from "date-fns"
+import { es } from "date-fns/locale"
 
 export default function FichajePage() {
   const { userProfile, isAdmin, loading: userLoading, getWorkDays, getOrganizationUsers } = useTimeTracking()
@@ -46,6 +47,7 @@ export default function FichajePage() {
 
   // Crear una función simple para refrescar los datos:
   const refreshWorkSessions = () => {
+    console.log("Refreshing work sessions...")
     setRefreshKey((prev) => prev + 1)
   }
 
@@ -73,6 +75,7 @@ export default function FichajePage() {
   useEffect(() => {
     const loadWorkSessions = async () => {
       if (!userProfile?.organization_id) return
+
       setLoading(true)
       try {
         const result = await getWorkDays({
@@ -83,6 +86,7 @@ export default function FichajePage() {
           startDate,
           endDate,
         })
+
         if (result.sessions) {
           setWorkSessions(result.sessions)
           setTotalRecords(result.totalRecords)
@@ -94,6 +98,7 @@ export default function FichajePage() {
         setLoading(false)
       }
     }
+
     loadWorkSessions()
   }, [userProfile, currentPage, pageSize, isAdmin, selectedUser, startDate, endDate, refreshKey])
 
@@ -116,32 +121,132 @@ export default function FichajePage() {
     setCurrentPage(1)
   }
 
+  const formatMinutes = (minutes: number | null | undefined) => {
+    if (!minutes || minutes === 0) return "0h 0m"
+    const hours = Math.floor(Math.abs(minutes) / 60)
+    const mins = Math.abs(minutes) % 60
+    return `${hours}h ${mins}m`
+  }
+
+  const formatTime = (timeString: string | null) => {
+    if (!timeString) return ""
+    try {
+      return format(parseISO(timeString), "HH:mm")
+    } catch (error) {
+      return ""
+    }
+  }
+
+  const calculateNetTime = (session: any) => {
+    if (!session.clock_in_time || !session.clock_out_time) {
+      return null
+    }
+
+    if (session.total_minutes) {
+      return session.total_minutes
+    }
+
+    try {
+      const startTime = new Date(session.clock_in_time)
+      const endTime = new Date(session.clock_out_time)
+      const grossMinutes = Math.floor((endTime.getTime() - startTime.getTime()) / (1000 * 60))
+      const pauseMinutes = session.total_pause_minutes ?? 0
+      return grossMinutes - pauseMinutes
+    } catch {
+      return null
+    }
+  }
+
   const handleExportData = async () => {
     if (!userProfile?.organization_id) return
+
     try {
-      const result = await exportWorkSessionsCSV({
+      // Cargar TODOS los registros para exportar (sin paginación)
+      const result = await getWorkDays({
         userId: isAdmin ? selectedUser?.id : userProfile.id,
+        organizationId: userProfile.organization_id,
+        page: 1,
+        pageSize: 10000, // Cargar todos
         startDate,
         endDate,
       })
-      if (result.error) {
-        throw new Error(result.error)
-      }
-      if (result.csvData) {
-        const blob = new Blob([result.csvData], { type: "text/csv;charset=utf-8;" })
-        const url = URL.createObjectURL(blob)
-        const link = document.createElement("a")
-        link.setAttribute("href", url)
-        link.setAttribute("download", `fichajes_${new Date().toISOString().split("T")[0]}.csv`)
-        link.style.visibility = "hidden"
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
+
+      if (!result.sessions || result.sessions.length === 0) {
         toast({
-          title: "Exportación completada",
-          description: "Los datos se han exportado correctamente",
+          title: "Sin datos",
+          description: "No hay registros para exportar",
+          variant: "destructive",
         })
+        return
       }
+
+      // Definir columnas del CSV
+      const headers = [
+        "Fecha",
+        ...(isAdmin ? ["Usuario", "Email"] : []),
+        "Hora Entrada",
+        "Hora Salida",
+        "Número de Pausas",
+        "Tiempo Total Pausas",
+        "Tiempo Neto",
+        "Estado",
+        "Notas",
+        "Fecha Creación",
+        "Última Actualización",
+      ]
+
+      // Convertir datos a filas CSV
+      const rows = result.sessions.map((session: any) => {
+        const netTime = calculateNetTime(session)
+        return [
+          format(parseISO(session.work_date), "dd/MM/yyyy", { locale: es }),
+          ...(isAdmin ? [session.user_name || "Sin nombre", session.user_email || ""] : []),
+          formatTime(session.clock_in_time),
+          formatTime(session.clock_out_time),
+          session.pause_count?.toString() || "0",
+          formatMinutes(session.total_pause_minutes),
+          formatMinutes(netTime),
+          !session.clock_in_time
+            ? "Sin entrada"
+            : !session.clock_out_time
+              ? "En curso"
+              : session.status === "complete"
+                ? "Completado"
+                : "Incompleto",
+          session.notes || "",
+          session.created_at ? format(parseISO(session.created_at), "dd/MM/yyyy HH:mm", { locale: es }) : "",
+          session.updated_at ? format(parseISO(session.updated_at), "dd/MM/yyyy HH:mm", { locale: es }) : "",
+        ]
+      })
+
+      // Crear contenido CSV
+      const csvContent = [
+        [`# Reporte de Jornadas Laborales`],
+        [`# Generado el: ${format(new Date(), "dd/MM/yyyy HH:mm", { locale: es })}`],
+        [`# Total de registros: ${result.sessions.length}`],
+        [], // Línea vacía
+        headers,
+        ...rows,
+      ]
+        .filter((row) => row.length > 0)
+        .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+        .join("\n")
+
+      // Crear y descargar archivo
+      const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.setAttribute("href", url)
+      link.setAttribute("download", `fichajes_${new Date().toISOString().split("T")[0]}.csv`)
+      link.style.visibility = "hidden"
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      toast({
+        title: "Exportación completada",
+        description: `Se han exportado ${result.sessions.length} registros correctamente`,
+      })
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Error al exportar datos"
       toast({
@@ -273,6 +378,7 @@ export default function FichajePage() {
             pageSize={pageSize}
             onPageChange={handlePageChange}
             onExport={handleExportData}
+            onRefresh={refreshWorkSessions}
           />
         </TabsContent>
 
