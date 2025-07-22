@@ -6,12 +6,23 @@ import { es } from "date-fns/locale"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible"
-import { Plus, Users, Building2, Edit, ChevronDown, ChevronRight } from "lucide-react"
-import { useGroupActivitiesContext,type GroupActivity } from "@/app/contexts/group-activities-context"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { Plus, Users, Building2, Edit, ChevronDown, ChevronRight, Trash2, AlertTriangle } from "lucide-react"
+import { useGroupActivitiesContext, type GroupActivity } from "@/app/contexts/group-activities-context"
 import { GroupActivityFormModal } from "./group-activity-form-modal"
 import { GroupActivityDetailsModal } from "./group-activity-details-modal"
 import { ParticipantsModal } from "./participants-modal"
 import { useServices } from "@/hooks/use-services"
+import { useToast } from "@/hooks/use-toast"
 
 interface GroupActivitiesViewProps {
   organizationId: number
@@ -37,6 +48,7 @@ interface ActivitySeries {
 
 export function GroupActivitiesView({ organizationId, users }: GroupActivitiesViewProps) {
   const { services } = useServices(organizationId)
+  const { toast } = useToast()
 
   // ✅ USAR EL CONTEXTO EN LUGAR DEL HOOK DIRECTO
   const {
@@ -56,6 +68,11 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
   const [showParticipantsModal, setShowParticipantsModal] = useState(false)
   const [selectedActivity, setSelectedActivity] = useState<GroupActivity | null>(null)
   const [expandedSeries, setExpandedSeries] = useState<Set<string>>(new Set())
+  const [deletingSeries, setDeletingSeries] = useState<string | null>(null)
+
+  // Estados para el modal de confirmación de eliminación
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [seriesToDelete, setSeriesToDelete] = useState<ActivitySeries | null>(null)
 
   // ✅ FUNCIÓN PARA DETECTAR PATRONES DE RECURRENCIA
   const detectRecurrencePattern = (activities: GroupActivity[]): "weekly" | "monthly" | null => {
@@ -204,6 +221,58 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
     }
   }
 
+  // ✅ FUNCIÓN PARA MOSTRAR CONFIRMACIÓN DE ELIMINACIÓN
+  const handleDeleteSeriesClick = (series: ActivitySeries) => {
+    setSeriesToDelete(series)
+    setShowDeleteConfirm(true)
+  }
+
+  // ✅ FUNCIÓN PARA ELIMINAR TODA UNA SERIE DE ACTIVIDADES
+  const handleConfirmDeleteSeries = async () => {
+    if (!seriesToDelete) return
+
+    setShowDeleteConfirm(false)
+    setDeletingSeries(seriesToDelete.id)
+
+    try {
+      // Eliminar todas las actividades de la serie en paralelo
+      await Promise.all(seriesToDelete.activities.map((activity) => deleteActivity(activity.id)))
+
+      // Cerrar el panel expandido si estaba abierto
+      setExpandedSeries((prev) => {
+        const newSet = new Set(prev)
+        newSet.delete(seriesToDelete.id)
+        return newSet
+      })
+
+      // Mostrar mensaje de éxito
+      toast({
+        title: "Serie eliminada",
+        description: `Se eliminaron ${seriesToDelete.activities.length} sesiones de "${seriesToDelete.name}" exitosamente.`,
+        variant: "default",
+      })
+
+      console.log(`Serie "${seriesToDelete.name}" eliminada exitosamente`)
+    } catch (error) {
+      console.error("Error eliminando la serie:", error)
+
+      // Mostrar mensaje de error
+      toast({
+        title: "Error al eliminar serie",
+        description: "No se pudo eliminar la serie completa. Por favor, inténtalo de nuevo.",
+        variant: "destructive",
+      })
+    } finally {
+      setDeletingSeries(null)
+      setSeriesToDelete(null)
+    }
+  }
+
+  const handleCancelDeleteSeries = () => {
+    setShowDeleteConfirm(false)
+    setSeriesToDelete(null)
+  }
+
   const getStatusBadge = (status: string) => {
     const statusConfig = {
       active: { label: "Activa", variant: "default" as const },
@@ -303,6 +372,7 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
             const isExpanded = expandedSeries.has(series.id)
             const firstActivity = series.activities[0]
             const participationStatus = getParticipationStatus(firstActivity)
+            const isDeleting = deletingSeries === series.id
 
             return (
               <div key={series.id} className="border rounded-lg overflow-hidden">
@@ -316,6 +386,7 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
                         size="sm"
                         onClick={() => toggleSeriesExpansion(series.id)}
                         className="mr-2 p-1 h-8 w-8"
+                        disabled={isDeleting}
                       >
                         {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                       </Button>
@@ -330,6 +401,11 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
                           {series.isRecurringSeries && (
                             <Badge variant="outline" className="text-xs">
                               📅 {getRecurrenceLabel(series.recurrencePattern, series.activities.length)}
+                            </Badge>
+                          )}
+                          {isDeleting && (
+                            <Badge variant="destructive" className="text-xs animate-pulse">
+                              Eliminando...
                             </Badge>
                           )}
                         </div>
@@ -370,9 +446,9 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
 
                     {/* Participantes */}
                     <div className="flex items-center gap-2 mr-4">
-                    <Badge variant={participationStatus.variant} className="text-xs">
-  {firstActivity.current_participants}/{firstActivity.max_participants}
-</Badge>
+                      <Badge variant={participationStatus.variant} className="text-xs">
+                        {firstActivity.current_participants}/{firstActivity.max_participants}
+                      </Badge>
                       <div className="w-16 bg-gray-200 rounded-full h-1.5">
                         <div
                           className="bg-blue-600 h-1.5 rounded-full transition-all"
@@ -391,6 +467,7 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
                         size="sm"
                         onClick={() => handleViewParticipants(firstActivity)}
                         className="h-8 px-2"
+                        disabled={isDeleting}
                       >
                         <Users className="h-4 w-4" />
                       </Button>
@@ -399,9 +476,27 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
                         size="sm"
                         onClick={() => handleEditActivity(firstActivity)}
                         className="h-8 px-2"
+                        disabled={isDeleting}
                       >
                         <Edit className="h-4 w-4" />
                       </Button>
+                      {/* Botón para eliminar toda la serie (solo para series recurrentes) */}
+                      {series.isRecurringSeries && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteSeriesClick(series)}
+                          className="h-8 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          title={`Eliminar todas las ${series.activities.length} sesiones`}
+                          disabled={isDeleting}
+                        >
+                          {isDeleting ? (
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -417,7 +512,9 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
                           return (
                             <div
                               key={activity.id}
-                              className="flex items-center p-3 pl-12 hover:bg-gray-100 transition-colors border-b border-gray-200 last:border-b-0"
+                              className={`flex items-center p-3 pl-12 hover:bg-gray-100 transition-colors border-b border-gray-200 last:border-b-0 ${
+                                isDeleting ? "opacity-50" : ""
+                              }`}
                             >
                               {/* Indicador de sesión */}
                               <div className="flex items-center gap-2 mr-4">
@@ -458,6 +555,7 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
                                   size="sm"
                                   onClick={() => handleViewParticipants(activity)}
                                   className="h-7 px-2"
+                                  disabled={isDeleting}
                                 >
                                   <Users className="h-3 w-3" />
                                 </Button>
@@ -466,6 +564,7 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
                                   size="sm"
                                   onClick={() => handleEditActivity(activity)}
                                   className="h-7 px-2"
+                                  disabled={isDeleting}
                                 >
                                   <Edit className="h-3 w-3" />
                                 </Button>
@@ -482,6 +581,37 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
           })}
         </div>
       )}
+
+      {/* Modal de confirmación de eliminación */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+              Eliminar serie completa
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>
+                ¿Estás seguro de que quieres eliminar toda la serie{" "}
+                <span className="font-semibold">"{seriesToDelete?.name}"</span>?
+              </p>
+              <p className="text-red-600 font-medium">Se eliminarán {seriesToDelete?.activities.length} sesiones.</p>
+              <p className="text-sm text-gray-600">
+                Esta acción no se puede deshacer. Todos los participantes y datos asociados se perderán permanentemente.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleCancelDeleteSeries}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDeleteSeries}
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+            >
+              Eliminar {seriesToDelete?.activities.length} sesiones
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Modals */}
       {showCreateModal && (
