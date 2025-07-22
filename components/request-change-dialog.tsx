@@ -1,24 +1,21 @@
 "use client"
 
-import type React from "react"
-
 import { useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Edit, Calendar } from "lucide-react"
+import { MessageSquare, Send, X } from "lucide-react"
 import { format, parseISO } from "date-fns"
-import { es } from "date-fns/locale"
+import { useToast } from "@/hooks/use-toast"
 
 interface WorkSession {
   id: string
   work_date: string
-  local_clock_in: string | null
-  local_clock_out: string | null
-  total_hours: number | null
+  clock_in_time: string | null
+  clock_out_time: string | null
+  total_minutes: number | null
   status: string | null
   user_name: string | null
   user_email: string | null
@@ -28,50 +25,63 @@ interface WorkSession {
 
 interface RequestChangeDialogProps {
   session: WorkSession
-  onSubmitRequest: (requestData: any) => Promise<void>
+  onSubmitRequest: (requestData: {
+    session_id: string
+    requested_clock_in?: string | null
+    requested_clock_out?: string | null
+    reason: string
+    notes?: string
+  }) => Promise<void>
 }
 
 export function RequestChangeDialog({ session, onSubmitRequest }: RequestChangeDialogProps) {
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [requestType, setRequestType] = useState<string>("")
-  const [newClockIn, setNewClockIn] = useState(
-    session.local_clock_in ? format(parseISO(session.local_clock_in), "HH:mm") : "",
-  )
-  const [newClockOut, setNewClockOut] = useState(
-    session.local_clock_out ? format(parseISO(session.local_clock_out), "HH:mm") : "",
+  const [clockIn, setClockIn] = useState(session.clock_in_time ? format(parseISO(session.clock_in_time), "HH:mm") : "")
+  const [clockOut, setClockOut] = useState(
+    session.clock_out_time ? format(parseISO(session.clock_out_time), "HH:mm") : "",
   )
   const [reason, setReason] = useState("")
+  const [notes, setNotes] = useState("")
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!requestType || !reason.trim()) return
+  const { toast } = useToast()
+
+  const handleSubmit = async () => {
+    if (!reason.trim()) {
+      toast({
+        title: "❌ Error",
+        description: "Debes proporcionar un motivo para la solicitud",
+        variant: "destructive",
+      })
+      return
+    }
 
     setLoading(true)
     try {
       const requestData = {
         session_id: session.id,
-        request_type: requestType,
-        current_clock_in: session.local_clock_in,
-        current_clock_out: session.local_clock_out,
-        requested_clock_in:
-          requestType === "modify_times" || requestType === "modify_clock_in"
-            ? `${session.work_date}T${newClockIn}:00`
-            : null,
-        requested_clock_out:
-          requestType === "modify_times" || requestType === "modify_clock_out"
-            ? `${session.work_date}T${newClockOut}:00`
-            : null,
-        reason: reason,
-        status: "pending",
+        requested_clock_in: clockIn ? `${session.work_date}T${clockIn}:00` : null,
+        requested_clock_out: clockOut ? `${session.work_date}T${clockOut}:00` : null,
+        reason: reason.trim(),
+        notes: notes.trim() || undefined,
       }
 
       await onSubmitRequest(requestData)
+
+      toast({
+        title: "✅ Solicitud enviada",
+        description: "Tu solicitud de cambio ha sido enviada al administrador",
+      })
+
       setOpen(false)
-      setRequestType("")
       setReason("")
-    } catch (error) {
-      console.error("Error submitting request:", error)
+      setNotes("")
+    } catch (err) {
+      toast({
+        title: "❌ Error",
+        description: err instanceof Error ? err.message : "Error al enviar solicitud",
+        variant: "destructive",
+      })
     } finally {
       setLoading(false)
     }
@@ -80,106 +90,92 @@ export function RequestChangeDialog({ session, onSubmitRequest }: RequestChangeD
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Edit className="h-4 w-4 mr-2" />
-          Solicitar Cambio
+        <Button variant="ghost" size="sm">
+          <MessageSquare className="h-4 w-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Calendar className="h-5 w-5" />
-            Solicitar Cambio de Registro
-          </DialogTitle>
+          <DialogTitle>Solicitar Cambio</DialogTitle>
         </DialogHeader>
-
         <div className="space-y-4">
-          {/* Información del registro actual */}
-          <div className="bg-muted p-3 rounded-lg space-y-2">
-            <p className="font-medium text-sm">Registro actual:</p>
-            <div className="text-sm text-muted-foreground space-y-1">
-              <p>📅 {format(parseISO(session.work_date), "dd MMM yyyy", { locale: es })}</p>
-              <p>
-                🟢 Entrada:{" "}
-                {session.local_clock_in ? format(parseISO(session.local_clock_in), "HH:mm") : "Sin registro"}
-              </p>
-              <p>
-                🔴 Salida:{" "}
-                {session.local_clock_out ? format(parseISO(session.local_clock_out), "HH:mm") : "Sin registro"}
-              </p>
+          <div>
+            <Label className="text-sm font-medium">Fecha</Label>
+            <p className="text-sm text-muted-foreground">{format(parseISO(session.work_date), "dd/MM/yyyy")}</p>
+          </div>
+
+          <div className="bg-muted p-3 rounded-md">
+            <h4 className="text-sm font-medium mb-2">Registro actual:</h4>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="text-muted-foreground">Entrada:</span>
+                <p>{session.clock_in_time ? format(parseISO(session.clock_in_time), "HH:mm") : "No registrada"}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Salida:</span>
+                <p>{session.clock_out_time ? format(parseISO(session.clock_out_time), "HH:mm") : "No registrada"}</p>
+              </div>
             </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="request-type">Tipo de solicitud</Label>
-              <Select value={requestType} onValueChange={setRequestType}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona el tipo de cambio" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="modify_times">Modificar horarios de entrada y salida</SelectItem>
-                  <SelectItem value="modify_clock_in">Modificar solo hora de entrada</SelectItem>
-                  <SelectItem value="modify_clock_out">Modificar solo hora de salida</SelectItem>
-                  <SelectItem value="add_missing_entry">Agregar entrada faltante</SelectItem>
-                  <SelectItem value="add_missing_exit">Agregar salida faltante</SelectItem>
-                  <SelectItem value="delete_record">Eliminar registro</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Campos de tiempo según el tipo de solicitud */}
-            {(requestType === "modify_times" ||
-              requestType === "modify_clock_in" ||
-              requestType === "add_missing_entry") && (
-              <div>
-                <Label htmlFor="new-clock-in">Nueva hora de entrada</Label>
-                <Input
-                  id="new-clock-in"
-                  type="time"
-                  value={newClockIn}
-                  onChange={(e) => setNewClockIn(e.target.value)}
-                  required
-                />
-              </div>
-            )}
-
-            {(requestType === "modify_times" ||
-              requestType === "modify_clock_out" ||
-              requestType === "add_missing_exit") && (
-              <div>
-                <Label htmlFor="new-clock-out">Nueva hora de salida</Label>
-                <Input
-                  id="new-clock-out"
-                  type="time"
-                  value={newClockOut}
-                  onChange={(e) => setNewClockOut(e.target.value)}
-                  required
-                />
-              </div>
-            )}
-
-            <div>
-              <Label htmlFor="reason">Motivo de la solicitud *</Label>
-              <Textarea
-                id="reason"
-                placeholder="Explica el motivo de tu solicitud..."
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                required
-                rows={3}
+              <Label htmlFor="new-clock-in">Nueva Hora de Entrada</Label>
+              <Input
+                id="new-clock-in"
+                type="time"
+                value={clockIn}
+                onChange={(e) => setClockIn(e.target.value)}
+                disabled={loading}
               />
             </div>
-
-            <div className="flex gap-2 pt-4">
-              <Button type="submit" disabled={loading || !requestType || !reason.trim()}>
-                {loading ? "Enviando..." : "Enviar Solicitud"}
-              </Button>
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-                Cancelar
-              </Button>
+            <div>
+              <Label htmlFor="new-clock-out">Nueva Hora de Salida</Label>
+              <Input
+                id="new-clock-out"
+                type="time"
+                value={clockOut}
+                onChange={(e) => setClockOut(e.target.value)}
+                disabled={loading}
+              />
             </div>
-          </form>
+          </div>
+
+          <div>
+            <Label htmlFor="reason">Motivo del cambio *</Label>
+            <Textarea
+              id="reason"
+              placeholder="Explica por qué necesitas este cambio..."
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              disabled={loading}
+              rows={3}
+              required
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="additional-notes">Notas adicionales</Label>
+            <Textarea
+              id="additional-notes"
+              placeholder="Información adicional (opcional)..."
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              disabled={loading}
+              rows={2}
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4">
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={loading}>
+              <X className="h-4 w-4 mr-2" />
+              Cancelar
+            </Button>
+            <Button onClick={handleSubmit} disabled={loading || !reason.trim()}>
+              <Send className="h-4 w-4 mr-2" />
+              {loading ? "Enviando..." : "Enviar Solicitud"}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { supabase } from "@/lib/supabase/client"
 import type { User } from "@supabase/supabase-js"
 import { setAuditContext } from "@/lib/actions/time-tracking-audit"
@@ -15,23 +15,32 @@ interface UserProfile {
 
 interface TimeEntry {
   id: string
-  entry_type: "entrada" | "salida"
+  entry_type: "entrada" | "salida" | "pausa_inicio" | "pausa_fin"
   local_timestamp: string
   user_name: string | null
   notes?: string | null
 }
 
+interface ActivePause {
+  id: string
+  local_pause_start: string
+  pause_number: number
+}
+
 interface WorkSession {
   id: string
   work_date: string
-  local_clock_in: string | null
-  local_clock_out: string | null
-  total_hours: number | null
+  clock_in_time: string | null
+  clock_out_time: string | null
+  total_minutes: number | null
   status: string | null
   user_name: string | null
   user_email: string | null
   user_id: string
   notes?: string | null
+  created_at?: string
+  updated_at?: string
+  organization_id?: number
 }
 
 interface OrganizationUser {
@@ -82,10 +91,8 @@ export function useTimeTracking() {
     }
   }
 
-  const getLastEntry = async (userId?: string): Promise<TimeEntry | null> => {
-    // Validar que el userId sea una cadena válida y no esté vacía
+  const getLastEntry = useCallback(async (userId?: string): Promise<TimeEntry | null> => {
     if (!userId || typeof userId !== "string" || userId.trim() === "") {
-      console.log("getLastEntry: ID de usuario inválido o vacío")
       return null
     }
 
@@ -96,31 +103,62 @@ export function useTimeTracking() {
         .eq("user_id", userId)
         .order("timestamp", { ascending: false })
         .limit(1)
-        .single()
+        .maybeSingle()
 
       if (error) {
-        // PGRST116 es el código cuando no hay resultados, no es un error real
-        if (error.code !== "PGRST116") {
-          console.error("Error getting last entry:", error)
-        }
+        console.error("Error getting last entry:", error)
         return null
       }
 
-      setLastEntry(data)
-      return data
+      if (data) {
+        setLastEntry(data)
+        return data
+      }
+
+      setLastEntry(null)
+      return null
     } catch (err) {
       console.error("Error getting last entry:", err)
       return null
     }
-  }
+  }, [])
+
+  const getActivePause = useCallback(async (userId: string): Promise<ActivePause | null> => {
+    if (!userId || typeof userId !== "string" || userId.trim() === "") {
+      return null
+    }
+
+    try {
+      const today = new Date().toISOString().split("T")[0]
+
+      const { data, error } = await supabase
+        .from("work_pauses_with_user")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("work_date", today)
+        .is("pause_end", null)
+        .order("pause_start", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (error) {
+        console.error("Error getting active pause:", error)
+        return null
+      }
+
+      return data
+    } catch (err) {
+      console.error("Error getting active pause:", err)
+      return null
+    }
+  }, [])
 
   const clockInOut = async (
     userId: string,
     organizationId: number,
-    entryType: "entrada" | "salida",
+    entryType: "entrada" | "salida" | "pausa_inicio" | "pausa_fin",
     isAdminAction = false,
   ) => {
-    // Validar que el userId sea una cadena válida y no esté vacía
     if (!userId || typeof userId !== "string" || userId.trim() === "") {
       return { success: false, error: "ID de usuario inválido" }
     }
@@ -129,50 +167,90 @@ export function useTimeTracking() {
     setError(null)
 
     try {
-      // Verificar el último entry para validar la secuencia
-      const lastEntry = await getLastEntry(userId)
+      // Verificar el último entry y pausa activa para validar la secuencia
+      const [lastEntry, activePause] = await Promise.all([getLastEntry(userId), getActivePause(userId)])
 
-      // Validación de secuencia - mantener la validación pero permitir ciclos completos
-      if (entryType === "entrada" && lastEntry?.entry_type === "entrada") {
-        throw new Error("Ya tienes una entrada registrada. Debes fichar salida primero.")
+      // Validaciones de secuencia
+      if (entryType === "entrada") {
+        if (lastEntry?.entry_type === "entrada") {
+          throw new Error("Ya tienes una entrada registrada. Debes fichar salida primero.")
+        }
+        if (activePause) {
+          throw new Error("Tienes una pausa activa. Debes finalizarla primero.")
+        }
       }
 
-      if (entryType === "salida" && (!lastEntry || lastEntry.entry_type === "salida")) {
-        throw new Error("No tienes una entrada registrada. Debes fichar entrada primero.")
+      if (entryType === "salida") {
+        if (!lastEntry || lastEntry.entry_type === "salida") {
+          throw new Error("No tienes una entrada registrada. Debes fichar entrada primero.")
+        }
+        if (activePause) {
+          throw new Error("Tienes una pausa activa. Debes finalizarla antes de fichar salida.")
+        }
       }
 
-      // Establecer el contexto de auditoría antes de la operación
+      if (entryType === "pausa_inicio") {
+        if (!lastEntry || (lastEntry.entry_type !== "entrada" && lastEntry.entry_type !== "pausa_fin")) {
+          throw new Error("Debes tener una entrada registrada para iniciar una pausa.")
+        }
+        if (activePause) {
+          throw new Error("Ya tienes una pausa activa. Debes finalizarla primero.")
+        }
+      }
+
+      if (entryType === "pausa_fin") {
+        if (!activePause) {
+          throw new Error("No tienes ninguna pausa activa para finalizar.")
+        }
+      }
+
+      // Establecer contexto de auditoría
       if (user) {
-        await setAuditContext(user.id, {
-          isAdminAction,
-          reason: isAdminAction ? `Fichaje ${entryType} para usuario ${userId} por administrador` : undefined,
-          details: {
-            entry_type: entryType,
-            target_user_id: userId,
-          },
-        })
+        try {
+          await setAuditContext(user.id, {
+            isAdminAction,
+            reason: isAdminAction ? `Fichaje ${entryType} para usuario ${userId} por administrador` : undefined,
+            details: {
+              entry_type: entryType,
+              target_user_id: userId,
+            },
+          })
+        } catch (auditError) {
+          console.warn("Error setting audit context:", auditError)
+        }
       }
 
-      const { data, error: insertError } = await supabase
-        .from("time_entries")
-        .insert({
-          user_id: userId,
-          organization_id: organizationId,
-          entry_type: entryType,
-          timestamp: new Date().toISOString(),
-          notes: isAdminAction ? `Fichaje realizado por administrador: ${userProfile?.name || user?.email}` : null,
-        })
-        .select()
-        .single()
+      // Preparar datos para inserción
+      const now = new Date()
+      const insertData = {
+        user_id: userId,
+        organization_id: organizationId,
+        entry_type: entryType,
+        timestamp: now.toISOString(),
+        local_timestamp: now.toISOString(),
+        notes: isAdminAction ? `Fichaje realizado por administrador: ${userProfile?.name || user?.email}` : null,
+      }
 
-      if (insertError) throw insertError
+      console.log("Insertando datos:", insertData)
 
-      // Actualizar el último entry después de un fichaje exitoso
+      // Insertar entrada
+      const { error: insertError } = await supabase.from("time_entries").insert(insertData)
+
+      if (insertError) {
+        console.error("Error de inserción:", insertError)
+        throw insertError
+      }
+
+      // Esperar para que los triggers procesen
+      await new Promise((resolve) => setTimeout(resolve, 200))
+
+      // Actualizar el último entry
       await getLastEntry(userId)
 
-      return { success: true, data }
+      return { success: true, data: { id: "temp-id", ...insertData } }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Error al fichar"
+      console.error("Error en clockInOut:", err)
       setError(errorMessage)
       return { success: false, error: errorMessage }
     } finally {
@@ -194,16 +272,19 @@ export function useTimeTracking() {
     }
 
     try {
-      // Establecer el contexto de auditoría antes de la operación
       if (user) {
-        await setAuditContext(user.id, {
-          isAdminAction: true,
-          reason: reason || "Actualización manual de jornada por administrador",
-          details: {
-            session_id: sessionId,
-            updates,
-          },
-        })
+        try {
+          await setAuditContext(user.id, {
+            isAdminAction: true,
+            reason: reason || "Actualización manual de jornada por administrador",
+            details: {
+              session_id: sessionId,
+              updates,
+            },
+          })
+        } catch (auditError) {
+          console.warn("Error setting audit context:", auditError)
+        }
       }
 
       const { data, error } = await supabase
@@ -215,7 +296,6 @@ export function useTimeTracking() {
         .single()
 
       if (error) throw error
-
       return { success: true, data }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Error al actualizar registro"
@@ -229,15 +309,18 @@ export function useTimeTracking() {
     }
 
     try {
-      // Establecer el contexto de auditoría antes de la operación
       if (user) {
-        await setAuditContext(user.id, {
-          isAdminAction: true,
-          reason: reason || "Eliminación manual de jornada por administrador",
-          details: {
-            session_id: sessionId,
-          },
-        })
+        try {
+          await setAuditContext(user.id, {
+            isAdminAction: true,
+            reason: reason || "Eliminación manual de jornada por administrador",
+            details: {
+              session_id: sessionId,
+            },
+          })
+        } catch (auditError) {
+          console.warn("Error setting audit context:", auditError)
+        }
       }
 
       const { error } = await supabase
@@ -247,7 +330,6 @@ export function useTimeTracking() {
         .eq("organization_id", userProfile.organization_id)
 
       if (error) throw error
-
       return { success: true }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Error al eliminar registro"
@@ -270,16 +352,19 @@ export function useTimeTracking() {
     }
 
     try {
-      // Establecer el contexto de auditoría antes de la operación
       if (user) {
-        await setAuditContext(user.id, {
-          isAdminAction: true,
-          reason: reason || "Creación manual de jornada por administrador",
-          details: {
-            user_id: sessionData.user_id,
-            work_date: sessionData.work_date,
-          },
-        })
+        try {
+          await setAuditContext(user.id, {
+            isAdminAction: true,
+            reason: reason || "Creación manual de jornada por administrador",
+            details: {
+              user_id: sessionData.user_id,
+              work_date: sessionData.work_date,
+            },
+          })
+        } catch (auditError) {
+          console.warn("Error setting audit context:", auditError)
+        }
       }
 
       const { data, error } = await supabase
@@ -292,7 +377,6 @@ export function useTimeTracking() {
         .single()
 
       if (error) throw error
-
       return { success: true, data }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Error al crear registro"
@@ -319,7 +403,7 @@ export function useTimeTracking() {
       const offset = (page - 1) * pageSize
 
       let query = supabase
-        .from("work_sessions_with_user")
+        .from("work_sessions_with_pauses")
         .select("*", { count: "exact" })
         .eq("organization_id", organizationId)
         .order("work_date", { ascending: false })
@@ -327,11 +411,9 @@ export function useTimeTracking() {
       if (userId) {
         query = query.eq("user_id", userId)
       }
-
       if (startDate) {
         query = query.gte("work_date", startDate)
       }
-
       if (endDate) {
         query = query.lte("work_date", endDate)
       }
@@ -366,20 +448,22 @@ export function useTimeTracking() {
         .order("name")
 
       if (error) throw error
-
       return { users: users || [] }
     } catch (err) {
       return { users: [], error: err instanceof Error ? err.message : "Error al cargar usuarios" }
     }
   }
 
-  const refreshLastEntry = (userId?: string) => {
-    if (userId) {
-      getLastEntry(userId)
-    } else if (user) {
-      getLastEntry(user.id)
-    }
-  }
+  const refreshLastEntry = useCallback(
+    (userId?: string) => {
+      if (userId) {
+        getLastEntry(userId)
+      } else if (user) {
+        getLastEntry(user.id)
+      }
+    },
+    [getLastEntry, user],
+  )
 
   return {
     user,
@@ -393,6 +477,7 @@ export function useTimeTracking() {
     canViewReports: userProfile?.role === "admin" || userProfile?.role === "viewer",
     // Funciones principales
     getLastEntry,
+    getActivePause,
     clockInOut,
     getWorkDays,
     getOrganizationUsers,

@@ -5,7 +5,7 @@ import { useTimeTracking } from "@/hooks/use-time-tracking"
 import { Card, CardContent } from "@/components/ui/card"
 import { Clock } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useCallback } from "react"
 
 interface TimeClockContainerProps {
   selectedUser?: {
@@ -14,53 +14,51 @@ interface TimeClockContainerProps {
     email: string | null
     organization_id: number | null
   } | null
-  onClockSuccess?: () => void // Añadir esta propiedad
+  onClockSuccess?: () => void
 }
 
 export function TimeClockContainer({ selectedUser, onClockSuccess }: TimeClockContainerProps) {
-  const { userProfile, loading, error, clockInOut, getLastEntry } = useTimeTracking()
+  const { userProfile, loading, error, clockInOut, getLastEntry, getActivePause } = useTimeTracking()
   const { toast } = useToast()
 
-  // Estado local para manejar el último entry por usuario
   const [lastEntry, setLastEntry] = useState<any>(null)
+  const [activePause, setActivePause] = useState<any>(null)
   const [isLoadingEntry, setIsLoadingEntry] = useState(false)
 
-  // Referencia para evitar solicitudes innecesarias
-  const lastRequestedUserId = useRef<string | null>(null)
-
-  // Usar el usuario seleccionado o el perfil del usuario actual
   const targetUser = selectedUser || userProfile
 
-  // Efecto para cargar el último entry cuando cambia el usuario
-  useEffect(() => {
-    const loadLastEntry = async () => {
-      // Validar que tenemos un usuario válido con ID
-      if (!targetUser?.id || typeof targetUser.id !== "string" || targetUser.id.trim() === "") {
+  const loadUserData = useCallback(
+    async (userId: string) => {
+      if (!userId || typeof userId !== "string" || userId.trim() === "") {
         setLastEntry(null)
+        setActivePause(null)
         return
       }
 
-      // Evitar solicitudes duplicadas para el mismo usuario
-      if (lastRequestedUserId.current === targetUser.id) {
-        return
-      }
-
-      lastRequestedUserId.current = targetUser.id
       setIsLoadingEntry(true)
-
       try {
-        const entry = await getLastEntry(targetUser.id)
+        const [entry, pause] = await Promise.all([getLastEntry(userId), getActivePause(userId)])
         setLastEntry(entry)
+        setActivePause(pause)
       } catch (err) {
-        console.error("Error loading last entry:", err)
+        console.error("Error loading user data:", err)
         setLastEntry(null)
+        setActivePause(null)
       } finally {
         setIsLoadingEntry(false)
       }
-    }
+    },
+    [getLastEntry, getActivePause],
+  )
 
-    loadLastEntry()
-  }, [targetUser?.id, getLastEntry])
+  useEffect(() => {
+    if (targetUser?.id) {
+      loadUserData(targetUser.id)
+    } else {
+      setLastEntry(null)
+      setActivePause(null)
+    }
+  }, [targetUser?.id, loadUserData])
 
   if (loading) {
     return (
@@ -97,7 +95,7 @@ export function TimeClockContainer({ selectedUser, onClockSuccess }: TimeClockCo
     )
   }
 
-  const handleClockInOut = async (entryType: "entrada" | "salida") => {
+  const handleClockInOut = async (entryType: "entrada" | "salida" | "pausa_inicio" | "pausa_fin") => {
     if (!targetUser.id || !targetUser.organization_id) {
       toast({
         title: "❌ Error",
@@ -108,27 +106,25 @@ export function TimeClockContainer({ selectedUser, onClockSuccess }: TimeClockCo
     }
 
     try {
-      const result = await clockInOut(targetUser.id, targetUser.organization_id, entryType)
+      const isAdminAction = Boolean(selectedUser && userProfile?.role === "admin")
+      const result = await clockInOut(targetUser.id, targetUser.organization_id, entryType, isAdminAction)
 
       if (result.success) {
+        const messages = {
+          entrada: "✅ Entrada registrada",
+          salida: "✅ Salida registrada",
+          pausa_inicio: "⏸️ Pausa iniciada",
+          pausa_fin: "▶️ Pausa finalizada",
+        }
+
         toast({
-          title: entryType === "entrada" ? "✅ Entrada registrada" : "✅ Salida registrada",
-          description: `Fichaje de ${entryType} guardado correctamente.`,
+          title: messages[entryType],
+          description: `Fichaje de ${entryType.replace("_", " ")} guardado correctamente.`,
         })
 
-        // Actualizar el estado local inmediatamente
-        const newEntry = {
-          id: result.data?.id || "temp-id",
-          entry_type: entryType,
-          local_timestamp: new Date().toISOString(),
-          user_name: targetUser.name,
-        }
-        setLastEntry(newEntry)
+        // Recargar datos del usuario
+        await loadUserData(targetUser.id)
 
-        // Actualizar la referencia para permitir una nueva solicitud
-        lastRequestedUserId.current = null
-
-        // Llamar al callback si existe para actualizar los registros
         if (onClockSuccess) {
           onClockSuccess()
         }
@@ -149,6 +145,7 @@ export function TimeClockContainer({ selectedUser, onClockSuccess }: TimeClockCo
     <TimeClock
       user={targetUser}
       lastEntry={lastEntry}
+      activePause={activePause}
       onClockInOut={handleClockInOut}
       isLoading={loading || isLoadingEntry}
     />
