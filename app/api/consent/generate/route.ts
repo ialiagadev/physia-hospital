@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { supabase } from "@/lib/supabase/client"
+import { createClient } from "@supabase/supabase-js"
 import { OrganizationDataService } from "@/lib/services/organization-data"
 
 interface OrganizationData {
@@ -18,6 +18,23 @@ interface OrganizationData {
 
 export async function POST(request: NextRequest) {
   try {
+    // ✅ CAMBIO: Obtener el token de autorización del header
+    const authHeader = request.headers.get("authorization")
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Token de autorización requerido" }, { status: 401 })
+    }
+
+    const token = authHeader.replace("Bearer ", "")
+
+    // ✅ CAMBIO: Crear cliente Supabase con el token del usuario
+    const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+      global: {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    })
+
     const {
       client_id,
       consent_form_id,
@@ -25,7 +42,7 @@ export async function POST(request: NextRequest) {
       delivery_method = "manual",
       created_by,
       organization_id,
-      organization_data, // ✅ CAMBIO: Recibir datos completos
+      organization_data,
     } = await request.json()
 
     console.log("🔍 DEBUG - Generate consent request:", {
@@ -33,7 +50,7 @@ export async function POST(request: NextRequest) {
       consent_form_id,
       created_by,
       organization_id,
-      has_organization_data: !!organization_data, // ✅ CAMBIO
+      has_organization_data: !!organization_data,
       organization_name: organization_data?.name,
       expiration_days,
       delivery_method,
@@ -47,7 +64,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "organization_id es obligatorio" }, { status: 400 })
     }
 
-    // Verificar que el cliente existe (si se proporciona)
+    // ✅ CAMBIO: Verificar que el usuario autenticado puede acceder a esta organización
+    const { data: userProfile, error: userError } = await supabase
+      .from("users")
+      .select("organization_id")
+      .eq("id", created_by)
+      .single()
+
+    if (userError || !userProfile || userProfile.organization_id !== organization_id) {
+      console.error("❌ User access denied:", {
+        created_by,
+        user_organization_id: userProfile?.organization_id,
+        requested_organization_id: organization_id,
+        error: userError,
+      })
+      return NextResponse.json({ error: "Sin acceso a esta organización" }, { status: 403 })
+    }
+
+    // Ahora las consultas usarán el contexto del usuario autenticado
     let client = null
     if (client_id) {
       const { data: clientData, error: clientError } = await supabase
@@ -59,12 +93,18 @@ export async function POST(request: NextRequest) {
       console.log("🔍 DEBUG - Client data:", { clientData, clientError })
 
       if (clientError || !clientData) {
-        return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 })
+        console.error("❌ Client not found or access denied:", {
+          client_id,
+          organization_id,
+          error: clientError,
+        })
+        return NextResponse.json({ error: "Cliente no encontrado o sin acceso" }, { status: 404 })
       }
+
       client = clientData
     }
 
-    // Verificar que el formulario de consentimiento existe
+    // Verificar formulario de consentimiento
     const { data: consentForm, error: formError } = await supabase
       .from("consent_forms")
       .select("id, title, content, category, organization_id")
@@ -89,7 +129,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Formulario de consentimiento no encontrado" }, { status: 404 })
     }
 
-    // ✅ CAMBIO: Usar datos de organización del frontend
     console.log("✅ DEBUG - Using organization data from frontend:", {
       organizationId: organization_id,
       organizationData: organization_data
@@ -122,7 +161,6 @@ export async function POST(request: NextRequest) {
         console.log("✅ DEBUG - Placeholders replaced:", placeholdersReplaced)
       } catch (processError) {
         console.error("❌ Error processing placeholders:", processError)
-        // Usar contenido original si hay error en el procesamiento
         processedContent = consentForm.content
       }
     } else {
@@ -130,7 +168,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Generar token único
-    const token = `${crypto.randomUUID()}-${Date.now()}`
+    const tokenId = `${crypto.randomUUID()}-${Date.now()}`
 
     // Calcular fecha de expiración
     const expiresAt = new Date()
@@ -144,18 +182,18 @@ export async function POST(request: NextRequest) {
       client_name: client?.name || null,
       processed_content: processedContent,
       placeholders_replaced: placeholdersReplaced,
-      organization_data: organization_data || null, // ✅ CAMBIO: Usar datos del frontend
+      organization_data: organization_data || null,
       organization_source: "frontend_complete",
       processing_timestamp: new Date().toISOString(),
     }
 
-    // Crear el token en la base de datos con el contenido procesado
+    // Crear el token en la base de datos
     const { data: tokenData, error: tokenError } = await supabase
       .from("consent_tokens")
       .insert({
         client_id: client_id || null,
         consent_form_id: consent_form_id,
-        token: token,
+        token: tokenId,
         expires_at: expiresAt.toISOString(),
         created_by: created_by,
         sent_via: delivery_method,
@@ -188,7 +226,7 @@ export async function POST(request: NextRequest) {
     const baseUrl =
       process.env.NEXT_PUBLIC_SITE_URL ||
       (process.env.NODE_ENV === "development" ? "http://localhost:3000" : "https://facturas-physia.vercel.app")
-    const link = `${baseUrl}/consentimiento/${token}`
+    const link = `${baseUrl}/consentimiento/${tokenId}`
 
     console.log("✅ DEBUG - Consent link generated successfully:", {
       token: tokenData.token,
