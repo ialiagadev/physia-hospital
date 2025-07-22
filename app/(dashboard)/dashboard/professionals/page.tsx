@@ -414,7 +414,7 @@ export default function ProfessionalsPage() {
                                 <p className="text-amber-800 font-medium text-xs">⚠️ Recordatorio importante</p>
                                 <p className="text-xs text-amber-700">
                                   No olvides asignar los servicios correspondientes a este profesional en la sección de
-                                  configuración.
+                                  servicios o desde el calendario.
                                 </p>
                               </div>
                             </div>

@@ -286,7 +286,7 @@ export default function ConsentFormsPage() {
                 <div>
                   <h4 className="font-medium text-gray-900">Plantillas por Especialidad</h4>
                   <p className="text-sm text-gray-600">
-                    Existen plantillas de diferentes espcialidades.
+                    Existen plantillas de diferentes especialidades.
                   </p>
                 </div>
               </div>

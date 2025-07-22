@@ -1,17 +1,20 @@
 "use client"
 
-import type React from "react"
-import { useState, useEffect } from "react"
+import React, { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Checkbox } from "@/components/ui/checkbox"
 import { useToast } from "@/hooks/use-toast"
-import { Save } from "lucide-react"
+import { Save, Upload, X, Download } from "lucide-react"
 import { useAuth } from "@/app/contexts/auth-context"
 import { useUsers } from "@/hooks/use-users"
+import { StorageService } from "@/lib/storage-service"
+import { calculateExpenseAmounts } from "@/types/expenses"
+import type { ExpenseWithDetails } from "@/types/expenses"
 import {
   Dialog,
   DialogContent,
@@ -20,7 +23,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import type { ExpenseWithDetails } from "@/types/expenses"
 
 const paymentMethodOptions = [
   { value: "cash", label: "Efectivo" },
@@ -42,18 +44,34 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
   const { userProfile } = useAuth()
   const { users, loading: usersLoading } = useUsers(userProfile?.organization_id)
   const [loading, setLoading] = useState(false)
+  const [uploadingFile, setUploadingFile] = useState(false)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [tempFilePath, setTempFilePath] = useState<string | null>(null)
+
   const [formData, setFormData] = useState({
     description: "",
     amount: "",
     expense_date: "",
     user_id: "default_user_id",
     supplier_name: "",
+    supplier_tax_id: "",
     payment_method: "default_payment_method",
     notes: "",
+    vat_rate: "21",
+    retention_rate: "0",
+    is_deductible: true,
   })
 
   // Filtrar usuarios con type=1 (profesionales)
   const professionalUsers = users.filter((user) => user.type === 1)
+
+  // Calcular importes automáticamente
+  const calculations = React.useMemo(() => {
+    const amount = Number.parseFloat(formData.amount) || 0
+    const vatRate = Number.parseFloat(formData.vat_rate) || 0
+    const retentionRate = Number.parseFloat(formData.retention_rate) || 0
+    return calculateExpenseAmounts(amount, vatRate, retentionRate)
+  }, [formData.amount, formData.vat_rate, formData.retention_rate])
 
   // Cargar datos del gasto cuando se abre el modal
   useEffect(() => {
@@ -64,17 +82,72 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
         expense_date: expense.expense_date || "",
         user_id: expense.user_id || "default_user_id",
         supplier_name: expense.supplier_name || "",
+        supplier_tax_id: expense.supplier_tax_id || "",
         payment_method: expense.payment_method || "default_payment_method",
         notes: expense.notes || "",
+        vat_rate: expense.vat_rate?.toString() || "21",
+        retention_rate: expense.retention_rate?.toString() || "0",
+        is_deductible: expense.is_deductible ?? true,
       })
     }
   }, [expense, open])
 
-  const handleInputChange = (field: string, value: string) => {
+  const handleInputChange = (field: string, value: string | boolean) => {
     setFormData((prev) => ({
       ...prev,
       [field]: value,
     }))
+  }
+
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file || !userProfile?.organization_id) return
+
+    setUploadingFile(true)
+    try {
+      const result = await StorageService.uploadExpenseReceipt(file, userProfile.organization_id, expense.id)
+
+      if (result.success && result.path) {
+        setSelectedFile(file)
+        setTempFilePath(result.path)
+        toast({
+          title: "Archivo subido",
+          description: "El documento se ha subido correctamente",
+        })
+      } else {
+        toast({
+          title: "Error",
+          description: result.error || "Error al subir el archivo",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Error inesperado al subir el archivo",
+        variant: "destructive",
+      })
+    } finally {
+      setUploadingFile(false)
+    }
+  }
+
+  const handleRemoveFile = async () => {
+    if (tempFilePath) {
+      await StorageService.deleteExpenseReceipt(tempFilePath)
+      setTempFilePath(null)
+    }
+    if (expense.receipt_path) {
+      // Marcar para eliminar el archivo existente
+      setTempFilePath("DELETE_EXISTING")
+    }
+    setSelectedFile(null)
+  }
+
+  const handleDownloadFile = () => {
+    if (expense.receipt_url) {
+      window.open(expense.receipt_url, "_blank")
+    }
   }
 
   const resetForm = () => {
@@ -84,9 +157,15 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
       expense_date: "",
       user_id: "default_user_id",
       supplier_name: "",
+      supplier_tax_id: "",
       payment_method: "default_payment_method",
       notes: "",
+      vat_rate: "21",
+      retention_rate: "0",
+      is_deductible: true,
     })
+    setSelectedFile(null)
+    setTempFilePath(null)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -101,11 +180,10 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
       return
     }
 
-    // Solo validar campos obligatorios: descripción, importe y fecha
     if (!formData.description || !formData.amount || !formData.expense_date) {
       toast({
         title: "Error",
-        description: "Por favor, completa todos los campos obligatorios (descripción, importe y fecha)",
+        description: "Por favor, completa todos los campos obligatorios",
         variant: "destructive",
       })
       return
@@ -126,11 +204,16 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
     try {
       const expenseData: any = {
         description: formData.description,
-        amount: amount,
+        amount: calculations.baseAmount,
         expense_date: formData.expense_date,
+        is_deductible: formData.is_deductible,
+        vat_rate: calculations.vatAmount > 0 ? Number.parseFloat(formData.vat_rate) : 0,
+        vat_amount: calculations.vatAmount,
+        retention_rate: calculations.retentionAmount > 0 ? Number.parseFloat(formData.retention_rate) : 0,
+        retention_amount: calculations.retentionAmount,
       }
 
-      // Solo agregar campos opcionales si tienen valor
+      // Campos opcionales
       if (formData.user_id !== "default_user_id") {
         expenseData.user_id = formData.user_id
       } else {
@@ -141,6 +224,12 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
         expenseData.supplier_name = formData.supplier_name
       } else {
         expenseData.supplier_name = null
+      }
+
+      if (formData.supplier_tax_id) {
+        expenseData.supplier_tax_id = formData.supplier_tax_id
+      } else {
+        expenseData.supplier_tax_id = null
       }
 
       if (formData.payment_method !== "default_payment_method") {
@@ -155,6 +244,20 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
         expenseData.notes = null
       }
 
+      // Manejar archivos
+      if (tempFilePath === "DELETE_EXISTING") {
+        // Eliminar archivo existente
+        if (expense.receipt_path) {
+          await StorageService.deleteExpenseReceipt(expense.receipt_path)
+        }
+        expenseData.receipt_path = null
+        expenseData.receipt_url = null
+      } else if (tempFilePath) {
+        // Nuevo archivo subido
+        expenseData.receipt_path = tempFilePath
+        expenseData.receipt_url = StorageService.getPublicUrl(tempFilePath)
+      }
+
       const { error } = await supabase.from("expenses").update(expenseData).eq("id", expense.id)
 
       if (error) throw error
@@ -164,7 +267,6 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
         description: "El gasto se ha actualizado correctamente",
       })
 
-      // Llamar a la función de actualización ANTES de cerrar el modal
       onExpenseUpdated()
       onOpenChange(false)
     } catch (error) {
@@ -181,6 +283,9 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
 
   const handleOpenChange = (newOpen: boolean) => {
     if (!newOpen) {
+      if (tempFilePath && tempFilePath !== "DELETE_EXISTING") {
+        StorageService.deleteExpenseReceipt(tempFilePath)
+      }
       resetForm()
     }
     onOpenChange(newOpen)
@@ -188,16 +293,17 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Editar Gasto</DialogTitle>
           <DialogDescription>
-            Modifica los datos del gasto. Solo son obligatorios la descripción, importe y fecha.
+            Modifica los datos del gasto. Los campos marcados con * son obligatorios.
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit}>
           <div className="space-y-6">
+            {/* Información básica */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="description">Descripción *</Label>
@@ -211,7 +317,7 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="amount">Importe *</Label>
+                <Label htmlFor="amount">Importe Base *</Label>
                 <Input
                   id="amount"
                   type="number"
@@ -236,7 +342,7 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="user">Usuario (opcional)</Label>
+                <Label htmlFor="user">Usuario</Label>
                 <Select value={formData.user_id} onValueChange={(value) => handleInputChange("user_id", value)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Seleccionar usuario" />
@@ -251,9 +357,12 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
                   </SelectContent>
                 </Select>
               </div>
+            </div>
 
+            {/* Información del proveedor */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="supplier_name">Proveedor (opcional)</Label>
+                <Label htmlFor="supplier_name">Proveedor</Label>
                 <Input
                   id="supplier_name"
                   value={formData.supplier_name}
@@ -263,7 +372,66 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="payment_method">Método de Pago (opcional)</Label>
+                <Label htmlFor="supplier_tax_id">NIF/CIF Proveedor</Label>
+                <Input
+                  id="supplier_tax_id"
+                  value={formData.supplier_tax_id}
+                  onChange={(e) => handleInputChange("supplier_tax_id", e.target.value)}
+                  placeholder="12345678A"
+                />
+              </div>
+            </div>
+
+            {/* Cálculos fiscales */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="vat_rate">IVA (%)</Label>
+                <Input
+                  id="vat_rate"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  value={formData.vat_rate}
+                  onChange={(e) => handleInputChange("vat_rate", e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="retention_rate">Retención (%)</Label>
+                <Input
+                  id="retention_rate"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  value={formData.retention_rate}
+                  onChange={(e) => handleInputChange("retention_rate", e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Resumen de cálculos */}
+            {formData.amount && (
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="font-medium mb-2">Resumen del Gasto</h4>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>Importe Base:</div>
+                  <div className="font-medium">{calculations.baseAmount.toFixed(2)} €</div>
+                  <div>IVA ({formData.vat_rate}%):</div>
+                  <div className="font-medium">{calculations.vatAmount.toFixed(2)} €</div>
+                  <div>Retención ({formData.retention_rate}%):</div>
+                  <div className="font-medium text-red-600">-{calculations.retentionAmount.toFixed(2)} €</div>
+                  <div className="border-t pt-1 font-semibold">Total:</div>
+                  <div className="border-t pt-1 font-semibold">{calculations.totalAmount.toFixed(2)} €</div>
+                </div>
+              </div>
+            )}
+
+            {/* Método de pago y deducible */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="payment_method">Método de Pago</Label>
                 <Select
                   value={formData.payment_method}
                   onValueChange={(value) => handleInputChange("payment_method", value)}
@@ -281,10 +449,78 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
                   </SelectContent>
                 </Select>
               </div>
+
+              <div className="space-y-2">
+                <Label>Opciones</Label>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="is_deductible"
+                    checked={formData.is_deductible}
+                    onCheckedChange={(checked) => handleInputChange("is_deductible", checked as boolean)}
+                  />
+                  <Label htmlFor="is_deductible">Gasto deducible</Label>
+                </div>
+              </div>
             </div>
 
+            {/* Gestión de archivos */}
             <div className="space-y-2">
-              <Label htmlFor="notes">Notas (opcional)</Label>
+              <Label>Documento/Factura</Label>
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
+                {expense.receipt_path && !selectedFile && tempFilePath !== "DELETE_EXISTING" ? (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <div className="text-sm">
+                        <div className="font-medium">Documento existente</div>
+                        <div className="text-gray-500">Archivo adjunto</div>
+                      </div>
+                    </div>
+                    <div className="flex space-x-2">
+                      <Button type="button" variant="ghost" size="sm" onClick={handleDownloadFile}>
+                        <Download className="h-4 w-4" />
+                      </Button>
+                      <Button type="button" variant="ghost" size="sm" onClick={handleRemoveFile}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ) : selectedFile ? (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <div className="text-sm">
+                        <div className="font-medium">{selectedFile.name}</div>
+                        <div className="text-gray-500">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</div>
+                      </div>
+                    </div>
+                    <Button type="button" variant="ghost" size="sm" onClick={handleRemoveFile}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="text-center">
+                    <Upload className="mx-auto h-8 w-8 text-gray-400" />
+                    <div className="mt-2">
+                      <label htmlFor="receipt-upload" className="cursor-pointer">
+                        <span className="text-blue-600 hover:text-blue-500">Seleccionar archivo</span>
+                        <input
+                          id="receipt-upload"
+                          type="file"
+                          className="hidden"
+                          accept=".jpg,.jpeg,.png,.pdf"
+                          onChange={handleFileSelect}
+                          disabled={uploadingFile}
+                        />
+                      </label>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">JPG, PNG o PDF (máx. 5MB)</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Notas */}
+            <div className="space-y-2">
+              <Label htmlFor="notes">Notas</Label>
               <Textarea
                 id="notes"
                 value={formData.notes}
@@ -299,7 +535,7 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
             <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={loading || usersLoading}>
+            <Button type="submit" disabled={loading || usersLoading || uploadingFile}>
               <Save className="mr-2 h-4 w-4" />
               {loading ? "Actualizando..." : "Actualizar Gasto"}
             </Button>

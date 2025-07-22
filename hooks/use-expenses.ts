@@ -3,11 +3,26 @@
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase/client"
 import { useAuth } from "@/app/contexts/auth-context"
-import type { Expense, ExpenseWithDetails, ExpenseFilters } from "@/types/expenses"
+import type { Expense, ExpenseFilters } from "@/types/expenses"
+
+export interface ExpenseWithUser extends Expense {
+  user?: {
+    id: string
+    name: string
+    email: string
+    type?: number
+  } | null
+  creator?: {
+    id: string
+    name: string
+    email: string
+    type?: number
+  } | null
+}
 
 export function useExpenses(filters?: ExpenseFilters) {
   const { userProfile } = useAuth()
-  const [expenses, setExpenses] = useState<ExpenseWithDetails[]>([])
+  const [expenses, setExpenses] = useState<ExpenseWithUser[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -18,14 +33,14 @@ export function useExpenses(filters?: ExpenseFilters) {
       setLoading(true)
       setError(null)
 
-      // Primero obtenemos los gastos sin joins
+      // Obtener gastos
       let query = supabase
         .from("expenses")
         .select("*")
         .eq("organization_id", userProfile.organization_id)
         .order("expense_date", { ascending: false })
 
-      // Apply filters
+      // Aplicar filtros
       if (filters?.user_id && filters.user_id !== "all" && filters.user_id !== "") {
         query = query.eq("user_id", filters.user_id)
       }
@@ -54,7 +69,7 @@ export function useExpenses(filters?: ExpenseFilters) {
 
       if (error) throw error
 
-      // Ahora obtenemos los usuarios por separado
+      // Obtener usuarios relacionados
       const userIds = [
         ...new Set([
           ...expensesData.map((e) => e.user_id).filter(Boolean),
@@ -68,7 +83,6 @@ export function useExpenses(filters?: ExpenseFilters) {
           .from("users")
           .select("id, name, email, type")
           .in("id", userIds)
-          .eq("type", 1) // Solo usuarios profesionales
 
         if (usersError) {
           console.error("Error fetching users:", usersError)
@@ -77,7 +91,7 @@ export function useExpenses(filters?: ExpenseFilters) {
         }
       }
 
-      // Combinar los datos
+      // Combinar datos
       const expensesWithDetails = expensesData.map((expense) => ({
         ...expense,
         user: expense.user_id ? usersData.find((u) => u.id === expense.user_id) || null : null,
@@ -97,8 +111,6 @@ export function useExpenses(filters?: ExpenseFilters) {
     if (!userProfile?.organization_id || !userProfile?.id) return
 
     try {
-      const vat_amount = (expenseData.amount * (expenseData.vat_rate || 0)) / 100
-
       const insertData: any = {
         organization_id: userProfile.organization_id,
         description: expenseData.description,
@@ -106,12 +118,14 @@ export function useExpenses(filters?: ExpenseFilters) {
         expense_date: expenseData.expense_date,
         created_by: userProfile.id,
         status: "pending",
-        vat_rate: expenseData.vat_rate || 0,
-        vat_amount,
+        vat_rate: expenseData.vat_rate || 21,
+        vat_amount: expenseData.vat_amount || 0,
+        retention_rate: expenseData.retention_rate || 0,
+        retention_amount: expenseData.retention_amount || 0,
         is_deductible: expenseData.is_deductible || false,
       }
 
-      // Solo agregar campos opcionales si tienen valor
+      // Campos opcionales
       if (expenseData.user_id && expenseData.user_id !== "none") {
         insertData.user_id = expenseData.user_id
       }
@@ -127,12 +141,18 @@ export function useExpenses(filters?: ExpenseFilters) {
       if (expenseData.supplier_tax_id) {
         insertData.supplier_tax_id = expenseData.supplier_tax_id
       }
+      if (expenseData.receipt_path) {
+        insertData.receipt_path = expenseData.receipt_path
+      }
+      if (expenseData.receipt_url) {
+        insertData.receipt_url = expenseData.receipt_url
+      }
 
       const { data, error } = await supabase.from("expenses").insert(insertData).select().single()
 
       if (error) throw error
 
-      await fetchExpenses() // Refresh the list
+      await fetchExpenses()
       return data
     } catch (err) {
       console.error("Error creating expense:", err)
@@ -142,20 +162,11 @@ export function useExpenses(filters?: ExpenseFilters) {
 
   const updateExpense = async (id: number, expenseData: any) => {
     try {
-      const updateData: any = { ...expenseData }
-
-      // Recalculate VAT if amount or rate is updated
-      if (expenseData.amount !== undefined || expenseData.vat_rate !== undefined) {
-        const amount = expenseData.amount ?? 0
-        const vat_rate = expenseData.vat_rate ?? 0
-        updateData.vat_amount = (amount * vat_rate) / 100
-      }
-
-      const { data, error } = await supabase.from("expenses").update(updateData).eq("id", id).select().single()
+      const { data, error } = await supabase.from("expenses").update(expenseData).eq("id", id).select().single()
 
       if (error) throw error
 
-      await fetchExpenses() // Refresh the list
+      await fetchExpenses()
       return data
     } catch (err) {
       console.error("Error updating expense:", err)
@@ -169,7 +180,7 @@ export function useExpenses(filters?: ExpenseFilters) {
 
       if (error) throw error
 
-      await fetchExpenses() // Refresh the list
+      await fetchExpenses()
     } catch (err) {
       console.error("Error deleting expense:", err)
       throw err
@@ -182,7 +193,7 @@ export function useExpenses(filters?: ExpenseFilters) {
 
       if (error) throw error
 
-      await fetchExpenses() // Refresh the list
+      await fetchExpenses()
       return data
     } catch (err) {
       console.error("Error updating expense status:", err)

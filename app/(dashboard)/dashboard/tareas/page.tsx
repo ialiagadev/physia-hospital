@@ -524,7 +524,7 @@ export default function TareasPage() {
   const [filtroAsignado, setFiltroAsignado] = useState<string | "todos">("todos")
   const [filtroPrioridad, setFiltroPrioridad] = useState<PrioridadTarea | "todas">("todas")
   const [busqueda, setBusqueda] = useState("")
-  const [mostrarFiltros, setMostrarFiltros] = useState(false)
+  const [mostrarFiltros, setMostrarFiltros] = useState(true)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [activeColumn, setActiveColumn] = useState<keyof typeof ESTADOS_CONFIG | null>(null)
   const [filtroEstado, setFiltroEstado] = useState<"creadas" | "archivadas" | "eliminadas">("creadas")
