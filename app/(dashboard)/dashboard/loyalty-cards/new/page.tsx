@@ -13,10 +13,19 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DatePicker } from "@/components/ui/date-picker"
 import { useToast } from "@/hooks/use-toast"
-import { Breadcrumbs } from "@/components/breadcrumbs"
 import { PhysiaCard } from "@/components/loyalty-card/physia-card"
-import { Search, X, User } from "lucide-react"
+import { Search, X, User, AlertCircle } from "lucide-react"
 import type { CardFormData } from "@/types/loyalty-cards"
+import { cn } from "@/lib/utils"
+
+// Tipos para errores de validación
+interface FormErrors {
+  organization_id?: string
+  client_id?: string
+  business_name?: string
+  total_sessions?: string
+  reward?: string
+}
 
 // Componente de búsqueda de clientes
 interface ClientSearchProps {
@@ -24,9 +33,10 @@ interface ClientSearchProps {
   selectedClient: any
   onClientSelect: (client: any) => void
   disabled?: boolean
+  error?: string
 }
 
-function ClientSearch({ organizationId, selectedClient, onClientSelect, disabled }: ClientSearchProps) {
+function ClientSearch({ organizationId, selectedClient, onClientSelect, disabled, error }: ClientSearchProps) {
   const [searchTerm, setSearchTerm] = useState("")
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [isSearching, setIsSearching] = useState(false)
@@ -111,7 +121,7 @@ function ClientSearch({ organizationId, selectedClient, onClientSelect, disabled
             }
           }}
           disabled={disabled}
-          className="pl-10 pr-10"
+          className={cn("pl-10 pr-10", error && "border-red-500 focus-visible:ring-red-500")}
         />
         {selectedClient && (
           <Button
@@ -126,6 +136,14 @@ function ClientSearch({ organizationId, selectedClient, onClientSelect, disabled
           </Button>
         )}
       </div>
+
+      {/* Error message */}
+      {error && (
+        <div className="flex items-center gap-2 mt-1 text-sm text-red-600">
+          <AlertCircle className="h-4 w-4" />
+          {error}
+        </div>
+      )}
 
       {/* Resultados de búsqueda */}
       {showResults && searchResults.length > 0 && (
@@ -186,6 +204,8 @@ function NewLoyaltyCardForm() {
   const [organizations, setOrganizations] = useState<any[]>([])
   const [selectedClient, setSelectedClient] = useState<any>(null)
   const [selectedClientFromUrl, setSelectedClientFromUrl] = useState<any>(null)
+  const [errors, setErrors] = useState<FormErrors>({})
+  const [touched, setTouched] = useState<Record<string, boolean>>({})
 
   // Obtener client_id de los parámetros de URL
   const clientIdFromUrl = searchParams.get("client_id")
@@ -199,6 +219,51 @@ function NewLoyaltyCardForm() {
     reward: "",
     expiry_date: null,
   })
+
+  // Función de validación
+  const validateField = (field: keyof CardFormData, value: any): string | undefined => {
+    switch (field) {
+      case "organization_id":
+        if (!value || value === 0) return "Debes seleccionar una organización"
+        break
+      case "client_id":
+        if (!value) return "Debes seleccionar un cliente"
+        break
+      case "business_name":
+        if (!value || value.trim() === "") return "Debes ingresar el nombre del negocio"
+        break
+      case "total_sessions":
+        if (!value || value < 1) return "El número de sesiones debe ser mayor a 0"
+        if (value > 20) return "El número máximo de sesiones es 20"
+        break
+      case "reward":
+        if (!value || value.trim() === "") return "Debes ingresar una recompensa"
+        break
+    }
+    return undefined
+  }
+
+  // Validar todos los campos
+  const validateForm = (): FormErrors => {
+    const newErrors: FormErrors = {}
+
+    const organizationError = validateField("organization_id", formData.organization_id)
+    if (organizationError) newErrors.organization_id = organizationError
+
+    const clientError = validateField("client_id", formData.client_id)
+    if (clientError) newErrors.client_id = clientError
+
+    const businessNameError = validateField("business_name", formData.business_name)
+    if (businessNameError) newErrors.business_name = businessNameError
+
+    const sessionsError = validateField("total_sessions", formData.total_sessions)
+    if (sessionsError) newErrors.total_sessions = sessionsError
+
+    const rewardError = validateField("reward", formData.reward)
+    if (rewardError) newErrors.reward = rewardError
+
+    return newErrors
+  }
 
   // Cargar datos iniciales
   useEffect(() => {
@@ -263,7 +328,7 @@ function NewLoyaltyCardForm() {
     loadInitialData()
   }, [toast, clientIdFromUrl])
 
-  // Manejar cambios en el formulario con validación para evitar NaN
+  // Manejar cambios en el formulario con validación
   const handleChange = (field: keyof CardFormData, value: any) => {
     // Si el valor es numérico, asegurarse de que sea un número válido
     if (field === "organization_id" || field === "client_id" || field === "total_sessions") {
@@ -284,6 +349,25 @@ function NewLoyaltyCardForm() {
     }
 
     setFormData((prev) => ({ ...prev, [field]: value }))
+
+    // Validar el campo si ya fue tocado
+    if (touched[field]) {
+      const fieldError = validateField(field, value)
+      setErrors((prev) => ({
+        ...prev,
+        [field]: fieldError,
+      }))
+    }
+  }
+
+  // Manejar cuando un campo pierde el foco
+  const handleBlur = (field: keyof CardFormData) => {
+    setTouched((prev) => ({ ...prev, [field]: true }))
+    const fieldError = validateField(field, formData[field])
+    setErrors((prev) => ({
+      ...prev,
+      [field]: fieldError,
+    }))
   }
 
   // Manejar selección de cliente
@@ -291,34 +375,44 @@ function NewLoyaltyCardForm() {
     setSelectedClient(client)
     if (client) {
       setFormData((prev) => ({ ...prev, client_id: client.id }))
+      // Limpiar error de cliente si existe
+      setErrors((prev) => ({ ...prev, client_id: undefined }))
     } else {
       setFormData((prev) => ({ ...prev, client_id: null }))
     }
+    setTouched((prev) => ({ ...prev, client_id: true }))
   }
 
   // Manejar envío del formulario
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // Marcar todos los campos como tocados
+    setTouched({
+      organization_id: true,
+      client_id: true,
+      business_name: true,
+      total_sessions: true,
+      reward: true,
+    })
+
+    // Validar formulario
+    const formErrors = validateForm()
+    setErrors(formErrors)
+
+    // Si hay errores, no enviar
+    if (Object.keys(formErrors).length > 0) {
+      toast({
+        title: "Formulario incompleto",
+        description: "Por favor, completa todos los campos obligatorios marcados con *",
+        variant: "destructive",
+      })
+      return
+    }
+
     setLoading(true)
 
     try {
-      // Validar datos
-      if (!formData.organization_id) {
-        throw new Error("Debes seleccionar una organización")
-      }
-      if (!formData.client_id) {
-        throw new Error("Debes seleccionar un cliente")
-      }
-      if (!formData.business_name) {
-        throw new Error("Debes ingresar el nombre del negocio")
-      }
-      if (!formData.total_sessions || formData.total_sessions < 1) {
-        throw new Error("El número de sesiones debe ser mayor a 0")
-      }
-      if (!formData.reward) {
-        throw new Error("Debes ingresar una recompensa")
-      }
-
       console.log("Creando tarjeta con datos:", formData)
 
       // Crear la tarjeta directamente con Supabase para mayor control
@@ -331,7 +425,7 @@ function NewLoyaltyCardForm() {
         completed_sessions: 0,
         reward: formData.reward,
         expiry_date: formData.expiry_date,
-        status: "active" as const, // Explicitly type as const to match the enum
+        status: "active" as const,
       }
 
       console.log("Enviando datos a Supabase:", cardData)
@@ -403,13 +497,11 @@ function NewLoyaltyCardForm() {
     reward: formData.reward || "Recompensa por completar",
     expiry_date: formData.expiry_date,
     last_visit_date: null,
-    status: "active" as const, // Use const assertion to match the LoyaltyCard status type
+    status: "active" as const,
   }
 
- 
   return (
     <div className="space-y-6">
-
       <div className="flex flex-col md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Nueva Tarjeta de Fidelización</h1>
@@ -433,18 +525,23 @@ function NewLoyaltyCardForm() {
           <Card>
             <CardHeader>
               <CardTitle>Información de la Tarjeta</CardTitle>
-              <CardDescription>Completa los datos para crear una nueva tarjeta de fidelización</CardDescription>
+              <CardDescription>
+                Completa los datos para crear una nueva tarjeta de fidelización. Los campos marcados con{" "}
+                <span className="text-red-500">*</span> son obligatorios.
+              </CardDescription>
             </CardHeader>
             <form onSubmit={handleSubmit}>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="organization_id">Organización</Label>
+                  <Label htmlFor="organization_id" className="flex items-center gap-1">
+                    Organización <span className="text-red-500">*</span>
+                  </Label>
                   <Select
                     value={getSelectValue(formData.organization_id)}
                     onValueChange={(value) => handleChange("organization_id", value ? Number.parseInt(value, 10) : 0)}
-                    disabled={!!selectedClientFromUrl} // Deshabilitar si viene de un cliente específico
+                    disabled={!!selectedClientFromUrl}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className={cn(errors.organization_id && "border-red-500")}>
                       <SelectValue placeholder="Selecciona una organización" />
                     </SelectTrigger>
                     <SelectContent>
@@ -455,15 +552,24 @@ function NewLoyaltyCardForm() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {errors.organization_id && (
+                    <div className="flex items-center gap-2 text-sm text-red-600">
+                      <AlertCircle className="h-4 w-4" />
+                      {errors.organization_id}
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="client_search">Cliente</Label>
+                  <Label htmlFor="client_search" className="flex items-center gap-1">
+                    Cliente <span className="text-red-500">*</span>
+                  </Label>
                   <ClientSearch
                     organizationId={formData.organization_id}
                     selectedClient={selectedClient}
                     onClientSelect={handleClientSelect}
                     disabled={!!selectedClientFromUrl}
+                    error={errors.client_id}
                   />
                   {selectedClientFromUrl && (
                     <p className="text-sm text-muted-foreground">
@@ -473,17 +579,29 @@ function NewLoyaltyCardForm() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="business_name">Nombre del Negocio</Label>
+                  <Label htmlFor="business_name" className="flex items-center gap-1">
+                    Nombre del Negocio <span className="text-red-500">*</span>
+                  </Label>
                   <Input
                     id="business_name"
                     value={formData.business_name}
                     onChange={(e) => handleChange("business_name", e.target.value)}
+                    onBlur={() => handleBlur("business_name")}
                     placeholder="Ej: Physia Health"
+                    className={cn(errors.business_name && "border-red-500 focus-visible:ring-red-500")}
                   />
+                  {errors.business_name && (
+                    <div className="flex items-center gap-2 text-sm text-red-600">
+                      <AlertCircle className="h-4 w-4" />
+                      {errors.business_name}
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="total_sessions">Número de Sesiones</Label>
+                  <Label htmlFor="total_sessions" className="flex items-center gap-1">
+                    Número de Sesiones <span className="text-red-500">*</span>
+                  </Label>
                   <Input
                     id="total_sessions"
                     type="number"
@@ -494,18 +612,36 @@ function NewLoyaltyCardForm() {
                       const value = e.target.value ? Number.parseInt(e.target.value, 10) : 0
                       handleChange("total_sessions", isNaN(value) ? 10 : value)
                     }}
+                    onBlur={() => handleBlur("total_sessions")}
+                    className={cn(errors.total_sessions && "border-red-500 focus-visible:ring-red-500")}
                   />
                   <p className="text-xs text-muted-foreground">Máximo 20 sesiones por tarjeta</p>
+                  {errors.total_sessions && (
+                    <div className="flex items-center gap-2 text-sm text-red-600">
+                      <AlertCircle className="h-4 w-4" />
+                      {errors.total_sessions}
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="reward">Recompensa</Label>
+                  <Label htmlFor="reward" className="flex items-center gap-1">
+                    Recompensa <span className="text-red-500">*</span>
+                  </Label>
                   <Textarea
                     id="reward"
                     value={formData.reward}
                     onChange={(e) => handleChange("reward", e.target.value)}
+                    onBlur={() => handleBlur("reward")}
                     placeholder="Ej: Consulta premium con análisis IA"
+                    className={cn(errors.reward && "border-red-500 focus-visible:ring-red-500")}
                   />
+                  {errors.reward && (
+                    <div className="flex items-center gap-2 text-sm text-red-600">
+                      <AlertCircle className="h-4 w-4" />
+                      {errors.reward}
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">
