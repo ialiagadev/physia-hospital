@@ -59,11 +59,11 @@ function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen bg-white flex items-center justify-center px-4 sm:px-6 lg:px-8">
+    <div className="flex items-stretch justify-center lg:justify-center lg:gap-8 min-h-[80vh]">
       <div className="max-w-5xl w-full">
         <div className="flex items-center justify-center lg:justify-center lg:gap-8">
           {/* Left Side - Login Form */}
-          <div className="w-full max-w-lg">
+          <div className="w-full max-w-lg flex flex-col justify-center">
             {/* Logo centrado arriba */}
             <div className="flex justify-center mb-8">
               <Image
@@ -156,17 +156,20 @@ function LoginForm() {
             </div>
           </div>
 
-          {/* Right Side - Mascot Illustration */}
-          <div className="hidden lg:block lg:flex-shrink-0">
-            <div className="flex justify-center items-center">
-              <Image
-                src="/images/mascota-physia2.png"
-                alt="Mascota PHYSIA"
-                width={600}
-                height={600}
-                className="w-full max-w-lg h-auto"
-                priority
-              />
+          {/* Right Side - Video */}
+          <div className="hidden lg:flex lg:flex-shrink-0 lg:items-center">
+            <div className="h-full flex items-center justify-center">
+              <video
+                src="/login.mp4"
+                autoPlay
+                loop
+                muted
+                playsInline
+                className="w-full max-w-xl h-full object-cover rounded-lg"
+                style={{ minHeight: "600px", maxHeight: "800px" }}
+              >
+                Tu navegador no soporta el elemento de video.
+              </video>
             </div>
           </div>
         </div>
