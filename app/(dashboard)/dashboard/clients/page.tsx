@@ -5,13 +5,23 @@ import Link from "next/link"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Plus, Upload, Search, X, ChevronLeft, ChevronRight } from "lucide-react"
+import { Plus, Upload, Search, X, ChevronLeft, ChevronRight, Trash2 } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { OrganizationSelector } from "@/components/organization-selector"
 import { ImportClientsDialog } from "@/components/import-clients-dialog"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/app/contexts/auth-context"
 import { Loader2 } from "lucide-react"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 interface Client {
   id: string
@@ -50,6 +60,15 @@ export default function ClientsPage() {
   })
   const { toast } = useToast()
   const { user, userProfile, isLoading: authLoading } = useAuth()
+  const [deleteDialog, setDeleteDialog] = useState<{
+    open: boolean
+    clientId: string
+    clientName: string
+  }>({
+    open: false,
+    clientId: "",
+    clientName: "",
+  })
 
   // Debounce para la búsqueda
   useEffect(() => {
@@ -206,6 +225,65 @@ export default function ClientsPage() {
 
   const handleRowClick = (clientId: string) => {
     window.location.href = `/dashboard/clients/${clientId}`
+  }
+
+  // Función para abrir el diálogo de confirmación de eliminación
+  const openDeleteDialog = (clientId: string, clientName: string) => {
+    setDeleteDialog({
+      open: true,
+      clientId,
+      clientName,
+    })
+  }
+
+  // Función para confirmar la eliminación
+  const confirmDeleteClient = async () => {
+    const { clientId, clientName } = deleteDialog
+
+    try {
+      const { error } = await supabase.from("clients").delete().eq("id", clientId)
+
+      if (error) {
+        console.error("Error al eliminar cliente:", error)
+        toast({
+          title: "Error",
+          description: "No se pudo eliminar el cliente",
+          variant: "destructive",
+        })
+        return
+      }
+
+      toast({
+        title: "Cliente eliminado",
+        description: `El cliente "${clientName}" ha sido eliminado correctamente`,
+      })
+
+      // Recargar la lista de clientes
+      loadClients(pagination.currentPage)
+    } catch (error) {
+      console.error("Error al eliminar cliente:", error)
+      toast({
+        title: "Error",
+        description: "Ocurrió un error inesperado al eliminar el cliente",
+        variant: "destructive",
+      })
+    } finally {
+      // Cerrar el diálogo
+      setDeleteDialog({
+        open: false,
+        clientId: "",
+        clientName: "",
+      })
+    }
+  }
+
+  // Función para cancelar la eliminación
+  const cancelDelete = () => {
+    setDeleteDialog({
+      open: false,
+      clientId: "",
+      clientName: "",
+    })
   }
 
   // Mostrar loading mientras se autentica
@@ -399,9 +477,22 @@ export default function ClientsPage() {
                   </TableCell>
                   {userProfile?.is_physia_admin && <TableCell>{client.organizations?.name || "-"}</TableCell>}
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" asChild onClick={(e) => e.stopPropagation()}>
-                      <Link href={`/dashboard/clients/${client.id}`}>Ver</Link>
-                    </Button>
+                    <div className="flex items-center justify-end gap-1">
+                      <Button variant="ghost" size="sm" asChild onClick={(e) => e.stopPropagation()}>
+                        <Link href={`/dashboard/clients/${client.id}`}>Ver</Link>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openDeleteDialog(client.id, client.name)
+                        }}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
@@ -507,6 +598,25 @@ export default function ClientsPage() {
         organizationId={organizationIdForImport}
         onImportComplete={handleImportComplete}
       />
+      {/* Diálogo de confirmación para eliminar cliente */}
+      <AlertDialog open={deleteDialog.open} onOpenChange={(open) => !open && cancelDelete()}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar cliente?</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Estás seguro de que quieres eliminar al cliente "{deleteDialog.clientName}"?
+              <br />
+              <span className="font-medium text-red-600">Esta acción no se puede deshacer.</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={cancelDelete}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteClient} className="bg-red-600 hover:bg-red-700 focus:ring-red-600">
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

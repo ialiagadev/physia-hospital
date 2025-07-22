@@ -30,6 +30,8 @@ import { AddParticipantModal } from "./add-participant-modal"
 import { toast } from "sonner"
 import type { GroupActivity } from "@/app/contexts/group-activities-context"
 import { GroupActivityBillingButton } from "../group-activity-billing-button"
+import { useAuth } from "@/app/contexts/auth-context"
+import { supabase } from "@/lib/supabase/client"
 
 interface GroupActivityDetailsModalProps {
   isOpen: boolean
@@ -62,27 +64,65 @@ export function GroupActivityDetailsModal({
   const [participantToRemove, setParticipantToRemove] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const { user, userProfile } = useAuth()
 
-  // ✅ ESTADO SIMPLIFICADO - Solo para UI local
   const [currentActivity, setCurrentActivity] = useState<GroupActivity>(activity)
+  const [participants, setParticipants] = useState<any[]>([])
+  const [loadingParticipants, setLoadingParticipants] = useState(false)
 
-  // ✅ EFECTO SIMPLIFICADO - Solo actualiza cuando cambia la actividad externa
+  const loadParticipants = async (activityId: string) => {
+    if (!user || !userProfile) return
+
+    setLoadingParticipants(true)
+    try {
+      const { data, error } = await supabase
+        .from("group_activity_participants")
+        .select(`
+          *,
+          client:clients!inner (
+            id,
+            name,
+            phone,
+            email,
+            tax_id,
+            address,
+            postal_code,
+            city,
+            organization_id
+          )
+        `)
+        .eq("group_activity_id", activityId)
+        .eq("client.organization_id", userProfile.organization_id || organizationId)
+
+      if (error) {
+        console.error("Error loading participants:", error)
+        return
+      }
+
+      setParticipants(data || [])
+    } catch (error) {
+      console.error("Error loading participants:", error)
+    } finally {
+      setLoadingParticipants(false)
+    }
+  }
+
   useEffect(() => {
     if (activity && activity.id) {
       setCurrentActivity(activity)
+      if (user && userProfile) {
+        loadParticipants(activity.id)
+      }
     }
-  }, [activity])
+  }, [activity, user, userProfile])
 
-  // ✅ FUNCIÓN DE CIERRE MEJORADA - Sin timeouts problemáticos
   const handleClose = () => {
-    // Resetear todos los estados inmediatamente
     setShowEditModal(false)
     setShowAddParticipantModal(false)
     setShowDeleteConfirm(false)
     setParticipantToRemove(null)
     setLoading(false)
     setDeleting(false)
-    // Cerrar modal principal
     onClose()
   }
 
@@ -102,9 +142,6 @@ export function GroupActivityDetailsModal({
       }
 
       await onUpdate(currentActivity.id, updates)
-      // ✅ YA NO NECESITA TOAST - EL CONTEXTO LO MANEJA
-
-      // ✅ CERRAR MODALES INMEDIATAMENTE
       setShowEditModal(false)
       handleClose()
     } catch (error) {
@@ -115,7 +152,6 @@ export function GroupActivityDetailsModal({
     }
   }
 
-  // ✅ FUNCIÓN DE ELIMINACIÓN OPTIMIZADA
   const handleDelete = async () => {
     if (!currentActivity?.id) {
       toast.error("No se puede eliminar: ID de actividad no válido")
@@ -124,11 +160,7 @@ export function GroupActivityDetailsModal({
 
     try {
       setDeleting(true)
-      // ✅ LLAMAR A LA FUNCIÓN DE ELIMINACIÓN (ya optimizada en el contexto)
       await onDelete(currentActivity.id)
-      // ✅ YA NO NECESITA TOAST - EL CONTEXTO LO MANEJA
-
-      // ✅ CERRAR MODALES INMEDIATAMENTE
       setShowDeleteConfirm(false)
       handleClose()
     } catch (error) {
@@ -144,9 +176,8 @@ export function GroupActivityDetailsModal({
     try {
       setLoading(true)
       await onAddParticipant(currentActivity.id, clientId, notes)
-      // ✅ YA NO NECESITA TOAST - EL CONTEXTO LO MANEJA
+      await loadParticipants(currentActivity.id)
       setShowAddParticipantModal(false)
-      handleClose()
     } catch (error) {
       console.error("Error adding participant:", error)
       throw error
@@ -161,9 +192,8 @@ export function GroupActivityDetailsModal({
     try {
       setLoading(true)
       await onRemoveParticipant(participantId)
-      // ✅ YA NO NECESITA TOAST - EL CONTEXTO LO MANEJA
+      await loadParticipants(currentActivity.id)
       setParticipantToRemove(null)
-      handleClose()
     } catch (error) {
       console.error("Error removing participant:", error)
     } finally {
@@ -182,24 +212,24 @@ export function GroupActivityDetailsModal({
     return <Badge variant={statusConfig.variant}>{statusConfig.label}</Badge>
   }
 
-  const participationPercentage = (currentActivity.current_participants / currentActivity.max_participants) * 100
-  const canAddMoreParticipants = currentActivity.current_participants < currentActivity.max_participants
-  const currentParticipantIds = currentActivity.participants?.map((p) => p.client_id) || []
+  const currentParticipants = participants.length
+  const participationPercentage = (currentParticipants / currentActivity.max_participants) * 100
+  const canAddMoreParticipants = currentParticipants < currentActivity.max_participants
+  const currentParticipantIds = participants?.map((p) => p.client_id) || []
 
-  // ✅ VALIDACIÓN MEJORADA PARA EVITAR ERRORES
   if (!currentActivity || !currentActivity.id) {
     return null
   }
 
   return (
     <>
-      {/* ✅ MODAL PRINCIPAL - TAMAÑO AUMENTADO */}
       <Dialog
         open={isOpen && !showEditModal && !showAddParticipantModal && !showDeleteConfirm}
         onOpenChange={handleClose}
       >
-<DialogContent className="sm:max-w-6xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
+        <DialogContent className="w-[95vw] max-w-[95vw] h-[95vh] flex flex-col">
+          {/* Header fijo */}
+          <DialogHeader className="flex-shrink-0">
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <DialogTitle className="text-xl">{currentActivity.name}</DialogTitle>
@@ -215,216 +245,227 @@ export function GroupActivityDetailsModal({
             </div>
           </DialogHeader>
 
-          <div className="space-y-4">
-            {/* Información básica */}
-            <div className="space-y-3">
-              {currentActivity.description && (
-                <div>
-                  <h4 className="text-sm font-medium mb-1">Descripción</h4>
-                  <p className="text-sm text-gray-600">{currentActivity.description}</p>
-                </div>
-              )}
+          {/* Contenido con scroll */}
+          <div className="flex-1 overflow-y-auto p-6">
+            <div className="space-y-4">
+              {/* Información básica */}
+              <div className="space-y-3">
+                {currentActivity.description && (
+                  <div>
+                    <h4 className="text-sm font-medium mb-1">Descripción</h4>
+                    <p className="text-sm text-gray-600">{currentActivity.description}</p>
+                  </div>
+                )}
 
-              {currentActivity.service_id && (
+                {currentActivity.service_id && (
+                  <div>
+                    <h4 className="text-sm font-medium mb-1 flex items-center gap-1">
+                      <div
+                        className="w-3 h-3 rounded-full"
+                        style={{
+                          backgroundColor:
+                            services.find((s) => s.id === currentActivity.service_id)?.color || "#3B82F6",
+                        }}
+                      />
+                      Servicio
+                    </h4>
+                    <p className="text-sm">
+                      {services.find((s) => s.id === currentActivity.service_id)?.name || "Servicio no encontrado"}
+                    </p>
+                    {services.find((s) => s.id === currentActivity.service_id)?.duration && (
+                      <p className="text-xs text-gray-500">
+                        Duración: {services.find((s) => s.id === currentActivity.service_id).duration} minutos
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <h4 className="text-sm font-medium mb-1 flex items-center gap-1">
+                      <Calendar className="h-3 w-3" />
+                      Fecha
+                    </h4>
+                    <p className="text-sm">{format(new Date(currentActivity.date), "dd/MM/yyyy", { locale: es })}</p>
+                  </div>
+
+                  <div>
+                    <h4 className="text-sm font-medium mb-1 flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      Horario
+                    </h4>
+                    <p className="text-sm">
+                      {currentActivity.start_time} - {currentActivity.end_time}
+                    </p>
+                  </div>
+                </div>
+
                 <div>
                   <h4 className="text-sm font-medium mb-1 flex items-center gap-1">
-                    <div
-                      className="w-3 h-3 rounded-full"
-                      style={{
-                        backgroundColor: services.find((s) => s.id === currentActivity.service_id)?.color || "#3B82F6",
-                      }}
-                    />
-                    Servicio
+                    <MapPin className="h-4 w-4" />
+                    Profesional
                   </h4>
-                  <p className="text-sm">
-                    {services.find((s) => s.id === currentActivity.service_id)?.name || "Servicio no encontrado"}
-                  </p>
-                  {services.find((s) => s.id === currentActivity.service_id)?.duration && (
-                    <p className="text-xs text-gray-500">
-                      Duración: {services.find((s) => s.id === currentActivity.service_id).duration} minutos
-                    </p>
+                  <p className="text-sm">{currentActivity.professional?.name || "Sin asignar"}</p>
+                  {currentActivity.consultation && (
+                    <p className="text-xs text-gray-500">Consulta: {currentActivity.consultation.name}</p>
                   )}
                 </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <h4 className="text-sm font-medium mb-1 flex items-center gap-1">
-                    <Calendar className="h-3 w-3" />
-                    Fecha
-                  </h4>
-                  <p className="text-sm">{format(new Date(currentActivity.date), "dd/MM/yyyy", { locale: es })}</p>
-                </div>
-
-                <div>
-                  <h4 className="text-sm font-medium mb-1 flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    Horario
-                  </h4>
-                  <p className="text-sm">
-                    {currentActivity.start_time} - {currentActivity.end_time}
-                  </p>
-                </div>
               </div>
 
+              <Separator />
+
+              {/* Participantes */}
               <div>
-                <h4 className="text-sm font-medium mb-1 flex items-center gap-1">
-                  <MapPin className="h-4 w-4" />
-                  Profesional
-                </h4>
-                <p className="text-sm">{currentActivity.professional?.name || "Sin asignar"}</p>
-                {currentActivity.consultation && (
-                  <p className="text-xs text-gray-500">Consulta: {currentActivity.consultation.name}</p>
-                )}
-              </div>
-            </div>
-
-            <Separator />
-
-            {/* Participantes */}
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="text-sm font-medium flex items-center gap-1">
-                  <Users className="h-4 w-4" />
-                  Participantes ({currentActivity.current_participants}/{currentActivity.max_participants})
-                </h4>
-                {onAddParticipant && canAddMoreParticipants && (
-                 <Button
-                 size="default"
-                 variant="default"
-                 onClick={() => setShowAddParticipantModal(true)}
-                 disabled={loading || deleting}
-                 className="bg-green-600 hover:bg-green-700 text-white border-green-600 hover:border-green-700"
-               >
-                 <UserPlus className="h-4 w-4 mr-2" />
-                 Añadir
-               </Button>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span>Ocupación</span>
-                  <Badge variant={participationPercentage >= 90 ? "destructive" : "default"}>
-                    {participationPercentage.toFixed(0)}%
-                  </Badge>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    className="bg-blue-600 h-2 rounded-full transition-all"
-                    style={{ width: `${Math.min(participationPercentage, 100)}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* Lista de participantes */}
-              {currentActivity.participants && currentActivity.participants.length > 0 ? (
-                <div className="mt-3 space-y-2 max-h-60 overflow-y-auto">
-                  {currentActivity.participants.map((participant) => (
-                    <div key={participant.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{participant.client?.name}</p>
-                        <div className="flex items-center gap-2 text-xs text-gray-500">
-                          {participant.client?.phone && (
-                            <span className="flex items-center gap-1">
-                              <Phone className="h-3 w-3" />
-                              {participant.client.phone}
-                            </span>
-                          )}
-                          {participant.client?.email && (
-                            <span className="flex items-center gap-1">
-                              <Mail className="h-3 w-3" />
-                              {participant.client.email}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge
-                          variant={
-                            participant.status === "attended"
-                              ? "default"
-                              : participant.status === "no_show"
-                                ? "destructive"
-                                : participant.status === "cancelled"
-                                  ? "secondary"
-                                  : "outline"
-                          }
-                          className="text-xs"
-                        >
-                          {participant.status === "registered" && "Registrado"}
-                          {participant.status === "attended" && "Asistió"}
-                          {participant.status === "no_show" && "No asistió"}
-                          {participant.status === "cancelled" && "Cancelado"}
-                        </Badge>
-
-                        {/* Confirmación de eliminación de participante */}
-                        {onRemoveParticipant &&
-                          (participantToRemove === participant.id ? (
-                            <div className="flex items-center gap-1 bg-red-50 p-1 rounded border border-red-200">
-                              <AlertTriangle className="h-3 w-3 text-red-600" />
-                              <span className="text-xs text-red-700 font-medium">¿Eliminar?</span>
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                onClick={() => handleRemoveParticipant(participant.id)}
-                                disabled={loading || deleting}
-                                className="h-6 px-2 text-xs"
-                              >
-                                Sí
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setParticipantToRemove(null)}
-                                disabled={loading || deleting}
-                                className="h-6 px-2 text-xs"
-                              >
-                                No
-                              </Button>
-                            </div>
-                          ) : (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setParticipantToRemove(participant.id)}
-                              disabled={loading || deleting}
-                              className="text-red-600 hover:text-red-700 hover:bg-red-50 h-8 px-2"
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-6 text-gray-500">
-                  <Users className="h-8 w-8 mx-auto mb-2 text-gray-400" />
-                  <p className="text-sm">No hay participantes registrados</p>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-medium flex items-center gap-1">
+                    <Users className="h-4 w-4" />
+                    Participantes ({currentParticipants}/{currentActivity.max_participants})
+                  </h4>
                   {onAddParticipant && canAddMoreParticipants && (
                     <Button
-                      size="sm"
+                      size="default"
+                      variant="default"
                       onClick={() => setShowAddParticipantModal(true)}
-                      className="mt-2"
                       disabled={loading || deleting}
+                      className="bg-green-600 hover:bg-green-700 text-white border-green-600 hover:border-green-700"
                     >
-                      <UserPlus className="h-4 w-4 mr-1" />
-                      Añadir Primer Participante
+                      <UserPlus className="h-4 w-4 mr-2" />
+                      Añadir
                     </Button>
                   )}
                 </div>
-              )}
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span>Ocupación</span>
+                    <Badge variant={participationPercentage >= 90 ? "destructive" : "default"}>
+                      {participationPercentage.toFixed(0)}%
+                    </Badge>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className="bg-blue-600 h-2 rounded-full transition-all"
+                      style={{ width: `${Math.min(participationPercentage, 100)}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Lista de participantes */}
+                {loadingParticipants ? (
+                  <div className="text-center py-6">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto"></div>
+                    <p className="text-sm text-gray-500 mt-2">Cargando participantes...</p>
+                  </div>
+                ) : participants && participants.length > 0 ? (
+                  <div className="mt-3 space-y-2">
+                    {participants.map((participant) => (
+                      <div key={participant.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{participant.client?.name}</p>
+                          <div className="flex items-center gap-2 text-xs text-gray-500">
+                            {participant.client?.phone && (
+                              <span className="flex items-center gap-1">
+                                <Phone className="h-3 w-3" />
+                                {participant.client.phone}
+                              </span>
+                            )}
+                            {participant.client?.email && (
+                              <span className="flex items-center gap-1">
+                                <Mail className="h-3 w-3" />
+                                {participant.client.email}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            variant={
+                              participant.status === "attended"
+                                ? "default"
+                                : participant.status === "no_show"
+                                  ? "destructive"
+                                  : participant.status === "cancelled"
+                                    ? "secondary"
+                                    : "outline"
+                            }
+                            className="text-xs"
+                          >
+                            {participant.status === "registered" && "Registrado"}
+                            {participant.status === "attended" && "Asistió"}
+                            {participant.status === "no_show" && "No asistió"}
+                            {participant.status === "cancelled" && "Cancelado"}
+                          </Badge>
+
+                          {onRemoveParticipant &&
+                            (participantToRemove === participant.id ? (
+                              <div className="flex items-center gap-1 bg-red-50 p-1 rounded border border-red-200">
+                                <AlertTriangle className="h-3 w-3 text-red-600" />
+                                <span className="text-xs text-red-700 font-medium">¿Eliminar?</span>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => handleRemoveParticipant(participant.id)}
+                                  disabled={loading || deleting}
+                                  className="h-6 px-2 text-xs"
+                                >
+                                  Sí
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setParticipantToRemove(null)}
+                                  disabled={loading || deleting}
+                                  className="h-6 px-2 text-xs"
+                                >
+                                  No
+                                </Button>
+                              </div>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setParticipantToRemove(participant.id)}
+                                disabled={loading || deleting}
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50 h-8 px-2"
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-6 text-gray-500">
+                    <Users className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                    <p className="text-sm">No hay participantes registrados</p>
+                    {onAddParticipant && canAddMoreParticipants && (
+                      <Button
+                        size="sm"
+                        onClick={() => setShowAddParticipantModal(true)}
+                        className="mt-2"
+                        disabled={loading || deleting}
+                      >
+                        <UserPlus className="h-4 w-4 mr-1" />
+                        Añadir Primer Participante
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
-          <DialogFooter>
+          {/* Footer fijo */}
+          <DialogFooter className="flex-shrink-0 border-t bg-gray-50 px-6 py-4">
             <GroupActivityBillingButton
-              activity={currentActivity}
+              activity={{
+                ...currentActivity,
+                participants: participants,
+              }}
               organizationId={organizationId}
               services={services}
               onBillingComplete={() => {
-                // Opcional: actualizar datos si es necesario
                 console.log("Facturación completada para la actividad")
               }}
             />
@@ -443,7 +484,6 @@ export function GroupActivityDetailsModal({
         </DialogContent>
       </Dialog>
 
-      {/* ✅ MODAL DE EDICIÓN */}
       {showEditModal && (
         <GroupActivityFormModal
           isOpen={showEditModal}
@@ -455,7 +495,6 @@ export function GroupActivityDetailsModal({
         />
       )}
 
-      {/* ✅ MODAL DE AÑADIR PARTICIPANTE */}
       {showAddParticipantModal && onAddParticipant && (
         <AddParticipantModal
           isOpen={showAddParticipantModal}
@@ -465,10 +504,11 @@ export function GroupActivityDetailsModal({
           currentParticipants={currentParticipantIds}
           maxParticipants={currentActivity.max_participants}
           activityName={currentActivity.name}
+          user={user}
+          userProfile={userProfile}
         />
       )}
 
-      {/* ✅ CONFIRMACIÓN DE ELIMINACIÓN DE ACTIVIDAD */}
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>

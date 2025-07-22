@@ -299,6 +299,7 @@ export default function ProfessionalsPage() {
               : "Lista de profesionales de tu organización"}
           </p>
         </div>
+
         {profile?.role === "admin" && (
           <Dialog
             open={showCreateUserModal}
@@ -468,20 +469,26 @@ export default function ProfessionalsPage() {
               <div className="flex items-center gap-2 mb-3">
                 <Badge className="bg-blue-100 text-blue-800">Usuario</Badge>
               </div>
-              <ul className="text-sm space-y-1 text-gray-700">
-                <li>• Acceso completo a información de clientes</li>
-                <li>• Incluye historial médico e informes</li>
-                <li>
-                  • <span className="text-red-600">No puede acceder a facturación</span>
-                </li>
-                <li>
-                  • <span className="text-red-600">No puede crear otros usuarios</span>
-                </li>
-                <li>
-                  • <span className="text-red-600">No puede acceder a configuración avanzada</span>
-                </li>
-                <li>• En fichaje: solo ve sus propios registros</li>
-              </ul>
+
+              {/* RESTRICCIONES PRIMERO */}
+              <div className="mb-4">
+                <h5 className="text-xs font-semibold text-red-700 mb-2 uppercase tracking-wide">Restricciones:</h5>
+                <ul className="text-sm space-y-1">
+                  <li className="text-red-600">• No puede acceder a facturación</li>
+                  <li className="text-red-600">• No puede crear otros usuarios</li>
+                  <li className="text-red-600">• No puede acceder a configuración avanzada</li>
+                </ul>
+              </div>
+
+              {/* PERMISOS DESPUÉS */}
+              <div>
+                <h5 className="text-xs font-semibold text-green-700 mb-2 uppercase tracking-wide">Permisos:</h5>
+                <ul className="text-sm space-y-1 text-gray-700">
+                  <li>• Acceso completo a información de clientes</li>
+                  <li>• Incluye historial médico e informes</li>
+                  <li>• En fichaje: solo ve sus propios registros</li>
+                </ul>
+              </div>
             </div>
 
             {/* Coordinador */}
@@ -489,18 +496,26 @@ export default function ProfessionalsPage() {
               <div className="flex items-center gap-2 mb-3">
                 <Badge className="bg-orange-100 text-orange-800">Coordinador</Badge>
               </div>
-              <ul className="text-sm space-y-1 text-gray-700">
-                <li>• Acceso a información de clientes</li>
-                <li>
-                  • <span className="text-red-600">EXCEPTO historial médico e informes</span>
-                </li>
-                <li>• Acceso completo a facturación</li>
-                <li>
-                  • <span className="text-red-600">No puede crear otros usuarios</span>
-                </li>
-                <li>• Acceso limitado a configuración</li>
-                <li>• En fichaje: solo ve sus propios registros</li>
-              </ul>
+
+              {/* RESTRICCIONES PRIMERO */}
+              <div className="mb-4">
+                <h5 className="text-xs font-semibold text-red-700 mb-2 uppercase tracking-wide">Restricciones:</h5>
+                <ul className="text-sm space-y-1">
+                  <li className="text-red-600">• EXCEPTO historial médico e informes</li>
+                  <li className="text-red-600">• No puede crear otros usuarios</li>
+                </ul>
+              </div>
+
+              {/* PERMISOS DESPUÉS */}
+              <div>
+                <h5 className="text-xs font-semibold text-green-700 mb-2 uppercase tracking-wide">Permisos:</h5>
+                <ul className="text-sm space-y-1 text-gray-700">
+                  <li>• Acceso a información de clientes</li>
+                  <li>• Acceso completo a facturación</li>
+                  <li>• Acceso limitado a configuración</li>
+                  <li>• En fichaje: solo ve sus propios registros</li>
+                </ul>
+              </div>
             </div>
 
             {/* Administrador */}
@@ -508,15 +523,20 @@ export default function ProfessionalsPage() {
               <div className="flex items-center gap-2 mb-3">
                 <Badge className="bg-red-100 text-red-800">Administrador</Badge>
               </div>
-              <ul className="text-sm space-y-1 text-gray-700">
-                <li>• Acceso completo a todas las funcionalidades</li>
-                <li>• Acceso completo a facturación</li>
-                <li>• Puede crear y gestionar otros usuarios</li>
-                <li>• Acceso a toda la información médica</li>
-                <li>• Puede configurar la organización</li>
-                <li>• En fichaje: ve todos los registros y puede aprobar/rechazar</li>
-                <li>• Gestión completa del sistema</li>
-              </ul>
+
+              {/* SOLO PERMISOS (no tiene restricciones) */}
+              <div>
+                <h5 className="text-xs font-semibold text-green-700 mb-2 uppercase tracking-wide">Permisos:</h5>
+                <ul className="text-sm space-y-1 text-gray-700">
+                  <li>• Acceso completo a todas las funcionalidades</li>
+                  <li>• Acceso completo a facturación</li>
+                  <li>• Puede crear y gestionar otros usuarios</li>
+                  <li>• Acceso a toda la información médica</li>
+                  <li>• Puede configurar la organización</li>
+                  <li>• En fichaje: ve todos los registros y puede aprobar/rechazar</li>
+                  <li>• Gestión completa del sistema</li>
+                </ul>
+              </div>
             </div>
           </div>
         </CardContent>
@@ -676,6 +696,7 @@ export default function ProfessionalsPage() {
             <DialogTitle>Editar Profesional</DialogTitle>
             <DialogDescription>Modificar información del profesional</DialogDescription>
           </DialogHeader>
+
           {editingUser && (
             <form onSubmit={handleEditUser} className="space-y-4">
               <div className="space-y-2">

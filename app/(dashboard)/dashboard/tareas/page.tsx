@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { Textarea } from "@/components/ui/textarea"
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import {
   DndContext,
   type DragEndEvent,
@@ -291,7 +291,7 @@ function TaskColumn({
   )
 }
 
-// Componente para selector múltiple de usuarios
+// Componente para selector múltiple de usuarios - VERSIÓN MEJORADA
 function MultiUserSelector({
   selectedUsers,
   onSelectionChange,
@@ -304,6 +304,24 @@ function MultiUserSelector({
   placeholder?: string
 }) {
   const [isOpen, setIsOpen] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  // Cerrar dropdown al hacer clic fuera
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside)
+    }
+  }, [isOpen])
 
   const toggleUser = (userId: string) => {
     if (selectedUsers.includes(userId)) {
@@ -317,6 +335,10 @@ function MultiUserSelector({
     onSelectionChange(selectedUsers.filter((id) => id !== userId))
   }
 
+  const clearAll = () => {
+    onSelectionChange([])
+  }
+
   const getSelectedUserNames = () => {
     return selectedUsers.map((id) => {
       const user = usuarios.find((u) => u.id === id)
@@ -325,63 +347,155 @@ function MultiUserSelector({
   }
 
   return (
-    <div className="space-y-2">
-      <div className="relative">
+    <div className="space-y-3">
+      <div className="relative" ref={dropdownRef}>
         <Button
           type="button"
           variant="outline"
-          className="w-full justify-between bg-transparent"
+          className="w-full justify-between bg-transparent h-12"
           onClick={() => setIsOpen(!isOpen)}
         >
-          <span className="truncate">
+          <span className="truncate text-left">
             {selectedUsers.length === 0
               ? placeholder
               : selectedUsers.length === 1
                 ? getSelectedUserNames()[0]
                 : `${selectedUsers.length} usuarios seleccionados`}
           </span>
-          <Users className="h-4 w-4 opacity-50" />
+          <div className="flex items-center gap-2">
+            {selectedUsers.length > 0 && (
+              <Badge variant="secondary" className="text-xs">
+                {selectedUsers.length}
+              </Badge>
+            )}
+            <Users className="h-4 w-4 opacity-50" />
+          </div>
         </Button>
 
         {isOpen && (
-          <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-y-auto">
-            <div className="p-2">
-              {usuarios.map((user) => (
-                <div
-                  key={user.id}
-                  className="flex items-center space-x-2 p-2 hover:bg-gray-100 rounded cursor-pointer"
-                  onClick={() => toggleUser(user.id)}
+          <div className="absolute z-50 w-full mt-2 bg-white border rounded-lg shadow-lg max-h-80 overflow-hidden">
+            {/* Header del dropdown */}
+            <div className="flex items-center justify-between p-3 border-b bg-gray-50">
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-gray-600" />
+                <span className="font-medium text-sm text-gray-700">
+                  Seleccionar usuarios ({usuarios.length} disponibles)
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {selectedUsers.length > 0 && (
+                  <Button type="button" variant="ghost" size="sm" onClick={clearAll} className="text-xs h-6 px-2">
+                    Limpiar todo
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsOpen(false)}
+                  className="h-6 w-6 p-0"
                 >
-                  <Checkbox checked={selectedUsers.includes(user.id)} onChange={() => toggleUser(user.id)} />
-                  <span className="flex-1 truncate">{user.name}</span>
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Lista de usuarios */}
+            <div className="max-h-60 overflow-y-auto">
+              {usuarios.length === 0 ? (
+                <div className="p-4 text-center text-gray-500 text-sm">No hay usuarios disponibles</div>
+              ) : (
+                <div className="p-2">
+                  {usuarios.map((user) => (
+                    <div
+                      key={user.id}
+                      className="flex items-center space-x-3 p-3 hover:bg-gray-50 rounded-md cursor-pointer transition-colors"
+                      onClick={() => toggleUser(user.id)}
+                    >
+                      <Checkbox
+                        checked={selectedUsers.includes(user.id)}
+                        onChange={() => toggleUser(user.id)}
+                        className="flex-shrink-0"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                            <span className="text-xs font-medium text-blue-700">
+                              {user.name
+                                ?.split(" ")
+                                .map((n) => n[0])
+                                .join("")
+                                .toUpperCase() || "U"}
+                            </span>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium text-sm text-gray-900 truncate">{user.name || "Sin nombre"}</p>
+                            <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                          </div>
+                        </div>
+                      </div>
+                      {selectedUsers.includes(user.id) && (
+                        <div className="flex-shrink-0">
+                          <Badge variant="secondary" className="text-xs">
+                            Seleccionado
+                          </Badge>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ))}
-              {usuarios.length === 0 && <div className="p-2 text-gray-500 text-sm">No hay usuarios disponibles</div>}
+              )}
             </div>
           </div>
         )}
       </div>
 
-      {/* Mostrar usuarios seleccionados como badges */}
+      {/* Mostrar usuarios seleccionados como badges mejorados */}
       {selectedUsers.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {selectedUsers.map((userId) => {
-            const user = usuarios.find((u) => u.id === userId)
-            return (
-              <Badge key={userId} variant="secondary" className="flex items-center gap-1">
-                <span className="truncate max-w-20">{user?.name || "Usuario"}</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-3 w-3 p-0 hover:bg-gray-300"
-                  onClick={() => removeUser(userId)}
-                >
-                  <X className="h-2 w-2" />
-                </Button>
-              </Badge>
-            )
-          })}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-sm font-medium text-gray-700">Usuarios asignados ({selectedUsers.length})</Label>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={clearAll}
+              className="text-xs h-6 px-2 text-gray-500 hover:text-gray-700"
+            >
+              Quitar todos
+            </Button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {selectedUsers.map((userId) => {
+              const user = usuarios.find((u) => u.id === userId)
+              return (
+                <Badge key={userId} variant="secondary" className="flex items-center gap-2 py-1 px-3 text-sm">
+                  <div className="w-5 h-5 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <span className="text-xs font-medium text-blue-700">
+                      {user?.name
+                        ?.split(" ")
+                        .map((n) => n[0])
+                        .join("")
+                        .toUpperCase() || "U"}
+                    </span>
+                  </div>
+                  <span className="truncate max-w-32">{user?.name || "Usuario"}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-4 w-4 p-0 hover:bg-gray-300 ml-1"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      removeUser(userId)
+                    }}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </Badge>
+              )
+            })}
+          </div>
         </div>
       )}
     </div>
@@ -952,7 +1066,7 @@ export default function TareasPage() {
 
         {/* Modal de nueva tarea */}
         <Dialog open={mostrarFormulario} onOpenChange={setMostrarFormulario}>
-        <DialogContent className="w-full max-w-4xl mx-auto max-h-[90vh] overflow-y-auto">
+          <DialogContent className="w-full max-w-7xl mx-auto max-h-[95vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Nueva Tarea</DialogTitle>
             </DialogHeader>
@@ -1037,7 +1151,7 @@ export default function TareasPage() {
             setTareaEnEdicion(null)
           }}
         >
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto mx-4">
+          <DialogContent className="max-w-7xl max-h-[95vh] overflow-y-auto mx-4">
             <DialogHeader>
               <DialogTitle>Editar Tarea</DialogTitle>
             </DialogHeader>

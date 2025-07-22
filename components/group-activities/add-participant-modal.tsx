@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect, useCallback, useRef } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -12,10 +11,9 @@ import { Textarea } from "@/components/ui/textarea"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
 import { Search, Phone, User, UserPlus, Users, Mail, Loader2, CheckCircle, AlertTriangle } from "lucide-react"
-import { useClients } from "@/hooks/use-clients"
-import { supabase } from "@/lib/supabase"
-import { normalizePhoneNumber, formatPhoneNumber, isValidPhoneNumber } from "@/utils/phone-utils"
+import { supabase } from "@/lib/supabase/client"
 import { toast } from "sonner"
+import { useAuth } from "@/app/contexts/auth-context"
 
 interface ClientMatch {
   id: number
@@ -33,6 +31,8 @@ interface AddParticipantModalProps {
   currentParticipants: number[]
   maxParticipants: number
   activityName?: string
+  user?: any
+  userProfile?: any
 }
 
 export function AddParticipantModal({
@@ -44,7 +44,7 @@ export function AddParticipantModal({
   maxParticipants,
   activityName,
 }: AddParticipantModalProps) {
-  const { createClient } = useClients(organizationId)
+  const { user, userProfile } = useAuth()
 
   // Estados principales
   const [searchTerm, setSearchTerm] = useState("")
@@ -65,10 +65,30 @@ export function AddParticipantModal({
   // Refs para timeouts
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
 
+  // Función para normalizar teléfono
+  const normalizePhoneNumber = (phone: string): string => {
+    return phone.replace(/\D/g, "")
+  }
+
+  // Función para formatear teléfono
+  const formatPhoneNumber = (phone: string): string => {
+    const cleaned = phone.replace(/\D/g, "")
+    if (cleaned.length === 9) {
+      return cleaned.replace(/(\d{3})(\d{3})(\d{3})/, "$1 $2 $3")
+    }
+    return phone
+  }
+
+  // Función para validar teléfono
+  const isValidPhoneNumber = (phone: string): boolean => {
+    const cleaned = phone.replace(/\D/g, "")
+    return cleaned.length >= 9
+  }
+
   // Búsqueda de clientes con debounce
   const searchClients = useCallback(
     async (term: string) => {
-      if (!term || term.length < 1) {
+      if (!term || term.length < 1 || !user || !userProfile) {
         setClientMatches([])
         setShowMatches(false)
         return
@@ -80,12 +100,15 @@ export function AddParticipantModal({
         const termLower = term.toLowerCase().trim()
         const phoneDigits = term.replace(/\D/g, "")
 
+        // Usar la organización del usuario autenticado
+        const orgId = userProfile.organization_id || organizationId
+
         // Buscar por teléfono si hay dígitos
         if (phoneDigits.length >= 3) {
           const { data: phoneMatches, error: phoneError } = await supabase
             .from("clients")
             .select("id, name, phone, email")
-            .eq("organization_id", organizationId)
+            .eq("organization_id", orgId)
             .ilike("phone", `%${phoneDigits}%`)
             .not("id", "in", `(${currentParticipants.join(",") || "0"})`)
             .limit(10)
@@ -108,7 +131,7 @@ export function AddParticipantModal({
           const { data: nameMatches, error: nameError } = await supabase
             .from("clients")
             .select("id, name, phone, email")
-            .eq("organization_id", organizationId)
+            .eq("organization_id", orgId)
             .ilike("name", `%${termLower}%`)
             .not("id", "in", `(${currentParticipants.join(",") || "0"})`)
             .limit(10)
@@ -133,7 +156,7 @@ export function AddParticipantModal({
           const { data: emailMatches, error: emailError } = await supabase
             .from("clients")
             .select("id, name, phone, email")
-            .eq("organization_id", organizationId)
+            .eq("organization_id", orgId)
             .ilike("email", `%${termLower}%`)
             .not("id", "in", `(${currentParticipants.join(",") || "0"})`)
             .limit(10)
@@ -163,7 +186,7 @@ export function AddParticipantModal({
         setSearching(false)
       }
     },
-    [organizationId, currentParticipants],
+    [organizationId, currentParticipants, user, userProfile],
   )
 
   // Auto-completar datos para nuevo cliente basado en la búsqueda
@@ -261,20 +284,33 @@ export function AddParticipantModal({
       return
     }
 
+    if (!user || !userProfile) {
+      toast.error("No estás autenticado")
+      return
+    }
+
     setLoading(true)
     try {
+      const orgId = userProfile.organization_id || organizationId
+
       const clientData = {
         name: newClientData.name.trim(),
         phone: normalizePhoneNumber(newClientData.phone),
-        email: newClientData.email.trim() || undefined,
-        organization_id: organizationId,
+        email: newClientData.email.trim() || null,
+        organization_id: orgId,
       }
 
-      const newClient = await createClient(clientData)
+      const { data: newClient, error } = await supabase.from("clients").insert([clientData]).select().single()
+
+      if (error) {
+        throw error
+      }
+
       await onAddParticipant(newClient.id, participantNotes.trim() || undefined)
       handleClose()
       toast.success(`${newClient.name} creado y añadido`)
     } catch (error) {
+      console.error("Error creating client:", error)
       toast.error("Error al crear cliente")
     } finally {
       setLoading(false)
@@ -303,9 +339,14 @@ export function AddParticipantModal({
     }
   }
 
+  // Si no hay usuario autenticado, no mostrar el modal
+  if (!user || !userProfile) {
+    return null
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[500px] h-[700px] flex flex-col">
+      <DialogContent className="w-[800px] h-[700px] max-w-[90vw] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserPlus className="h-5 w-5" />
@@ -385,14 +426,12 @@ export function AddParticipantModal({
                   {selectedClient.phone && `Teléfono: ${formatPhoneNumber(selectedClient.phone)}`}
                   {selectedClient.email && ` • Email: ${selectedClient.email}`}
                 </span>
-                <br />
-                <span className="text-sm">Los datos se han completado automáticamente</span>
               </AlertDescription>
             </Alert>
           )}
 
           {/* Advertencia si es cliente nuevo */}
-          {!selectedClient && searchTerm && !searching && (
+          {!selectedClient && searchTerm && !searching && clientMatches.length === 0 && searchTerm.length >= 2 && (
             <Alert className="border-blue-200 bg-blue-50">
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription className="text-blue-800">
@@ -418,12 +457,10 @@ export function AddParticipantModal({
           {/* Separador */}
           {selectedClient && searchTerm && <Separator />}
 
-          {/* Formulario para nuevo cliente - SIEMPRE VISIBLE si hay texto de búsqueda */}
-          {searchTerm && searchTerm.length >= 2 && remainingSlots > 0 && (
+          {/* Formulario para nuevo cliente */}
+          {searchTerm && searchTerm.length >= 2 && remainingSlots > 0 && !selectedClient && (
             <div className="space-y-3">
-              <Label className="text-blue-600 font-medium">
-                {selectedClient ? "¿O prefieres crear un nuevo cliente?" : "Crear nuevo cliente"}
-              </Label>
+              <Label className="text-blue-600 font-medium">Crear nuevo cliente</Label>
               <div className="space-y-2">
                 <div>
                   <Label htmlFor="new-name">Nombre completo *</Label>

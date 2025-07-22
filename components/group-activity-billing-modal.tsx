@@ -252,7 +252,6 @@ export function GroupActivityBillingModal({
     >
   >(new Map())
 
-  // Agregar esta línea después de los otros useState (alrededor de la línea 200)
   const [initialSelectionDone, setInitialSelectionDone] = useState(false)
 
   // useEffect para añadir nota automática cuando IVA = 0
@@ -307,7 +306,7 @@ export function GroupActivityBillingModal({
           status: participant.status,
           has_complete_data: hasCompleteData,
           missing_fields: missingFields,
-          payment_method: "tarjeta", // Cambiar de "efectivo" a "tarjeta"
+          payment_method: "tarjeta",
           payment_method_other: "",
         }
       })
@@ -329,10 +328,8 @@ export function GroupActivityBillingModal({
     }
   }
 
-  // Y luego reemplazar el useEffect anterior con este:
   useEffect(() => {
     if (participantsData.length > 0 && !loading && !initialSelectionDone) {
-      // Solo seleccionar automáticamente la primera vez que se cargan los datos
       const participantsToSelect = participantsData
         .filter((participant) => participant.has_complete_data && !existingInvoices.has(participant.client_id))
         .map((participant) => participant.participant_id)
@@ -343,7 +340,6 @@ export function GroupActivityBillingModal({
     }
   }, [participantsData, existingInvoices, loading, initialSelectionDone])
 
-  // ✅ MODIFICAR checkExistingInvoices para NO hacer la selección automática aquí
   const checkExistingInvoices = async (clientIds: number[], dateStr: string) => {
     if (!userProfile?.organization_id || clientIds.length === 0) return
 
@@ -352,7 +348,7 @@ export function GroupActivityBillingModal({
         .from("invoices")
         .select("id, invoice_number, created_at, client_id")
         .eq("organization_id", userProfile.organization_id)
-        .eq("group_activity_id", activity.id) // ✅ CAMBIO: usar group_activity_id específico
+        .eq("group_activity_id", activity.id)
         .in("client_id", clientIds)
         .order("created_at", { ascending: true })
 
@@ -360,7 +356,6 @@ export function GroupActivityBillingModal({
 
       const invoicesMap = new Map()
       data?.forEach((invoice) => {
-        // Solo guardar la primera factura de cada cliente para esta actividad específica
         if (!invoicesMap.has(invoice.client_id)) {
           invoicesMap.set(invoice.client_id, {
             invoice_number: invoice.invoice_number,
@@ -371,7 +366,6 @@ export function GroupActivityBillingModal({
       })
 
       setExistingInvoices(invoicesMap)
-      // ✅ REMOVER la selección automática de aquí - se hace en el useEffect
     } catch (error) {
       console.error("Error checking existing invoices:", error)
     }
@@ -380,7 +374,7 @@ export function GroupActivityBillingModal({
   const handleParticipantToggle = (participantId: string, checked: boolean) => {
     const participant = participantsData.find((p) => p.participant_id === participantId)
     if (participant && existingInvoices.has(participant.client_id)) {
-      return // No permitir seleccionar participantes ya facturados
+      return
     }
 
     const newSelected = new Set(selectedParticipants)
@@ -403,7 +397,6 @@ export function GroupActivityBillingModal({
     setSelectedParticipants(new Set())
   }
 
-  // ✅ NUEVA FUNCIÓN: Actualizar método de pago de un participante
   const updatePaymentMethod = (
     participantId: string,
     paymentMethod: "tarjeta" | "efectivo" | "transferencia" | "paypal" | "bizum" | "otro",
@@ -422,7 +415,6 @@ export function GroupActivityBillingModal({
     )
   }
 
-  // ✅ NUEVA FUNCIÓN: Obtener texto del método de pago
   const getPaymentMethodText = (participant: ParticipantBillingData) => {
     switch (participant.payment_method) {
       case "tarjeta":
@@ -447,6 +439,7 @@ export function GroupActivityBillingModal({
 
     setGenerating(true)
     setGeneratedInvoices([])
+
     const selectedParticipantsArray = Array.from(selectedParticipants)
 
     setProgress({
@@ -503,7 +496,6 @@ export function GroupActivityBillingModal({
             "normal",
           )
 
-          // ✅ CORREGIR: Usar valores por defecto para los impuestos con ??
           const serviceVatRate = service.vat_rate ?? 0
           const serviceIrpfRate = service.irpf_rate ?? 0
           const serviceRetentionRate = service.retention_rate ?? 0
@@ -516,9 +508,9 @@ export function GroupActivityBillingModal({
               quantity: 1,
               unit_price: service.price,
               discount_percentage: 0,
-              vat_rate: serviceVatRate, // ✅ USAR CON VALOR POR DEFECTO
-              irpf_rate: serviceIrpfRate, // ✅ USAR CON VALOR POR DEFECTO
-              retention_rate: serviceRetentionRate, // ✅ USAR CON VALOR POR DEFECTO
+              vat_rate: serviceVatRate,
+              irpf_rate: serviceIrpfRate,
+              retention_rate: serviceRetentionRate,
               line_amount: service.price,
               professional_id: null,
             },
@@ -528,13 +520,14 @@ export function GroupActivityBillingModal({
           const subtotalAmount = service.price
           const totalDiscountAmount = 0
           const baseAmount = subtotalAmount - totalDiscountAmount
-          const vatAmount = (baseAmount * serviceVatRate) / 100 // ✅ USAR CON VALOR POR DEFECTO
-          const irpfAmount = (baseAmount * serviceIrpfRate) / 100 // ✅ USAR CON VALOR POR DEFECTO
-          const retentionAmount = (baseAmount * serviceRetentionRate) / 100 // ✅ USAR CON VALOR POR DEFECTO
+          const vatAmount = (baseAmount * serviceVatRate) / 100
+          const irpfAmount = (baseAmount * serviceIrpfRate) / 100
+          const retentionAmount = (baseAmount * serviceRetentionRate) / 100
           const totalAmount = baseAmount + vatAmount - irpfAmount - retentionAmount
 
           // Preparar notas de la factura
           const clientInfoText = `Cliente: ${participantData.client_name}, CIF/NIF: ${participantData.client_tax_id}, Dirección: ${participantData.client_address}, ${participantData.client_postal_code} ${participantData.client_city}, ${participantData.client_province}`
+
           const additionalNotes = `Factura generada para actividad grupal "${activity.name}" del ${format(new Date(activity.date), "dd/MM/yyyy", { locale: es })}\nServicio: ${service.name} - ${service.price}€\nEstado del participante: ${participantData.status === "attended" ? "Asistió" : "Registrado"}\nMétodo de pago: ${getPaymentMethodText(participantData)}`
 
           // Añadir nota de IVA exento automáticamente si vatAmount === 0
@@ -552,7 +545,7 @@ export function GroupActivityBillingModal({
               organization_id: organizationId,
               invoice_number: invoiceNumberFormatted,
               client_id: participantData.client_id,
-              group_activity_id: activity.id, // ✅ NUEVO CAMPO
+              group_activity_id: activity.id,
               issue_date: format(new Date(activity.date), "yyyy-MM-dd"),
               invoice_type: "normal",
               status: "paid",
@@ -563,8 +556,8 @@ export function GroupActivityBillingModal({
               total_amount: totalAmount,
               discount_amount: totalDiscountAmount,
               notes: fullNotes,
-              payment_method: participantData.payment_method, // ✅ AÑADIR MÉTODO DE PAGO
-              payment_method_other: participantData.payment_method_other || null, // ✅ AÑADIR MÉTODO DE PAGO OTRO
+              payment_method: participantData.payment_method,
+              payment_method_other: participantData.payment_method_other || null,
               created_by: userProfile!.id,
             })
             .select()
@@ -572,7 +565,6 @@ export function GroupActivityBillingModal({
 
           if (invoiceError) throw invoiceError
 
-          // ✅ ACTUALIZACIÓN OPTIMISTA INMEDIATA
           setExistingInvoices((prev) =>
             new Map(prev).set(participantData.client_id, {
               invoice_number: invoiceNumberFormatted,
@@ -581,7 +573,6 @@ export function GroupActivityBillingModal({
             }),
           )
 
-          // ✅ REMOVER DE SELECCIONADOS
           setSelectedParticipants((prev) => {
             const newSet = new Set(prev)
             newSet.delete(participantId)
@@ -603,6 +594,7 @@ export function GroupActivityBillingModal({
           }))
 
           const { error: linesError } = await supabase.from("invoice_lines").insert(invoiceLines_db)
+
           if (linesError) {
             console.error("Error saving invoice lines:", linesError)
           }
@@ -641,8 +633,8 @@ export function GroupActivityBillingModal({
               discount_amount: totalDiscountAmount,
               notes: fullNotes,
               signature: null,
-              payment_method: participantData.payment_method, // ✅ AÑADIR MÉTODO DE PAGO
-              payment_method_other: participantData.payment_method_other || null, // ✅ AÑADIR MÉTODO DE PAGO OTRO
+              payment_method: participantData.payment_method,
+              payment_method_other: participantData.payment_method_other || null,
               organization: {
                 name: orgData.name,
                 tax_id: orgData.tax_id,
@@ -755,7 +747,6 @@ export function GroupActivityBillingModal({
         setGeneratedInvoices(invoicesForZip)
       }
 
-      // ✅ RE-CONSULTA FINAL PARA CONFIRMAR
       await checkExistingInvoices(
         participantsData.map((p) => p.client_id),
         format(new Date(activity.date), "yyyy-MM-dd"),
@@ -814,6 +805,7 @@ export function GroupActivityBillingModal({
       })
 
       const zipBlob = await zip.generateAsync({ type: "blob" })
+
       const dateStr = format(new Date(activity.date), "yyyy-MM-dd")
       const zipFileName = `facturas_actividad_${activity.name.replace(/[^a-zA-Z0-9]/g, "_")}_${dateStr}_${generatedInvoices.length}_facturas.zip`
 
@@ -865,10 +857,10 @@ export function GroupActivityBillingModal({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2">
-      <div className="bg-white rounded-lg shadow-2xl w-full max-w-7xl max-h-[95vh] overflow-hidden">
-        {/* Header */}
-        <div className="bg-purple-50 px-6 py-4 border-b border-purple-100">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-lg shadow-2xl w-full max-w-[95vw] h-[95vh] flex flex-col">
+        {/* Header fijo */}
+        <div className="bg-purple-50 px-6 py-4 border-b border-purple-100 flex-shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="bg-purple-100 p-2 rounded-lg">
@@ -887,8 +879,8 @@ export function GroupActivityBillingModal({
           </div>
         </div>
 
-        {/* Content */}
-        <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
+        {/* Contenido con scroll */}
+        <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
@@ -1000,7 +992,7 @@ export function GroupActivityBillingModal({
                 </Button>
               </div>
 
-              {/* Participants List */}
+              {/* Lista de participantes */}
               <div className="space-y-3">
                 {participantsData.map((participant) => (
                   <Card
@@ -1072,7 +1064,7 @@ export function GroupActivityBillingModal({
                             </div>
                           </div>
 
-                          {/* ✅ NUEVA SECCIÓN: Método de Pago */}
+                          {/* Método de Pago */}
                           <div className="mb-3 p-3 bg-gray-50 rounded-lg border">
                             <div className="flex items-center gap-2 mb-2">
                               <Label className="text-sm font-medium text-gray-700">Método de Pago</Label>
@@ -1127,9 +1119,9 @@ export function GroupActivityBillingModal({
           )}
         </div>
 
-        {/* Footer */}
+        {/* Footer fijo */}
         {!loading && participantsData.length > 0 && (
-          <div className="border-t bg-gray-50 px-6 py-4">
+          <div className="border-t bg-gray-50 px-6 py-4 flex-shrink-0">
             <div className="flex justify-between items-center">
               <div className="text-sm text-gray-600">
                 {selectedParticipants.size} participantes seleccionados • {formatCurrency(getTotalSelected())} total
