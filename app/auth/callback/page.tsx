@@ -5,12 +5,14 @@ import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase/client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Loader2, CheckCircle, XCircle } from "lucide-react"
+import { useAuth } from "@/app/contexts/auth-context"
 
 export default function AuthCallback() {
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading")
   const [message, setMessage] = useState("Confirmando email...")
   const router = useRouter()
   const hasProcessed = useRef(false)
+  const { refreshUserProfile } = useAuth()
 
   useEffect(() => {
     if (hasProcessed.current) return
@@ -74,6 +76,7 @@ export default function AuthCallback() {
           if (retryUser.organization_id) {
             setStatus("success")
             setMessage("¡Cuenta configurada! Redirigiendo al login...")
+            await refreshUserProfile() // Agregar esta línea
             setTimeout(() => {
               router.push("/login")
             }, 1500)
@@ -83,6 +86,7 @@ export default function AuthCallback() {
           if (existingUser.organization_id) {
             setStatus("success")
             setMessage("¡Cuenta configurada! Redirigiendo al login...")
+            await refreshUserProfile() // Agregar esta línea
             setTimeout(() => {
               router.push("/login")
             }, 1500)
@@ -178,6 +182,7 @@ export default function AuthCallback() {
 
         setStatus("success")
         setMessage("¡Cuenta creada! Redirigiendo al login...")
+        await refreshUserProfile() // Agregar esta línea
         setTimeout(() => {
           router.push("/login")
         }, 2000)
@@ -189,7 +194,7 @@ export default function AuthCallback() {
     }
 
     handleCallback()
-  }, [router])
+  }, [router, refreshUserProfile])
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">

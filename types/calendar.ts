@@ -409,6 +409,7 @@ export interface ProfessionalSettings {
   id: string
   user_id: string
   specialty: string | null
+  specialty_other?: string | null  // ✅ AÑADIR ESTA LÍNEA
   calendar_color: string | null
   created_at: string
   updated_at: string
@@ -659,8 +660,7 @@ export interface HoraPreviewTooltipProps {
   citaOriginal: any
   children: React.ReactNode
 }
-
-// Interfaz principal actualizada para citas - ACTUALIZADA CON type
+// Interfaz principal actualizada para citas - ACTUALIZADA CON type y specialty
 export interface Profesional {
   id: number
   nombre: string
@@ -669,9 +669,13 @@ export interface Profesional {
   color?: string
   type: number // AÑADIDO: 1 = profesional médico, 2 = otro tipo
   settings?: {
-    specialty?: string
+    specialty?: string // Valor del enum specialty_type
+    specialty_other?: string // Especialidad personalizada cuando specialty = 'otros'
     calendar_color?: string
   }
+  // NUEVOS CAMPOS para especialidad
+  specialty?: string // Valor directo del enum de la BD
+  specialty_other?: string // Especialidad personalizada
 }
 
 export interface EmoticonoPersonalizado {

@@ -23,10 +23,15 @@ export interface Profesional {
   especialidad: string
   color?: string
   name?: string // Para compatibilidad
+  type: number // ✅ AÑADIDO: 1 = profesional, 2 = otro tipo
   settings?: {
     specialty?: string
+    specialty_other?: string // ✅ AÑADIDO
     calendar_color?: string
   }
+  // NUEVOS CAMPOS para especialidad
+  specialty?: string // Valor directo del enum de la BD
+  specialty_other?: string // Especialidad personalizada
 }
 
 export interface EmoticonoPersonalizado {
@@ -185,3 +190,34 @@ export interface CalendarViewProps {
   onSelectEvent?: (event: CalendarEvent) => void
   onSelectSlot?: (slot: CalendarSlot) => void
 }
+
+export interface ProfessionalSettings {
+  id: string
+  user_id: string
+  specialty: string | null
+  specialty_other?: string | null  // ✅ Opcional
+  calendar_color: string | null
+  created_at: string
+  updated_at: string
+}
+
+// Tipos modernos para la base de datos - ACTUALIZADO CON type y specialty
+export interface User {
+  id: string
+  name: string | null
+  email: string
+  role: "admin" | "professional" | "staff"
+  organization_id: number
+  type: number // AÑADIDO: 1 = profesional, 2 = otro tipo
+  avatar_url?: string | null
+  is_physia_admin?: boolean
+  prompt?: string | null
+  work_schedules?: any[] // Declared as any[] to avoid undeclared variable error
+  settings?: ProfessionalSettings
+  // ✅ CAMPOS DE ESPECIALIDAD AÑADIDOS
+  specialty?: string | null
+  specialty_other?: string | null
+}
+
+// Import WorkSchedule interface
+export type WorkSchedule = {}

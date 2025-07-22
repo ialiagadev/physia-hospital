@@ -19,6 +19,7 @@ type AuthContextType = {
   userProfile: UserProfile | null
   isLoading: boolean
   signOut: () => Promise<void>
+  refreshUserProfile: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -158,11 +159,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(false)
   }
 
+  const refreshUserProfile = async () => {
+    const currentUser = currentUserRef.current
+    if (currentUser) {
+      console.log("🔄 Forzando refresh del perfil...")
+      await getUserProfile(currentUser.id)
+    }
+  }
+
   const value = {
     user,
     userProfile,
     isLoading,
     signOut,
+    refreshUserProfile,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

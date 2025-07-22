@@ -11,8 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import type { Cita, Profesional } from "@/types/calendar-types"
-import type { User } from "@/types/calendar"
+import type { Cita, Profesional, User } from "@/types/calendar-types"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { ScheduleConfigModal } from "./schedule-config-modal"
@@ -43,18 +42,50 @@ const COLORES_DISPONIBLES = [
   { value: "#10B981", label: "Esmeralda", class: "bg-emerald-100 border-emerald-500" },
 ]
 
+// Especialidades con valores del enum y etiquetas legibles
 const especialidades = [
-  "Medicina General",
-  "Cardiología",
-  "Dermatología",
-  "Pediatría",
-  "Ginecología",
-  "Traumatología",
-  "Neurología",
-  "Psiquiatría",
-  "Oftalmología",
-  "Otorrinolaringología",
+  { value: "medicina_general", label: "Medicina General" },
+  { value: "pediatria", label: "Pediatría" },
+  { value: "cardiologia", label: "Cardiología" },
+  { value: "dermatologia", label: "Dermatología" },
+  { value: "ginecologia", label: "Ginecología" },
+  { value: "traumatologia", label: "Traumatología" },
+  { value: "neurologia", label: "Neurología" },
+  { value: "psicologia", label: "Psicología" },
+  { value: "fisioterapia", label: "Fisioterapia" },
+  { value: "nutricion", label: "Nutrición" },
+  { value: "odontologia", label: "Odontología" },
+  { value: "oftalmologia", label: "Oftalmología" },
+  { value: "otorrinolaringologia", label: "Otorrinolaringología" },
+  { value: "urologia", label: "Urología" },
+  { value: "endocrinologia", label: "Endocrinología" },
+  { value: "gastroenterologia", label: "Gastroenterología" },
+  { value: "neumologia", label: "Neumología" },
+  { value: "reumatologia", label: "Reumatología" },
+  { value: "oncologia", label: "Oncología" },
+  { value: "psiquiatria", label: "Psiquiatría" },
+  { value: "radiologia", label: "Radiología" },
+  { value: "cirugia_general", label: "Cirugía General" },
+  { value: "medicina_interna", label: "Medicina Interna" },
+  { value: "geriatria", label: "Geriatría" },
+  { value: "medicina_deportiva", label: "Medicina Deportiva" },
+  { value: "medicina_estetica", label: "Medicina Estética" },
+  { value: "acupuntura", label: "Acupuntura" },
+  { value: "osteopatia", label: "Osteopatía" },
+  { value: "podologia", label: "Podología" },
+  { value: "logopedia", label: "Logopedia" },
+  { value: "terapia_ocupacional", label: "Terapia Ocupacional" },
+  { value: "enfermeria", label: "Enfermería" },
+  { value: "farmacia", label: "Farmacia" },
+  { value: "veterinaria", label: "Veterinaria" },
+  { value: "otros", label: "Otros (especificar)" },
 ]
+
+// Función para obtener la etiqueta de una especialidad
+const getSpecialtyLabel = (value: string) => {
+  const specialty = especialidades.find((esp) => esp.value === value)
+  return specialty ? specialty.label : value
+}
 
 export function ProfesionalesView({
   profesionales,
@@ -95,6 +126,7 @@ export function ProfesionalesView({
   const [editForm, setEditForm] = useState({
     nombre: "",
     especialidad: "",
+    especialidadOtra: "",
     color: "#3B82F6",
   })
   const [showScheduleModal, setShowScheduleModal] = useState(false)
@@ -141,9 +173,12 @@ export function ProfesionalesView({
   }
 
   const handleEditProfesional = (profesional: Profesional) => {
+    // Buscar el usuario real para obtener su especialidad
+    const realUser = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesional.id)
     setEditForm({
       nombre: profesional.nombre || profesional.name || "",
-      especialidad: profesional.especialidad || "", // Mantener pero no mostrar
+      especialidad: realUser?.specialty || "",
+      especialidadOtra: realUser?.specialty_other || "",
       color: profesional.color || "#3B82F6",
     })
     setSelectedProfesional(profesional)
@@ -159,7 +194,12 @@ export function ProfesionalesView({
 
       if (realUser) {
         // Actualizar en la base de datos
-        await UserService.updateProfessionalColor(realUser.id, editForm.color)
+        await UserService.updateProfessionalData(realUser.id, {
+          color: editForm.color,
+          specialty: editForm.especialidad,
+          specialty_other: editForm.especialidad === "otros" ? editForm.especialidadOtra : null,
+        })
+
         toast.success("Profesional actualizado correctamente")
 
         // Refrescar usuarios si hay función disponible
@@ -172,7 +212,8 @@ export function ProfesionalesView({
           onUpdateProfesional({
             ...selectedProfesional,
             nombre: editForm.nombre,
-            especialidad: selectedProfesional.especialidad, // Mantener especialidad existente
+            especialidad:
+              editForm.especialidad === "otros" ? editForm.especialidadOtra : getSpecialtyLabel(editForm.especialidad),
             name: editForm.nombre,
             color: editForm.color,
           })
@@ -189,23 +230,30 @@ export function ProfesionalesView({
 
   const handleAddNew = () => {
     if (!editForm.nombre.trim() || !editForm.especialidad) return
+    if (editForm.especialidad === "otros" && !editForm.especialidadOtra.trim()) return
 
     if (onAddProfesional) {
+      const especialidadFinal =
+        editForm.especialidad === "otros" ? editForm.especialidadOtra : getSpecialtyLabel(editForm.especialidad)
+
       const newProfesional: Omit<Profesional, "id"> = {
         nombre: editForm.nombre.trim(),
-        especialidad: editForm.especialidad,
+        especialidad: especialidadFinal,
         color: editForm.color,
         name: editForm.nombre.trim(),
+        type: 1,
         settings: {
           specialty: editForm.especialidad,
+          specialty_other: editForm.especialidad === "otros" ? editForm.especialidadOtra : undefined,
           calendar_color: editForm.color,
         },
       }
+
       onAddProfesional(newProfesional)
     }
 
     setShowAddModal(false)
-    setEditForm({ nombre: "", especialidad: "", color: "#3B82F6" })
+    setEditForm({ nombre: "", especialidad: "", especialidadOtra: "", color: "#3B82F6" })
   }
 
   const getInitials = (nombre: string) => {
@@ -227,6 +275,7 @@ export function ProfesionalesView({
       toast.error("Este profesional no tiene usuario asociado de tipo profesional")
       return
     }
+
     setShowScheduleModal(true)
   }
 
@@ -259,6 +308,17 @@ export function ProfesionalesView({
     const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
     if (!user) return []
     return getUserSchedules(user.id)
+  }
+
+  // Función para obtener la especialidad de un profesional
+  const getProfessionalSpecialty = (profesionalId: number) => {
+    const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
+    if (!user) return ""
+
+    if (user.specialty === "otros" && user.specialty_other) {
+      return user.specialty_other
+    }
+    return getSpecialtyLabel(user.specialty || "")
   }
 
   // Si no hay profesionales filtrados, mostrar mensaje
@@ -302,6 +362,7 @@ export function ProfesionalesView({
           // MEJORADO: Obtener horarios del profesional
           const professionalSchedules = getProfessionalSchedules(profesional.id)
           const hasSchedules = professionalSchedules.length > 0
+          const specialty = getProfessionalSpecialty(profesional.id)
 
           return (
             <Card key={profesional.id} className="h-fit">
@@ -321,8 +382,9 @@ export function ProfesionalesView({
                     </Avatar>
                     <div>
                       <CardTitle className="text-lg">{profesional?.nombre || profesional?.name}</CardTitle>
+                      {specialty && <p className="text-sm text-gray-600">{specialty}</p>}
                       {hasSchedules && (
-                        <p className="text-xs text-gray-600">
+                        <p className="text-xs text-gray-500">
                           {professionalSchedules.filter((s) => s.is_active).length} días configurados
                         </p>
                       )}
@@ -469,6 +531,38 @@ export function ProfesionalesView({
                 onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })}
               />
             </div>
+
+            <div>
+              <Label htmlFor="edit-especialidad">Especialidad</Label>
+              <Select
+                value={editForm.especialidad}
+                onValueChange={(value) => setEditForm({ ...editForm, especialidad: value, especialidadOtra: "" })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona una especialidad" />
+                </SelectTrigger>
+                <SelectContent>
+                  {especialidades.map((esp) => (
+                    <SelectItem key={esp.value} value={esp.value}>
+                      {esp.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {editForm.especialidad === "otros" && (
+              <div>
+                <Label htmlFor="edit-especialidad-otra">Especifica la especialidad</Label>
+                <Input
+                  id="edit-especialidad-otra"
+                  value={editForm.especialidadOtra}
+                  onChange={(e) => setEditForm({ ...editForm, especialidadOtra: e.target.value })}
+                  placeholder="Ej: Medicina Alternativa"
+                />
+              </div>
+            )}
+
             <div>
               <Label htmlFor="edit-color">Color</Label>
               <div className="flex items-center gap-3">
@@ -482,6 +576,7 @@ export function ProfesionalesView({
                 <div className="text-sm text-muted-foreground">{editForm.color}</div>
               </div>
             </div>
+
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowEditModal(false)}>
                 Cancelar
@@ -508,24 +603,38 @@ export function ProfesionalesView({
                 placeholder="Ej: Dr. Juan Pérez"
               />
             </div>
+
             <div>
               <Label htmlFor="add-especialidad">Especialidad</Label>
               <Select
                 value={editForm.especialidad}
-                onValueChange={(value) => setEditForm({ ...editForm, especialidad: value })}
+                onValueChange={(value) => setEditForm({ ...editForm, especialidad: value, especialidadOtra: "" })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecciona una especialidad" />
                 </SelectTrigger>
                 <SelectContent>
                   {especialidades.map((esp) => (
-                    <SelectItem key={esp} value={esp}>
-                      {esp}
+                    <SelectItem key={esp.value} value={esp.value}>
+                      {esp.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+
+            {editForm.especialidad === "otros" && (
+              <div>
+                <Label htmlFor="add-especialidad-otra">Especifica la especialidad</Label>
+                <Input
+                  id="add-especialidad-otra"
+                  value={editForm.especialidadOtra}
+                  onChange={(e) => setEditForm({ ...editForm, especialidadOtra: e.target.value })}
+                  placeholder="Ej: Medicina Alternativa"
+                />
+              </div>
+            )}
+
             <div>
               <Label htmlFor="add-color">Color</Label>
               <Select value={editForm.color} onValueChange={(value) => setEditForm({ ...editForm, color: value })}>
@@ -544,6 +653,7 @@ export function ProfesionalesView({
                 </SelectContent>
               </Select>
             </div>
+
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowAddModal(false)}>
                 Cancelar

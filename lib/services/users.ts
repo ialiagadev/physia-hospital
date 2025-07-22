@@ -8,6 +8,7 @@ export class UserService {
     const {
       data: { user },
     } = await supabase.auth.getUser()
+
     if (!user) throw new Error("No authenticated user")
 
     const { data: currentUser } = await supabase.from("users").select("organization_id").eq("id", user.id).single()
@@ -39,6 +40,7 @@ export class UserService {
     const {
       data: { user },
     } = await supabase.auth.getUser()
+
     if (!user) return null
 
     const { data, error } = await supabase
@@ -86,6 +88,82 @@ export class UserService {
     }
 
     return data
+  }
+
+  // ACTUALIZADO: Método para actualizar datos del profesional con validaciones
+  static async updateProfessionalData(
+    userId: string,
+    data: {
+      color?: string
+      specialty?: string
+      specialty_other?: string | null
+    },
+  ) {
+    try {
+      const updateData: any = {}
+
+      // Validar y actualizar especialidad en la tabla users
+      if (data.specialty !== undefined) {
+        updateData.specialty = data.specialty
+
+        // Si specialty es 'otros', specialty_other debe tener un valor válido
+        if (data.specialty === "otros") {
+          if (!data.specialty_other || data.specialty_other.trim() === "") {
+            throw new Error("specialty_other es requerido cuando specialty es 'otros'")
+          }
+          updateData.specialty_other = data.specialty_other.trim()
+        } else {
+          // Si specialty no es 'otros', specialty_other debe ser null
+          updateData.specialty_other = null
+        }
+      } else if (data.specialty_other !== undefined) {
+        // Si solo se está actualizando specialty_other, validar que specialty sea 'otros'
+        const { data: currentUser } = await supabase.from("users").select("specialty").eq("id", userId).single()
+
+        if (currentUser?.specialty === "otros") {
+          if (!data.specialty_other || data.specialty_other.trim() === "") {
+            throw new Error("specialty_other no puede estar vacío cuando specialty es 'otros'")
+          }
+          updateData.specialty_other = data.specialty_other.trim()
+        } else {
+          updateData.specialty_other = null
+        }
+      }
+
+      // Actualizar en la tabla users solo si hay cambios
+      if (Object.keys(updateData).length > 0) {
+        const { error: userError } = await supabase.from("users").update(updateData).eq("id", userId)
+
+        if (userError) {
+          console.error("Error updating user:", userError)
+          throw userError
+        }
+      }
+
+      // Actualizar color en professional_settings si se proporciona
+      if (data.color) {
+        const { error: settingsError } = await supabase.from("professional_settings").upsert(
+          {
+            user_id: userId,
+            calendar_color: data.color,
+            updated_at: new Date().toISOString(),
+          },
+          {
+            onConflict: "user_id",
+          },
+        )
+
+        if (settingsError) {
+          console.error("Error updating professional settings:", settingsError)
+          throw settingsError
+        }
+      }
+
+      return { success: true }
+    } catch (error) {
+      console.error("Error updating professional data:", error)
+      throw error
+    }
   }
 
   // Actualizar color del calendario del profesional
