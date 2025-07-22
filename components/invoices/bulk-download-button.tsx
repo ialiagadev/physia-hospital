@@ -125,7 +125,7 @@ export function BulkDownloadButton({ selectedInvoiceIds, onDownloadComplete }: B
 
     // Generar el PDF
     const fileName = `factura-${invoice.invoice_number}.pdf`
-    const pdfBlob = await generatePdf(mappedInvoice, validLines, fileName, true)
+    const pdfBlob = await generatePdf(mappedInvoice, validLines, fileName, false)
 
     // Si el PDF se generó correctamente, descargarlo
     if (pdfBlob && pdfBlob instanceof Blob) {

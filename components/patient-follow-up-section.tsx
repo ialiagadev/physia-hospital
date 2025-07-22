@@ -38,7 +38,7 @@ export function PatientFollowUpSection({ clientId, clientName }: PatientFollowUp
   const { userProfile } = useAuth()
 
   const [formData, setFormData] = useState<PatientFollowUpFormData>({
-    followUpDate: new Date().toISOString().slice(0, 16),
+    followUpDate: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16),
     followUpType: "Seguimiento general",
     description: "",
     recommendations: "",
