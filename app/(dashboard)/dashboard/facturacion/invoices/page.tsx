@@ -45,6 +45,23 @@ const statusOptions = [
   { value: "overdue", label: "Vencida", color: "bg-orange-100 text-orange-800" },
 ]
 
+// Función para formatear el método de pago
+const formatPaymentMethod = (paymentMethod: string | null, paymentMethodOther: string | null) => {
+  if (!paymentMethod) return "-"
+
+  const paymentMethods: Record<string, string> = {
+    tarjeta: "Tarjeta",
+    efectivo: "Efectivo",
+    transferencia: "Transferencia",
+    bizum: "Bizum",
+    paypal: "PayPal",
+    cheque: "Cheque",
+    otro: paymentMethodOther || "Otro",
+  }
+
+  return paymentMethods[paymentMethod] || paymentMethod
+}
+
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -262,7 +279,7 @@ export default function InvoicesPage() {
   }
 
   const generateCSVData = (invoices: any[], lines: any[]) => {
-    // Encabezados del CSV
+    // Encabezados del CSV - AÑADIDO MÉTODO DE PAGO
     const headers = [
       "Número Factura",
       "Fecha Emisión",
@@ -284,6 +301,7 @@ export default function InvoicesPage() {
       "IRPF",
       "Retenciones",
       "Total",
+      "Método de Pago", // NUEVA COLUMNA
       "Líneas de Factura",
       "Profesionales",
       "Notas",
@@ -342,6 +360,7 @@ export default function InvoicesPage() {
         invoice.irpf_amount?.toFixed(2) || "0.00",
         invoice.retention_amount?.toFixed(2) || "0.00",
         invoice.total_amount?.toFixed(2) || "0.00",
+        formatPaymentMethod(invoice.payment_method, invoice.payment_method_other), // NUEVA COLUMNA
         linesText,
         professionalsText,
         invoice.notes || "",
@@ -575,10 +594,9 @@ export default function InvoicesPage() {
           const clientInfoText = `Cliente: ${client.name}${client.tax_id ? `, CIF/NIF: ${client.tax_id}` : ""}${client.address ? `, Dirección: ${client.address}` : ""}${client.postal_code ? `, ${client.postal_code}` : ""} ${client.city || ""}${client.province ? `, ${client.province}` : ""}`
 
           const additionalNotes = `Factura generada automáticamente para citas del ${format(new Date(selectedDateString), "dd/MM/yyyy", { locale: es })}`
-
           const fullNotes = clientInfoText + `\n\nNotas adicionales: ${additionalNotes}`
 
-          // Crear factura - estructura idéntica a nueva factura
+          // Crear factura - estructura idéntica a nueva factura + MÉTODO DE PAGO POR DEFECTO
           const { data: invoiceData, error: invoiceError } = await supabase
             .from("invoices")
             .insert({
@@ -593,6 +611,7 @@ export default function InvoicesPage() {
               irpf_amount: 0,
               retention_amount: 0,
               total_amount: totalAmount,
+              payment_method: "tarjeta", // MÉTODO DE PAGO POR DEFECTO
               notes: fullNotes,
             })
             .select()
@@ -642,6 +661,7 @@ export default function InvoicesPage() {
 
       // Actualizar lista de facturas
       await loadInvoices()
+
       setGenerationResults(results)
 
       toast({
@@ -1004,6 +1024,7 @@ export default function InvoicesPage() {
               <TableHead>Fecha</TableHead>
               <TableHead>Cliente</TableHead>
               <TableHead>Estado</TableHead>
+              <TableHead>Método de Pago</TableHead> {/* NUEVA COLUMNA */}
               <TableHead className="text-right">Importe</TableHead>
               <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
@@ -1011,7 +1032,7 @@ export default function InvoicesPage() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center">
+                <TableCell colSpan={8} className="h-24 text-center">
                   Cargando facturas...
                 </TableCell>
               </TableRow>
@@ -1035,6 +1056,13 @@ export default function InvoicesPage() {
                       onStatusChange={(newStatus) => handleStatusChange(invoice.id, newStatus)}
                     />
                   </TableCell>
+                  <TableCell>
+                    {" "}
+                    {/* NUEVA CELDA */}
+                    <span className="text-sm text-muted-foreground">
+                      {formatPaymentMethod(invoice.payment_method, invoice.payment_method_other)}
+                    </span>
+                  </TableCell>
                   <TableCell className="text-right">{invoice.total_amount.toFixed(2)} €</TableCell>
                   <TableCell className="text-right">
                     <div className="flex gap-1 justify-end">
@@ -1056,7 +1084,7 @@ export default function InvoicesPage() {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center">
+                <TableCell colSpan={8} className="h-24 text-center">
                   {hasActiveFilters
                     ? "No se encontraron facturas con los filtros aplicados"
                     : "No hay facturas registradas"}

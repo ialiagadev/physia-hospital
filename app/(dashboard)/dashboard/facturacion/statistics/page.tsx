@@ -10,6 +10,7 @@ import { RevenueByProfessional } from "@/components/statistics/revenue-by-profes
 import { RevenueByService } from "@/components/statistics/revenue-by-service"
 import { ExpensesByCategory } from "@/components/statistics/expenses-by-category"
 import { ExpensesBySupplier } from "@/components/statistics/expenses-by-supplier"
+import { RevenueByPaymentMethod } from "@/components/statistics/revenue-by-payment-method"
 import { CalendarDays } from "lucide-react"
 
 export default function StatisticsPage() {
@@ -40,11 +41,12 @@ export default function StatisticsPage() {
       </div>
 
       <Tabs defaultValue="revenue" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="revenue">Ingresos</TabsTrigger>
           <TabsTrigger value="expenses">Gastos</TabsTrigger>
           <TabsTrigger value="by-professional">Por Profesional</TabsTrigger>
           <TabsTrigger value="by-service">Por Servicio</TabsTrigger>
+          <TabsTrigger value="by-payment">Por Método Pago</TabsTrigger>
           <TabsTrigger value="expenses-analysis">Análisis Gastos</TabsTrigger>
         </TabsList>
 
@@ -96,6 +98,18 @@ export default function StatisticsPage() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="by-payment">
+          <Card>
+            <CardHeader>
+              <CardTitle>Ingresos por Método de Pago</CardTitle>
+              <CardDescription>Distribución de ingresos por método de pago utilizado</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <RevenueByPaymentMethod period={timePeriod} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="expenses-analysis">
           <div className="grid gap-6 md:grid-cols-2">
             <Card>
@@ -107,7 +121,6 @@ export default function StatisticsPage() {
                 <ExpensesByCategory period={timePeriod} />
               </CardContent>
             </Card>
-
             <Card>
               <CardHeader>
                 <CardTitle>Gastos por Proveedor</CardTitle>
