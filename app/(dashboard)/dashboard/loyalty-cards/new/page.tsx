@@ -2,7 +2,7 @@
 
 import { Suspense } from "react"
 import type React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
@@ -15,7 +15,167 @@ import { DatePicker } from "@/components/ui/date-picker"
 import { useToast } from "@/hooks/use-toast"
 import { Breadcrumbs } from "@/components/breadcrumbs"
 import { PhysiaCard } from "@/components/loyalty-card/physia-card"
+import { Search, X, User } from "lucide-react"
 import type { CardFormData } from "@/types/loyalty-cards"
+
+// Componente de búsqueda de clientes
+interface ClientSearchProps {
+  organizationId: number
+  selectedClient: any
+  onClientSelect: (client: any) => void
+  disabled?: boolean
+}
+
+function ClientSearch({ organizationId, selectedClient, onClientSelect, disabled }: ClientSearchProps) {
+  const [searchTerm, setSearchTerm] = useState("")
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [isSearching, setIsSearching] = useState(false)
+  const [showResults, setShowResults] = useState(false)
+
+  // Función de búsqueda con debouncing
+  const searchClients = useCallback(
+    async (term: string) => {
+      if (!term.trim() || !organizationId) {
+        setSearchResults([])
+        setShowResults(false)
+        return
+      }
+
+      setIsSearching(true)
+      try {
+        const { data, error } = await supabase
+          .from("clients")
+          .select("id, name, tax_id, phone")
+          .eq("organization_id", organizationId)
+          .or(`name.ilike.%${term}%,tax_id.ilike.%${term}%,phone.ilike.%${term}%`)
+          .order("name")
+          .limit(10)
+
+        if (error) {
+          console.error("Error searching clients:", error)
+          return
+        }
+
+        setSearchResults(data || [])
+        setShowResults(true)
+      } catch (error) {
+        console.error("Error searching clients:", error)
+      } finally {
+        setIsSearching(false)
+      }
+    },
+    [organizationId],
+  )
+
+  // Debounce para la búsqueda
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      searchClients(searchTerm)
+    }, 300)
+
+    return () => clearTimeout(timeoutId)
+  }, [searchTerm, searchClients])
+
+  // Manejar selección de cliente
+  const handleClientSelect = (client: any) => {
+    onClientSelect(client)
+    setSearchTerm(client.name)
+    setShowResults(false)
+  }
+
+  // Limpiar selección
+  const handleClearSelection = () => {
+    onClientSelect(null)
+    setSearchTerm("")
+    setShowResults(false)
+  }
+
+  // Si hay un cliente seleccionado y no estamos buscando, mostrar el cliente seleccionado
+  useEffect(() => {
+    if (selectedClient && !searchTerm) {
+      setSearchTerm(selectedClient.name)
+    }
+  }, [selectedClient])
+
+  return (
+    <div className="relative">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+        <Input
+          placeholder="Buscar cliente por nombre, ID fiscal o teléfono..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          onFocus={() => {
+            if (searchResults.length > 0) {
+              setShowResults(true)
+            }
+          }}
+          disabled={disabled}
+          className="pl-10 pr-10"
+        />
+        {selectedClient && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="absolute right-1 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
+            onClick={handleClearSelection}
+            disabled={disabled}
+          >
+            <X className="h-3 w-3" />
+          </Button>
+        )}
+      </div>
+
+      {/* Resultados de búsqueda */}
+      {showResults && searchResults.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-background border rounded-md shadow-lg max-h-60 overflow-auto">
+          {searchResults.map((client) => (
+            <button
+              key={client.id}
+              type="button"
+              className="w-full px-4 py-3 text-left hover:bg-muted flex items-center gap-3 border-b last:border-b-0"
+              onClick={() => handleClientSelect(client)}
+            >
+              <User className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <div className="font-medium">{client.name}</div>
+                <div className="text-sm text-muted-foreground">
+                  {client.tax_id} {client.phone && `• ${client.phone}`}
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Indicador de búsqueda */}
+      {isSearching && (
+        <div className="absolute z-50 w-full mt-1 bg-background border rounded-md shadow-lg p-4 text-center text-muted-foreground">
+          Buscando...
+        </div>
+      )}
+
+      {/* Sin resultados */}
+      {showResults && searchResults.length === 0 && searchTerm.trim() && !isSearching && (
+        <div className="absolute z-50 w-full mt-1 bg-background border rounded-md shadow-lg p-4 text-center text-muted-foreground">
+          No se encontraron clientes
+        </div>
+      )}
+
+      {/* Cliente seleccionado */}
+      {selectedClient && (
+        <div className="mt-2 p-3 bg-muted rounded-md flex items-center gap-3">
+          <User className="h-4 w-4 text-muted-foreground" />
+          <div className="flex-1">
+            <div className="font-medium">{selectedClient.name}</div>
+            <div className="text-sm text-muted-foreground">{selectedClient.tax_id}</div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 // Componente que usa useSearchParams
 function NewLoyaltyCardForm() {
@@ -24,8 +184,7 @@ function NewLoyaltyCardForm() {
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
   const [organizations, setOrganizations] = useState<any[]>([])
-  const [clients, setClients] = useState<any[]>([])
-  const [professionals, setProfessionals] = useState<any[]>([])
+  const [selectedClient, setSelectedClient] = useState<any>(null)
   const [selectedClientFromUrl, setSelectedClientFromUrl] = useState<any>(null)
 
   // Obtener client_id de los parámetros de URL
@@ -33,7 +192,6 @@ function NewLoyaltyCardForm() {
 
   const [formData, setFormData] = useState<CardFormData>({
     organization_id: 0,
-    professional_id: null,
     client_id: clientIdFromUrl ? Number.parseInt(clientIdFromUrl) : null,
     template_id: null,
     business_name: "",
@@ -71,19 +229,6 @@ function NewLoyaltyCardForm() {
           console.warn("No se encontraron organizaciones")
         }
 
-        // Cargar profesionales
-        const { data: profsData, error: profsError } = await supabase
-          .from("professionals")
-          .select("id, name")
-          .order("name")
-
-        if (profsError) {
-          console.error("Error al cargar profesionales:", profsError)
-        } else if (profsData) {
-          console.log("Profesionales cargados:", profsData.length)
-          setProfessionals(profsData)
-        }
-
         // Si hay un client_id en la URL, cargar los datos del cliente
         if (clientIdFromUrl) {
           const { data: clientData, error: clientError } = await supabase
@@ -96,6 +241,7 @@ function NewLoyaltyCardForm() {
             console.error("Error al cargar cliente desde URL:", clientError)
           } else if (clientData) {
             setSelectedClientFromUrl(clientData)
+            setSelectedClient(clientData)
             // Actualizar la organización y cliente en el formulario
             setFormData((prev) => ({
               ...prev,
@@ -117,67 +263,37 @@ function NewLoyaltyCardForm() {
     loadInitialData()
   }, [toast, clientIdFromUrl])
 
-  // Cargar clientes cuando cambia la organización
-  useEffect(() => {
-    async function loadClients() {
-      if (!formData.organization_id) {
-        console.warn("No hay organization_id seleccionado")
-        return
-      }
-
-      try {
-        console.log("Cargando clientes para organización:", formData.organization_id)
-        const { data, error } = await supabase
-          .from("clients")
-          .select("id, name, tax_id")
-          .eq("organization_id", formData.organization_id)
-          .order("name")
-
-        if (error) {
-          console.error("Error al cargar clientes:", error)
-          return
-        }
-
-        if (data) {
-          console.log("Clientes cargados:", data.length)
-          setClients(data)
-        } else {
-          console.warn("No se encontraron clientes para esta organización")
-        }
-      } catch (error) {
-        console.error("Error loading clients:", error)
-      }
-    }
-
-    loadClients()
-  }, [formData.organization_id])
-
   // Manejar cambios en el formulario con validación para evitar NaN
   const handleChange = (field: keyof CardFormData, value: any) => {
     // Si el valor es numérico, asegurarse de que sea un número válido
-    if (
-      field === "organization_id" ||
-      field === "client_id" ||
-      field === "professional_id" ||
-      field === "total_sessions"
-    ) {
+    if (field === "organization_id" || field === "client_id" || field === "total_sessions") {
       // Si es una cadena, intentar convertirla a número
       if (typeof value === "string") {
         const parsedValue = Number.parseInt(value, 10)
-        // Si la conversión resulta en NaN, usar 0 o null según corresponda
+        // Si la conversión resulta en NaN, usar 0
         if (isNaN(parsedValue)) {
-          value = field === "professional_id" ? null : 0
+          value = 0
         } else {
           value = parsedValue
         }
       }
-      // Si es null o undefined y no es professional_id, usar 0
-      else if (value == null && field !== "professional_id") {
+      // Si es null o undefined, usar 0
+      else if (value == null) {
         value = 0
       }
     }
 
     setFormData((prev) => ({ ...prev, [field]: value }))
+  }
+
+  // Manejar selección de cliente
+  const handleClientSelect = (client: any) => {
+    setSelectedClient(client)
+    if (client) {
+      setFormData((prev) => ({ ...prev, client_id: client.id }))
+    } else {
+      setFormData((prev) => ({ ...prev, client_id: null }))
+    }
   }
 
   // Manejar envío del formulario
@@ -190,19 +306,15 @@ function NewLoyaltyCardForm() {
       if (!formData.organization_id) {
         throw new Error("Debes seleccionar una organización")
       }
-
       if (!formData.client_id) {
         throw new Error("Debes seleccionar un cliente")
       }
-
       if (!formData.business_name) {
         throw new Error("Debes ingresar el nombre del negocio")
       }
-
       if (!formData.total_sessions || formData.total_sessions < 1) {
         throw new Error("El número de sesiones debe ser mayor a 0")
       }
-
       if (!formData.reward) {
         throw new Error("Debes ingresar una recompensa")
       }
@@ -212,7 +324,6 @@ function NewLoyaltyCardForm() {
       // Crear la tarjeta directamente con Supabase para mayor control
       const cardData = {
         organization_id: formData.organization_id || 0,
-        professional_id: formData.professional_id,
         client_id: formData.client_id || 0,
         template_id: formData.template_id,
         business_name: formData.business_name,
@@ -284,7 +395,6 @@ function NewLoyaltyCardForm() {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     organization_id: formData.organization_id || 0,
-    professional_id: formData.professional_id,
     client_id: formData.client_id || 0,
     template_id: formData.template_id,
     business_name: formData.business_name || "Nombre del Negocio",
@@ -296,18 +406,10 @@ function NewLoyaltyCardForm() {
     status: "active" as const, // Use const assertion to match the LoyaltyCard status type
   }
 
-  // Cliente seleccionado para la vista previa
-  const selectedClient = selectedClientFromUrl || clients.find((c) => c.id === formData.client_id)
-
-  const breadcrumbItems = [
-    { label: "Dashboard", href: "/dashboard" },
-    { label: "Tarjetas de Fidelización", href: "/dashboard/loyalty-cards" },
-    { label: "Nueva Tarjeta", href: "/dashboard/loyalty-cards/new" },
-  ]
-
+ 
   return (
     <div className="space-y-6">
-      <Breadcrumbs items={breadcrumbItems} />
+
       <div className="flex flex-col md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Nueva Tarjeta de Fidelización</h1>
@@ -356,50 +458,18 @@ function NewLoyaltyCardForm() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="client_id">Cliente</Label>
-                  <Select
-                    value={getSelectValue(formData.client_id)}
-                    onValueChange={(value) => handleChange("client_id", value ? Number.parseInt(value, 10) : 0)}
-                    disabled={!!selectedClientFromUrl} // Deshabilitar si viene de un cliente específico
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecciona un cliente" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {clients.map((client) => (
-                        <SelectItem key={client.id} value={client.id.toString()}>
-                          {client.name} ({client.tax_id})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="client_search">Cliente</Label>
+                  <ClientSearch
+                    organizationId={formData.organization_id}
+                    selectedClient={selectedClient}
+                    onClientSelect={handleClientSelect}
+                    disabled={!!selectedClientFromUrl}
+                  />
                   {selectedClientFromUrl && (
                     <p className="text-sm text-muted-foreground">
                       Tarjeta para: {selectedClientFromUrl.name} ({selectedClientFromUrl.tax_id})
                     </p>
                   )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="professional_id">Profesional (opcional)</Label>
-                  <Select
-                    value={getSelectValue(formData.professional_id)}
-                    onValueChange={(value) =>
-                      handleChange("professional_id", value === "0" ? null : Number.parseInt(value, 10))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecciona un profesional" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="0">Ninguno</SelectItem>
-                      {professionals.map((prof) => (
-                        <SelectItem key={prof.id} value={prof.id.toString()}>
-                          {prof.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
                 </div>
 
                 <div className="space-y-2">
@@ -446,7 +516,6 @@ function NewLoyaltyCardForm() {
                   />
                 </div>
               </CardContent>
-
               <CardFooter className="flex justify-between">
                 <Button
                   type="button"

@@ -25,7 +25,7 @@ export interface LoyaltyCard {
   created_at: string
   updated_at: string
   organization_id: number
-  professional_id: number | null
+  professional_id?: number | null
   client_id: number
   template_id: number | null
   business_name: string
@@ -51,7 +51,7 @@ export interface CardSession {
   id: number
   created_at: string
   card_id: number
-  professional_id: number | null
+  professional_id?: number | null
   session_date: string
   notes: string | null
   professionals?: {
@@ -61,7 +61,6 @@ export interface CardSession {
 
 export interface CardFormData {
   organization_id: number
-  professional_id: number | null
   client_id: number | null
   template_id: number | null
   business_name: string

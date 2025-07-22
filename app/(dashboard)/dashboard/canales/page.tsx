@@ -191,7 +191,7 @@ function ChannelCard({ channel }: { channel: Canal }) {
     </LiquidGlass>
   )
 
-  return channel.estado === 1 ? (
+  return channel.estado === 1 && channel.href_button_action ? (
     <Link href={channelUrl} className="block h-full">
       {CardContent}
     </Link>
@@ -211,7 +211,6 @@ export default function CanalesPage() {
       try {
         setLoading(true)
         setError(null)
-
         // Simulación de datos para demostración
         // await new Promise((resolve) => setTimeout(resolve, 1500))
         const demoData: Canal[] = [
@@ -220,8 +219,8 @@ export default function CanalesPage() {
             nombre: "WhatsApp ",
             descripcion: "Conecta con tus clientes directamente a través de mensajes instantáneos.",
             imagen: null,
-            href_button_action: "/config/whatsapp",
-            estado: 1,
+            href_button_action: null, // Cambiar a null para indicar que no hay página de configuración
+            estado: 1, // Cambiar a 1 para que aparezca como activo
           },
           {
             id: 2,
@@ -239,7 +238,6 @@ export default function CanalesPage() {
             href_button_action: "/config/instagram",
             estado: 0,
           },
-
           {
             id: 4,
             nombre: "Telegram ",
@@ -333,6 +331,7 @@ export default function CanalesPage() {
         {/* Efecto de luz adicional */}
         <div className="absolute inset-0 bg-gradient-to-br from-white/20 via-transparent to-transparent pointer-events-none rounded-xl" />
         <div className="absolute inset-0 bg-gradient-to-tl from-white/30 via-transparent to-white/5 pointer-events-none rounded-xl" />
+
         {/* Header */}
         <LiquidGlass
           variant="card"
