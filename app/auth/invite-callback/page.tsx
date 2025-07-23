@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase/client"
@@ -26,7 +25,7 @@ export default function InviteCallback() {
   const router = useRouter()
   const hasProcessed = useRef(false)
   const [userInfo, setUserInfo] = useState<any>(null)
-  const { user, forceRefresh } = useAuth()
+  const { user, refreshUserProfile } = useAuth()
 
   useEffect(() => {
     if (hasProcessed.current) return
@@ -61,7 +60,7 @@ export default function InviteCallback() {
         setMessage("Configurando tu sesión...")
 
         // Esperar un poco para que Supabase procese la URL automáticamente
-        await new Promise((resolve) => setTimeout(resolve, 1500))
+        await new Promise((resolve) => setTimeout(resolve, 2000))
 
         // Obtener la sesión actual (debería estar establecida automáticamente)
         const {
@@ -107,10 +106,10 @@ export default function InviteCallback() {
         if (existingUser) {
           console.log("✅ Usuario ya existe en la tabla con organización:", existingUser.organization_id)
 
-          // FORZAR REFRESH DEL AUTH CONTEXT
-          console.log("🔄 Forzando refresh del contexto de autenticación...")
+          // Actualizar el contexto de autenticación
+          console.log("🔄 Actualizando contexto de autenticación...")
           try {
-            await forceRefresh()
+            await refreshUserProfile()
             console.log("✅ Contexto actualizado")
           } catch (refreshError) {
             console.warn("⚠️ Error actualizando contexto:", refreshError)
@@ -179,10 +178,10 @@ export default function InviteCallback() {
 
         console.log("✅ Usuario creado exitosamente:", newUser)
 
-        // FORZAR REFRESH DEL AUTH CONTEXT
-        console.log("🔄 Forzando refresh del contexto de autenticación...")
+        // Actualizar el contexto de autenticación
+        console.log("🔄 Actualizando contexto de autenticación...")
         try {
-          await forceRefresh()
+          await refreshUserProfile()
           console.log("✅ Contexto actualizado")
         } catch (refreshError) {
           console.warn("⚠️ Error actualizando contexto:", refreshError)
@@ -203,7 +202,7 @@ export default function InviteCallback() {
     }
 
     handleInviteCallback()
-  }, [forceRefresh])
+  }, [refreshUserProfile])
 
   const handleSetPassword = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -238,10 +237,10 @@ export default function InviteCallback() {
 
       console.log("✅ Contraseña establecida correctamente")
 
-      // FORZAR REFRESH FINAL DEL AUTH CONTEXT
-      console.log("🔄 Refresh final del contexto...")
+      // Actualizar contexto final
+      console.log("🔄 Actualizando contexto final...")
       try {
-        await forceRefresh()
+        await refreshUserProfile()
         console.log("✅ Contexto final actualizado")
       } catch (refreshError) {
         console.warn("⚠️ Error en refresh final:", refreshError)

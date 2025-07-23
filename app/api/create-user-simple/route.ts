@@ -50,9 +50,9 @@ export async function POST(request: Request) {
     console.log("📧 Email enviado a:", email)
     console.log("👤 Usuario creado con ID:", data.user?.id)
 
-    // 2. CREAR USUARIO EN LA TABLA USERS INMEDIATAMENTE
+    // 2. CREAR USUARIO EN LA TABLA INMEDIATAMENTE
     if (data.user?.id) {
-      console.log("🔄 Creando usuario en tabla users...")
+      console.log("🔄 Creando usuario en la tabla users...")
 
       const { data: newUser, error: createUserError } = await supabaseAdmin
         .from("users")
@@ -62,18 +62,18 @@ export async function POST(request: Request) {
           name: name,
           role: role,
           organization_id: organizationId,
-          type: 1, // Usuario activo
-          created_at: new Date().toISOString(),
+          type: 1,
+          is_physia_admin: false,
         })
         .select()
         .single()
 
       if (createUserError) {
         console.error("❌ Error creando usuario en tabla:", createUserError)
-        // No fallar la invitación por esto, pero loggearlo
-        console.warn("⚠️ La invitación se envió pero no se pudo crear el registro en users")
+        // No fallar la invitación por esto, solo loggearlo
+        console.warn("⚠️ La invitación se envió pero no se pudo crear el registro en la tabla")
       } else {
-        console.log("✅ Usuario creado en tabla users:", newUser)
+        console.log("✅ Usuario creado en tabla exitosamente:", newUser)
       }
     }
 
