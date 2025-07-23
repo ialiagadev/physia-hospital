@@ -61,7 +61,7 @@ export default function InviteCallback() {
         setMessage("Configurando tu sesión...")
 
         // Esperar un poco para que Supabase procese la URL automáticamente
-        await new Promise((resolve) => setTimeout(resolve, 1000))
+        await new Promise((resolve) => setTimeout(resolve, 1500))
 
         // Obtener la sesión actual (debería estar establecida automáticamente)
         const {
@@ -92,8 +92,40 @@ export default function InviteCallback() {
 
         setUserInfo(currentUser)
 
-        // Procesar invitación
-        await processUserInvitation(currentUser)
+        // Verificar si el usuario ya existe en la tabla users
+        console.log("🔍 Verificando usuario en base de datos...")
+        const { data: existingUser, error: userError } = await supabase
+          .from("users")
+          .select("id, organization_id, name, role")
+          .eq("id", currentUser.id)
+          .maybeSingle()
+
+        console.log("📊 RESULTADO DE CONSULTA DE USUARIO:")
+        console.log("   - Error:", userError)
+        console.log("   - Usuario existente:", existingUser)
+
+        if (existingUser) {
+          console.log("✅ Usuario ya existe en la tabla con organización:", existingUser.organization_id)
+
+          // FORZAR REFRESH DEL AUTH CONTEXT
+          console.log("🔄 Forzando refresh del contexto de autenticación...")
+          try {
+            await forceRefresh()
+            console.log("✅ Contexto actualizado")
+          } catch (refreshError) {
+            console.warn("⚠️ Error actualizando contexto:", refreshError)
+          }
+
+          // MOSTRAR FORMULARIO DE CONTRASEÑA
+          console.log("🔄 Mostrando formulario de contraseña...")
+          setStatus("set-password")
+          setMessage("¡Bienvenido al equipo! Ahora establece tu contraseña.")
+          setShowPasswordForm(true)
+        } else {
+          // Si por alguna razón no existe, intentar crearlo con los metadatos
+          console.log("⚠️ Usuario no encontrado en tabla, intentando crear...")
+          await processUserInvitation(currentUser)
+        }
       } catch (error) {
         console.error("💥 Error en handleInviteCallback:", error)
         setStatus("error")
@@ -103,7 +135,7 @@ export default function InviteCallback() {
 
     const processUserInvitation = async (currentUser: any) => {
       try {
-        console.log("🔄 PROCESANDO INVITACIÓN DE USUARIO")
+        console.log("🔄 PROCESANDO INVITACIÓN DE USUARIO (FALLBACK)")
         setMessage("Configurando tu cuenta...")
 
         const userMetadata = currentUser.user_metadata || {}
@@ -119,83 +151,33 @@ export default function InviteCallback() {
         if (!organizationId) {
           console.error("❌ No se encontró organization_id en metadata")
           setStatus("error")
-          setMessage("Error: Invitación sin organización asociada")
+          setMessage("Error: Invitación sin organización asociada. Contacta al administrador.")
           return
         }
 
-        // Verificar si el usuario ya existe en la tabla users
-        console.log("🔍 Verificando usuario en base de datos...")
-        const { data: existingUser, error: userError } = await supabase
+        // Crear usuario en la tabla
+        console.log("👤 Creando usuario en la tabla...")
+        const { data: newUser, error: createError } = await supabase
           .from("users")
-          .select("id, organization_id, name, role")
-          .eq("id", currentUser.id)
-          .maybeSingle()
+          .insert({
+            id: currentUser.id,
+            email: currentUser.email,
+            name: userName,
+            role: userRole,
+            organization_id: organizationId,
+            type: 1,
+          })
+          .select()
+          .single()
 
-        console.log("📊 RESULTADO DE CONSULTA DE USUARIO:")
-        console.log("   - Error:", userError)
-        console.log("   - Usuario existente:", existingUser)
-
-        if (!existingUser && !userError) {
-          // Usuario no existe - crearlo
-          console.log("👤 Usuario no existe, creándolo...")
-
-          const { data: newUser, error: createError } = await supabase
-            .from("users")
-            .insert({
-              id: currentUser.id,
-              email: currentUser.email,
-              name: userName,
-              role: userRole,
-              organization_id: organizationId,
-              type: 1,
-            })
-            .select()
-            .single()
-
-          if (createError) {
-            console.error("❌ Error creando usuario:", createError)
-            setStatus("error")
-            setMessage(`Error al crear el usuario: ${createError.message}`)
-            return
-          }
-
-          console.log("✅ Usuario creado exitosamente:", newUser)
-        } else if (userError) {
-          console.error("❌ Error consultando usuario:", userError)
+        if (createError) {
+          console.error("❌ Error creando usuario:", createError)
           setStatus("error")
-          setMessage(`Error al verificar el usuario: ${userError.message}`)
+          setMessage(`Error al crear el usuario: ${createError.message}`)
           return
-        } else if (existingUser) {
-          // Usuario existe - actualizar organización si es necesario
-          console.log("👤 Usuario existe, verificando organización...")
-
-          if (existingUser.organization_id !== organizationId) {
-            console.log("🔄 Actualizando organización del usuario...")
-
-            const { error: updateError } = await supabase
-              .from("users")
-              .update({
-                organization_id: organizationId,
-                name: userName,
-                role: userRole,
-                type: 1,
-              })
-              .eq("id", currentUser.id)
-
-            if (updateError) {
-              console.error("❌ Error actualizando usuario:", updateError)
-              setStatus("error")
-              setMessage(`Error al asociar usuario a la organización: ${updateError.message}`)
-              return
-            }
-
-            console.log("✅ Usuario actualizado con nueva organización")
-          } else {
-            console.log("✅ Usuario ya está en la organización correcta")
-          }
         }
 
-        console.log("✅ INVITACIÓN PROCESADA CORRECTAMENTE")
+        console.log("✅ Usuario creado exitosamente:", newUser)
 
         // FORZAR REFRESH DEL AUTH CONTEXT
         console.log("🔄 Forzando refresh del contexto de autenticación...")

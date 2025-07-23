@@ -39,7 +39,6 @@ export async function POST(request: Request) {
         invite_type: "user_invitation",
       },
       redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/auth/invite-callback?type=invite`,
-
     })
 
     if (error) {
@@ -50,6 +49,33 @@ export async function POST(request: Request) {
     console.log("✅ Invitación enviada exitosamente")
     console.log("📧 Email enviado a:", email)
     console.log("👤 Usuario creado con ID:", data.user?.id)
+
+    // 2. CREAR USUARIO EN LA TABLA USERS INMEDIATAMENTE
+    if (data.user?.id) {
+      console.log("🔄 Creando usuario en tabla users...")
+
+      const { data: newUser, error: createUserError } = await supabaseAdmin
+        .from("users")
+        .insert({
+          id: data.user.id,
+          email: email,
+          name: name,
+          role: role,
+          organization_id: organizationId,
+          type: 1, // Usuario activo
+          created_at: new Date().toISOString(),
+        })
+        .select()
+        .single()
+
+      if (createUserError) {
+        console.error("❌ Error creando usuario en tabla:", createUserError)
+        // No fallar la invitación por esto, pero loggearlo
+        console.warn("⚠️ La invitación se envió pero no se pudo crear el registro en users")
+      } else {
+        console.log("✅ Usuario creado en tabla users:", newUser)
+      }
+    }
 
     return NextResponse.json({
       success: true,
