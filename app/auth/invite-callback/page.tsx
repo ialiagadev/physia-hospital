@@ -41,18 +41,15 @@ export default function InviteCallback() {
         setMessage("Confirmando invitación...")
 
         // Obtener tokens del hash
-        const hashParams = new URLSearchParams(window.location.hash.substring(1))
-        const accessToken = hashParams.get("access_token")
-        const refreshToken = hashParams.get("refresh_token")
-        const tokenType = hashParams.get("token_type")
-        const type = hashParams.get("type")
+        const searchParams = new URLSearchParams(window.location.search)
+const accessToken = searchParams.get("access_token")
+const refreshToken = searchParams.get("refresh_token")
+      
 
         console.log("🔑 TOKENS OBTENIDOS:")
         console.log("   - Access Token:", accessToken ? "✅ Presente" : "❌ Ausente")
         console.log("   - Refresh Token:", refreshToken ? "✅ Presente" : "❌ Ausente")
-        console.log("   - Token Type:", tokenType)
-        console.log("   - Type:", type)
-
+      
         if (!accessToken) {
           console.error("❌ No se encontró access_token en la URL")
           setStatus("error")
