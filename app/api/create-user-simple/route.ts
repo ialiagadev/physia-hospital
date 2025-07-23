@@ -2,12 +2,16 @@ import { createClient } from "@supabase/supabase-js"
 import { NextResponse } from "next/server"
 
 // Cliente admin para invitar usuarios
-const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-})
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!, 
+  process.env.SUPABASE_SERVICE_ROLE_KEY!, 
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  }
+)
 
 export async function POST(request: Request) {
   try {
@@ -30,6 +34,12 @@ export async function POST(request: Request) {
       role,
     })
 
+    // URL base del sitio
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+    
+    // URL de redirección con parámetros adicionales
+    const redirectUrl = `${siteUrl}/auth/invite-callback?type=invite&organization_id=${organizationId}`;
+
     // 1. ENVIAR INVITACIÓN con inviteUserByEmail
     const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
       data: {
@@ -38,7 +48,7 @@ export async function POST(request: Request) {
         role: role,
         invite_type: "user_invitation",
       },
-      redirectTo: `https://facturas-physia.vercel.app/auth/invite-callback`,
+      redirectTo: redirectUrl,
     })
 
     if (error) {
@@ -49,11 +59,11 @@ export async function POST(request: Request) {
     console.log("✅ Invitación enviada exitosamente")
     console.log("📧 Email enviado a:", email)
     console.log("👤 Usuario creado con ID:", data.user?.id)
+    console.log("🔗 URL de redirección:", redirectUrl)
 
     // 2. CREAR USUARIO EN LA TABLA INMEDIATAMENTE
     if (data.user?.id) {
       console.log("🔄 Creando usuario en la tabla users...")
-
       const { data: newUser, error: createUserError } = await supabaseAdmin
         .from("users")
         .insert({

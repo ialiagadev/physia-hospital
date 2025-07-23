@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase/client"
 import { useAuth } from "@/app/contexts/auth-context"
@@ -27,6 +27,184 @@ export default function InviteCallback() {
   const [userInfo, setUserInfo] = useState<any>(null)
   const { user, refreshUserProfile } = useAuth()
 
+  // Mover la función fuera del useEffect para que sea accesible desde handleSetPassword
+  const createUserFromInvitation = useCallback(async (currentUser: any, urlOrganizationId?: string | null) => {
+    try {
+      console.log("👤 DATOS COMPLETOS DEL USUARIO:", currentUser);
+      
+      // Los metadatos pueden estar en diferentes lugares dependiendo de cómo llegue la invitación
+      const userMetadata = currentUser.user_metadata || {};
+      const appMetadata = currentUser.app_metadata || {};
+      
+      // Buscar organization_id en diferentes lugares
+      let organizationId = userMetadata.organization_id || appMetadata.organization_id;
+      
+      // Si no se encuentra en los metadatos, usar el de la URL
+      if (!organizationId && urlOrganizationId) {
+        organizationId = urlOrganizationId;
+        console.log("✅ Usando organization_id de la URL:", organizationId);
+      }
+      
+      // Buscar el nombre en diferentes lugares
+      const userName = userMetadata.full_name || 
+                      userMetadata.name || 
+                      appMetadata.full_name ||
+                      appMetadata.name ||
+                      currentUser.email?.split("@")[0] || 
+                      "Usuario";
+      
+      // Buscar el rol en diferentes lugares
+      const userRole = userMetadata.role || 
+                      appMetadata.role ||
+                      "user";
+
+      console.log("👤 DATOS EXTRAÍDOS DE LA INVITACIÓN:");
+      console.log("   - Organization ID:", organizationId);
+      console.log("   - Name:", userName);
+      console.log("   - Role:", userRole);
+
+      if (!organizationId) {
+        console.error("❌ No se encontró organization_id en ninguna parte");
+        setStatus("error");
+        setMessage("Error: Invitación sin organización asociada. Contacta al administrador.");
+        return;
+      }
+
+      // Crear usuario en la tabla
+      const { data: newUser, error: createError } = await supabase
+        .from("users")
+        .insert({
+          id: currentUser.id,
+          email: currentUser.email,
+          name: userName,
+          role: userRole,
+          organization_id: organizationId,
+          type: 1,
+          is_physia_admin: false,
+        })
+        .select()
+        .single();
+
+      if (createError) {
+        console.error("❌ Error creando usuario:", createError);
+        
+        // Verificar si es un error de duplicado
+        if (createError.code === '23505') { // Código de error de duplicado en PostgreSQL
+          console.log("⚠️ El usuario ya existe, intentando actualizar...");
+          
+          // Intentar actualizar en lugar de insertar
+          const { data: updatedUser, error: updateError } = await supabase
+            .from("users")
+            .update({
+              name: userName,
+              role: userRole,
+              organization_id: organizationId,
+            })
+            .eq("id", currentUser.id)
+            .select()
+            .single();
+            
+          if (updateError) {
+            console.error("❌ Error actualizando usuario:", updateError);
+            setStatus("error");
+            setMessage(`Error al actualizar el usuario: ${updateError.message}`);
+            return;
+          }
+          
+          console.log("✅ Usuario actualizado exitosamente:", updatedUser);
+          return;
+        }
+        
+        setStatus("error");
+        setMessage(`Error al crear el usuario: ${createError.message}`);
+        return;
+      }
+
+      console.log("✅ Usuario creado exitosamente:", newUser);
+    } catch (error) {
+      console.error("💥 Error creando usuario:", error);
+      setStatus("error");
+      setMessage(`Error al crear el usuario: ${error instanceof Error ? error.message : "Error desconocido"}`);
+    }
+  }, []);
+
+  // Función para procesar el usuario
+  const processUser = useCallback(async (currentUser: any, urlOrganizationId?: string | null) => {
+    try {
+      console.log("✅ PROCESANDO USUARIO:")
+      console.log("   - User ID:", currentUser.id)
+      console.log("   - Email:", currentUser.email)
+      console.log("   - Email confirmed:", currentUser.email_confirmed_at)
+      console.log("   - User Metadata:", currentUser.user_metadata)
+      console.log("   - App Metadata:", currentUser.app_metadata)
+      console.log("   - URL Organization ID:", urlOrganizationId)
+
+      setUserInfo(currentUser)
+
+      // Verificar si el usuario ya existe en la tabla users
+      console.log("🔍 Verificando usuario en base de datos...")
+      setMessage("Configurando tu cuenta...")
+
+      const { data: existingUser, error: userError } = await supabase
+        .from("users")
+        .select("id, organization_id, name, role")
+        .eq("id", currentUser.id)
+        .maybeSingle()
+
+      console.log("📊 RESULTADO DE CONSULTA DE USUARIO:")
+      console.log("   - Error:", userError)
+      console.log("   - Usuario existente:", existingUser)
+
+      if (existingUser) {
+        console.log("✅ Usuario ya existe en la tabla con organización:", existingUser.organization_id)
+        
+        // Si existe pero no tiene organización, actualizar con la de la URL
+        if (urlOrganizationId && (!existingUser.organization_id || existingUser.organization_id === "null")) {
+          console.log("🔄 Actualizando organización del usuario existente...")
+          
+          const { data: updatedUser, error: updateError } = await supabase
+            .from("users")
+            .update({
+              organization_id: urlOrganizationId
+            })
+            .eq("id", currentUser.id)
+            .select()
+            .single()
+            
+          if (updateError) {
+            console.error("❌ Error actualizando organización:", updateError)
+          } else {
+            console.log("✅ Organización actualizada:", updatedUser)
+          }
+        }
+      } else {
+        // Crear usuario usando los metadatos de la invitación
+        console.log("🔄 Creando usuario en la tabla...")
+        await createUserFromInvitation(currentUser, urlOrganizationId)
+      }
+
+      // Actualizar el contexto de autenticación
+      console.log("🔄 Actualizando contexto de autenticación...")
+      try {
+        await refreshUserProfile()
+        console.log("✅ Contexto actualizado")
+      } catch (refreshError) {
+        console.warn("⚠️ Error actualizando contexto:", refreshError)
+      }
+
+      // Mostrar formulario de contraseña
+      console.log("🔄 Mostrando formulario de contraseña...")
+      setStatus("set-password")
+      setMessage("¡Bienvenido al equipo! Ahora establece tu contraseña.")
+      setShowPasswordForm(true)
+
+    } catch (error) {
+      console.error("💥 Error procesando usuario:", error)
+      setStatus("error")
+      setMessage(`Error al procesar el usuario: ${error instanceof Error ? error.message : "Error desconocido"}`)
+    }
+  }, [createUserFromInvitation, refreshUserProfile]);
+
   useEffect(() => {
     if (hasProcessed.current) return
     hasProcessed.current = true
@@ -46,12 +224,14 @@ export default function InviteCallback() {
         
         const token = urlParams.get('token')
         const type = urlParams.get('type')
+        const organizationId = urlParams.get('organization_id')
         const accessToken = hashParams.get('access_token')
         const refreshToken = hashParams.get('refresh_token')
         
         console.log("🔑 PARÁMETROS ENCONTRADOS:")
         console.log("   - Token (query):", token ? "✅ Presente" : "❌ Ausente")
         console.log("   - Type:", type)
+        console.log("   - Organization ID:", organizationId)
         console.log("   - Access Token (hash):", accessToken ? "✅ Presente" : "❌ Ausente")
         console.log("   - Refresh Token (hash):", refreshToken ? "✅ Presente" : "❌ Ausente")
 
@@ -75,7 +255,7 @@ export default function InviteCallback() {
           const currentUser = sessionData.session?.user
           if (currentUser) {
             console.log("✅ Sesión establecida con tokens del hash")
-            await processUser(currentUser)
+            await processUser(currentUser, organizationId)
             return
           }
         }
@@ -89,6 +269,7 @@ export default function InviteCallback() {
             token_hash: token,
             type: 'invite'
           })
+
           if (error) {
             console.error("❌ Error verificando invitación:", error)
             setStatus("error")
@@ -99,7 +280,7 @@ export default function InviteCallback() {
           const currentUser = data.user
           if (currentUser) {
             console.log("✅ Token verificado correctamente")
-            await processUser(currentUser)
+            await processUser(currentUser, organizationId)
             return
           }
         }
@@ -122,7 +303,7 @@ export default function InviteCallback() {
 
         if (session?.user) {
           console.log("✅ Sesión obtenida automáticamente")
-          await processUser(session.user)
+          await processUser(session.user, organizationId)
           return
         }
 
@@ -132,7 +313,7 @@ export default function InviteCallback() {
         
         if (!refreshError && refreshData.session?.user) {
           console.log("✅ Sesión obtenida después del refresh")
-          await processUser(refreshData.session.user)
+          await processUser(refreshData.session.user, organizationId)
           return
         }
 
@@ -148,111 +329,8 @@ export default function InviteCallback() {
       }
     }
 
-    const processUser = async (currentUser: any) => {
-      try {
-        console.log("✅ PROCESANDO USUARIO:")
-        console.log("   - User ID:", currentUser.id)
-        console.log("   - Email:", currentUser.email)
-        console.log("   - Email confirmed:", currentUser.email_confirmed_at)
-        console.log("   - Metadata:", currentUser.user_metadata)
-
-        setUserInfo(currentUser)
-
-        // Verificar si el usuario ya existe en la tabla users
-        console.log("🔍 Verificando usuario en base de datos...")
-        setMessage("Configurando tu cuenta...")
-
-        const { data: existingUser, error: userError } = await supabase
-          .from("users")
-          .select("id, organization_id, name, role")
-          .eq("id", currentUser.id)
-          .maybeSingle()
-
-        console.log("📊 RESULTADO DE CONSULTA DE USUARIO:")
-        console.log("   - Error:", userError)
-        console.log("   - Usuario existente:", existingUser)
-
-        if (existingUser) {
-          console.log("✅ Usuario ya existe en la tabla con organización:", existingUser.organization_id)
-        } else {
-          // Crear usuario usando los metadatos de la invitación
-          console.log("🔄 Creando usuario en la tabla...")
-          await createUserFromInvitation(currentUser)
-        }
-
-        // Actualizar el contexto de autenticación
-        console.log("🔄 Actualizando contexto de autenticación...")
-        try {
-          await refreshUserProfile()
-          console.log("✅ Contexto actualizado")
-        } catch (refreshError) {
-          console.warn("⚠️ Error actualizando contexto:", refreshError)
-        }
-
-        // Mostrar formulario de contraseña
-        console.log("🔄 Mostrando formulario de contraseña...")
-        setStatus("set-password")
-        setMessage("¡Bienvenido al equipo! Ahora establece tu contraseña.")
-        setShowPasswordForm(true)
-
-      } catch (error) {
-        console.error("💥 Error procesando usuario:", error)
-        setStatus("error")
-        setMessage(`Error al procesar el usuario: ${error instanceof Error ? error.message : "Error desconocido"}`)
-      }
-    }
-
-    const createUserFromInvitation = async (currentUser: any) => {
-      try {
-        const userMetadata = currentUser.user_metadata || {}
-        const organizationId = userMetadata.organization_id
-        const userName = userMetadata.full_name || currentUser.email?.split("@")[0] || "Usuario"
-        const userRole = userMetadata.role || "user"
-
-        console.log("👤 DATOS DE LA INVITACIÓN:")
-        console.log("   - Organization ID:", organizationId)
-        console.log("   - Name:", userName)
-        console.log("   - Role:", userRole)
-
-        if (!organizationId) {
-          console.error("❌ No se encontró organization_id en metadata")
-          setStatus("error")
-          setMessage("Error: Invitación sin organización asociada. Contacta al administrador.")
-          return
-        }
-
-        // Crear usuario en la tabla
-        const { data: newUser, error: createError } = await supabase
-          .from("users")
-          .insert({
-            id: currentUser.id,
-            email: currentUser.email,
-            name: userName,
-            role: userRole,
-            organization_id: organizationId,
-            type: 1,
-            is_physia_admin: false,
-          })
-          .select()
-          .single()
-
-        if (createError) {
-          console.error("❌ Error creando usuario:", createError)
-          setStatus("error")
-          setMessage(`Error al crear el usuario: ${createError.message}`)
-          return
-        }
-
-        console.log("✅ Usuario creado exitosamente:", newUser)
-      } catch (error) {
-        console.error("💥 Error creando usuario:", error)
-        setStatus("error")
-        setMessage(`Error al crear el usuario: ${error instanceof Error ? error.message : "Error desconocido"}`)
-      }
-    }
-
     handleInviteCallback()
-  }, [refreshUserProfile])
+  }, [processUser])
 
   const handleSetPassword = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -286,6 +364,25 @@ export default function InviteCallback() {
       }
 
       console.log("✅ Contraseña establecida correctamente")
+
+      // Verificar que el usuario existe en la tabla
+      const { data: userCheck, error: userCheckError } = await supabase
+        .from("users")
+        .select("*")
+        .eq("id", userInfo.id)
+        .single();
+
+      console.log("📊 VERIFICACIÓN FINAL DE USUARIO:");
+      console.log("   - Error:", userCheckError);
+      console.log("   - Usuario:", userCheck);
+
+      if (!userCheck) {
+        console.error("❌ Usuario no encontrado en la tabla después de establecer contraseña");
+        // Intentar crear el usuario una última vez
+        const urlParams = new URLSearchParams(window.location.search);
+        const organizationId = urlParams.get('organization_id');
+        await createUserFromInvitation(userInfo, organizationId);
+      }
 
       // Actualizar contexto final
       console.log("🔄 Actualizando contexto final...")
