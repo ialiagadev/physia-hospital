@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2, CheckCircle, XCircle, Users, Eye, EyeOff } from "lucide-react"
+import { Loader2, CheckCircle, XCircle, Users, Eye, EyeOff } from 'lucide-react'
 
 export default function InviteCallback() {
   const [status, setStatus] = useState<"loading" | "success" | "error" | "set-password">("loading")
@@ -36,54 +36,58 @@ export default function InviteCallback() {
         console.log("🔄 INICIANDO PROCESAMIENTO DE INVITACIÓN")
         console.log("   - URL actual:", window.location.href)
         console.log("   - Hash:", window.location.hash)
-
+        
         setMessage("Confirmando invitación...")
 
-        // Obtener tokens del hash para validar
+        // Obtener parámetros de la URL
+        const urlParams = new URLSearchParams(window.location.search)
         const hashParams = new URLSearchParams(window.location.hash.substring(1))
-        const accessToken = hashParams.get("access_token")
-        const type = hashParams.get("type")
-
-        console.log("🔑 TOKENS EN URL:")
-        console.log("   - Access Token:", accessToken ? "✅ Presente" : "❌ Ausente")
+        
+        // Intentar obtener el token de diferentes formas
+        let token = urlParams.get('token')
+        if (!token) {
+          // Si no está en query params, buscar en hash
+          token = hashParams.get('access_token')
+        }
+        
+        const type = urlParams.get('type') || hashParams.get('type')
+        
+        console.log("🔑 PARÁMETROS ENCONTRADOS:")
+        console.log("   - Token:", token ? "✅ Presente" : "❌ Ausente")
         console.log("   - Type:", type)
 
-        if (!accessToken) {
-          console.error("❌ No se encontró access_token en la URL")
+        if (!token) {
+          console.error("❌ No se encontró token en la URL")
           setStatus("error")
           setMessage("Enlace de invitación inválido - Token faltante")
           return
         }
 
-        // Esperar a que Supabase procese automáticamente la sesión desde la URL
-        console.log("🔄 Esperando que Supabase procese la sesión automáticamente...")
-        setMessage("Configurando tu sesión...")
+        // Verificar la invitación usando verifyOtp
+        console.log("🔄 Verificando token de invitación...")
+        setMessage("Verificando tu invitación...")
 
-        // Esperar un poco para que Supabase procese la URL automáticamente
-        await new Promise((resolve) => setTimeout(resolve, 2000))
+        const { data, error } = await supabase.auth.verifyOtp({
+          token_hash: token,
+          type: 'invite'
+        })
 
-        // Obtener la sesión actual (debería estar establecida automáticamente)
-        const {
-          data: { session },
-          error: sessionError,
-        } = await supabase.auth.getSession()
-
-        if (sessionError) {
-          console.error("❌ Error obteniendo sesión:", sessionError)
+        if (error) {
+          console.error("❌ Error verificando invitación:", error)
           setStatus("error")
-          setMessage(`Error al procesar la invitación: ${sessionError.message}`)
+          setMessage(`Error al procesar la invitación: ${error.message}`)
           return
         }
 
-        if (!session?.user) {
-          console.error("❌ No se obtuvo usuario de la sesión")
+        if (!data.session?.user) {
+          console.error("❌ No se obtuvo sesión del token")
           setStatus("error")
-          setMessage("Error: No se pudo obtener información del usuario")
+          setMessage("Error: No se pudo establecer la sesión")
           return
         }
 
-        const currentUser = session.user
-        console.log("✅ SESIÓN OBTENIDA:")
+        const currentUser = data.session.user
+        console.log("✅ SESIÓN ESTABLECIDA:")
         console.log("   - User ID:", currentUser.id)
         console.log("   - Email:", currentUser.email)
         console.log("   - Email confirmed:", currentUser.email_confirmed_at)
@@ -93,6 +97,8 @@ export default function InviteCallback() {
 
         // Verificar si el usuario ya existe en la tabla users
         console.log("🔍 Verificando usuario en base de datos...")
+        setMessage("Configurando tu cuenta...")
+
         const { data: existingUser, error: userError } = await supabase
           .from("users")
           .select("id, organization_id, name, role")
@@ -105,26 +111,27 @@ export default function InviteCallback() {
 
         if (existingUser) {
           console.log("✅ Usuario ya existe en la tabla con organización:", existingUser.organization_id)
-
-          // Actualizar el contexto de autenticación
-          console.log("🔄 Actualizando contexto de autenticación...")
-          try {
-            await refreshUserProfile()
-            console.log("✅ Contexto actualizado")
-          } catch (refreshError) {
-            console.warn("⚠️ Error actualizando contexto:", refreshError)
-          }
-
-          // MOSTRAR FORMULARIO DE CONTRASEÑA
-          console.log("🔄 Mostrando formulario de contraseña...")
-          setStatus("set-password")
-          setMessage("¡Bienvenido al equipo! Ahora establece tu contraseña.")
-          setShowPasswordForm(true)
         } else {
-          // Si por alguna razón no existe, intentar crearlo con los metadatos
-          console.log("⚠️ Usuario no encontrado en tabla, intentando crear...")
-          await processUserInvitation(currentUser)
+          // Crear usuario usando los metadatos de la invitación
+          console.log("🔄 Creando usuario en la tabla...")
+          await createUserFromInvitation(currentUser)
         }
+
+        // Actualizar el contexto de autenticación
+        console.log("🔄 Actualizando contexto de autenticación...")
+        try {
+          await refreshUserProfile()
+          console.log("✅ Contexto actualizado")
+        } catch (refreshError) {
+          console.warn("⚠️ Error actualizando contexto:", refreshError)
+        }
+
+        // Mostrar formulario de contraseña
+        console.log("🔄 Mostrando formulario de contraseña...")
+        setStatus("set-password")
+        setMessage("¡Bienvenido al equipo! Ahora establece tu contraseña.")
+        setShowPasswordForm(true)
+
       } catch (error) {
         console.error("💥 Error en handleInviteCallback:", error)
         setStatus("error")
@@ -132,11 +139,8 @@ export default function InviteCallback() {
       }
     }
 
-    const processUserInvitation = async (currentUser: any) => {
+    const createUserFromInvitation = async (currentUser: any) => {
       try {
-        console.log("🔄 PROCESANDO INVITACIÓN DE USUARIO (FALLBACK)")
-        setMessage("Configurando tu cuenta...")
-
         const userMetadata = currentUser.user_metadata || {}
         const organizationId = userMetadata.organization_id
         const userName = userMetadata.full_name || currentUser.email?.split("@")[0] || "Usuario"
@@ -155,7 +159,6 @@ export default function InviteCallback() {
         }
 
         // Crear usuario en la tabla
-        console.log("👤 Creando usuario en la tabla...")
         const { data: newUser, error: createError } = await supabase
           .from("users")
           .insert({
@@ -165,6 +168,7 @@ export default function InviteCallback() {
             role: userRole,
             organization_id: organizationId,
             type: 1,
+            is_physia_admin: false,
           })
           .select()
           .single()
@@ -177,27 +181,10 @@ export default function InviteCallback() {
         }
 
         console.log("✅ Usuario creado exitosamente:", newUser)
-
-        // Actualizar el contexto de autenticación
-        console.log("🔄 Actualizando contexto de autenticación...")
-        try {
-          await refreshUserProfile()
-          console.log("✅ Contexto actualizado")
-        } catch (refreshError) {
-          console.warn("⚠️ Error actualizando contexto:", refreshError)
-        }
-
-        // MOSTRAR FORMULARIO DE CONTRASEÑA
-        console.log("🔄 Mostrando formulario de contraseña...")
-        setStatus("set-password")
-        setMessage("¡Bienvenido al equipo! Ahora establece tu contraseña.")
-        setShowPasswordForm(true)
-
-        console.log("✅ FORMULARIO DE CONTRASEÑA MOSTRADO")
       } catch (error) {
-        console.error("💥 Error procesando invitación:", error)
+        console.error("💥 Error creando usuario:", error)
         setStatus("error")
-        setMessage(`Error al procesar la invitación: ${error instanceof Error ? error.message : "Error desconocido"}`)
+        setMessage(`Error al crear el usuario: ${error instanceof Error ? error.message : "Error desconocido"}`)
       }
     }
 
@@ -207,7 +194,7 @@ export default function InviteCallback() {
   const handleSetPassword = async (e: React.FormEvent) => {
     e.preventDefault()
     setPasswordError("")
-
+    
     console.log("🔄 ESTABLECIENDO CONTRASEÑA...")
 
     if (password !== confirmPassword) {
@@ -248,11 +235,12 @@ export default function InviteCallback() {
 
       setStatus("success")
       setMessage("¡Contraseña establecida! Redirigiendo al dashboard...")
-
+      
       console.log("✅ PROCESO COMPLETADO - Redirigiendo al dashboard...")
       setTimeout(() => {
         router.push("/dashboard")
       }, 2000)
+
     } catch (error: any) {
       console.error("💥 Error estableciendo contraseña:", error)
       setPasswordError(`Error al establecer contraseña: ${error.message}`)
@@ -378,17 +366,27 @@ export default function InviteCallback() {
           </div>
           <p
             className={`text-sm ${
-              status === "success" ? "text-green-600" : status === "error" ? "text-red-600" : "text-gray-600"
+              status === "success" 
+                ? "text-green-600" 
+                : status === "error" 
+                ? "text-red-600" 
+                : "text-gray-600"
             }`}
           >
             {message}
           </p>
           {status === "error" && (
             <div className="mt-4 space-y-2">
-              <button onClick={() => router.push("/login")} className="text-blue-600 hover:underline text-sm block">
+              <button 
+                onClick={() => router.push("/login")} 
+                className="text-blue-600 hover:underline text-sm block"
+              >
                 Ir al login
               </button>
-              <button onClick={() => router.push("/register")} className="text-gray-600 hover:underline text-sm block">
+              <button 
+                onClick={() => router.push("/register")} 
+                className="text-gray-600 hover:underline text-sm block"
+              >
                 Crear cuenta nueva
               </button>
             </div>
