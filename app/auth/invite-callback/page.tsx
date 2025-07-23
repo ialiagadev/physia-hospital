@@ -26,7 +26,7 @@ export default function InviteCallback() {
   const router = useRouter()
   const hasProcessed = useRef(false)
   const [userInfo, setUserInfo] = useState<any>(null)
-  const { refreshUserProfile } = useAuth()
+  const { user, forceRefresh } = useAuth()
 
   useEffect(() => {
     if (hasProcessed.current) return
@@ -40,16 +40,15 @@ export default function InviteCallback() {
 
         setMessage("Confirmando invitación...")
 
-        // Obtener tokens del hash
-        const searchParams = new URLSearchParams(window.location.search)
-const accessToken = searchParams.get("access_token")
-const refreshToken = searchParams.get("refresh_token")
-      
+        // Obtener tokens del hash para validar
+        const hashParams = new URLSearchParams(window.location.hash.substring(1))
+        const accessToken = hashParams.get("access_token")
+        const type = hashParams.get("type")
 
-        console.log("🔑 TOKENS OBTENIDOS:")
+        console.log("🔑 TOKENS EN URL:")
         console.log("   - Access Token:", accessToken ? "✅ Presente" : "❌ Ausente")
-        console.log("   - Refresh Token:", refreshToken ? "✅ Presente" : "❌ Ausente")
-      
+        console.log("   - Type:", type)
+
         if (!accessToken) {
           console.error("❌ No se encontró access_token en la URL")
           setStatus("error")
@@ -57,38 +56,44 @@ const refreshToken = searchParams.get("refresh_token")
           return
         }
 
-        // Establecer la sesión
-        console.log("🔄 Estableciendo sesión...")
-        const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken || "",
-        })
+        // Esperar a que Supabase procese automáticamente la sesión desde la URL
+        console.log("🔄 Esperando que Supabase procese la sesión automáticamente...")
+        setMessage("Configurando tu sesión...")
+
+        // Esperar un poco para que Supabase procese la URL automáticamente
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+
+        // Obtener la sesión actual (debería estar establecida automáticamente)
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession()
 
         if (sessionError) {
-          console.error("❌ Error estableciendo sesión:", sessionError)
+          console.error("❌ Error obteniendo sesión:", sessionError)
           setStatus("error")
           setMessage(`Error al procesar la invitación: ${sessionError.message}`)
           return
         }
 
-        if (!sessionData.user) {
+        if (!session?.user) {
           console.error("❌ No se obtuvo usuario de la sesión")
           setStatus("error")
           setMessage("Error: No se pudo obtener información del usuario")
           return
         }
 
-        const user = sessionData.user
-        console.log("✅ SESIÓN ESTABLECIDA:")
-        console.log("   - User ID:", user.id)
-        console.log("   - Email:", user.email)
-        console.log("   - Email confirmed:", user.email_confirmed_at)
-        console.log("   - Metadata:", user.user_metadata)
+        const currentUser = session.user
+        console.log("✅ SESIÓN OBTENIDA:")
+        console.log("   - User ID:", currentUser.id)
+        console.log("   - Email:", currentUser.email)
+        console.log("   - Email confirmed:", currentUser.email_confirmed_at)
+        console.log("   - Metadata:", currentUser.user_metadata)
 
-        setUserInfo(user)
+        setUserInfo(currentUser)
 
         // Procesar invitación
-        await processUserInvitation(user)
+        await processUserInvitation(currentUser)
       } catch (error) {
         console.error("💥 Error en handleInviteCallback:", error)
         setStatus("error")
@@ -96,21 +101,20 @@ const refreshToken = searchParams.get("refresh_token")
       }
     }
 
-    const processUserInvitation = async (user: any) => {
+    const processUserInvitation = async (currentUser: any) => {
       try {
         console.log("🔄 PROCESANDO INVITACIÓN DE USUARIO")
         setMessage("Configurando tu cuenta...")
 
-        const userMetadata = user.user_metadata || {}
+        const userMetadata = currentUser.user_metadata || {}
         const organizationId = userMetadata.organization_id
-        const userName = userMetadata.full_name || user.email?.split("@")[0] || "Usuario"
+        const userName = userMetadata.full_name || currentUser.email?.split("@")[0] || "Usuario"
         const userRole = userMetadata.role || "user"
 
         console.log("👤 DATOS DE LA INVITACIÓN:")
         console.log("   - Organization ID:", organizationId)
         console.log("   - Name:", userName)
         console.log("   - Role:", userRole)
-        console.log("   - Invite Type:", userMetadata.invite_type)
 
         if (!organizationId) {
           console.error("❌ No se encontró organization_id en metadata")
@@ -124,26 +128,26 @@ const refreshToken = searchParams.get("refresh_token")
         const { data: existingUser, error: userError } = await supabase
           .from("users")
           .select("id, organization_id, name, role")
-          .eq("id", user.id)
-          .single()
+          .eq("id", currentUser.id)
+          .maybeSingle()
 
         console.log("📊 RESULTADO DE CONSULTA DE USUARIO:")
         console.log("   - Error:", userError)
         console.log("   - Usuario existente:", existingUser)
 
-        if (userError && userError.code === "PGRST116") {
+        if (!existingUser && !userError) {
           // Usuario no existe - crearlo
           console.log("👤 Usuario no existe, creándolo...")
 
           const { data: newUser, error: createError } = await supabase
             .from("users")
             .insert({
-              id: user.id,
-              email: user.email,
+              id: currentUser.id,
+              email: currentUser.email,
               name: userName,
               role: userRole,
               organization_id: organizationId,
-              type: 1, // Asegurar que sea tipo 1
+              type: 1,
             })
             .select()
             .single()
@@ -161,7 +165,7 @@ const refreshToken = searchParams.get("refresh_token")
           setStatus("error")
           setMessage(`Error al verificar el usuario: ${userError.message}`)
           return
-        } else {
+        } else if (existingUser) {
           // Usuario existe - actualizar organización si es necesario
           console.log("👤 Usuario existe, verificando organización...")
 
@@ -174,9 +178,9 @@ const refreshToken = searchParams.get("refresh_token")
                 organization_id: organizationId,
                 name: userName,
                 role: userRole,
-                type: 1, // Asegurar que sea tipo 1
+                type: 1,
               })
-              .eq("id", user.id)
+              .eq("id", currentUser.id)
 
             if (updateError) {
               console.error("❌ Error actualizando usuario:", updateError)
@@ -194,9 +198,9 @@ const refreshToken = searchParams.get("refresh_token")
         console.log("✅ INVITACIÓN PROCESADA CORRECTAMENTE")
 
         // FORZAR REFRESH DEL AUTH CONTEXT
-        console.log("🔄 Actualizando contexto de autenticación...")
+        console.log("🔄 Forzando refresh del contexto de autenticación...")
         try {
-          await refreshUserProfile()
+          await forceRefresh()
           console.log("✅ Contexto actualizado")
         } catch (refreshError) {
           console.warn("⚠️ Error actualizando contexto:", refreshError)
@@ -217,7 +221,7 @@ const refreshToken = searchParams.get("refresh_token")
     }
 
     handleInviteCallback()
-  }, [router, refreshUserProfile])
+  }, [forceRefresh])
 
   const handleSetPassword = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -255,17 +259,19 @@ const refreshToken = searchParams.get("refresh_token")
       // FORZAR REFRESH FINAL DEL AUTH CONTEXT
       console.log("🔄 Refresh final del contexto...")
       try {
-        await refreshUserProfile()
+        await forceRefresh()
         console.log("✅ Contexto final actualizado")
       } catch (refreshError) {
         console.warn("⚠️ Error en refresh final:", refreshError)
       }
 
       setStatus("success")
-      setMessage("¡Contraseña establecida! Redirigiendo al login...")
+      setMessage("¡Contraseña establecida! Redirigiendo al dashboard...")
 
-      console.log("✅ PROCESO COMPLETADO - Redirigiendo al login...")
-     
+      console.log("✅ PROCESO COMPLETADO - Redirigiendo al dashboard...")
+      setTimeout(() => {
+        router.push("/dashboard")
+      }, 2000)
     } catch (error: any) {
       console.error("💥 Error estableciendo contraseña:", error)
       setPasswordError(`Error al establecer contraseña: ${error.message}`)
@@ -279,6 +285,7 @@ const refreshToken = searchParams.get("refresh_token")
   console.log("   - Status:", status)
   console.log("   - ShowPasswordForm:", showPasswordForm)
   console.log("   - Message:", message)
+  console.log("   - User from context:", user?.email)
 
   if (showPasswordForm) {
     return (
@@ -380,7 +387,7 @@ const refreshToken = searchParams.get("refresh_token")
           </CardTitle>
           <CardDescription>
             {status === "loading" && "Configurando tu acceso a la organización"}
-            {status === "success" && "Redirigiendo al login..."}
+            {status === "success" && "Redirigiendo al dashboard..."}
             {status === "error" && "Hubo un problema al procesar tu invitación"}
           </CardDescription>
         </CardHeader>
