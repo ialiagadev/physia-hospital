@@ -2,16 +2,12 @@ import { createClient } from "@supabase/supabase-js"
 import { NextResponse } from "next/server"
 
 // Cliente admin para invitar usuarios
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!, 
-  process.env.SUPABASE_SERVICE_ROLE_KEY!, 
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  }
-)
+const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
+  },
+})
 
 export async function POST(request: Request) {
   try {
@@ -35,10 +31,10 @@ export async function POST(request: Request) {
     })
 
     // URL base del sitio
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
-    
-    // URL de redirección con parámetros adicionales
-    const redirectUrl = `${siteUrl}/auth/invite-callback?type=invite&organization_id=${organizationId}`;
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"
+
+    // ✅ CORREGIDO: Quité "/auth" y agregué role
+    const redirectUrl = `${siteUrl}/invite-callback?type=invite&organization_id=${organizationId}&role=${role}`
 
     // 1. ENVIAR INVITACIÓN con inviteUserByEmail
     const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
@@ -80,7 +76,7 @@ export async function POST(request: Request) {
 
       if (createUserError) {
         console.error("❌ Error creando usuario en tabla:", createUserError)
-        // No fallar la invitación por esto, solo loggearlo
+        // No fallar la invitación por esto, solo loggear
         console.warn("⚠️ La invitación se envió pero no se pudo crear el registro en la tabla")
       } else {
         console.log("✅ Usuario creado en tabla exitosamente:", newUser)
