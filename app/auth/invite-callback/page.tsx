@@ -265,9 +265,7 @@ const refreshToken = searchParams.get("refresh_token")
       setMessage("¡Contraseña establecida! Redirigiendo al login...")
 
       console.log("✅ PROCESO COMPLETADO - Redirigiendo al login...")
-      setTimeout(() => {
-        router.push("/login")
-      }, 2000)
+     
     } catch (error: any) {
       console.error("💥 Error estableciendo contraseña:", error)
       setPasswordError(`Error al establecer contraseña: ${error.message}`)
