@@ -38,7 +38,7 @@ export async function POST(request: Request) {
         role: role,
         invite_type: "user_invitation",
       },
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/auth/invite-callback?type=invite`,
+      redirectTo: `https://facturas-physia.vercel.app/auth/invite-callback`,
     })
 
     if (error) {
