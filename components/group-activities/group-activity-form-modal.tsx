@@ -85,11 +85,27 @@ export function GroupActivityFormModal({
   const [filteredServices, setFilteredServices] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [recurrenceEnabled, setRecurrenceEnabled] = useState(false)
-
   const isEditing = !!activity
 
   // Hook para detectar conflictos
   const { conflicts, checkConflicts, loading: conflictsLoading } = useAppointmentConflicts(organizationId)
+
+  // Filtrar solo profesionales médicos (type === 1)
+  const professionals = users.filter((user) => user.type === 1)
+
+  // ✅ FUNCIÓN PARA OBTENER EL NOMBRE DEL PROFESIONAL SELECCIONADO
+  const getSelectedProfessionalName = () => {
+    if (!formData.professional_id) return ""
+    const professional = professionals.find((p) => p.id.toString() === formData.professional_id.toString())
+    return professional?.name || ""
+  }
+
+  // ✅ FUNCIÓN PARA OBTENER EL NOMBRE DEL SERVICIO SELECCIONADO
+  const getSelectedServiceName = () => {
+    if (!formData.service_id) return ""
+    const service = filteredServices.find((s) => s.id.toString() === formData.service_id.toString())
+    return service?.name || ""
+  }
 
   // Initialize form data when editing
   useEffect(() => {
@@ -101,7 +117,7 @@ export function GroupActivityFormModal({
         date: new Date(activity.date).toISOString().split("T")[0],
         start_time: activity.start_time,
         end_time: activity.end_time,
-        professional_id: activity.professional_id,
+        professional_id: activity.professional_id?.toString() || "",
         consultation_id: activity.consultation_id || "",
         max_participants: activity.max_participants,
         color: activity.color,
@@ -134,7 +150,6 @@ export function GroupActivityFormModal({
         setFilteredServices([])
         return
       }
-
       try {
         const professionalServices = await getServicesByUser(professionalId)
         setFilteredServices(professionalServices)
@@ -157,7 +172,6 @@ export function GroupActivityFormModal({
     if (formData.date && formData.start_time && formData.end_time && formData.professional_id) {
       const timeoutId = setTimeout(() => {
         const duration = calculateDurationInMinutes(formData.start_time, formData.end_time)
-
         if (duration > 0) {
           checkConflicts(
             formData.date,
@@ -169,7 +183,6 @@ export function GroupActivityFormModal({
           )
         }
       }, 500)
-
       return () => clearTimeout(timeoutId)
     }
   }, [
@@ -184,33 +197,27 @@ export function GroupActivityFormModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
     // Validaciones
     if (!formData.name.trim()) {
       toast.error("El nombre de la actividad es obligatorio")
       return
     }
-
     if (!formData.professional_id) {
       toast.error("Debe seleccionar un profesional")
       return
     }
-
     if (!formData.service_id) {
       toast.error("Debe seleccionar un servicio")
       return
     }
-
     if (formData.start_time >= formData.end_time) {
       toast.error("La hora de fin debe ser posterior a la hora de inicio")
       return
     }
-
     if (formData.max_participants < 1) {
       toast.error("El número máximo de participantes debe ser al menos 1")
       return
     }
-
     if (conflicts.length > 0) {
       toast.error("Hay conflictos de horario. Por favor, revise las citas existentes.")
       return
@@ -225,7 +232,6 @@ export function GroupActivityFormModal({
         consultation_id: formData.consultation_id === "none" ? null : formData.consultation_id || null,
         recurrence: recurrenceEnabled && formData.recurrence ? formData.recurrence : null,
       }
-
       await onSubmit(submitData)
       toast.success(isEditing ? "Actividad actualizada correctamente" : "Actividad creada correctamente")
       onClose()
@@ -240,14 +246,12 @@ export function GroupActivityFormModal({
   const handleTimeChange = (field: "start_time" | "end_time", value: string) => {
     setFormData((prev) => {
       const newData = { ...prev, [field]: value }
-
       if (field === "start_time") {
         const [hours, minutes] = value.split(":").map(Number)
         const endHours = hours + 1
         const endTime = `${endHours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`
         newData.end_time = endTime
       }
-
       return newData
     })
   }
@@ -262,9 +266,6 @@ export function GroupActivityFormModal({
   const resetToDefaultColor = () => {
     setFormData((prev) => ({ ...prev, color: "#3B82F6" }))
   }
-
-  // Filtrar solo profesionales médicos (type === 1)
-  const professionals = users.filter((user) => user.type === 1)
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -291,7 +292,7 @@ export function GroupActivityFormModal({
             />
           </div>
 
-          {/* Professional - PRIMERO */}
+          {/* Professional - PRIMERO - ✅ ARREGLADO */}
           <div className="space-y-2">
             <Label>Profesional responsable *</Label>
             <Select
@@ -305,11 +306,13 @@ export function GroupActivityFormModal({
               }
             >
               <SelectTrigger>
-                <SelectValue placeholder="Seleccionar profesional" />
+                <SelectValue placeholder="Seleccionar profesional">
+                  {formData.professional_id ? getSelectedProfessionalName() : "Seleccionar profesional"}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {professionals.map((professional) => (
-                  <SelectItem key={professional.id} value={professional.id}>
+                  <SelectItem key={professional.id} value={professional.id.toString()}>
                     {professional.name}
                   </SelectItem>
                 ))}
@@ -317,7 +320,7 @@ export function GroupActivityFormModal({
             </Select>
           </div>
 
-          {/* Service Selection - SEGUNDO */}
+          {/* Service Selection - SEGUNDO - ✅ ARREGLADO */}
           <div className="space-y-2">
             <Label htmlFor="service">Servicio *</Label>
             <Select
@@ -336,7 +339,9 @@ export function GroupActivityFormModal({
                           ? "No hay servicios disponibles"
                           : "Seleccionar servicio"
                   }
-                />
+                >
+                  {formData.service_id && !userServicesLoading ? getSelectedServiceName() : null}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {filteredServices.map((service) => (
@@ -366,6 +371,7 @@ export function GroupActivityFormModal({
             {formData.professional_id && !userServicesLoading && filteredServices.length === 0 && (
               <p className="text-sm text-amber-600">Este profesional no tiene servicios asignados</p>
             )}
+
             {formData.professional_id && !userServicesLoading && filteredServices.length > 0 && (
               <p className="text-sm text-blue-600">
                 {filteredServices.length} servicio(s) disponible(s) para este profesional
@@ -515,7 +521,6 @@ export function GroupActivityFormModal({
               <Palette className="h-4 w-4" />
               Color de la actividad
             </Label>
-
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-3">
                 <Input
@@ -533,7 +538,6 @@ export function GroupActivityFormModal({
                   <span className="text-sm font-mono text-gray-600">{formData.color.toUpperCase()}</span>
                 </div>
               </div>
-
               <Button
                 type="button"
                 variant="outline"
@@ -545,7 +549,6 @@ export function GroupActivityFormModal({
                 Reset
               </Button>
             </div>
-
             <div className="space-y-2">
               <Label className="text-xs text-gray-500">Colores rápidos:</Label>
               <div className="flex flex-wrap gap-2">
