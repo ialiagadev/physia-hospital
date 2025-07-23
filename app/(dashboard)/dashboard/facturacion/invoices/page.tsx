@@ -840,10 +840,7 @@ export default function InvoicesPage() {
             )}
           </Button>
 
-          <Button variant="outline" onClick={() => setGenerateModalOpen(true)} disabled={!userProfile?.organization_id}>
-            <FileText className="mr-2 h-4 w-4" />
-            Generar del día
-          </Button>
+         
 
           <Button asChild>
             <Link href="/dashboard/facturacion/invoices/new">

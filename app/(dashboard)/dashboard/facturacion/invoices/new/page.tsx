@@ -89,7 +89,8 @@ interface Service {
 interface Professional {
   id: number
   name: string
-  active: boolean
+  type: number
+  organization_id: number
 }
 
 interface OriginalInvoice {
@@ -422,11 +423,12 @@ export default function NewInvoicePage() {
   const fetchProfessionals = async (organizationId: number) => {
     try {
       const { data: professionalsData, error: professionalsError } = await supabase
-        .from("professionals")
-        .select("*")
-        .eq("organization_id", organizationId)
-        .eq("active", true)
-        .order("name")
+  .from("users")
+  .select("id, name, organization_id, type")
+  .eq("organization_id", organizationId)
+  .eq("type", 1)
+  .in("role", ["admin", "user", "coordinador"])
+  .order("name")
 
       if (professionalsError) {
         throw new Error("Error al obtener los profesionales")

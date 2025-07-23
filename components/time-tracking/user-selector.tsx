@@ -15,6 +15,7 @@ interface OrganizationUser {
   role: string | null // 'admin' | 'user' | 'coordinador' | 'viewer'
   organization_id: number | null
   created_at: string
+  type: number // ✅ AÑADIDO: Campo type para filtrar
 }
 
 interface UserSelectorProps {
@@ -27,16 +28,18 @@ interface UserSelectorProps {
 export function UserSelector({ users, selectedUser, onSelectUser, currentUserId }: UserSelectorProps) {
   const [open, setOpen] = useState(false)
 
-  // ✅ CORREGIDO: Incluir coordinadores en usuarios que pueden fichar
+  // ✅ CORREGIDO: Filtrar por type=1 (activos) Y roles permitidos
   const fichableUsers = users.filter(
-    (user) => user.role === "admin" || user.role === "user" || user.role === "coordinador", // ✅ AÑADIDO: Incluir coordinadores
+    (user) =>
+      user.type === 1 && // ✅ AÑADIDO: Solo usuarios activos (type=1)
+      (user.role === "admin" || user.role === "user" || user.role === "coordinador"),
   )
 
   if (fichableUsers.length === 0) {
     return (
       <div className="text-center py-8 text-muted-foreground">
         <User className="h-8 w-8 mx-auto mb-2 opacity-50" />
-        <p className="text-sm">No hay empleados disponibles para fichar</p>
+        <p className="text-sm">No hay empleados activos disponibles para fichar</p>
       </div>
     )
   }
@@ -111,7 +114,7 @@ export function UserSelector({ users, selectedUser, onSelectUser, currentUserId 
         <Command>
           <CommandInput placeholder="Buscar empleado..." className="h-9" />
           <CommandList>
-            <CommandEmpty>No se encontraron empleados.</CommandEmpty>
+            <CommandEmpty>No se encontraron empleados activos.</CommandEmpty>
             <CommandGroup>
               {fichableUsers.map((user) => (
                 <CommandItem

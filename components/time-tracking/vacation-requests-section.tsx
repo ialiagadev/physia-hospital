@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,7 +20,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useVacationRequests, type VacationType, type VacationStatus } from "@/hooks/use-vacation-requests"
 import { useToast } from "@/hooks/use-toast"
 import { format, differenceInDays, parseISO } from "date-fns"
@@ -50,7 +50,6 @@ export function GeneralRequestsSection({
 }: GeneralRequestsSectionProps) {
   const { requests, loading, createRequest, updateRequestStatus, deleteRequest, getRequests } = useVacationRequests()
   const { toast } = useToast()
-
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [formData, setFormData] = useState({
     user_id: "",
@@ -60,13 +59,16 @@ export function GeneralRequestsSection({
     reason: "",
   })
 
-  // Estados para confirmación de eliminación
+  // Estados para eliminación
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [requestToDelete, setRequestToDelete] = useState<any>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
   // Añadir este estado al inicio del componente, después de los otros useState
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Filtros usuarios tipo 1 (igual que en tareas)
+  const usuariosTipo1 = organizationUsers.filter((user) => user.type === 1)
 
   // Filtros
   const [filters, setFilters] = useState({
@@ -196,7 +198,7 @@ export function GeneralRequestsSection({
       const result = await createRequest(requestData)
       console.log("Resultado createRequest:", result)
 
-      const targetUser = organizationUsers.find((u) => u.id === targetUserId)
+      const targetUser = usuariosTipo1.find((u) => u.id === targetUserId)
       const userName = targetUser?.name || targetUser?.email || "usuario"
 
       toast({
@@ -223,17 +225,14 @@ export function GeneralRequestsSection({
       console.log("Solicitudes recargadas")
     } catch (error) {
       console.error("=== ERROR en handleSubmit ===", error)
-
       // Mostrar error más detallado
       const errorMessage = error instanceof Error ? error.message : "Error desconocido"
-
       toast({
         title: "❌ Error al crear la solicitud",
         description: `Detalles: ${errorMessage}`,
         variant: "destructive",
       })
     }
-
     console.log("=== FIN handleSubmit ===")
   }
 
@@ -255,29 +254,24 @@ export function GeneralRequestsSection({
     }
   }
 
-  // Función para mostrar el modal de confirmación de eliminación
+  // Funciones para eliminación
   const handleDeleteClick = (request: any) => {
     setRequestToDelete(request)
     setShowDeleteConfirm(true)
   }
 
-  // Función para confirmar la eliminación
   const handleConfirmDelete = async () => {
     if (!requestToDelete) return
 
     setIsDeleting(true)
     try {
       await deleteRequest(requestToDelete.id)
-
-      const user = organizationUsers.find((u) => u.id === requestToDelete.user_id)
-      const userName = user?.name || user?.email || "usuario"
-      const typeInfo = getTypeInfo(requestToDelete.type)
-
       toast({
         title: "✅ Solicitud eliminada",
-        description: `Se eliminó la solicitud de ${typeInfo.label.toLowerCase()} de ${userName}`,
+        description: "La solicitud ha sido eliminada correctamente",
       })
-
+      setShowDeleteConfirm(false)
+      setRequestToDelete(null)
       // Recargar solicitudes
       await getRequests(userProfile.organization_id, isAdmin ? undefined : userProfile.id)
     } catch (error) {
@@ -289,12 +283,9 @@ export function GeneralRequestsSection({
       })
     } finally {
       setIsDeleting(false)
-      setShowDeleteConfirm(false)
-      setRequestToDelete(null)
     }
   }
 
-  // Función para cancelar la eliminación
   const handleCancelDelete = () => {
     setShowDeleteConfirm(false)
     setRequestToDelete(null)
@@ -361,394 +352,397 @@ export function GeneralRequestsSection({
   }
 
   return (
-    <>
-      <div className="space-y-6">
-        {/* Estadísticas */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="p-4">
-              <div className="text-2xl font-bold">{stats.total}</div>
-              <p className="text-sm text-muted-foreground">Total solicitudes</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="text-2xl font-bold text-yellow-600">{stats.pending}</div>
-              <p className="text-sm text-muted-foreground">Pendientes</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="text-2xl font-bold text-green-600">{stats.approved}</div>
-              <p className="text-sm text-muted-foreground">Aprobadas</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="text-2xl font-bold text-red-600">{stats.rejected}</div>
-              <p className="text-sm text-muted-foreground">Rechazadas</p>
-            </CardContent>
-          </Card>
+    <div className="space-y-6">
+      {/* Estadísticas */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold">{stats.total}</div>
+            <p className="text-sm text-muted-foreground">Total solicitudes</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold text-yellow-600">{stats.pending}</div>
+            <p className="text-sm text-muted-foreground">Pendientes</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold text-green-600">{stats.approved}</div>
+            <p className="text-sm text-muted-foreground">Aprobadas</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-2xl font-bold text-red-600">{stats.rejected}</div>
+            <p className="text-sm text-muted-foreground">Rechazadas</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Header con botón de nueva solicitud */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-xl font-semibold flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            Solicitudes
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {isAdmin ? "Gestiona las solicitudes de tu organización" : "Gestiona tus solicitudes"}
+          </p>
         </div>
 
-        {/* Header con botón de nueva solicitud */}
-        <div className="flex justify-between items-center">
-          <div>
-            <h2 className="text-xl font-semibold flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Solicitudes
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {isAdmin ? "Gestiona las solicitudes de tu organización" : "Gestiona tus solicitudes"}
-            </p>
-          </div>
-
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                {isAdmin ? <UserPlus className="h-4 w-4 mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
-                {isAdmin ? "Añadir Solicitud" : "Nueva Solicitud"}
-              </Button>
-            </DialogTrigger>
-
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  {isAdmin ? "Añadir Solicitud a Usuario" : "Nueva Solicitud"}
-                </DialogTitle>
-              </DialogHeader>
-
-              <div className="space-y-4">
-                {/* Selector de usuario (solo para admins) */}
-                {isAdmin && (
-                  <div>
-                    <Label htmlFor="user">Usuario *</Label>
-                    <Select
-                      value={formData.user_id}
-                      onValueChange={(value) => setFormData({ ...formData, user_id: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecciona un usuario" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {organizationUsers.map((user) => (
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <Button>
+              {isAdmin ? <UserPlus className="h-4 w-4 mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
+              {isAdmin ? "Añadir Solicitud" : "Nueva Solicitud"}
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                {isAdmin ? "Añadir Solicitud a Usuario" : "Nueva Solicitud"}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              {/* Selector de usuario (solo para admins) */}
+              {isAdmin && (
+                <div>
+                  <Label htmlFor="user">Usuario *</Label>
+                  <Select
+                    value={formData.user_id}
+                    onValueChange={(value) => setFormData({ ...formData, user_id: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecciona un usuario" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {usuariosTipo1.length === 0 ? (
+                        <div className="p-2 text-sm text-gray-500">No hay usuarios tipo 1 disponibles</div>
+                      ) : (
+                        usuariosTipo1.map((user) => (
                           <SelectItem key={user.id} value={user.id}>
                             {user.name || user.email}
                           </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-
-                <div>
-                  <Label htmlFor="type">Tipo de solicitud *</Label>
-                  <Select
-                    value={formData.type}
-                    onValueChange={(value: VacationType) => setFormData({ ...formData, type: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecciona el tipo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {REQUEST_TYPES.map((type) => (
-                        <SelectItem key={type.value} value={type.value}>
-                          <div className="flex items-center gap-2">
-                            <span>{type.icon}</span>
-                            <div className={`w-3 h-3 rounded-full ${type.color}`} />
-                            {type.label}
-                          </div>
-                        </SelectItem>
-                      ))}
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
+                  {usuariosTipo1.length > 0 && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Mostrando {usuariosTipo1.length} de {organizationUsers.length} usuarios (solo tipo 1)
+                    </p>
+                  )}
                 </div>
+              )}
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="start_date">Fecha de inicio *</Label>
-                    <Input
-                      id="start_date"
-                      type="date"
-                      value={formData.start_date}
-                      onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                      min={!isAdmin ? new Date().toISOString().split("T")[0] : undefined}
-                      className="w-full"
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="end_date">Fecha de fin *</Label>
-                    <Input
-                      id="end_date"
-                      type="date"
-                      value={formData.end_date}
-                      onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
-                      min={formData.start_date || (!isAdmin ? new Date().toISOString().split("T")[0] : undefined)}
-                      className="w-full"
-                    />
-                  </div>
-                </div>
-
-                {/* Mostrar días calculados */}
-                {formData.start_date && formData.end_date && calculateDays() > 0 && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                    <div className="flex items-center gap-2 text-blue-700">
-                      <Calendar className="h-4 w-4" />
-                      <span className="font-medium">
-                        Total de días: {calculateDays()} día{calculateDays() !== 1 ? "s" : ""}
-                      </span>
-                    </div>
-                    <div className="text-sm text-blue-600 mt-1">
-                      Del {format(parseISO(formData.start_date), "dd/MM/yyyy", { locale: es })} al{" "}
-                      {format(parseISO(formData.end_date), "dd/MM/yyyy", { locale: es })}
-                    </div>
-                  </div>
-                )}
-
-                <div>
-                  <Label htmlFor="reason">Motivo (opcional)</Label>
-                  <Textarea
-                    id="reason"
-                    placeholder="Describe el motivo de la solicitud (opcional)..."
-                    value={formData.reason}
-                    onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-                    rows={3}
-                  />
-                </div>
-
-                <div className="flex gap-2 pt-4">
-                  <Button variant="outline" onClick={() => setIsDialogOpen(false)} className="flex-1">
-                    Cancelar
-                  </Button>
-                  <Button
-                    onClick={async () => {
-                      setIsSubmitting(true)
-                      await handleSubmit()
-                      setIsSubmitting(false)
-                    }}
-                    className="flex-1"
-                    disabled={isSubmitting}
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                        {isAdmin ? "Creando..." : "Enviando..."}
-                      </>
-                    ) : isAdmin ? (
-                      "Crear y Aprobar"
-                    ) : (
-                      "Enviar Solicitud"
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
-        </div>
-
-        {/* Filtros */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Filter className="h-4 w-4" />
-              Filtros
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <Label>Estado</Label>
-                <Select value={filters.status} onValueChange={(value) => setFilters({ ...filters, status: value })}>
+                <Label htmlFor="type">Tipo de solicitud *</Label>
+                <Select
+                  value={formData.type}
+                  onValueChange={(value: VacationType) => setFormData({ ...formData, type: value })}
+                >
                   <SelectTrigger>
-                    <SelectValue />
+                    <SelectValue placeholder="Selecciona el tipo" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Todos</SelectItem>
-                    <SelectItem value="pending">Pendientes</SelectItem>
-                    <SelectItem value="approved">Aprobadas</SelectItem>
-                    <SelectItem value="rejected">Rechazadas</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Tipo</Label>
-                <Select value={filters.type} onValueChange={(value) => setFilters({ ...filters, type: value })}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos</SelectItem>
                     {REQUEST_TYPES.map((type) => (
                       <SelectItem key={type.value} value={type.value}>
-                        {type.label}
+                        <div className="flex items-center gap-2">
+                          <span>{type.icon}</span>
+                          <div className={`w-3 h-3 rounded-full ${type.color}`} />
+                          {type.label}
+                        </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              {isAdmin && (
+
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>Usuario</Label>
-                  <Select value={filters.user} onValueChange={(value) => setFilters({ ...filters, user: value })}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todos</SelectItem>
-                      {organizationUsers.map((user) => (
-                        <SelectItem key={user.id} value={user.id}>
-                          {user.name || user.email}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="start_date">Fecha de inicio *</Label>
+                  <Input
+                    id="start_date"
+                    type="date"
+                    value={formData.start_date}
+                    onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                    min={!isAdmin ? new Date().toISOString().split("T")[0] : undefined}
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="end_date">Fecha de fin *</Label>
+                  <Input
+                    id="end_date"
+                    type="date"
+                    value={formData.end_date}
+                    onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
+                    min={formData.start_date || (!isAdmin ? new Date().toISOString().split("T")[0] : undefined)}
+                    className="w-full"
+                  />
+                </div>
+              </div>
+
+              {/* Mostrar días calculados */}
+              {formData.start_date && formData.end_date && calculateDays() > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <div className="flex items-center gap-2 text-blue-700">
+                    <Calendar className="h-4 w-4" />
+                    <span className="font-medium">
+                      Total de días: {calculateDays()} día{calculateDays() !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                  <div className="text-sm text-blue-600 mt-1">
+                    Del {format(parseISO(formData.start_date), "dd/MM/yyyy", { locale: es })} al{" "}
+                    {format(parseISO(formData.end_date), "dd/MM/yyyy", { locale: es })}
+                  </div>
                 </div>
               )}
+
+              <div>
+                <Label htmlFor="reason">Motivo (opcional)</Label>
+                <Textarea
+                  id="reason"
+                  placeholder="Describe el motivo de la solicitud (opcional)..."
+                  value={formData.reason}
+                  onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+                  rows={3}
+                />
+              </div>
+
+              <div className="flex gap-2 pt-4">
+                <Button variant="outline" onClick={() => setIsDialogOpen(false)} className="flex-1">
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={async () => {
+                    setIsSubmitting(true)
+                    await handleSubmit()
+                    setIsSubmitting(false)
+                  }}
+                  className="flex-1"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      {isAdmin ? "Creando..." : "Enviando..."}
+                    </>
+                  ) : isAdmin ? (
+                    "Crear y Aprobar"
+                  ) : (
+                    "Enviar Solicitud"
+                  )}
+                </Button>
+              </div>
             </div>
-          </CardContent>
-        </Card>
+          </DialogContent>
+        </Dialog>
+      </div>
 
-        {/* Tabla de solicitudes */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Solicitudes ({filteredRequests.length})</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="text-center py-8">
-                <p className="text-muted-foreground">Cargando solicitudes...</p>
+      {/* Filtros */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Filter className="h-4 w-4" />
+            Filtros
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <Label>Estado</Label>
+              <Select value={filters.status} onValueChange={(value) => setFilters({ ...filters, status: value })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="pending">Pendientes</SelectItem>
+                  <SelectItem value="approved">Aprobadas</SelectItem>
+                  <SelectItem value="rejected">Rechazadas</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Tipo</Label>
+              <Select value={filters.type} onValueChange={(value) => setFilters({ ...filters, type: value })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {REQUEST_TYPES.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {isAdmin && (
+              <div>
+                <Label>Usuario</Label>
+                <Select value={filters.user} onValueChange={(value) => setFilters({ ...filters, user: value })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos</SelectItem>
+                    {organizationUsers.map((user) => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.name || user.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            ) : filteredRequests.length === 0 ? (
-              <div className="text-center py-8">
-                <p className="text-muted-foreground">No hay solicitudes que mostrar</p>
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    {isAdmin && <TableHead>Usuario</TableHead>}
-                    <TableHead>Tipo</TableHead>
-                    <TableHead>Fechas</TableHead>
-                    <TableHead>Días</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead>Motivo</TableHead>
-                    <TableHead>Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredRequests.map((request) => {
-                    const typeInfo = getTypeInfo(request.type)
-                    const user = organizationUsers.find((u) => u.id === request.user_id)
-                    const canDelete = isAdmin || request.user_id === userProfile.id
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
-                    return (
-                      <TableRow key={request.id}>
-                        {isAdmin && (
-                          <TableCell>
-                            <div className="font-medium">{user?.name || user?.email || "Usuario desconocido"}</div>
-                          </TableCell>
-                        )}
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <span>{typeInfo.icon}</span>
-                            <div className={`w-3 h-3 rounded-full ${typeInfo.color}`} />
-                            {typeInfo.label}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-sm">
-                            <div>{format(new Date(request.start_date), "dd/MM/yyyy", { locale: es })}</div>
-                            <div className="text-muted-foreground">
-                              {format(new Date(request.end_date), "dd/MM/yyyy", { locale: es })}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{request.total_days} días</Badge>
-                        </TableCell>
-                        <TableCell>{getStatusBadge(request.status)}</TableCell>
-                        <TableCell>
-                          <div className="max-w-xs truncate" title={request.reason}>
-                            {request.reason}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            {/* Botones de aprobación/rechazo (solo para admins y solicitudes pendientes) */}
-                            {isAdmin && request.status === "pending" && (
-                              <>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="text-green-600 border-green-600 hover:bg-green-50 bg-transparent"
-                                  onClick={() => handleStatusUpdate(request.id, "approved")}
-                                >
-                                  <Check className="h-3 w-3" />
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="text-red-600 border-red-600 hover:bg-red-50 bg-transparent"
-                                  onClick={() => handleStatusUpdate(request.id, "rejected")}
-                                >
-                                  <X className="h-3 w-3" />
-                                </Button>
-                              </>
-                            )}
+      {/* Tabla de solicitudes */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Solicitudes ({filteredRequests.length})</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">Cargando solicitudes...</p>
+            </div>
+          ) : filteredRequests.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">No hay solicitudes que mostrar</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  {isAdmin && <TableHead>Usuario</TableHead>}
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Fechas</TableHead>
+                  <TableHead>Días</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Motivo</TableHead>
+                  <TableHead>Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredRequests.map((request) => {
+                  const typeInfo = getTypeInfo(request.type)
+                  const user = organizationUsers.find((u) => u.id === request.user_id)
+                  const canDelete = isAdmin || request.user_id === userProfile.id
 
-                            {/* Botón de eliminar (para admins o propietario de la solicitud) */}
-                            {canDelete && (
+                  return (
+                    <TableRow key={request.id}>
+                      {isAdmin && (
+                        <TableCell>
+                          <div className="font-medium">{user?.name || user?.email || "Usuario desconocido"}</div>
+                        </TableCell>
+                      )}
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <span>{typeInfo.icon}</span>
+                          <div className={`w-3 h-3 rounded-full ${typeInfo.color}`} />
+                          {typeInfo.label}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm">
+                          <div>{format(new Date(request.start_date), "dd/MM/yyyy", { locale: es })}</div>
+                          <div className="text-muted-foreground">
+                            {format(new Date(request.end_date), "dd/MM/yyyy", { locale: es })}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{request.total_days} días</Badge>
+                      </TableCell>
+                      <TableCell>{getStatusBadge(request.status)}</TableCell>
+                      <TableCell>
+                        <div className="max-w-xs truncate" title={request.reason}>
+                          {request.reason}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          {isAdmin && request.status === "pending" && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-green-600 border-green-600 hover:bg-green-50 bg-transparent"
+                                onClick={() => handleStatusUpdate(request.id, "approved")}
+                              >
+                                <Check className="h-3 w-3" />
+                              </Button>
                               <Button
                                 size="sm"
                                 variant="outline"
                                 className="text-red-600 border-red-600 hover:bg-red-50 bg-transparent"
-                                onClick={() => handleDeleteClick(request)}
+                                onClick={() => handleStatusUpdate(request.id, "rejected")}
                               >
-                                <Trash2 className="h-3 w-3" />
+                                <X className="h-3 w-3" />
                               </Button>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                            </>
+                          )}
+                          {canDelete && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-red-600 border-red-600 hover:bg-red-50 bg-transparent"
+                              onClick={() => handleDeleteClick(request)}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Modal de confirmación de eliminación */}
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-red-600">
-              <AlertTriangle className="h-5 w-5" />
-              Eliminar Solicitud
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+              Eliminar solicitud
             </AlertDialogTitle>
             <AlertDialogDescription className="space-y-2">
               {requestToDelete && (
                 <>
                   <p>¿Estás seguro de que quieres eliminar esta solicitud?</p>
-                  <div className="bg-gray-50 p-3 rounded-lg space-y-1">
-                    <p>
+                  <div className="bg-gray-50 p-3 rounded-lg space-y-1 text-sm">
+                    <div>
                       <strong>Usuario:</strong>{" "}
                       {organizationUsers.find((u) => u.id === requestToDelete.user_id)?.name || "Usuario desconocido"}
-                    </p>
-                    <p>
+                    </div>
+                    <div>
                       <strong>Tipo:</strong> {getTypeInfo(requestToDelete.type).label}
-                    </p>
-                    <p>
+                    </div>
+                    <div>
                       <strong>Fechas:</strong>{" "}
                       {format(new Date(requestToDelete.start_date), "dd/MM/yyyy", { locale: es })} -{" "}
                       {format(new Date(requestToDelete.end_date), "dd/MM/yyyy", { locale: es })}
-                    </p>
-                    <p>
+                    </div>
+                    <div>
                       <strong>Días:</strong> {requestToDelete.total_days} días
-                    </p>
+                    </div>
                   </div>
                   <p className="text-red-600 font-medium">Esta acción no se puede deshacer.</p>
                 </>
@@ -770,13 +764,13 @@ export function GeneralRequestsSection({
               ) : (
                 <>
                   <Trash2 className="h-4 w-4 mr-2" />
-                  Eliminar Solicitud
+                  Eliminar solicitud
                 </>
               )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </div>
   )
 }

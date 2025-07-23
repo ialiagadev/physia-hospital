@@ -50,6 +50,7 @@ interface OrganizationUser {
   role: string | null
   organization_id: number | null
   created_at: string
+  type: number // ✅ AÑADIDO: Campo type para filtrar
 }
 
 export function useTimeTracking() {
@@ -130,7 +131,6 @@ export function useTimeTracking() {
 
     try {
       const today = new Date().toISOString().split("T")[0]
-
       const { data, error } = await supabase
         .from("work_pauses_with_user")
         .select("*")
@@ -367,6 +367,7 @@ export function useTimeTracking() {
         .single()
 
       if (error) throw error
+
       return { success: true, data }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Error al actualizar registro"
@@ -402,6 +403,7 @@ export function useTimeTracking() {
         .eq("organization_id", userProfile.organization_id)
 
       if (error) throw error
+
       return { success: true }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Error al eliminar registro"
@@ -449,6 +451,7 @@ export function useTimeTracking() {
         .single()
 
       if (error) throw error
+
       return { success: true, data }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Error al crear registro"
@@ -483,9 +486,11 @@ export function useTimeTracking() {
       if (userId) {
         query = query.eq("user_id", userId)
       }
+
       if (startDate) {
         query = query.gte("work_date", startDate)
       }
+
       if (endDate) {
         query = query.lte("work_date", endDate)
       }
@@ -506,6 +511,7 @@ export function useTimeTracking() {
     }
   }
 
+  // ✅ FUNCIÓN ACTUALIZADA: Filtrar solo usuarios activos (type=1)
   const getOrganizationUsers = async (): Promise<{ users: OrganizationUser[]; error?: string }> => {
     if (!userProfile || userProfile.role !== "admin") {
       return { users: [], error: "Sin permisos de administrador" }
@@ -514,12 +520,13 @@ export function useTimeTracking() {
     try {
       const { data: users, error } = await supabase
         .from("users")
-        .select("id, name, email, role, organization_id, created_at")
+        .select("id, name, email, role, organization_id, created_at, type") // ✅ AÑADIDO: Incluir campo type
         .eq("organization_id", userProfile.organization_id)
-        .neq("type", 2)
+        .eq("type", 1) // ✅ CAMBIADO: Solo usuarios activos (type=1)
         .order("name")
 
       if (error) throw error
+
       return { users: users || [] }
     } catch (err) {
       return { users: [], error: err instanceof Error ? err.message : "Error al cargar usuarios" }
