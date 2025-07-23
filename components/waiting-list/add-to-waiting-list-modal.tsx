@@ -1,5 +1,4 @@
 "use client"
-
 import type React from "react"
 import { useState, useCallback, useRef, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -10,23 +9,16 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import {
-  Search,
-  User,
-  Clock,
-  CalendarIcon as CalendarIconLucide,
-  Phone,
-  CheckCircle,
-  AlertTriangle,
-  Loader2,
-} from "lucide-react"
+import { Search, User, Clock, CalendarIcon as CalendarIconLucide, Phone, CheckCircle, AlertTriangle, Loader2, Briefcase } from 'lucide-react'
 import { format } from "date-fns"
 import { useWaitingListData } from "@/hooks/use-waiting-list-data"
+import { useUserServices } from "../services/use-user-services"
 import { useClients } from "@/hooks/use-clients"
 import { useAuth } from "@/app/contexts/auth-context"
 import { formatPhoneNumber } from "@/utils/phone-utils"
 import { supabase } from "@/lib/supabase/client"
 import type { CreateWaitingListEntry } from "@/hooks/use-waiting-list"
+import type { Service } from "@/hooks/use-waiting-list-data" // ✅ IMPORTAR TIPO
 
 interface AddToWaitingListModalProps {
   isOpen: boolean
@@ -45,6 +37,7 @@ interface ClientMatch {
 export function AddToWaitingListModal({ isOpen, onClose, onSubmit, organizationId }: AddToWaitingListModalProps) {
   const { userProfile } = useAuth()
   const { professionals, services, loading: dataLoading } = useWaitingListData(organizationId)
+  const { getServicesByUser, loading: userServicesLoading } = useUserServices(organizationId) // ✅ NUEVO HOOK
   const { clients, createClient } = useClients(organizationId)
 
   const [formData, setFormData] = useState({
@@ -75,80 +68,115 @@ export function AddToWaitingListModal({ isOpen, onClose, onSubmit, organizationI
     email: "",
   })
 
+  // ✅ NUEVOS ESTADOS PARA SERVICIOS FILTRADOS
+  const [filteredServices, setFilteredServices] = useState<Service[]>([])
+  const [loadingProfessionalServices, setLoadingProfessionalServices] = useState(false)
+
   // Estados para fechas y envío
   const [submitting, setSubmitting] = useState(false)
 
   // Refs para timeouts
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
 
-  // Función para buscar clientes
-  const searchClients = useCallback(
-    async (term: string) => {
-      if (!term || term.length < 1) {
-        setClientMatches([])
-        setShowMatches(false)
+  // ✅ NUEVA FUNCIÓN: Actualizar servicios cuando cambie el profesional
+  const updateServicesForProfessional = useCallback(
+    async (professionalId: string | null) => {
+      if (!professionalId) {
+        // Si no hay profesional específico, mostrar todos los servicios
+        setFilteredServices(services)
         return
       }
 
-      setSearchingClients(true)
+      setLoadingProfessionalServices(true)
       try {
-        const matches: ClientMatch[] = []
-        const termLower = term.toLowerCase().trim()
+        const professionalServices = await getServicesByUser(professionalId)
+        setFilteredServices(professionalServices)
+      } catch (error) {
+        console.error("Error loading professional services:", error)
+        setFilteredServices([])
+      } finally {
+        setLoadingProfessionalServices(false)
+      }
+    },
+    [services, getServicesByUser],
+  )
 
-        const phoneDigits = term.replace(/\D/g, "")
-        if (phoneDigits.length >= 3) {
-          const { data: phoneMatches, error: phoneError } = await supabase
-            .from("clients")
-            .select("id, name, phone")
-            .eq("organization_id", organizationId)
-            .ilike("phone", `%${phoneDigits}%`)
-            .limit(10)
+  // ✅ EFECTO: Inicializar servicios filtrados
+  useEffect(() => {
+    if (!dataLoading && services.length > 0) {
+      if (formData.professional_id) {
+        updateServicesForProfessional(formData.professional_id)
+      } else {
+        setFilteredServices(services)
+      }
+    }
+  }, [services, dataLoading, formData.professional_id, updateServicesForProfessional])
 
-          if (!phoneError && phoneMatches) {
-            phoneMatches.forEach((client) => {
+  // Función para buscar clientes
+  const searchClients = useCallback(async (term: string) => {
+    if (!term || term.length < 1) {
+      setClientMatches([])
+      setShowMatches(false)
+      return
+    }
+
+    setSearchingClients(true)
+    try {
+      const matches: ClientMatch[] = []
+      const termLower = term.toLowerCase().trim()
+      const phoneDigits = term.replace(/\D/g, "")
+
+      if (phoneDigits.length >= 3) {
+        const { data: phoneMatches, error: phoneError } = await supabase
+          .from("clients")
+          .select("id, name, phone")
+          .eq("organization_id", organizationId)
+          .ilike("phone", `%${phoneDigits}%`)
+          .limit(10)
+
+        if (!phoneError && phoneMatches) {
+          phoneMatches.forEach((client) => {
+            matches.push({
+              id: client.id,
+              name: client.name,
+              phone: client.phone || "",
+              matchType: "phone",
+            })
+          })
+        }
+      }
+
+      if (!/^\d+$/.test(term)) {
+        const { data: nameMatches, error: nameError } = await supabase
+          .from("clients")
+          .select("id, name, phone")
+          .eq("organization_id", organizationId)
+          .ilike("name", `%${termLower}%`)
+          .limit(10)
+
+        if (!nameError && nameMatches) {
+          nameMatches.forEach((client) => {
+            if (!matches.find((m) => m.id === client.id)) {
               matches.push({
                 id: client.id,
                 name: client.name,
                 phone: client.phone || "",
-                matchType: "phone",
+                matchType: "name",
               })
-            })
-          }
+            }
+          })
         }
-
-        if (!/^\d+$/.test(term)) {
-          const { data: nameMatches, error: nameError } = await supabase
-            .from("clients")
-            .select("id, name, phone")
-            .eq("organization_id", organizationId)
-            .ilike("name", `%${termLower}%`)
-            .limit(10)
-
-          if (!nameError && nameMatches) {
-            nameMatches.forEach((client) => {
-              if (!matches.find((m) => m.id === client.id)) {
-                matches.push({
-                  id: client.id,
-                  name: client.name,
-                  phone: client.phone || "",
-                  matchType: "name",
-                })
-              }
-            })
-          }
-        }
-
-        setClientMatches(matches)
-        setShowMatches(matches.length > 0)
-      } catch (error) {
-        setClientMatches([])
-        setShowMatches(false)
-      } finally {
-        setSearchingClients(false)
       }
-    },
-    [organizationId],
-  )
+
+      setClientMatches(matches)
+      setShowMatches(matches.length > 0)
+    } catch (error) {
+      setClientMatches([])
+      setShowMatches(false)
+    } finally {
+      setSearchingClients(false)
+    }
+  }, [organizationId])
 
   // Handlers
   const selectClient = useCallback((client: ClientMatch) => {
@@ -156,7 +184,6 @@ export function AddToWaitingListModal({ isOpen, onClose, onSubmit, organizationI
     setTelefonoValidado(true)
     setShowMatches(false)
     setShowNewClientForm(false)
-
     setFormData((prev) => ({
       ...prev,
       client_id: client.id,
@@ -169,7 +196,6 @@ export function AddToWaitingListModal({ isOpen, onClose, onSubmit, organizationI
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const value = e.target.value
       setSearchTerm(value)
-
       setClienteEncontrado(null)
       setTelefonoValidado(false)
       setTelefonoFormateado("")
@@ -199,9 +225,34 @@ export function AddToWaitingListModal({ isOpen, onClose, onSubmit, organizationI
     setTimeout(() => setShowMatches(false), 200)
   }, [])
 
+  // ✅ NUEVO HANDLER: Para cambio de profesional con control de servicios
+  const handleProfessionalChange = useCallback(
+    (value: string) => {
+      const newProfessionalId = value === "any" ? null : value
+
+      setFormData((prev) => ({
+        ...prev,
+        professional_id: newProfessionalId,
+        service_id: null, // ✅ Reset servicio cuando cambie profesional
+      }))
+
+      // ✅ Actualizar servicios disponibles
+      updateServicesForProfessional(newProfessionalId)
+    },
+    [updateServicesForProfessional],
+  )
+
+  // ✅ NUEVO HANDLER: Para cambio de servicio con validación
+  const handleServiceChange = useCallback((value: string) => {
+    const serviceId = value === "none" ? null : Number.parseInt(value)
+    setFormData((prev) => ({
+      ...prev,
+      service_id: serviceId,
+    }))
+  }, [])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
     const newErrors: { [key: string]: string } = {}
 
     // Validar cliente
@@ -219,13 +270,20 @@ export function AddToWaitingListModal({ isOpen, onClose, onSubmit, organizationI
       }
     }
 
+    // ✅ NUEVA VALIDACIÓN: Verificar compatibilidad profesional-servicio
+    if (formData.professional_id && formData.service_id) {
+      const serviceExists = filteredServices.find((s) => s.id === formData.service_id)
+      if (!serviceExists) {
+        newErrors.service = "El servicio seleccionado no está disponible para este profesional"
+      }
+    }
+
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
       return
     }
 
     setSubmitting(true)
-
     try {
       let clientId = formData.client_id
 
@@ -279,6 +337,7 @@ export function AddToWaitingListModal({ isOpen, onClose, onSubmit, organizationI
     setErrors({})
     setTelefonoFormateado("")
     setTelefonoValidado(false)
+    setFilteredServices([]) // ✅ Reset servicios filtrados
     onClose()
   }
 
@@ -453,18 +512,10 @@ export function AddToWaitingListModal({ isOpen, onClose, onSubmit, organizationI
             </div>
           )}
 
-          {/* Profesional */}
+          {/* ✅ PROFESIONAL MODIFICADO */}
           <div className="space-y-2">
             <Label htmlFor="professional">Profesional</Label>
-            <Select
-              value={formData.professional_id || "any"}
-              onValueChange={(value) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  professional_id: value === "any" ? null : value,
-                }))
-              }
-            >
+            <Select value={formData.professional_id || "any"} onValueChange={handleProfessionalChange}>
               <SelectTrigger>
                 <SelectValue placeholder="Seleccionar profesional" />
               </SelectTrigger>
@@ -479,34 +530,80 @@ export function AddToWaitingListModal({ isOpen, onClose, onSubmit, organizationI
             </Select>
           </div>
 
-          {/* Servicio */}
+          {/* ✅ SERVICIO MODIFICADO CON FILTRADO */}
           <div className="space-y-2">
-            <Label htmlFor="service">Servicio</Label>
+            <Label htmlFor="service" className="flex items-center gap-2 text-sm font-medium">
+              <Briefcase className="h-4 w-4" />
+              Servicio
+              {(loadingProfessionalServices || userServicesLoading) && (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              )}
+            </Label>
+
             <Select
               value={formData.service_id?.toString() || "none"}
-              onValueChange={(value) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  service_id: value === "none" ? null : Number.parseInt(value),
-                }))
-              }
+              onValueChange={handleServiceChange}
+              disabled={loadingProfessionalServices || userServicesLoading}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Seleccionar servicio" />
+                <SelectValue
+                  placeholder={
+                    loadingProfessionalServices || userServicesLoading
+                      ? "Cargando servicios..."
+                      : formData.professional_id && filteredServices.length === 0
+                      ? "No hay servicios disponibles para este profesional"
+                      : "Seleccionar servicio"
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Sin servicio específico</SelectItem>
-                {services.map((service) => (
+                {filteredServices.map((service) => (
                   <SelectItem key={service.id} value={service.id.toString()}>
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 rounded-full" style={{ backgroundColor: service.color }} />
                       <span>{service.name}</span>
                       <span className="text-sm text-muted-foreground">({service.duration} min)</span>
+                      {service.category && (
+                        <span className="text-xs text-gray-400">• {service.category}</span>
+                      )}
                     </div>
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+
+            {/* ✅ INDICADORES DE ESTADO */}
+            {(loadingProfessionalServices || userServicesLoading) && formData.professional_id && (
+              <div className="flex items-center gap-2 text-sm text-blue-600">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Cargando servicios del profesional...
+              </div>
+            )}
+
+            {formData.professional_id &&
+              !loadingProfessionalServices &&
+              !userServicesLoading &&
+              filteredServices.length === 0 && (
+                <p className="text-sm text-amber-600">Este profesional no tiene servicios asignados</p>
+              )}
+
+            {formData.professional_id &&
+              !loadingProfessionalServices &&
+              !userServicesLoading &&
+              filteredServices.length > 0 && (
+                <p className="text-sm text-blue-600">
+                  {filteredServices.length} servicio(s) disponible(s) para este profesional
+                </p>
+              )}
+
+            {!formData.professional_id && filteredServices.length > 0 && (
+              <p className="text-sm text-gray-600">
+                Mostrando todos los servicios ({filteredServices.length} disponibles)
+              </p>
+            )}
+
+            {errors.service && <p className="text-sm text-red-600">{errors.service}</p>}
           </div>
 
           {/* Fechas Preferidas */}
@@ -591,7 +688,7 @@ export function AddToWaitingListModal({ isOpen, onClose, onSubmit, organizationI
             />
           </div>
 
-          {/* Información adicional */}
+          {/* ✅ INFORMACIÓN ADICIONAL ACTUALIZADA */}
           <div className="text-xs text-gray-500 space-y-1 bg-gray-50 p-3 rounded">
             <p className="flex items-center gap-1">
               <Search className="h-3 w-3 flex-shrink-0" />
@@ -600,7 +697,11 @@ export function AddToWaitingListModal({ isOpen, onClose, onSubmit, organizationI
             <p>• Busca por teléfono (3+ dígitos), nombre o apellido para encontrar clientes existentes</p>
             <p>• Si no encuentras el cliente, se creará automáticamente uno nuevo</p>
             <p>• Selecciona "Cualquier profesional" si el paciente no tiene preferencia</p>
+            <p>• Al seleccionar un profesional específico, solo verás sus servicios asignados</p>
             <p>• Las fechas de disponibilidad ayudan a priorizar la programación</p>
+            <p className="text-blue-600">
+              • ✅ El sistema garantiza que solo se asignen servicios compatibles con el profesional
+            </p>
           </div>
 
           {/* Botones */}
@@ -609,7 +710,11 @@ export function AddToWaitingListModal({ isOpen, onClose, onSubmit, organizationI
               Cancelar
             </Button>
             <Button type="submit" disabled={!isFormValid() || submitting}>
-              {submitting ? "Añadiendo..." : showNewClientForm ? "Crear Cliente y Añadir a Lista" : "Añadir a Lista"}
+              {submitting
+                ? "Añadiendo..."
+                : showNewClientForm
+                ? "Crear Cliente y Añadir a Lista"
+                : "Añadir a Lista"}
             </Button>
           </div>
         </form>

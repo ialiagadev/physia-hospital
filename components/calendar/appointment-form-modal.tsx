@@ -1,5 +1,4 @@
 "use client"
-
 import type React from "react"
 import { useState, useEffect, useCallback, useRef } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -10,22 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Checkbox } from "@/components/ui/checkbox"
-import {
-  Loader2,
-  Phone,
-  User,
-  CheckCircle,
-  AlertTriangle,
-  MapPin,
-  Info,
-  Briefcase,
-  Search,
-  CalendarIcon,
-  Clock,
-  ClipboardList,
-  Repeat,
-  Ban,
-} from "lucide-react"
+import { Loader2, Phone, User, CheckCircle, AlertTriangle, MapPin, Info, Briefcase, Search, CalendarIcon, Clock, ClipboardList, Repeat, Ban } from 'lucide-react'
 import { useClients } from "@/hooks/use-clients"
 import { useUsers } from "@/hooks/use-users"
 import { useUserServices } from "../services/use-user-services"
@@ -103,7 +87,7 @@ export function AppointmentFormModal({
   const { clients } = useClients(organizationId)
   const { users } = useUsers(organizationId)
   const { getServicesByUser, loading: userServicesLoading, error: userServicesError } = useUserServices(organizationId!)
-    const { consultations, loading: consultationsLoading, getAvailableConsultations } = useConsultations(organizationId)
+  const { consultations, loading: consultationsLoading, getAvailableConsultations } = useConsultations(organizationId)
   const { services, loading: servicesLoading } = useServices(organizationId)
   const { getAvailableUsers } = useVacations(organizationId)
   const { conflicts, loading: conflictsLoading, checkConflicts } = useAppointmentConflicts(organizationId)
@@ -111,7 +95,8 @@ export function AppointmentFormModal({
   // Estados simplificados
   const [availableConsultations, setAvailableConsultations] = useState<typeof consultations>([])
   const [filteredUsers, setFilteredUsers] = useState<any[]>([])
-  const [filteredServices, setFilteredServices] = useState<any[]>([]) // ✅ NUEVO: servicios filtrados por profesional
+  const [filteredServices, setFilteredServices] = useState<any[]>([]) // ✅ servicios filtrados por profesional
+  const [loadingProfessionalServices, setLoadingProfessionalServices] = useState(false) // ✅ NUEVO: loading específico
   const [searchTerm, setSearchTerm] = useState("")
   const [clientMatches, setClientMatches] = useState<ClientMatch[]>([])
   const [showMatches, setShowMatches] = useState(false)
@@ -174,8 +159,8 @@ export function AppointmentFormModal({
       service_id: citaExistente?.service_id
         ? Number(citaExistente.service_id)
         : waitingListEntry?.service_id
-          ? Number(waitingListEntry.service_id)
-          : null, // ✅ CAMBIO: no seleccionar servicio por defecto
+        ? Number(waitingListEntry.service_id)
+        : null, // ✅ Mantener servicio de lista de espera si existe
       // 🆕 CAMPOS PARA RECURRENCIA - Añadida opción "daily"
       isRecurring: citaExistente?.isRecurring || false,
       recurrenceType: citaExistente?.recurrenceType || "weekly",
@@ -213,7 +198,7 @@ export function AppointmentFormModal({
     formData.fecha,
   ])
 
-  // ✅ NUEVA FUNCIÓN: Actualizar servicios basados en el profesional seleccionado
+  // ✅ FUNCIÓN MEJORADA: Actualizar servicios basados en el profesional seleccionado
   const updateServices = useCallback(
     async (professionalId: number) => {
       if (!professionalId || professionalId === 0) {
@@ -228,29 +213,52 @@ export function AppointmentFormModal({
         return
       }
 
+      setLoadingProfessionalServices(true) // ✅ Loading específico
       try {
         const professionalServices = await getServicesByUser(professionalUuid)
         setFilteredServices(professionalServices)
       } catch (error) {
         console.error("Error fetching professional services:", error)
         setFilteredServices([])
+      } finally {
+        setLoadingProfessionalServices(false) // ✅ FINALLY agregado
       }
     },
     [users, getServicesByUser],
   )
 
-// ✅ EFECTO: Actualizar servicios cuando cambie el profesional
-useEffect(() => {
-  const professionalIdNumber = typeof formData.profesionalId === 'string' 
-    ? Number.parseInt(formData.profesionalId) 
-    : formData.profesionalId;
-    
-  if (professionalIdNumber && professionalIdNumber !== 0) {
-    updateServices(professionalIdNumber)
-  } else {
-    setFilteredServices([])
-  }
-}, [formData.profesionalId, updateServices])
+  // ✅ EFECTO MEJORADO: Actualizar servicios cuando cambie el profesional
+  useEffect(() => {
+    const professionalIdNumber =
+      typeof formData.profesionalId === "string" ? Number.parseInt(formData.profesionalId) : formData.profesionalId
+    if (professionalIdNumber && professionalIdNumber !== 0) {
+      updateServices(professionalIdNumber)
+    } else {
+      setFilteredServices([])
+    }
+  }, [formData.profesionalId, updateServices])
+
+  // ✅ VALIDACIÓN MEJORADA: Verificar compatibilidad servicio-profesional para lista de espera
+  useEffect(() => {
+    // Solo validar si viene de lista de espera y ya se cargaron los servicios del profesional
+    if (
+      waitingListEntry &&
+      formData.profesionalId &&
+      formData.service_id &&
+      filteredServices.length > 0 &&
+      !loadingProfessionalServices
+    ) {
+      const serviceExists = filteredServices.find((s) => s.id === formData.service_id)
+      if (!serviceExists) {
+        // ✅ Si el servicio no es compatible, resetear a null
+        console.warn(
+          `Servicio ${formData.service_id} no disponible para profesional ${formData.profesionalId}. Reseteando.`,
+        )
+        setFormData((prev) => ({ ...prev, service_id: null }))
+      }
+    }
+  }, [waitingListEntry, formData.profesionalId, formData.service_id, filteredServices, loadingProfessionalServices])
+
   // Verificar consultas disponibles
   const checkConsultationAvailability = useCallback(async () => {
     if (!formData.hora || !formData.duracion || consultationsLoading) {
@@ -338,7 +346,6 @@ useEffect(() => {
   // ✅ ACTUALIZAR USUARIOS FILTRADOS - SIMPLIFICADO (ya no filtra por servicio)
   const updateFilteredUsers = useCallback(async () => {
     const usersToFilter = users.filter((user) => user.type === 1) // Solo profesionales
-
     // Filtrar por vacaciones
     const availableUsers = getAvailableUsers(usersToFilter, formData.fecha)
     setFilteredUsers(availableUsers)
@@ -368,7 +375,6 @@ useEffect(() => {
         setShowMatches(false)
         return
       }
-
       setSearchingClients(true)
       try {
         const matches: ClientMatch[] = []
@@ -445,11 +451,9 @@ useEffect(() => {
     if (consultationCheckTimeoutRef.current) {
       clearTimeout(consultationCheckTimeoutRef.current)
     }
-
     consultationCheckTimeoutRef.current = setTimeout(() => {
       checkConsultationAvailability()
     }, 300)
-
     return () => {
       if (consultationCheckTimeoutRef.current) {
         clearTimeout(consultationCheckTimeoutRef.current)
@@ -489,18 +493,15 @@ useEffect(() => {
     setClienteEncontrado(client)
     setTelefonoValidado(true)
     setShowMatches(false)
-
     const nombreCompleto = client.name.split(" ")
     const nombre = nombreCompleto[0] || ""
     const apellidos = nombreCompleto.slice(1).join(" ") || ""
-
     setFormData((prev) => ({
       ...prev,
       telefonoPaciente: client.phone || "",
       nombrePaciente: nombre,
       apellidosPaciente: apellidos,
     }))
-
     setSearchTerm(`${client.name} - ${client.phone}`)
     setTelefonoFormateado(formatPhoneNumber(client.phone || ""))
   }, [])
@@ -512,11 +513,9 @@ useEffect(() => {
       setClienteEncontrado(null)
       setTelefonoValidado(false)
       setTelefonoFormateado("")
-
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current)
       }
-
       searchTimeoutRef.current = setTimeout(() => {
         searchClients(value)
       }, 300)
@@ -546,7 +545,20 @@ useEffect(() => {
     setTimeout(() => setShowMatches(false), 200)
   }, [clienteEncontrado, searchTerm])
 
-  // ✅ NUEVO HANDLER: Para cambio de servicio (ahora más simple)
+  // ✅ HANDLER MEJORADO: Para cambio de profesional con reset de servicio
+  const handleProfessionalChange = useCallback(
+    (value: string) => {
+      const newProfessionalId = Number.parseInt(value)
+      setFormData((prev) => ({
+        ...prev,
+        profesionalId: newProfessionalId,
+        service_id: null, // ✅ Reset service when professional changes
+      }))
+    },
+    [],
+  )
+
+  // ✅ HANDLER MEJORADO: Para cambio de servicio con validación
   const handleServiceChange = useCallback(
     (value: string) => {
       const selectedService = filteredServices.find((s) => s.id.toString() === value)
@@ -591,7 +603,6 @@ useEffect(() => {
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault()
-
       const newErrors: { [key: string]: string } = {}
 
       if (!formData.telefonoPaciente.trim()) {
@@ -614,6 +625,14 @@ useEffect(() => {
 
       if (!formData.profesionalId || formData.profesionalId === 0) {
         newErrors.profesional = "Debes seleccionar un profesional"
+      }
+
+      // ✅ NUEVA VALIDACIÓN: Verificar compatibilidad profesional-servicio
+      if (formData.profesionalId && formData.service_id) {
+        const serviceExists = filteredServices.find((s) => s.id === formData.service_id)
+        if (!serviceExists) {
+          newErrors.service = "El servicio seleccionado no está disponible para este profesional"
+        }
       }
 
       // 🆕 Validaciones de recurrencia
@@ -678,6 +697,7 @@ useEffect(() => {
       onClose,
       profesionalId,
       conflicts.length,
+      filteredServices, // ✅ Añadida dependencia
     ],
   )
 
@@ -754,6 +774,16 @@ useEffect(() => {
                 <div className="text-sm mt-1 text-blue-600 font-medium">
                   ✅ Al crear la cita, se eliminará automáticamente de la lista de espera.
                 </div>
+                {/* ✅ NUEVA ADVERTENCIA: Si el servicio no es compatible */}
+                {waitingListEntry.service_id &&
+                  formData.profesionalId &&
+                  filteredServices.length > 0 &&
+                  !filteredServices.find((s) => s.id === waitingListEntry.service_id) && (
+                    <div className="text-sm mt-2 text-amber-700 bg-amber-100 p-2 rounded">
+                      ⚠️ <strong>Atención:</strong> El servicio "{waitingListEntry.service_name}" no está disponible
+                      para el profesional seleccionado. Selecciona un servicio compatible.
+                    </div>
+                  )}
               </AlertDescription>
             </Alert>
           )}
@@ -773,7 +803,9 @@ useEffect(() => {
                 onFocus={() => searchTerm && searchClients(searchTerm)}
                 placeholder="Buscar por teléfono (3+ dígitos), nombre o apellido..."
                 required
-                className={`w-full ${errors.telefono ? "border-red-500" : ""} ${clienteEncontrado ? "border-green-500" : ""}`}
+                className={`w-full ${errors.telefono ? "border-red-500" : ""} ${
+                  clienteEncontrado ? "border-green-500" : ""
+                }`}
               />
               {searchingClients && (
                 <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 animate-spin text-gray-400" />
@@ -890,16 +922,7 @@ useEffect(() => {
             <Label htmlFor="profesional" className="flex items-center gap-2 text-sm font-medium">
               Profesional *
             </Label>
-            <Select
-              value={formData.profesionalId.toString()}
-              onValueChange={(value) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  profesionalId: Number.parseInt(value),
-                  service_id: null, // ✅ Reset service when professional changes
-                }))
-              }
-            >
+            <Select value={formData.profesionalId.toString()} onValueChange={handleProfessionalChange}>
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Selecciona un profesional *" />
               </SelectTrigger>
@@ -921,12 +944,13 @@ useEffect(() => {
           <div className="space-y-2">
             <Label htmlFor="service" className="flex items-center gap-2 text-sm font-medium">
               <Briefcase className="h-4 w-4" />
-              Servicio *{userServicesLoading && <Loader2 className="h-3 w-3 animate-spin" />}
+              Servicio *
+              {(loadingProfessionalServices || userServicesLoading) && <Loader2 className="h-3 w-3 animate-spin" />}
             </Label>
             <Select
               value={formData.service_id ? formData.service_id.toString() : ""}
               onValueChange={handleServiceChange}
-              disabled={!formData.profesionalId || userServicesLoading}
+              disabled={!formData.profesionalId || loadingProfessionalServices || userServicesLoading}
               required
             >
               <SelectTrigger className="w-full">
@@ -934,11 +958,11 @@ useEffect(() => {
                   placeholder={
                     !formData.profesionalId
                       ? "Primero selecciona un profesional"
-                      : userServicesLoading
-                        ? "Cargando servicios..."
-                        : filteredServices.length === 0
-                          ? "No hay servicios disponibles"
-                          : "Selecciona un servicio"
+                      : loadingProfessionalServices || userServicesLoading
+                      ? "Cargando servicios..."
+                      : filteredServices.length === 0
+                      ? "No hay servicios disponibles"
+                      : "Selecciona un servicio"
                   }
                 />
               </SelectTrigger>
@@ -961,7 +985,7 @@ useEffect(() => {
             </Select>
 
             {/* Loading indicator */}
-            {userServicesLoading && formData.profesionalId && (
+            {(loadingProfessionalServices || userServicesLoading) && formData.profesionalId && (
               <div className="flex items-center gap-2 text-sm text-blue-600">
                 <Loader2 className="h-3 w-3 animate-spin" />
                 Cargando servicios del profesional...
@@ -972,14 +996,21 @@ useEffect(() => {
             {userServicesError && <p className="text-sm text-red-600">{userServicesError}</p>}
 
             {/* Status messages */}
-            {formData.profesionalId && !userServicesLoading && filteredServices.length === 0 && (
-              <p className="text-sm text-amber-600">Este profesional no tiene servicios asignados</p>
-            )}
-            {formData.profesionalId && !userServicesLoading && filteredServices.length > 0 && (
-              <p className="text-sm text-blue-600">
-                {filteredServices.length} servicio(s) disponible(s) para este profesional
-              </p>
-            )}
+            {formData.profesionalId &&
+              !loadingProfessionalServices &&
+              !userServicesLoading &&
+              filteredServices.length === 0 && (
+                <p className="text-sm text-amber-600">Este profesional no tiene servicios asignados</p>
+              )}
+
+            {formData.profesionalId &&
+              !loadingProfessionalServices &&
+              !userServicesLoading &&
+              filteredServices.length > 0 && (
+                <p className="text-sm text-blue-600">
+                  {filteredServices.length} servicio(s) disponible(s) para este profesional
+                </p>
+              )}
 
             {errors.service && <p className="text-sm text-red-600">{errors.service}</p>}
           </div>
@@ -1083,8 +1114,8 @@ useEffect(() => {
                       {formData.recurrenceType === "daily"
                         ? "días"
                         : formData.recurrenceType === "weekly"
-                          ? "semanas"
-                          : "meses"}
+                        ? "semanas"
+                        : "meses"}
                     </Label>
                     <Select
                       value={formData.recurrenceInterval.toString()}
@@ -1102,16 +1133,16 @@ useEffect(() => {
                               </SelectItem>
                             ))
                           : formData.recurrenceType === "weekly"
-                            ? [1, 2, 3, 4].map((interval) => (
-                                <SelectItem key={interval} value={interval.toString()}>
-                                  {interval} {interval === 1 ? "semana" : "semanas"}
-                                </SelectItem>
-                              ))
-                            : [1, 2, 3, 4, 6, 8, 12].map((interval) => (
-                                <SelectItem key={interval} value={interval.toString()}>
-                                  {interval} {interval === 1 ? "mes" : "meses"}
-                                </SelectItem>
-                              ))}
+                          ? [1, 2, 3, 4].map((interval) => (
+                              <SelectItem key={interval} value={interval.toString()}>
+                                {interval} {interval === 1 ? "semana" : "semanas"}
+                              </SelectItem>
+                            ))
+                          : [1, 2, 3, 4, 6, 8, 12].map((interval) => (
+                              <SelectItem key={interval} value={interval.toString()}>
+                                {interval} {interval === 1 ? "mes" : "meses"}
+                              </SelectItem>
+                            ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -1348,6 +1379,12 @@ useEffect(() => {
             {conflicts.length > 0 && (
               <p className="text-red-600 font-medium">
                 • ⚠️ Hay conflictos de horario - debes resolverlos antes de continuar
+              </p>
+            )}
+            {/* ✅ NUEVO CONSEJO: Sobre compatibilidad de servicios */}
+            {waitingListEntry && (
+              <p className="text-blue-600">
+                • ✅ El sistema garantiza que solo se asignen servicios compatibles con el profesional
               </p>
             )}
           </div>
