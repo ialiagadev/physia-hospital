@@ -36,6 +36,7 @@ export default function InviteCallback() {
         console.log("🔄 INICIANDO PROCESAMIENTO DE INVITACIÓN")
         console.log("   - URL actual:", window.location.href)
         console.log("   - Hash:", window.location.hash)
+        console.log("   - Search:", window.location.search)
         
         setMessage("Confirmando invitación...")
 
@@ -43,51 +44,113 @@ export default function InviteCallback() {
         const urlParams = new URLSearchParams(window.location.search)
         const hashParams = new URLSearchParams(window.location.hash.substring(1))
         
-        // Intentar obtener el token de diferentes formas
-        let token = urlParams.get('token')
-        if (!token) {
-          // Si no está en query params, buscar en hash
-          token = hashParams.get('access_token')
-        }
-        
-        const type = urlParams.get('type') || hashParams.get('type')
+        const token = urlParams.get('token')
+        const type = urlParams.get('type')
+        const accessToken = hashParams.get('access_token')
+        const refreshToken = hashParams.get('refresh_token')
         
         console.log("🔑 PARÁMETROS ENCONTRADOS:")
-        console.log("   - Token:", token ? "✅ Presente" : "❌ Ausente")
+        console.log("   - Token (query):", token ? "✅ Presente" : "❌ Ausente")
         console.log("   - Type:", type)
+        console.log("   - Access Token (hash):", accessToken ? "✅ Presente" : "❌ Ausente")
+        console.log("   - Refresh Token (hash):", refreshToken ? "✅ Presente" : "❌ Ausente")
 
-        if (!token) {
-          console.error("❌ No se encontró token en la URL")
+        // Método 1: Si tenemos access_token y refresh_token en el hash
+        if (accessToken && refreshToken) {
+          console.log("🔄 Método 1: Estableciendo sesión con tokens del hash...")
+          setMessage("Estableciendo tu sesión...")
+
+          const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+          })
+
+          if (sessionError) {
+            console.error("❌ Error estableciendo sesión:", sessionError)
+            setStatus("error")
+            setMessage(`Error al procesar la invitación: ${sessionError.message}`)
+            return
+          }
+
+          const currentUser = sessionData.session?.user
+          if (currentUser) {
+            console.log("✅ Sesión establecida con tokens del hash")
+            await processUser(currentUser)
+            return
+          }
+        }
+
+        // Método 2: Si tenemos token en query params
+        if (token && type === 'invite') {
+          console.log("🔄 Método 2: Verificando token de invitación...")
+          setMessage("Verificando tu invitación...")
+
+          const { data, error } = await supabase.auth.verifyOtp({
+            token_hash: token,
+            type: 'invite'
+          })
+          if (error) {
+            console.error("❌ Error verificando invitación:", error)
+            setStatus("error")
+            setMessage("El enlace de invitación es inválido o ha expirado. Solicita una nueva invitación.")
+            return
+          }
+
+          const currentUser = data.user
+          if (currentUser) {
+            console.log("✅ Token verificado correctamente")
+            await processUser(currentUser)
+            return
+          }
+        }
+
+        // Método 3: Esperar a que Supabase procese automáticamente
+        console.log("🔄 Método 3: Esperando procesamiento automático...")
+        setMessage("Procesando automáticamente...")
+        
+        // Esperar un momento para que Supabase procese la URL
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        
+        if (sessionError) {
+          console.error("❌ Error obteniendo sesión:", sessionError)
           setStatus("error")
-          setMessage("Enlace de invitación inválido - Token faltante")
+          setMessage(`Error al procesar la invitación: ${sessionError.message}`)
           return
         }
 
-        // Verificar la invitación usando verifyOtp
-        console.log("🔄 Verificando token de invitación...")
-        setMessage("Verificando tu invitación...")
-
-        const { data, error } = await supabase.auth.verifyOtp({
-          token_hash: token,
-          type: 'invite'
-        })
-
-        if (error) {
-          console.error("❌ Error verificando invitación:", error)
-          setStatus("error")
-          setMessage(`Error al procesar la invitación: ${error.message}`)
+        if (session?.user) {
+          console.log("✅ Sesión obtenida automáticamente")
+          await processUser(session.user)
           return
         }
 
-        if (!data.session?.user) {
-          console.error("❌ No se obtuvo sesión del token")
-          setStatus("error")
-          setMessage("Error: No se pudo establecer la sesión")
+        // Método 4: Intentar refresh
+        console.log("🔄 Método 4: Intentando refresh de sesión...")
+        const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession()
+        
+        if (!refreshError && refreshData.session?.user) {
+          console.log("✅ Sesión obtenida después del refresh")
+          await processUser(refreshData.session.user)
           return
         }
 
-        const currentUser = data.session.user
-        console.log("✅ SESIÓN ESTABLECIDA:")
+        // Si llegamos aquí, no pudimos obtener la sesión
+        console.error("❌ No se pudo obtener sesión con ningún método")
+        setStatus("error")
+        setMessage("Error: El enlace de invitación es inválido o ha expirado. Solicita una nueva invitación.")
+
+      } catch (error) {
+        console.error("💥 Error en handleInviteCallback:", error)
+        setStatus("error")
+        setMessage(`Error al procesar la invitación: ${error instanceof Error ? error.message : "Error desconocido"}`)
+      }
+    }
+
+    const processUser = async (currentUser: any) => {
+      try {
+        console.log("✅ PROCESANDO USUARIO:")
         console.log("   - User ID:", currentUser.id)
         console.log("   - Email:", currentUser.email)
         console.log("   - Email confirmed:", currentUser.email_confirmed_at)
@@ -133,9 +196,9 @@ export default function InviteCallback() {
         setShowPasswordForm(true)
 
       } catch (error) {
-        console.error("💥 Error en handleInviteCallback:", error)
+        console.error("💥 Error procesando usuario:", error)
         setStatus("error")
-        setMessage(`Error al procesar la invitación: ${error instanceof Error ? error.message : "Error desconocido"}`)
+        setMessage(`Error al procesar el usuario: ${error instanceof Error ? error.message : "Error desconocido"}`)
       }
     }
 
