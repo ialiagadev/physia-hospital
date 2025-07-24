@@ -27,7 +27,7 @@ interface Client {
   id: string
   name: string
   tax_id: string
-  phone?: string // Añadir este campo
+  phone?: string
   client_type: "public" | "private"
   city: string
   email?: string
@@ -50,7 +50,6 @@ export default function ClientsPage() {
   const [loading, setLoading] = useState(true)
   const [selectedOrgId, setSelectedOrgId] = useState("all")
   const [searchTerm, setSearchTerm] = useState("")
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("")
   const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [pagination, setPagination] = useState<PaginationInfo>({
     currentPage: 1,
@@ -70,20 +69,6 @@ export default function ClientsPage() {
     clientName: "",
   })
 
-  // Debounce para la búsqueda
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm)
-    }, 500)
-
-    return () => clearTimeout(timer)
-  }, [searchTerm])
-
-  // Reset página cuando cambia la búsqueda
-  useEffect(() => {
-    setPagination((prev) => ({ ...prev, currentPage: 1 }))
-  }, [debouncedSearchTerm, selectedOrgId])
-
   // Función para resaltar texto en búsquedas
   const highlightText = (text: string | null | undefined, search: string): string => {
     if (!text || !search.trim()) {
@@ -101,7 +86,7 @@ export default function ClientsPage() {
 
   // Cargar clientes con paginación y búsqueda del servidor
   const loadClients = useCallback(
-    async (page = 1) => {
+    async (page = 1, search = "") => {
       if (authLoading) return
 
       if (!user) {
@@ -139,8 +124,8 @@ export default function ClientsPage() {
         }
 
         // Aplicar búsqueda del servidor
-        if (debouncedSearchTerm.trim()) {
-          const searchLower = debouncedSearchTerm.toLowerCase().trim()
+        if (search.trim()) {
+          const searchLower = search.toLowerCase().trim()
           query = query.or(
             `name.ilike.%${searchLower}%,tax_id.ilike.%${searchLower}%,phone.ilike.%${searchLower}%,email.ilike.%${searchLower}%,city.ilike.%${searchLower}%`,
           )
@@ -185,20 +170,31 @@ export default function ClientsPage() {
         setLoading(false)
       }
     },
-    [selectedOrgId, debouncedSearchTerm, user, userProfile, authLoading, pagination.pageSize, toast],
+    [selectedOrgId, user, userProfile, authLoading, pagination.pageSize, toast],
   )
 
-  // Efecto para cargar clientes
+  // Efecto para cargar clientes cuando cambian los filtros
   useEffect(() => {
     if (!authLoading && user) {
-      loadClients(pagination.currentPage)
+      loadClients(1, searchTerm) // Siempre empezar desde la página 1 cuando cambian los filtros
     }
-  }, [selectedOrgId, debouncedSearchTerm, user, userProfile, authLoading])
+  }, [selectedOrgId, user, userProfile, authLoading])
+
+  // Efecto para búsqueda con debounce
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!authLoading && user) {
+        loadClients(1, searchTerm) // Reiniciar a página 1 en cada búsqueda
+      }
+    }, 500) // Debounce de 500ms
+
+    return () => clearTimeout(timer)
+  }, [searchTerm, loadClients, authLoading, user])
 
   // Funciones de paginación
   const goToPage = (page: number) => {
     if (page >= 1 && page <= pagination.totalPages) {
-      loadClients(page)
+      loadClients(page, searchTerm)
     }
   }
 
@@ -215,7 +211,7 @@ export default function ClientsPage() {
   }
 
   const handleImportComplete = () => {
-    loadClients(1) // Recargar desde la primera página
+    loadClients(1, searchTerm) // Recargar desde la primera página
     setImportDialogOpen(false)
   }
 
@@ -259,7 +255,7 @@ export default function ClientsPage() {
       })
 
       // Recargar la lista de clientes
-      loadClients(pagination.currentPage)
+      loadClients(pagination.currentPage, searchTerm)
     } catch (error) {
       console.error("Error al eliminar cliente:", error)
       toast({
@@ -421,10 +417,10 @@ export default function ClientsPage() {
                   onClick={() => handleRowClick(client.id)}
                 >
                   <TableCell className="font-medium">
-                    {debouncedSearchTerm ? (
+                    {searchTerm ? (
                       <span
                         dangerouslySetInnerHTML={{
-                          __html: highlightText(client.name, debouncedSearchTerm),
+                          __html: highlightText(client.name, searchTerm),
                         }}
                       />
                     ) : (
@@ -432,10 +428,10 @@ export default function ClientsPage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    {debouncedSearchTerm ? (
+                    {searchTerm ? (
                       <span
                         dangerouslySetInnerHTML={{
-                          __html: highlightText(client.phone, debouncedSearchTerm),
+                          __html: highlightText(client.phone, searchTerm),
                         }}
                       />
                     ) : (
@@ -443,10 +439,10 @@ export default function ClientsPage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    {debouncedSearchTerm ? (
+                    {searchTerm ? (
                       <span
                         dangerouslySetInnerHTML={{
-                          __html: highlightText(client.tax_id, debouncedSearchTerm),
+                          __html: highlightText(client.tax_id, searchTerm),
                         }}
                       />
                     ) : (
@@ -454,10 +450,10 @@ export default function ClientsPage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    {debouncedSearchTerm ? (
+                    {searchTerm ? (
                       <span
                         dangerouslySetInnerHTML={{
-                          __html: highlightText(client.city, debouncedSearchTerm),
+                          __html: highlightText(client.city, searchTerm),
                         }}
                       />
                     ) : (
@@ -465,10 +461,10 @@ export default function ClientsPage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    {debouncedSearchTerm && client.email ? (
+                    {searchTerm && client.email ? (
                       <span
                         dangerouslySetInnerHTML={{
-                          __html: highlightText(client.email, debouncedSearchTerm),
+                          __html: highlightText(client.email, searchTerm),
                         }}
                       />
                     ) : (
@@ -496,13 +492,13 @@ export default function ClientsPage() {
                   </TableCell>
                 </TableRow>
               ))
-            ) : debouncedSearchTerm ? (
+            ) : searchTerm ? (
               <TableRow>
                 <TableCell colSpan={userProfile?.is_physia_admin ? 7 : 6} className="h-24 text-center">
                   <div className="text-center">
                     <Search className="h-8 w-8 text-gray-300 mx-auto mb-2" />
                     <p className="text-muted-foreground mb-2">
-                      No se encontraron clientes que coincidan con "{debouncedSearchTerm}"
+                      No se encontraron clientes que coincidan con "{searchTerm}"
                     </p>
                     <Button variant="outline" onClick={clearSearch} size="sm">
                       Limpiar búsqueda

@@ -229,10 +229,10 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
   const [expandedFields, setExpandedFields] = useState<Record<string, boolean>>({})
 
   const [clinicalStats, setClinicalStats] = useState({
+    lastVisit: null,
+    nextAppointment: null,
     totalRecords: 0,
-    activeRecords: 0,
-    lastVisit: null as string | null,
-    nextAppointment: null as string | null,
+    activeRecords: 0
   })
 
   const [formData, setFormData] = useState({
@@ -636,7 +636,50 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
       return "No especificada"
     }
   }
+          // resumen citas
 
+  useEffect(() => {
+    const loadClinicalStats = async () => {
+      if (!clientId) return
+      
+      try {
+        const today = new Date()
+        const todayString = today.toISOString().split('T')[0] // Formato YYYY-MM-DD
+        
+        // Buscar última visita (citas pasadas)
+        const { data: pastAppointments } = await supabase
+          .from('appointments')
+          .select('date, start_time, status')
+          .eq('client_id', clientId)
+          .lt('date', todayString)
+          .order('date', { ascending: false })
+          .limit(1)
+  
+        // Buscar próxima cita (citas futuras confirmadas o pendientes)
+        const { data: futureAppointments } = await supabase
+          .from('appointments')
+          .select('date, start_time, status')
+          .eq('client_id', clientId)
+          .gte('date', todayString)
+          .in('status', ['confirmed', 'pending'])
+          .order('date', { ascending: true })
+          .limit(1)
+  
+        const stats = {
+          lastVisit: pastAppointments?.[0]?.date || null,
+          nextAppointment: futureAppointments?.[0]?.date || null,
+          totalRecords: 0,
+          activeRecords: 0
+        }
+  
+        setClinicalStats(stats)
+      } catch (error) {
+        console.error('Error loading clinical stats:', error)
+      }
+    }
+  
+    loadClinicalStats()
+  }, [clientId])
   // Cargar datos del cliente y organizaciones
   useEffect(() => {
     const fetchData = async () => {
@@ -846,6 +889,10 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
       [field]: value,
     }))
   }
+  // Función para actualizar estadísticas clínicas
+const updateClinicalStats = (newStats: any) => {
+  setClinicalStats(newStats)
+}
 
   // Función para guardar historial médico
   const handleSaveMedical = async () => {
@@ -1307,37 +1354,30 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
             </Card>
 
             {/* Historial de Visitas */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Calendar className="h-5 w-5 text-purple-500" />
-                  Historial de Visitas
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label className="text-sm text-gray-500">Última visita</Label>
-                  <p className="font-medium mt-1">{formatDate(clinicalStats.lastVisit)}</p>
-                </div>
-
-                <div>
-                  <Label className="text-sm text-gray-500">Próxima cita</Label>
-                  <p className="font-medium mt-1 text-green-600">
-                    {clinicalStats.nextAppointment ? formatDate(clinicalStats.nextAppointment) : "No programada"}
-                  </p>
-                </div>
-
-                <div>
-                  <Label className="text-sm text-gray-500">Total de historias</Label>
-                  <p className="font-medium mt-1">{clinicalStats.totalRecords}</p>
-                </div>
-
-                <div>
-                  <Label className="text-sm text-gray-500">Historias activas</Label>
-                  <p className="font-medium mt-1">{clinicalStats.activeRecords}</p>
-                </div>
-              </CardContent>
-            </Card>
+           {/* Historial de Visitas */}
+<Card>
+  <CardHeader>
+    <CardTitle className="flex items-center gap-2">
+      <Calendar className="h-5 w-5 text-purple-500" />
+      Historial de Visitas
+    </CardTitle>
+  </CardHeader>
+  <CardContent className="space-y-4">
+    <div>
+      <Label className="text-sm text-gray-500">Última visita</Label>
+      <p className="font-medium mt-1">
+        {clinicalStats.lastVisit ? formatDate(clinicalStats.lastVisit) : "Sin visitas registradas"}
+      </p>
+    </div>
+    <div>
+      <Label className="text-sm text-gray-500">Próxima cita</Label>
+      <p className="font-medium mt-1 text-green-600">
+        {clinicalStats.nextAppointment ? formatDate(clinicalStats.nextAppointment) : "No programada"}
+      </p>
+    </div>
+   
+  </CardContent>
+</Card>
           </div>
 
           {/* Botones de acción para el resumen */}
