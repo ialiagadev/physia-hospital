@@ -261,7 +261,6 @@ export function WeekView({
                                   </div>
                                 )}
 
-                                <div className="text-xs text-gray-500 mt-1">{cita.tipo}</div>
                               </div>
                             </TooltipTrigger>
                             <TooltipContent>
@@ -273,9 +272,8 @@ export function WeekView({
                                   {cita.hora} - {calcularHoraFin(cita.hora, cita.duracion)} ({cita.duracion} min)
                                 </p>
                                 <p className="text-sm">{profesional?.name}</p>
-                                <p className="text-sm">{cita.tipo}</p>
                                 {cita.telefonoPaciente && <p className="text-sm">📞 {cita.telefonoPaciente}</p>}
-                                <p className="text-xs text-gray-500 mt-2">🖱️ Arrastra para mover a otro día</p>
+                                <p className="text-xs text-yellow-200 mt-2">🖱️ Arrastra para mover a otro día</p>
                               </div>
                             </TooltipContent>
                           </Tooltip>

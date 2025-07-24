@@ -959,7 +959,7 @@ export function HorarioViewDynamic({
                                       {normalizedStartTime}-{normalizedEndTime} ({cita.duracion} min)
                                     </p>
                                     {cita.telefonoPaciente && <p className="text-xs">Tel: {cita.telefonoPaciente}</p>}
-                                    <p className="text-xs">{cita.tipo}</p>
+                                    
                                   </div>
                                 </TooltipContent>
                               </Tooltip>
