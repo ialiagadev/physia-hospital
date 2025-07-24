@@ -1,22 +1,32 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Users, Plus, Trash2, Phone, Mail, AlertTriangle } from "lucide-react"
+import { Card, CardContent } from "@/components/ui/card"
+import { Users, UserPlus, Trash2, User, Phone, Mail, Calendar, Clock } from "lucide-react"
+import { format } from "date-fns"
+import { es } from "date-fns/locale"
 import { AddParticipantModal } from "./add-participant-modal"
-// ✅ CAMBIAR IMPORTACIÓN - Usar el contexto en lugar del hook
+import { supabase } from "@/lib/supabase/client"
+import { useAuth } from "@/app/contexts/auth-context"
 import type { GroupActivity } from "@/app/contexts/group-activities-context"
+
+interface Participant {
+  id: string
+  client_id: number
+  status: "registered" | "attended" | "no_show" | "cancelled"
+  notes?: string | null
+  registration_date: string
+  client: {
+    id: number
+    name: string
+    phone?: string | null
+    email?: string | null
+  }
+}
 
 interface ParticipantsModalProps {
   isOpen: boolean
@@ -34,161 +44,240 @@ interface ParticipantsModalProps {
 export function ParticipantsModal({
   isOpen,
   onClose,
-  activity: initialActivity,
+  activity,
   onAddParticipant,
   onRemoveParticipant,
   onUpdateParticipantStatus,
   organizationId,
 }: ParticipantsModalProps) {
-  // ✅ SIMPLIFICADO - Solo estado local mínimo
-  const [currentActivity, setCurrentActivity] = useState<GroupActivity>(initialActivity)
-  const [loading, setLoading] = useState(false)
-  const [showAddParticipantModal, setShowAddParticipantModal] = useState(false)
-  const [participantToDelete, setParticipantToDelete] = useState<string | null>(null)
+  const { user, userProfile } = useAuth()
+  const [participants, setParticipants] = useState<Participant[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [updatingStatus, setUpdatingStatus] = useState<string | null>(null)
+  const [removingParticipant, setRemovingParticipant] = useState<string | null>(null)
 
-  // Actualizar cuando cambie la actividad externa
+  // Cargar participantes
+  const loadParticipants = async () => {
+    if (!activity?.id || !user || !userProfile) return
+
+    setLoading(true)
+    try {
+      console.log("Loading participants for activity:", activity.id)
+
+      const { data, error } = await supabase
+        .from("group_activity_participants")
+        .select(`
+          id,
+          client_id,
+          status,
+          notes,
+          registration_date,
+          clients!inner (
+            id,
+            name,
+            phone,
+            email
+          )
+        `)
+        .eq("group_activity_id", activity.id)
+        .order("registration_date", { ascending: true })
+
+      if (error) {
+        console.error("Error loading participants:", error)
+        return
+      }
+
+      console.log("Raw participants data:", data)
+
+      // Transformar los datos para que coincidan con la interfaz Participant
+      const transformedData: Participant[] = (data || []).map((item: any) => ({
+        id: item.id,
+        client_id: item.client_id,
+        status: item.status,
+        notes: item.notes,
+        registration_date: item.registration_date,
+        client: {
+          id: item.clients.id,
+          name: item.clients.name,
+          phone: item.clients.phone,
+          email: item.clients.email,
+        },
+      }))
+
+      console.log("Transformed participants data:", transformedData)
+      setParticipants(transformedData)
+    } catch (error) {
+      console.error("Error loading participants:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
-    setCurrentActivity(initialActivity)
-  }, [initialActivity])
+    if (isOpen && activity?.id) {
+      loadParticipants()
+    }
+  }, [isOpen, activity?.id, user, userProfile])
 
   const handleAddParticipant = async (clientId: number, notes?: string) => {
     try {
-      setLoading(true)
-      await onAddParticipant(currentActivity.id, clientId, notes)
-      setShowAddParticipantModal(false)
-      // ✅ NO actualizar estado local - se actualiza desde el padre
+      await onAddParticipant(activity.id, clientId, notes)
+      await loadParticipants() // Recargar participantes
+      setShowAddModal(false)
     } catch (error) {
       console.error("Error adding participant:", error)
       throw error
-    } finally {
-      setLoading(false)
     }
   }
 
   const handleRemoveParticipant = async (participantId: string) => {
+    setRemovingParticipant(participantId)
     try {
-      setLoading(true)
       await onRemoveParticipant(participantId)
-      setParticipantToDelete(null)
-      // ✅ NO actualizar estado local - se actualiza desde el padre
+      await loadParticipants() // Recargar participantes
     } catch (error) {
       console.error("Error removing participant:", error)
     } finally {
-      setLoading(false)
+      setRemovingParticipant(null)
     }
   }
 
-  const handleUpdateStatus = async (
+  const handleStatusChange = async (
     participantId: string,
     status: "registered" | "attended" | "no_show" | "cancelled",
   ) => {
+    setUpdatingStatus(participantId)
     try {
-      setLoading(true)
       await onUpdateParticipantStatus(participantId, status)
-      // ✅ NO actualizar estado local - se actualiza desde el padre
+      await loadParticipants() // Recargar participantes
     } catch (error) {
       console.error("Error updating participant status:", error)
     } finally {
-      setLoading(false)
+      setUpdatingStatus(null)
     }
   }
 
   const getStatusBadge = (status: string) => {
     const statusConfig = {
-      registered: { label: "Registrado", variant: "outline" as const },
-      attended: { label: "Asistió", variant: "default" as const },
-      no_show: { label: "No asistió", variant: "destructive" as const },
-      cancelled: { label: "Cancelado", variant: "secondary" as const },
+      registered: { label: "Registrado", variant: "default" as const, color: "bg-blue-100 text-blue-800" },
+      attended: { label: "Asistió", variant: "default" as const, color: "bg-green-100 text-green-800" },
+      no_show: { label: "No asistió", variant: "destructive" as const, color: "bg-red-100 text-red-800" },
+      cancelled: { label: "Cancelado", variant: "secondary" as const, color: "bg-gray-100 text-gray-800" },
     }
 
     const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.registered
-    return <Badge variant={config.variant}>{config.label}</Badge>
+    return (
+      <Badge variant={config.variant} className={config.color}>
+        {config.label}
+      </Badge>
+    )
   }
 
-  const canAddMoreParticipants = currentActivity.current_participants < currentActivity.max_participants
-  const currentParticipantIds = currentActivity.participants?.map((p) => p.client_id) || []
+  const getStatistics = () => {
+    const stats = {
+      registered: participants.filter((p) => p.status === "registered").length,
+      attended: participants.filter((p) => p.status === "attended").length,
+      no_show: participants.filter((p) => p.status === "no_show").length,
+      cancelled: participants.filter((p) => p.status === "cancelled").length,
+    }
+    return stats
+  }
+
+  const stats = getStatistics()
+  const currentParticipantIds = participants.map((p) => p.client_id)
+
+  if (!user || !userProfile) {
+    return null
+  }
 
   return (
     <>
-      <Dialog open={isOpen && !showAddParticipantModal} onOpenChange={onClose}>
-        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Users className="h-5 w-5" />
-              Participantes - {currentActivity.name}
+              Participantes - {activity.name}
             </DialogTitle>
-            <DialogDescription>
-              Gestiona los participantes de esta actividad grupal ({currentActivity.current_participants}/
-              {currentActivity.max_participants})
-            </DialogDescription>
+            <p className="text-sm text-gray-600">
+              Gestiona los participantes de esta actividad grupal ({participants.length}/{activity.max_participants})
+            </p>
           </DialogHeader>
 
           <div className="space-y-6">
-            {/* Botón para añadir participante */}
-            <div className="flex justify-between items-center">
+            {/* Header con botón añadir */}
+            <div className="flex items-center justify-between">
               <h3 className="text-lg font-medium">Lista de Participantes</h3>
               <Button
-                onClick={() => setShowAddParticipantModal(true)}
-                disabled={!canAddMoreParticipants || loading}
-                className="flex items-center gap-2"
+                onClick={() => setShowAddModal(true)}
+                disabled={participants.length >= activity.max_participants}
+                className="bg-blue-600 hover:bg-blue-700"
               >
-                <Plus className="h-4 w-4" />
+                <UserPlus className="h-4 w-4 mr-2" />
                 Añadir Participante
               </Button>
             </div>
 
-            {!canAddMoreParticipants && (
-              <Card className="border-orange-200 bg-orange-50">
-                <CardContent className="pt-6">
-                  <p className="text-sm text-orange-800 text-center">
-                    La actividad ha alcanzado el máximo de participantes ({currentActivity.max_participants})
-                  </p>
-                </CardContent>
-              </Card>
-            )}
+            {/* Lista de participantes */}
+            <div className="space-y-4">
+              <h4 className="font-medium">Participantes Actuales ({participants.length})</h4>
 
-            {/* Lista de participantes actuales */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm">
-                  Participantes Actuales ({currentActivity.participants?.length || 0})
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {!currentActivity.participants || currentActivity.participants.length === 0 ? (
-                  <p className="text-sm text-gray-500 text-center py-8">No hay participantes registrados</p>
-                ) : (
-                  <div className="space-y-3">
-                    {currentActivity.participants.map((participant) => (
-                      <div key={participant.id} className="flex items-center justify-between p-3 border rounded-lg">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3">
-                            <div>
-                              <p className="text-sm font-medium">{participant.client?.name}</p>
-                              <div className="flex items-center gap-4 text-xs text-gray-500">
-                                {participant.client?.phone && (
-                                  <span className="flex items-center gap-1">
-                                    <Phone className="h-3 w-3" />
-                                    {participant.client.phone}
-                                  </span>
-                                )}
-                                {participant.client?.email && (
-                                  <span className="flex items-center gap-1">
-                                    <Mail className="h-3 w-3" />
-                                    {participant.client.email}
-                                  </span>
-                                )}
+              {loading ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+              ) : participants.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <Users className="h-12 w-12 mx-auto mb-2 text-gray-400" />
+                  <p>No hay participantes registrados</p>
+                  <p className="text-sm">Añade el primer participante para comenzar</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {participants.map((participant) => (
+                    <Card key={participant.id} className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3 flex-1">
+                          <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                            <User className="h-5 w-5 text-blue-600" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-gray-900">{participant.client.name}</div>
+                            <div className="flex items-center gap-4 text-sm text-gray-500">
+                              {participant.client.phone && (
+                                <div className="flex items-center gap-1">
+                                  <Phone className="h-3 w-3" />
+                                  {participant.client.phone}
+                                </div>
+                              )}
+                              {participant.client.email && (
+                                <div className="flex items-center gap-1">
+                                  <Mail className="h-3 w-3" />
+                                  {participant.client.email}
+                                </div>
+                              )}
+                            </div>
+                            {participant.notes && (
+                              <div className="text-sm text-gray-600 mt-1">
+                                <strong>Notas:</strong> {participant.notes}
                               </div>
+                            )}
+                            <div className="text-xs text-gray-400 mt-1">
+                              Registrado:{" "}
+                              {format(new Date(participant.registration_date), "dd/MM/yyyy HH:mm", { locale: es })}
                             </div>
                           </div>
-                          {participant.notes && <p className="text-xs text-gray-600 mt-1">{participant.notes}</p>}
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-3">
+                          {/* Selector de estado */}
                           <Select
                             value={participant.status}
-                            onValueChange={(value) => handleUpdateStatus(participant.id, value as any)}
-                            disabled={loading}
+                            onValueChange={(value: "registered" | "attended" | "no_show" | "cancelled") =>
+                              handleStatusChange(participant.id, value)
+                            }
+                            disabled={updatingStatus === participant.id}
                           >
                             <SelectTrigger className="w-32">
                               <SelectValue />
@@ -201,105 +290,92 @@ export function ParticipantsModal({
                             </SelectContent>
                           </Select>
 
-                          {/* ✅ CONFIRMACIÓN MEJORADA - Más clara */}
-                          {participantToDelete === participant.id ? (
-                            <div className="flex items-center gap-1 bg-red-50 p-1 rounded border border-red-200">
-                              <AlertTriangle className="h-3 w-3 text-red-600" />
-                              <span className="text-xs text-red-700 font-medium">¿Eliminar?</span>
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                onClick={() => handleRemoveParticipant(participant.id)}
-                                disabled={loading}
-                                className="h-6 px-2 text-xs"
-                              >
-                                Sí
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setParticipantToDelete(null)}
-                                disabled={loading}
-                                className="h-6 px-2 text-xs"
-                              >
-                                No
-                              </Button>
-                            </div>
-                          ) : (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setParticipantToDelete(participant.id)}
-                              disabled={loading}
-                              className="text-red-600 hover:text-red-700 hover:bg-red-50 h-8 px-2"
-                            >
+                          {/* Botón eliminar */}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRemoveParticipant(participant.id)}
+                            disabled={removingParticipant === participant.id}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          >
+                            {removingParticipant === participant.id ? (
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600" />
+                            ) : (
                               <Trash2 className="h-4 w-4" />
-                            </Button>
-                          )}
+                            )}
+                          </Button>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* Estadísticas */}
-            {currentActivity.participants && currentActivity.participants.length > 0 && (
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">Estadísticas</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-                    <div>
-                      <p className="text-2xl font-bold text-blue-600">
-                        {currentActivity.participants.filter((p) => p.status === "registered").length}
-                      </p>
-                      <p className="text-xs text-gray-600">Registrados</p>
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold text-green-600">
-                        {currentActivity.participants.filter((p) => p.status === "attended").length}
-                      </p>
-                      <p className="text-xs text-gray-600">Asistieron</p>
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold text-red-600">
-                        {currentActivity.participants.filter((p) => p.status === "no_show").length}
-                      </p>
-                      <p className="text-xs text-gray-600">No asistieron</p>
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold text-gray-600">
-                        {currentActivity.participants.filter((p) => p.status === "cancelled").length}
-                      </p>
-                      <p className="text-xs text-gray-600">Cancelados</p>
-                    </div>
+            <div className="space-y-4">
+              <h4 className="font-medium">Estadísticas</h4>
+              <div className="grid grid-cols-4 gap-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-blue-600">{stats.registered}</div>
+                  <div className="text-sm text-gray-600">Registrados</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-600">{stats.attended}</div>
+                  <div className="text-sm text-gray-600">Asistieron</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-red-600">{stats.no_show}</div>
+                  <div className="text-sm text-gray-600">No asistieron</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-gray-600">{stats.cancelled}</div>
+                  <div className="text-sm text-gray-600">Cancelados</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Información de la actividad */}
+            <Card className="bg-gray-50">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-4 text-sm text-gray-600">
+                  <div className="flex items-center gap-1">
+                    <Calendar className="h-4 w-4" />
+                    {format(new Date(activity.date), "dd/MM/yyyy", { locale: es })}
                   </div>
-                </CardContent>
-              </Card>
-            )}
+                  <div className="flex items-center gap-1">
+                    <Clock className="h-4 w-4" />
+                    {activity.start_time} - {activity.end_time}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Users className="h-4 w-4" />
+                    Capacidad: {activity.max_participants} participantes
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
-          <DialogFooter>
+          <div className="flex justify-end pt-4">
             <Button variant="outline" onClick={onClose}>
               Cerrar
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 
       {/* Modal para añadir participante */}
-      <AddParticipantModal
-        isOpen={showAddParticipantModal}
-        onClose={() => setShowAddParticipantModal(false)}
-        onAddParticipant={handleAddParticipant}
-        organizationId={organizationId}
-        currentParticipants={currentParticipantIds}
-        maxParticipants={currentActivity.max_participants}
-        activityName={currentActivity.name}
-      />
+      {showAddModal && (
+        <AddParticipantModal
+          isOpen={showAddModal}
+          onClose={() => setShowAddModal(false)}
+          onAddParticipant={handleAddParticipant}
+          organizationId={organizationId}
+          currentParticipants={currentParticipantIds}
+          maxParticipants={activity.max_participants}
+          activityName={activity.name}
+        />
+      )}
     </>
   )
 }

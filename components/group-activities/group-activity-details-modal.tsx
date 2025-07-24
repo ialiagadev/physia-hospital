@@ -139,11 +139,23 @@ export function GroupActivityDetailsModal({
         consultation_id: formData.consultation_id || undefined,
         max_participants: formData.max_participants,
         color: formData.color,
+        service_id: formData.service_id || undefined,
       }
 
       await onUpdate(currentActivity.id, updates)
+
+      // Encontrar el profesional actualizado
+      const updatedProfessional = users.find((u) => u.id === formData.professional_id)
+
+      // Actualizar el estado local con los nuevos datos
+      setCurrentActivity((prev) => ({
+        ...prev,
+        ...updates,
+        date: formData.date instanceof Date ? format(formData.date, "yyyy-MM-dd") : formData.date,
+        professional: updatedProfessional || prev.professional,
+      }))
+
       setShowEditModal(false)
-      handleClose()
     } catch (error) {
       console.error("Error updating activity:", error)
       throw error

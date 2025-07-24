@@ -24,7 +24,7 @@ import { useServices } from "@/hooks/use-services"
 import { useVacations } from "@/hooks/use-vacations"
 import { useWorkSchedules } from "@/hooks/use-work-schedules"
 import { useAuth } from "@/app/contexts/auth-context"
-import { supabase } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase/client"
 import { WaitingListView } from "../waiting-list/waiting-list-view"
 import type {
   IntervaloTiempo,
@@ -72,38 +72,56 @@ const mapStatusToEstado = (status: string): EstadoCita => {
   return mapping[status as keyof typeof mapping] || "confirmada"
 }
 
-// 🚀 SERVICIO SIMPLE PARA OPERACIONES DE CLIENTES BAJO DEMANDA
+// 🚀 SERVICIO SIMPLE PARA OPERACIONES DE CLIENTES - CON AUTENTICACIÓN
 const ClientService = {
   async findOrCreateClient(organizationId: number, clientData: { name: string; phone?: string }) {
     try {
-      // 1. Buscar cliente existente por teléfono primero
-      if (clientData.phone) {
-        const { data: existingByPhone } = await supabase
-          .from("clients")
-          .select("*")
-          .eq("organization_id", organizationId)
-          .eq("phone", clientData.phone)
-          .single()
+      // Obtener la sesión actual para asegurar autenticación
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      if (!session) {
+        throw new Error("No hay sesión activa")
+      }
 
-        if (existingByPhone) {
-          return existingByPhone
+      // 1. Buscar cliente existente por teléfono primero (más específico)
+      if (clientData.phone) {
+        try {
+          const { data: existingByPhone, error: phoneError } = await supabase
+            .from("clients")
+            .select("*")
+            .eq("organization_id", organizationId)
+            .eq("phone", clientData.phone)
+            .maybeSingle()
+
+          if (!phoneError && existingByPhone) {
+            return existingByPhone
+          }
+        } catch (error) {
+          // Continuar con la búsqueda por nombre si no se encuentra por teléfono
+          console.log("Cliente no encontrado por teléfono, buscando por nombre...")
         }
       }
 
-      // 2. Buscar por nombre exacto
-      const { data: existingByName } = await supabase
-        .from("clients")
-        .select("*")
-        .eq("organization_id", organizationId)
-        .ilike("name", clientData.name.trim())
-        .single()
+      // 2. Buscar por nombre exacto (case insensitive)
+      try {
+        const { data: existingByName, error: nameError } = await supabase
+          .from("clients")
+          .select("*")
+          .eq("organization_id", organizationId)
+          .ilike("name", clientData.name.trim())
+          .maybeSingle()
 
-      if (existingByName) {
-        return existingByName
+        if (!nameError && existingByName) {
+          return existingByName
+        }
+      } catch (error) {
+        // Continuar con la creación si no se encuentra por nombre
+        console.log("Cliente no encontrado por nombre, creando nuevo...")
       }
 
       // 3. Crear nuevo cliente
-      const { data: newClient, error } = await supabase
+      const { data: newClient, error: createError } = await supabase
         .from("clients")
         .insert({
           name: clientData.name.trim(),
@@ -113,21 +131,38 @@ const ClientService = {
         .select()
         .single()
 
-      if (error) {
-        // Si es error de duplicado, intentar buscar de nuevo
-        if (error.code === "23505" && clientData.phone) {
-          const { data: duplicateClient } = await supabase
+      if (createError) {
+        // Si es error de duplicado por teléfono, intentar buscar de nuevo
+        if (createError.code === "23505" && clientData.phone) {
+          console.log("Error de duplicado, reintentando búsqueda por teléfono...")
+          const { data: duplicateClient, error: retryError } = await supabase
             .from("clients")
             .select("*")
             .eq("organization_id", organizationId)
             .eq("phone", clientData.phone)
-            .single()
+            .maybeSingle()
 
-          if (duplicateClient) {
+          if (!retryError && duplicateClient) {
             return duplicateClient
           }
         }
-        throw error
+
+        // Si es error de duplicado por nombre, intentar buscar de nuevo
+        if (createError.code === "23505") {
+          console.log("Error de duplicado, reintentando búsqueda por nombre...")
+          const { data: duplicateClient, error: retryError } = await supabase
+            .from("clients")
+            .select("*")
+            .eq("organization_id", organizationId)
+            .ilike("name", clientData.name.trim())
+            .maybeSingle()
+
+          if (!retryError && duplicateClient) {
+            return duplicateClient
+          }
+        }
+
+        throw createError
       }
 
       return newClient
@@ -389,7 +424,7 @@ const MedicalCalendarSystem: React.FC = () => {
     }
   }
 
-  // 🚀 HANDLER OPTIMIZADO PARA CREAR CITAS - USANDO SERVICIO SIMPLE
+  // 🚀 HANDLER OPTIMIZADO PARA CREAR CITAS - CON MEJOR MANEJO DE ERRORES
   const handleAddAppointment = async (appointmentData: any) => {
     try {
       if (!currentUser || !organizationId) {
@@ -403,14 +438,20 @@ const MedicalCalendarSystem: React.FC = () => {
       if (appointmentData.clienteEncontrado) {
         clientId = appointmentData.clienteEncontrado.id
       } else {
-        // 🚀 USAR EL SERVICIO SIMPLE
+        // 🚀 USAR EL SERVICIO SIMPLE CON MEJOR MANEJO DE ERRORES
         const clientData = {
           name: `${appointmentData.nombrePaciente} ${appointmentData.apellidosPaciente || ""}`.trim(),
           phone: appointmentData.telefonoPaciente,
         }
 
-        const client = await ClientService.findOrCreateClient(organizationId, clientData)
-        clientId = client.id
+        try {
+          const client = await ClientService.findOrCreateClient(organizationId, clientData)
+          clientId = client.id
+        } catch (clientError) {
+          console.error("Error al gestionar cliente:", clientError)
+          toast.error("Error al crear o encontrar el cliente")
+          return
+        }
       }
 
       // Determinar el profesional
@@ -425,7 +466,14 @@ const MedicalCalendarSystem: React.FC = () => {
         }
       }
 
-      const appointmentTypeId = await getDefaultAppointmentType(professionalUuid)
+      let appointmentTypeId: string
+      try {
+        appointmentTypeId = await getDefaultAppointmentType(professionalUuid)
+      } catch (typeError) {
+        console.error("Error al obtener tipo de cita:", typeError)
+        toast.error("Error al configurar el tipo de cita")
+        return
+      }
 
       let consultationId = null
       if (appointmentData.consultationId && appointmentData.consultationId !== "none") {
@@ -462,7 +510,12 @@ const MedicalCalendarSystem: React.FC = () => {
 
       // Si viene de lista de espera, eliminarla después de crear la cita
       if (waitingListEntry?.id) {
-        await removeFromWaitingList(waitingListEntry.id)
+        try {
+          await removeFromWaitingList(waitingListEntry.id)
+        } catch (waitingError) {
+          console.error("Error al eliminar de lista de espera:", waitingError)
+          // No mostrar error al usuario, la cita ya se creó correctamente
+        }
       }
 
       toast.success("Cita creada correctamente")

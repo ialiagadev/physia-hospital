@@ -70,9 +70,14 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
   const [expandedSeries, setExpandedSeries] = useState<Set<string>>(new Set())
   const [deletingSeries, setDeletingSeries] = useState<string | null>(null)
 
-  // Estados para el modal de confirmación de eliminación
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  // Estados para el modal de confirmación de eliminación de series
+  const [showDeleteSeriesConfirm, setShowDeleteSeriesConfirm] = useState(false)
   const [seriesToDelete, setSeriesToDelete] = useState<ActivitySeries | null>(null)
+
+  // Estados para el modal de confirmación de eliminación individual
+  const [showDeleteSingleConfirm, setShowDeleteSingleConfirm] = useState(false)
+  const [activityToDelete, setActivityToDelete] = useState<GroupActivity | null>(null)
+  const [deletingSingle, setDeletingSingle] = useState<string | null>(null)
 
   // ✅ FUNCIÓN PARA DETECTAR PATRONES DE RECURRENCIA
   const detectRecurrencePattern = (activities: GroupActivity[]): "weekly" | "monthly" | null => {
@@ -221,17 +226,17 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
     }
   }
 
-  // ✅ FUNCIÓN PARA MOSTRAR CONFIRMACIÓN DE ELIMINACIÓN
+  // ✅ FUNCIÓN PARA MOSTRAR CONFIRMACIÓN DE ELIMINACIÓN DE SERIE
   const handleDeleteSeriesClick = (series: ActivitySeries) => {
     setSeriesToDelete(series)
-    setShowDeleteConfirm(true)
+    setShowDeleteSeriesConfirm(true)
   }
 
   // ✅ FUNCIÓN PARA ELIMINAR TODA UNA SERIE DE ACTIVIDADES
   const handleConfirmDeleteSeries = async () => {
     if (!seriesToDelete) return
 
-    setShowDeleteConfirm(false)
+    setShowDeleteSeriesConfirm(false)
     setDeletingSeries(seriesToDelete.id)
 
     try {
@@ -269,8 +274,45 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
   }
 
   const handleCancelDeleteSeries = () => {
-    setShowDeleteConfirm(false)
+    setShowDeleteSeriesConfirm(false)
     setSeriesToDelete(null)
+  }
+
+  // ✅ NUEVAS FUNCIONES PARA ELIMINACIÓN INDIVIDUAL CON MODAL
+  const handleDeleteSingleActivityClick = (activity: GroupActivity) => {
+    setActivityToDelete(activity)
+    setShowDeleteSingleConfirm(true)
+  }
+
+  const handleConfirmDeleteSingle = async () => {
+    if (!activityToDelete) return
+
+    setShowDeleteSingleConfirm(false)
+    setDeletingSingle(activityToDelete.id)
+
+    try {
+      await deleteActivity(activityToDelete.id)
+      toast({
+        title: "Actividad eliminada",
+        description: `La actividad "${activityToDelete.name}" se eliminó exitosamente.`,
+        variant: "default",
+      })
+    } catch (error) {
+      console.error("Error eliminando la actividad:", error)
+      toast({
+        title: "Error al eliminar",
+        description: "No se pudo eliminar la actividad. Por favor, inténtalo de nuevo.",
+        variant: "destructive",
+      })
+    } finally {
+      setDeletingSingle(null)
+      setActivityToDelete(null)
+    }
+  }
+
+  const handleCancelDeleteSingle = () => {
+    setShowDeleteSingleConfirm(false)
+    setActivityToDelete(null)
   }
 
   const getStatusBadge = (status: string) => {
@@ -372,7 +414,7 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
             const isExpanded = expandedSeries.has(series.id)
             const firstActivity = series.activities[0]
             const participationStatus = getParticipationStatus(firstActivity)
-            const isDeleting = deletingSeries === series.id
+            const isDeleting = deletingSeries === series.id || deletingSingle === firstActivity.id
 
             return (
               <div key={series.id} className="border rounded-lg overflow-hidden">
@@ -480,6 +522,25 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
                       >
                         <Edit className="h-4 w-4" />
                       </Button>
+
+                      {/* Botón eliminar individual para actividades no recurrentes */}
+                      {!series.isRecurringSeries && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteSingleActivityClick(firstActivity)}
+                          className="h-8 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          title="Eliminar actividad"
+                          disabled={isDeleting}
+                        >
+                          {deletingSingle === firstActivity.id ? (
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </Button>
+                      )}
+
                       {/* Botón para eliminar toda la serie (solo para series recurrentes) */}
                       {series.isRecurringSeries && (
                         <Button
@@ -490,7 +551,7 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
                           title={`Eliminar todas las ${series.activities.length} sesiones`}
                           disabled={isDeleting}
                         >
-                          {isDeleting ? (
+                          {deletingSeries === series.id ? (
                             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600" />
                           ) : (
                             <Trash2 className="h-4 w-4" />
@@ -582,8 +643,8 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
         </div>
       )}
 
-      {/* Modal de confirmación de eliminación */}
-      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+      {/* Modal de confirmación de eliminación de serie */}
+      <AlertDialog open={showDeleteSeriesConfirm} onOpenChange={setShowDeleteSeriesConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
@@ -608,6 +669,36 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
               className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
             >
               Eliminar {seriesToDelete?.activities.length} sesiones
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Modal de confirmación de eliminación individual */}
+      <AlertDialog open={showDeleteSingleConfirm} onOpenChange={setShowDeleteSingleConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+              Eliminar actividad
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>
+                ¿Estás seguro de que quieres eliminar la actividad{" "}
+                <span className="font-semibold">"{activityToDelete?.name}"</span>?
+              </p>
+              <p className="text-sm text-gray-600">
+                Esta acción no se puede deshacer. Todos los participantes y datos asociados se perderán permanentemente.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleCancelDeleteSingle}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDeleteSingle}
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+            >
+              Eliminar actividad
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

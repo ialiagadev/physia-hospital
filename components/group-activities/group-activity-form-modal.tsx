@@ -85,6 +85,7 @@ export function GroupActivityFormModal({
   const [filteredServices, setFilteredServices] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [recurrenceEnabled, setRecurrenceEnabled] = useState(false)
+  const [validationErrors, setValidationErrors] = useState<string[]>([])
   const isEditing = !!activity
 
   // Hook para detectar conflictos
@@ -141,6 +142,7 @@ export function GroupActivityFormModal({
       })
       setRecurrenceEnabled(false)
     }
+    setValidationErrors([])
   }, [activity])
 
   // ✅ MEMOIZAR LA FUNCIÓN DE ACTUALIZACIÓN DE SERVICIOS
@@ -195,31 +197,38 @@ export function GroupActivityFormModal({
     activity?.id,
   ])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    // Validaciones
+  // Función de validación
+  const validateForm = () => {
+    const errors: string[] = []
+
     if (!formData.name.trim()) {
-      toast.error("El nombre de la actividad es obligatorio")
-      return
+      errors.push("El nombre de la actividad es obligatorio")
     }
     if (!formData.professional_id) {
-      toast.error("Debe seleccionar un profesional")
-      return
+      errors.push("Debe seleccionar un profesional")
     }
     if (!formData.service_id) {
-      toast.error("Debe seleccionar un servicio")
-      return
+      errors.push("Debe seleccionar un servicio")
     }
     if (formData.start_time >= formData.end_time) {
-      toast.error("La hora de fin debe ser posterior a la hora de inicio")
-      return
+      errors.push("La hora de fin debe ser posterior a la hora de inicio")
     }
     if (formData.max_participants < 1) {
-      toast.error("El número máximo de participantes debe ser al menos 1")
-      return
+      errors.push("El número máximo de participantes debe ser al menos 1")
     }
     if (conflicts.length > 0) {
-      toast.error("Hay conflictos de horario. Por favor, revise las citas existentes.")
+      errors.push("Hay conflictos de horario. Por favor, revise las citas existentes.")
+    }
+
+    setValidationErrors(errors)
+    return errors.length === 0
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    // Validar formulario
+    if (!validateForm()) {
       return
     }
 
@@ -254,6 +263,10 @@ export function GroupActivityFormModal({
       }
       return newData
     })
+    // Limpiar errores de validación cuando el usuario hace cambios
+    if (validationErrors.length > 0) {
+      setValidationErrors([])
+    }
   }
 
   const handleRecurrenceChange = (config: any) => {
@@ -265,6 +278,14 @@ export function GroupActivityFormModal({
 
   const resetToDefaultColor = () => {
     setFormData((prev) => ({ ...prev, color: "#3B82F6" }))
+  }
+
+  // Limpiar errores cuando el usuario hace cambios en los campos
+  const handleFieldChange = (field: string, value: any) => {
+    setFormData((prev) => ({ ...prev, [field]: value }))
+    if (validationErrors.length > 0) {
+      setValidationErrors([])
+    }
   }
 
   return (
@@ -280,15 +301,35 @@ export function GroupActivityFormModal({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Mostrar errores de validación */}
+          {validationErrors.length > 0 && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                <div className="space-y-1">
+                  <p className="font-medium">Por favor, corrija los siguientes errores:</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    {validationErrors.map((error, index) => (
+                      <li key={index} className="text-sm">
+                        {error}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
           {/* Nombre de la actividad */}
           <div className="space-y-2">
             <Label htmlFor="name">Nombre de la actividad *</Label>
             <Input
               id="name"
               value={formData.name}
-              onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+              onChange={(e) => handleFieldChange("name", e.target.value)}
               placeholder="Ej: Terapia grupal de ansiedad"
               required
+              className={validationErrors.some((e) => e.includes("nombre")) ? "border-red-500" : ""}
             />
           </div>
 
@@ -297,15 +338,18 @@ export function GroupActivityFormModal({
             <Label>Profesional responsable *</Label>
             <Select
               value={formData.professional_id}
-              onValueChange={(value) =>
+              onValueChange={(value) => {
+                handleFieldChange("professional_id", value)
                 setFormData((prev) => ({
                   ...prev,
                   professional_id: value,
                   service_id: "", // Reset service when professional changes
                 }))
-              }
+              }}
             >
-              <SelectTrigger>
+              <SelectTrigger
+                className={validationErrors.some((e) => e.includes("profesional")) ? "border-red-500" : ""}
+              >
                 <SelectValue placeholder="Seleccionar profesional">
                   {formData.professional_id ? getSelectedProfessionalName() : "Seleccionar profesional"}
                 </SelectValue>
@@ -325,10 +369,10 @@ export function GroupActivityFormModal({
             <Label htmlFor="service">Servicio *</Label>
             <Select
               value={formData.service_id}
-              onValueChange={(value) => setFormData((prev) => ({ ...prev, service_id: value }))}
+              onValueChange={(value) => handleFieldChange("service_id", value)}
               disabled={!formData.professional_id || userServicesLoading}
             >
-              <SelectTrigger>
+              <SelectTrigger className={validationErrors.some((e) => e.includes("servicio")) ? "border-red-500" : ""}>
                 <SelectValue
                   placeholder={
                     !formData.professional_id
@@ -385,7 +429,7 @@ export function GroupActivityFormModal({
             <Textarea
               id="description"
               value={formData.description}
-              onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
+              onChange={(e) => handleFieldChange("description", e.target.value)}
               placeholder="Describe la actividad y sus objetivos..."
               rows={3}
             />
@@ -398,7 +442,7 @@ export function GroupActivityFormModal({
               id="date"
               type="date"
               value={formData.date}
-              onChange={(e) => setFormData((prev) => ({ ...prev, date: e.target.value }))}
+              onChange={(e) => handleFieldChange("date", e.target.value)}
               min={new Date().toISOString().split("T")[0]}
               required
             />
@@ -415,7 +459,7 @@ export function GroupActivityFormModal({
                   type="time"
                   value={formData.start_time}
                   onChange={(e) => handleTimeChange("start_time", e.target.value)}
-                  className="pl-10"
+                  className={`pl-10 ${validationErrors.some((e) => e.includes("hora")) ? "border-red-500" : ""}`}
                   required
                 />
               </div>
@@ -429,7 +473,7 @@ export function GroupActivityFormModal({
                   type="time"
                   value={formData.end_time}
                   onChange={(e) => handleTimeChange("end_time", e.target.value)}
-                  className="pl-10"
+                  className={`pl-10 ${validationErrors.some((e) => e.includes("hora")) ? "border-red-500" : ""}`}
                   required
                 />
               </div>
@@ -479,7 +523,7 @@ export function GroupActivityFormModal({
             <Label>Consulta (opcional)</Label>
             <Select
               value={formData.consultation_id}
-              onValueChange={(value) => setFormData((prev) => ({ ...prev, consultation_id: value }))}
+              onValueChange={(value) => handleFieldChange("consultation_id", value)}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Seleccionar consulta" />
@@ -506,10 +550,8 @@ export function GroupActivityFormModal({
                 min="1"
                 max="50"
                 value={formData.max_participants}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, max_participants: Number.parseInt(e.target.value) || 1 }))
-                }
-                className="pl-10"
+                onChange={(e) => handleFieldChange("max_participants", Number.parseInt(e.target.value) || 1)}
+                className={`pl-10 ${validationErrors.some((e) => e.includes("participantes")) ? "border-red-500" : ""}`}
                 required
               />
             </div>
@@ -526,7 +568,7 @@ export function GroupActivityFormModal({
                 <Input
                   type="color"
                   value={formData.color}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, color: e.target.value }))}
+                  onChange={(e) => handleFieldChange("color", e.target.value)}
                   className="w-12 h-10 p-1 border rounded cursor-pointer"
                   title="Seleccionar color personalizado"
                 />
@@ -564,7 +606,7 @@ export function GroupActivityFormModal({
                     )}
                     style={{ backgroundColor: option.value }}
                     title={option.label}
-                    onClick={() => setFormData((prev) => ({ ...prev, color: option.value }))}
+                    onClick={() => handleFieldChange("color", option.value)}
                   />
                 ))}
               </div>
@@ -588,7 +630,7 @@ export function GroupActivityFormModal({
             <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={loading || conflictsLoading || conflicts.length > 0}>
+            <Button type="submit" disabled={loading || conflictsLoading}>
               {loading ? (
                 <>
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>

@@ -9,7 +9,17 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Search, User, Clock, CalendarIcon as CalendarIconLucide, Phone, CheckCircle, AlertTriangle, Loader2, Briefcase } from 'lucide-react'
+import {
+  Search,
+  User,
+  Clock,
+  CalendarIcon as CalendarIconLucide,
+  Phone,
+  CheckCircle,
+  AlertTriangle,
+  Loader2,
+  Briefcase,
+} from "lucide-react"
 import { format } from "date-fns"
 import { useWaitingListData } from "@/hooks/use-waiting-list-data"
 import { useUserServices } from "../services/use-user-services"
@@ -113,70 +123,73 @@ export function AddToWaitingListModal({ isOpen, onClose, onSubmit, organizationI
   }, [services, dataLoading, formData.professional_id, updateServicesForProfessional])
 
   // Función para buscar clientes
-  const searchClients = useCallback(async (term: string) => {
-    if (!term || term.length < 1) {
-      setClientMatches([])
-      setShowMatches(false)
-      return
-    }
-
-    setSearchingClients(true)
-    try {
-      const matches: ClientMatch[] = []
-      const termLower = term.toLowerCase().trim()
-      const phoneDigits = term.replace(/\D/g, "")
-
-      if (phoneDigits.length >= 3) {
-        const { data: phoneMatches, error: phoneError } = await supabase
-          .from("clients")
-          .select("id, name, phone")
-          .eq("organization_id", organizationId)
-          .ilike("phone", `%${phoneDigits}%`)
-          .limit(10)
-
-        if (!phoneError && phoneMatches) {
-          phoneMatches.forEach((client) => {
-            matches.push({
-              id: client.id,
-              name: client.name,
-              phone: client.phone || "",
-              matchType: "phone",
-            })
-          })
-        }
+  const searchClients = useCallback(
+    async (term: string) => {
+      if (!term || term.length < 1) {
+        setClientMatches([])
+        setShowMatches(false)
+        return
       }
 
-      if (!/^\d+$/.test(term)) {
-        const { data: nameMatches, error: nameError } = await supabase
-          .from("clients")
-          .select("id, name, phone")
-          .eq("organization_id", organizationId)
-          .ilike("name", `%${termLower}%`)
-          .limit(10)
+      setSearchingClients(true)
+      try {
+        const matches: ClientMatch[] = []
+        const termLower = term.toLowerCase().trim()
+        const phoneDigits = term.replace(/\D/g, "")
 
-        if (!nameError && nameMatches) {
-          nameMatches.forEach((client) => {
-            if (!matches.find((m) => m.id === client.id)) {
+        if (phoneDigits.length >= 3) {
+          const { data: phoneMatches, error: phoneError } = await supabase
+            .from("clients")
+            .select("id, name, phone")
+            .eq("organization_id", organizationId)
+            .ilike("phone", `%${phoneDigits}%`)
+            .limit(10)
+
+          if (!phoneError && phoneMatches) {
+            phoneMatches.forEach((client) => {
               matches.push({
                 id: client.id,
                 name: client.name,
                 phone: client.phone || "",
-                matchType: "name",
+                matchType: "phone",
               })
-            }
-          })
+            })
+          }
         }
-      }
 
-      setClientMatches(matches)
-      setShowMatches(matches.length > 0)
-    } catch (error) {
-      setClientMatches([])
-      setShowMatches(false)
-    } finally {
-      setSearchingClients(false)
-    }
-  }, [organizationId])
+        if (!/^\d+$/.test(term)) {
+          const { data: nameMatches, error: nameError } = await supabase
+            .from("clients")
+            .select("id, name, phone")
+            .eq("organization_id", organizationId)
+            .ilike("name", `%${termLower}%`)
+            .limit(10)
+
+          if (!nameError && nameMatches) {
+            nameMatches.forEach((client) => {
+              if (!matches.find((m) => m.id === client.id)) {
+                matches.push({
+                  id: client.id,
+                  name: client.name,
+                  phone: client.phone || "",
+                  matchType: "name",
+                })
+              }
+            })
+          }
+        }
+
+        setClientMatches(matches)
+        setShowMatches(matches.length > 0)
+      } catch (error) {
+        setClientMatches([])
+        setShowMatches(false)
+      } finally {
+        setSearchingClients(false)
+      }
+    },
+    [organizationId],
+  )
 
   // Handlers
   const selectClient = useCallback((client: ClientMatch) => {
@@ -211,11 +224,12 @@ export function AddToWaitingListModal({ isOpen, onClose, onSubmit, organizationI
       searchTimeoutRef.current = setTimeout(async () => {
         await searchClients(value)
         // Mostrar formulario de cliente nuevo si no hay coincidencias y hay texto
-        if (value.trim() && clientMatches.length === 0) {
-          setShowNewClientForm(true)
-        } else {
-          setShowNewClientForm(false)
-        }
+        // Eliminar estas líneas:
+        // if (value.trim() && clientMatches.length === 0) {
+        //   setShowNewClientForm(true)
+        // } else {
+        //   setShowNewClientForm(false)
+        // }
       }, 300)
     },
     [searchClients, clientMatches.length],
@@ -430,6 +444,29 @@ export function AddToWaitingListModal({ isOpen, onClose, onSubmit, organizationI
             {telefonoFormateado && <p className="text-sm text-gray-600">Formato: {telefonoFormateado}</p>}
           </div>
 
+          {/* Botón para crear cliente nuevo manualmente */}
+          {!clienteEncontrado && !showNewClientForm && searchTerm.trim() && (
+            <div className="flex justify-center">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setShowNewClientForm(true)
+                  setNewClientData((prev) => ({
+                    ...prev,
+                    name: searchTerm.trim(),
+                    phone: searchTerm.replace(/\D/g, "").length >= 3 ? searchTerm.trim() : "",
+                  }))
+                }}
+                className="flex items-center gap-2 text-blue-600 border-blue-300 hover:bg-blue-50"
+              >
+                <User className="h-4 w-4" />
+                Crear nuevo cliente: "{searchTerm.trim()}"
+              </Button>
+            </div>
+          )}
+
           {/* Información del cliente encontrado */}
           {clienteEncontrado && (
             <Alert className="border-green-200 bg-green-50">
@@ -457,10 +494,24 @@ export function AddToWaitingListModal({ isOpen, onClose, onSubmit, organizationI
               </Alert>
 
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-4">
-                <h4 className="font-medium text-blue-900 flex items-center gap-2">
-                  <User className="h-4 w-4" />
-                  Crear nuevo cliente
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="font-medium text-blue-900 flex items-center gap-2">
+                    <User className="h-4 w-4" />
+                    Crear nuevo cliente
+                  </h4>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setShowNewClientForm(false)
+                      setNewClientData({ name: "", phone: "", email: "" })
+                    }}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    Cancelar
+                  </Button>
+                </div>
 
                 {/* Nombre completo */}
                 <div className="space-y-2">
@@ -535,9 +586,7 @@ export function AddToWaitingListModal({ isOpen, onClose, onSubmit, organizationI
             <Label htmlFor="service" className="flex items-center gap-2 text-sm font-medium">
               <Briefcase className="h-4 w-4" />
               Servicio
-              {(loadingProfessionalServices || userServicesLoading) && (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              )}
+              {(loadingProfessionalServices || userServicesLoading) && <Loader2 className="h-3 w-3 animate-spin" />}
             </Label>
 
             <Select
@@ -551,8 +600,8 @@ export function AddToWaitingListModal({ isOpen, onClose, onSubmit, organizationI
                     loadingProfessionalServices || userServicesLoading
                       ? "Cargando servicios..."
                       : formData.professional_id && filteredServices.length === 0
-                      ? "No hay servicios disponibles para este profesional"
-                      : "Seleccionar servicio"
+                        ? "No hay servicios disponibles para este profesional"
+                        : "Seleccionar servicio"
                   }
                 />
               </SelectTrigger>
@@ -564,9 +613,7 @@ export function AddToWaitingListModal({ isOpen, onClose, onSubmit, organizationI
                       <div className="w-3 h-3 rounded-full" style={{ backgroundColor: service.color }} />
                       <span>{service.name}</span>
                       <span className="text-sm text-muted-foreground">({service.duration} min)</span>
-                      {service.category && (
-                        <span className="text-xs text-gray-400">• {service.category}</span>
-                      )}
+                      {service.category && <span className="text-xs text-gray-400">• {service.category}</span>}
                     </div>
                   </SelectItem>
                 ))}
@@ -710,11 +757,7 @@ export function AddToWaitingListModal({ isOpen, onClose, onSubmit, organizationI
               Cancelar
             </Button>
             <Button type="submit" disabled={!isFormValid() || submitting}>
-              {submitting
-                ? "Añadiendo..."
-                : showNewClientForm
-                ? "Crear Cliente y Añadir a Lista"
-                : "Añadir a Lista"}
+              {submitting ? "Añadiendo..." : showNewClientForm ? "Crear Cliente y Añadir a Lista" : "Añadir a Lista"}
             </Button>
           </div>
         </form>
