@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -26,18 +26,19 @@ interface ServicesViewProps {
 }
 
 export function ServicesView({ organizationId, onRefreshServices }: ServicesViewProps) {
-  const { services, loading, error, deleteService } = useServices(organizationId)
+  const { services, loading, error, deleteService, refetch } = useServices(organizationId)
   const { toast } = useToast()
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingService, setEditingService] = useState<Service | null>(null)
   const [deletingServiceId, setDeletingServiceId] = useState<number | null>(null)
   const [serviceToDelete, setServiceToDelete] = useState<Service | null>(null)
 
-  const handleDeleteClick = (service: Service) => {
+  // Usar useCallback para evitar recrear funciones en cada render
+  const handleDeleteClick = useCallback((service: Service) => {
     setServiceToDelete(service)
-  }
+  }, [])
 
-  const handleConfirmDelete = async () => {
+  const handleConfirmDelete = useCallback(async () => {
     if (!serviceToDelete) return
 
     setDeletingServiceId(serviceToDelete.id)
@@ -48,6 +49,9 @@ export function ServicesView({ organizationId, onRefreshServices }: ServicesView
         description: `El servicio "${serviceToDelete.name}" ha sido eliminado correctamente.`,
         variant: "default",
       })
+
+      // Refrescar datos localmente y en el componente padre
+      await refetch()
       onRefreshServices?.()
     } catch (error) {
       console.error("Error deleting service:", error)
@@ -60,29 +64,62 @@ export function ServicesView({ organizationId, onRefreshServices }: ServicesView
       setDeletingServiceId(null)
       setServiceToDelete(null)
     }
-  }
+  }, [serviceToDelete, deleteService, toast, refetch, onRefreshServices])
 
-  const handleCancelDelete = () => {
+  const handleCancelDelete = useCallback(() => {
     setServiceToDelete(null)
-  }
+    setDeletingServiceId(null)
+  }, [])
 
-  const formatPrice = (price: number) => {
+  const handleCreateSuccess = useCallback(async () => {
+    setShowCreateModal(false)
+    try {
+      await refetch()
+      onRefreshServices?.()
+    } catch (error) {
+      console.error("Error refreshing services:", error)
+    }
+  }, [refetch, onRefreshServices])
+
+  const handleEditSuccess = useCallback(async () => {
+    setEditingService(null)
+    try {
+      await refetch()
+      onRefreshServices?.()
+    } catch (error) {
+      console.error("Error refreshing services:", error)
+    }
+  }, [refetch, onRefreshServices])
+
+  const handleEditClick = useCallback((service: Service) => {
+    setEditingService(service)
+  }, [])
+
+  const handleCloseCreateModal = useCallback(() => {
+    setShowCreateModal(false)
+  }, [])
+
+  const handleCloseEditModal = useCallback(() => {
+    setEditingService(null)
+  }, [])
+
+  const formatPrice = useCallback((price: number) => {
     return (
       new Intl.NumberFormat("es-ES", {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       }).format(price) + " €"
     )
-  }
+  }, [])
 
-  const formatDuration = (duration: number) => {
+  const formatDuration = useCallback((duration: number) => {
     if (duration >= 60) {
       const hours = Math.floor(duration / 60)
       const minutes = duration % 60
       return minutes > 0 ? `${hours}h ${minutes}min` : `${hours}h`
     }
     return `${duration}min`
-  }
+  }, [])
 
   if (loading) {
     return (
@@ -99,6 +136,9 @@ export function ServicesView({ organizationId, onRefreshServices }: ServicesView
         <div className="text-center">
           <p className="text-red-600 mb-2">Error al cargar servicios</p>
           <p className="text-sm text-gray-500">{error}</p>
+          <Button onClick={() => refetch()} className="mt-2">
+            Reintentar
+          </Button>
         </div>
       </div>
     )
@@ -149,7 +189,7 @@ export function ServicesView({ organizationId, onRefreshServices }: ServicesView
                     </div>
                   </div>
                   <div className="flex gap-1 flex-shrink-0 ml-2">
-                    <Button variant="ghost" size="sm" onClick={() => setEditingService(service)}>
+                    <Button variant="ghost" size="sm" onClick={() => handleEditClick(service)}>
                       <Edit className="h-4 w-4" />
                     </Button>
                     <Button
@@ -207,7 +247,7 @@ export function ServicesView({ organizationId, onRefreshServices }: ServicesView
       )}
 
       {/* Modal de confirmación para eliminar */}
-      <AlertDialog open={!!serviceToDelete} onOpenChange={() => setServiceToDelete(null)}>
+      <AlertDialog open={!!serviceToDelete} onOpenChange={(open) => !open && handleCancelDelete()}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <div className="flex items-center gap-2">
@@ -223,7 +263,9 @@ export function ServicesView({ organizationId, onRefreshServices }: ServicesView
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={handleCancelDelete}>Cancelar</AlertDialogCancel>
+            <AlertDialogCancel onClick={handleCancelDelete} disabled={!!deletingServiceId}>
+              Cancelar
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleConfirmDelete}
               className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
@@ -249,11 +291,8 @@ export function ServicesView({ organizationId, onRefreshServices }: ServicesView
       {showCreateModal && (
         <ServiceFormModal
           organizationId={organizationId}
-          onClose={() => setShowCreateModal(false)}
-          onSuccess={() => {
-            setShowCreateModal(false)
-            onRefreshServices?.()
-          }}
+          onClose={handleCloseCreateModal}
+          onSuccess={handleCreateSuccess}
         />
       )}
 
@@ -262,11 +301,8 @@ export function ServicesView({ organizationId, onRefreshServices }: ServicesView
         <ServiceFormModal
           organizationId={organizationId}
           service={editingService}
-          onClose={() => setEditingService(null)}
-          onSuccess={() => {
-            setEditingService(null)
-            onRefreshServices?.()
-          }}
+          onClose={handleCloseEditModal}
+          onSuccess={handleEditSuccess}
         />
       )}
     </div>

@@ -17,8 +17,12 @@ export function ServiceFormModal({ organizationId, service, onClose, onSuccess }
     onClose()
   }
 
+  const handleClose = () => {
+    onClose()
+  }
+
   return (
-    <Dialog open={true} onOpenChange={onClose}>
+    <Dialog open={true} onOpenChange={(open) => !open && handleClose()}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{service ? "Editar Servicio" : "Nuevo Servicio"}</DialogTitle>
@@ -27,7 +31,12 @@ export function ServiceFormModal({ organizationId, service, onClose, onSuccess }
           </DialogDescription>
         </DialogHeader>
 
-        <ServiceForm organizationId={organizationId} service={service} onSuccess={handleSuccess} onCancel={onClose} />
+        <ServiceForm
+          organizationId={organizationId}
+          service={service}
+          onSuccess={handleSuccess}
+          onCancel={handleClose}
+        />
       </DialogContent>
     </Dialog>
   )
