@@ -59,6 +59,9 @@ export function useExpenses(filters?: ExpenseFilters) {
       if (filters?.max_amount) {
         query = query.lte("amount", filters.max_amount)
       }
+      if (filters?.is_deductible && filters.is_deductible !== "all") {
+        query = query.eq("is_deductible", filters.is_deductible === "true")
+      }
       if (filters?.search && filters.search.trim() !== "") {
         query = query.or(
           `description.ilike.%${filters.search}%,supplier_name.ilike.%${filters.search}%,notes.ilike.%${filters.search}%`,

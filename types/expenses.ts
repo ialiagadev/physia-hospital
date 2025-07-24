@@ -60,6 +60,7 @@ export interface ExpenseFilters {
   min_amount?: number
   max_amount?: number
   search?: string
+  is_deductible?: string // "true", "false", o undefined para todos
 }
 
 export interface ExpenseStats {

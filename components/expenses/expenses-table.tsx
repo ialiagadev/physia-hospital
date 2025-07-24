@@ -217,7 +217,7 @@ export function ExpensesTable() {
 
       {/* Advanced Filters */}
       {showFilters && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
           <div>
             <label className="text-sm font-medium mb-2 block">Usuario</label>
             <Select value={filters.user_id || "all"} onValueChange={(value) => handleFilterChange("user_id", value)}>
@@ -231,6 +231,23 @@ export function ExpensesTable() {
                     {user.name}
                   </SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium mb-2 block">Deducible</label>
+            <Select
+              value={filters.is_deductible || "all"}
+              onValueChange={(value) => handleFilterChange("is_deductible", value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Todos" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="true">Deducible</SelectItem>
+                <SelectItem value="false">No deducible</SelectItem>
               </SelectContent>
             </Select>
           </div>
