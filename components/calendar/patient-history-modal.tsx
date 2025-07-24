@@ -24,6 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible"
 import { supabase } from "@/lib/supabase/client"
 import { toast } from "sonner"
+import { useAuth } from "@/app/contexts/auth-context"
 import type { Client } from "@/types/calendar"
 
 interface PatientFollowUp {
@@ -62,6 +63,7 @@ export function PatientHistoryModal({ client, isOpen, onClose, isEmbedded = fals
   const [followUps, setFollowUps] = useState<PatientFollowUp[]>([])
   const [medicalHistories, setMedicalHistories] = useState<MedicalHistory[]>([])
   const [loading, setLoading] = useState(false)
+  const { userProfile } = useAuth()
 
   // Voice recording states
   const [isRecording, setIsRecording] = useState(false)
@@ -308,11 +310,11 @@ export function PatientHistoryModal({ client, isOpen, onClose, isEmbedded = fals
       const { error } = await supabase.from("patient_follow_ups").insert({
         client_id: client.id,
         organization_id: client.organization_id,
-        follow_up_date: new Date().toISOString().split("T")[0],
+        follow_up_date: new Date().toISOString(),
         follow_up_type: followUpType,
         description: description.trim(),
         recommendations: recommendations.trim() || null,
-        professional_name: "Dr. Usuario",
+        professional_name: userProfile?.name || "Usuario",
         is_active: true,
       })
 
@@ -617,7 +619,6 @@ export function PatientHistoryModal({ client, isOpen, onClose, isEmbedded = fals
                                 {format(new Date(history.created_at), "d MMM", { locale: es })}
                               </Badge>
                               <div className="flex items-center gap-2">
-                               
                                 {expandedHistories.has(history.id) ? (
                                   <ChevronUp className="h-4 w-4 text-purple-600" />
                                 ) : (

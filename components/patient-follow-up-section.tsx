@@ -7,7 +7,21 @@ import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
-import { Activity, Calendar, Check, Edit, Plus, Save, Trash2, X, TrendingUp, Clock, User, FileText } from "lucide-react"
+import {
+  Activity,
+  Calendar,
+  Check,
+  Edit,
+  Plus,
+  Save,
+  Trash2,
+  X,
+  TrendingUp,
+  Clock,
+  User,
+  FileText,
+  Megaphone,
+} from "lucide-react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import {
@@ -34,6 +48,7 @@ export function PatientFollowUpSection({ clientId, clientName }: PatientFollowUp
   const [isEditing, setIsEditing] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<number | null>(null)
   const { toast } = useToast()
   const { userProfile } = useAuth()
 
@@ -203,10 +218,6 @@ export function PatientFollowUpSection({ clientId, clientName }: PatientFollowUp
   }
 
   const handleDeleteFollowUp = async (id: number) => {
-    if (!confirm("¿Estás seguro de que quieres eliminar este seguimiento?")) {
-      return
-    }
-
     setIsSaving(true)
     try {
       const { error } = await deletePatientFollowUp(id)
@@ -235,6 +246,7 @@ export function PatientFollowUpSection({ clientId, clientName }: PatientFollowUp
       })
     } finally {
       setIsSaving(false)
+      setShowDeleteConfirm(null)
     }
   }
 
@@ -277,6 +289,21 @@ export function PatientFollowUpSection({ clientId, clientName }: PatientFollowUp
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Seguimiento del Paciente</h2>
           <p className="text-gray-500 mt-1">{clientName}</p>
+          {/* Aviso sobre seguimiento por voz */}
+          <div className="mt-2 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                <Megaphone className="w-4 h-4 text-blue-600" />
+                <span className="text-sm font-medium text-blue-800">SEGUIMIENTO POR VOZ</span>
+                <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs font-medium rounded-full">
+                  Próximamente
+                </span>
+              </div>
+            </div>
+            <p className="text-xs text-blue-600 mt-1">
+              Ya disponible desde el calendario: haz click en cualquier cita → "Nuevo seguimiento"
+            </p>
+          </div>
         </div>
         <Button
           onClick={() => setIsEditing(!isEditing)}
@@ -488,6 +515,26 @@ export function PatientFollowUpSection({ clientId, clientName }: PatientFollowUp
                           <X className="w-4 h-4" />
                         </Button>
                       </>
+                    ) : showDeleteConfirm === followUp.id ? (
+                      <>
+                        <Button
+                          size="sm"
+                          onClick={() => handleDeleteFollowUp(followUp.id)}
+                          disabled={isSaving}
+                          className="h-8 bg-red-600 hover:bg-red-700 text-white"
+                        >
+                          {isSaving ? "Eliminando..." : "Confirmar"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setShowDeleteConfirm(null)}
+                          className="h-8"
+                          disabled={isSaving}
+                        >
+                          Cancelar
+                        </Button>
+                      </>
                     ) : (
                       <>
                         <Button
@@ -502,7 +549,7 @@ export function PatientFollowUpSection({ clientId, clientName }: PatientFollowUp
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => handleDeleteFollowUp(followUp.id)}
+                          onClick={() => setShowDeleteConfirm(followUp.id)}
                           className="h-8 text-red-600 hover:text-red-700 hover:bg-red-50"
                           disabled={isSaving}
                         >
