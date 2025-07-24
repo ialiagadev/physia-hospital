@@ -61,6 +61,7 @@ export interface CardSession {
 
 export interface CardFormData {
   organization_id: number
+  professional_id?: number | null
   client_id: number | null
   template_id: number | null
   business_name: string

@@ -1,14 +1,17 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { Plus, Search, Filter } from "lucide-react"
+import { Plus, Search, Filter, Edit } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { OrganizationSelector } from "@/components/organization-selector"
 import { useToast } from "@/hooks/use-toast"
 import { PhysiaCard } from "@/components/loyalty-card/physia-card"
+import { NewCardModal } from "@/components/loyalty-card/new-card-modal"
 import { LoyaltyCardService } from "@/lib/loyalty-card-service"
 import type { LoyaltyCard } from "@/types/loyalty-cards"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -19,7 +22,9 @@ export default function LoyaltyCardsPage() {
   const [loading, setLoading] = useState(true)
   const [selectedOrgId, setSelectedOrgId] = useState("all")
   const [searchTerm, setSearchTerm] = useState("")
-  const [statusFilter, setStatusFilter] = useState("all")
+  const [statusFilter, setStatusFilter] = useState("active") // Por defecto solo activas
+  const [editingCard, setEditingCard] = useState<LoyaltyCard | null>(null)
+  const [showEditModal, setShowEditModal] = useState(false)
   const { toast } = useToast()
 
   // Cargar tarjetas
@@ -137,6 +142,27 @@ export default function LoyaltyCardsPage() {
     }
   }
 
+  // Función para abrir el modal de edición
+  const handleEditCard = (card: LoyaltyCard, e: React.MouseEvent) => {
+    e.preventDefault() // Prevenir navegación del Link
+    e.stopPropagation()
+    setEditingCard(card)
+    setShowEditModal(true)
+  }
+
+  // Función para recargar las tarjetas después de una actualización
+  const handleCardUpdated = async () => {
+    try {
+      const orgId = selectedOrgId !== "all" ? Number.parseInt(selectedOrgId) : undefined
+      const loadedCards = await LoyaltyCardService.getCards(orgId)
+      setCards(loadedCards)
+      setShowEditModal(false)
+      setEditingCard(null)
+    } catch (error) {
+      console.error("Error al recargar tarjetas:", error)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -175,11 +201,8 @@ export default function LoyaltyCardsPage() {
               </div>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todos los estados</SelectItem>
+              <SelectItem value="all">Todas</SelectItem>
               <SelectItem value="active">Activas</SelectItem>
-              <SelectItem value="completed">Completadas</SelectItem>
-              <SelectItem value="redeemed">Canjeadas</SelectItem>
-              <SelectItem value="expired">Expiradas</SelectItem>
               <SelectItem value="cancelled">Canceladas</SelectItem>
             </SelectContent>
           </Select>
@@ -195,16 +218,28 @@ export default function LoyaltyCardsPage() {
       ) : filteredCards.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredCards.map((card) => (
-            <Link key={card.id} href={`/dashboard/loyalty-cards/${card.id}`} className="block">
-              <PhysiaCard
-                card={card}
-                customerName={card.clients?.name || "Cliente"}
-                customerID={card.clients?.tax_id || ""}
-                onAddSession={handleAddSession}
-                onRedeemReward={handleRedeemReward}
-                readOnly={card.status === "redeemed" || card.status === "expired" || card.status === "cancelled"}
-              />
-            </Link>
+            <div key={card.id} className="relative group">
+              <Link href={`/dashboard/loyalty-cards/${card.id}`} className="block">
+                <PhysiaCard
+                  card={card}
+                  customerName={card.clients?.name || "Cliente"}
+                  customerID={card.clients?.tax_id || ""}
+                  onAddSession={handleAddSession}
+                  onRedeemReward={handleRedeemReward}
+                  readOnly={card.status === "redeemed" || card.status === "expired" || card.status === "cancelled"}
+                />
+              </Link>
+
+              {/* Botón de edición flotante */}
+              <Button
+                variant="secondary"
+                size="sm"
+                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-md"
+                onClick={(e) => handleEditCard(card, e)}
+              >
+                <Edit className="h-4 w-4" />
+              </Button>
+            </div>
           ))}
         </div>
       ) : (
@@ -219,6 +254,18 @@ export default function LoyaltyCardsPage() {
             </Button>
           </CardContent>
         </Card>
+      )}
+
+      {/* Modal de edición de tarjeta */}
+      {showEditModal && editingCard && (
+        <NewCardModal
+          open={showEditModal}
+          onOpenChange={setShowEditModal}
+          clientId={editingCard.client_id.toString()}
+          organizationId={editingCard.organization_id.toString()}
+          onCardCreated={handleCardUpdated}
+          editingCard={editingCard} // Pasamos la tarjeta a editar
+        />
       )}
     </div>
   )

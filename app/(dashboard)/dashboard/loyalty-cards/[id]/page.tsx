@@ -283,14 +283,12 @@ export default function LoyaltyCardDetailPage({ params }: { params: { id: string
             Volver a Tarjetas
           </Button>
           {card.client_id && (
-            <Button 
-              variant="outline" 
-              onClick={() => router.push(`/dashboard/clients/${card.client_id}`)}
-            >
+            <Button variant="outline" onClick={() => router.push(`/dashboard/clients/${card.client_id}`)}>
               Ver Cliente
             </Button>
           )}
-          {isCardUsable ? null : (
+          {/* Mostrar botón de cancelar solo si la tarjeta NO está cancelada ni canjeada */}
+          {card.status !== "cancelled" && card.status !== "redeemed" && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive">Cancelar Tarjeta</Button>
@@ -345,15 +343,12 @@ export default function LoyaltyCardDetailPage({ params }: { params: { id: string
                   <TableHeader>
                     <TableRow>
                       <TableHead>Fecha</TableHead>
-                      <TableHead>Profesional</TableHead>
-                      <TableHead>Notas</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {sessions.map((session) => (
                       <TableRow key={session.id}>
                         <TableCell>{new Date(session.session_date).toLocaleDateString()}</TableCell>
-                        <TableCell>{session.professionals?.name || "-"}</TableCell>
                         <TableCell>{session.notes || "-"}</TableCell>
                       </TableRow>
                     ))}
@@ -375,10 +370,6 @@ export default function LoyaltyCardDetailPage({ params }: { params: { id: string
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <h3 className="text-sm font-medium text-muted-foreground">ID de Tarjeta</h3>
-                  <p>{card.id}</p>
-                </div>
-                <div>
                   <h3 className="text-sm font-medium text-muted-foreground">Fecha de Creación</h3>
                   <p>{new Date(card.created_at).toLocaleDateString()}</p>
                 </div>
@@ -389,10 +380,6 @@ export default function LoyaltyCardDetailPage({ params }: { params: { id: string
                 <div>
                   <h3 className="text-sm font-medium text-muted-foreground">Cliente</h3>
                   <p>{client?.name || card.clients?.name || "-"}</p>
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium text-muted-foreground">Profesional</h3>
-                  <p>{card.professionals?.name || "-"}</p>
                 </div>
                 <div>
                   <h3 className="text-sm font-medium text-muted-foreground">Estado</h3>
