@@ -117,7 +117,7 @@ export default function NewInvoicePage() {
   const [existingInvoices, setExistingInvoices] = useState<OriginalInvoice[]>([])
 
   const [selectedOrganization, setSelectedOrganization] = useState<Organization | null>(null)
-  const [isNewClient, setIsNewClient] = useState(true)
+  const [isNewClient, setIsNewClient] = useState(false)
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [serviceDialogOpen, setServiceDialogOpen] = useState(false)
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null)
@@ -1353,11 +1353,18 @@ export default function NewInvoicePage() {
               <CardTitle>Datos del Cliente</CardTitle>
               <CardDescription>Busca un cliente existente o crea uno nuevo</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center space-x-2">
-                <Switch id="client-type-switch" checked={isNewClient} onCheckedChange={setIsNewClient} />
-                <Label htmlFor="client-type-switch">{isNewClient ? "Cliente nuevo" : "Cliente existente"}</Label>
-              </div>
+              <CardContent className="space-y-4">
+               <div className="flex items-center space-x-2">
+              <Switch
+                id="client-type-switch"
+                checked={!isNewClient}
+                onCheckedChange={(checked) => setIsNewClient(!checked)}
+              />
+              <Label htmlFor="client-type-switch">
+                {isNewClient ? "Cliente nuevo" : "Cliente existente"}
+              </Label>
+          </div>
+
 
               {!isNewClient && (
                 <div className="space-y-2">

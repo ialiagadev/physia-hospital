@@ -10,7 +10,7 @@ export function useServices(organizationId?: number) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Función para obtener servicios
+  // Función para obtener servicios (todos, no solo activos para la página de administración)
   const fetchServices = useCallback(async () => {
     if (!organizationId) {
       setServices([])
@@ -22,12 +22,12 @@ export function useServices(organizationId?: number) {
       setLoading(true)
       setError(null)
 
-      // Consulta simple sin JOINs problemáticos
+      // Consulta simple sin JOINs problemáticos - obtener TODOS los servicios
       const { data, error: fetchError } = await supabase
         .from("services")
         .select("*")
         .eq("organization_id", organizationId)
-        .eq("active", true)
+        .order("active", { ascending: false }) // Activos primero
         .order("sort_order", { ascending: true })
         .order("name", { ascending: true })
 
@@ -46,6 +46,31 @@ export function useServices(organizationId?: number) {
     }
   }, [organizationId])
 
+  // Función para obtener solo servicios activos (para formularios y selecciones)
+  const fetchActiveServices = useCallback(async () => {
+    if (!organizationId) return []
+
+    try {
+      const { data, error: fetchError } = await supabase
+        .from("services")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .eq("active", true)
+        .order("sort_order", { ascending: true })
+        .order("name", { ascending: true })
+
+      if (fetchError) {
+        console.error("Error fetching active services:", fetchError)
+        throw fetchError
+      }
+
+      return data || []
+    } catch (err) {
+      console.error("💥 useServices: Error in fetchActiveServices:", err)
+      return []
+    }
+  }, [organizationId])
+
   // Función para crear servicio
   const createService = useCallback(async (serviceData: ServiceInsert): Promise<Service> => {
     try {
@@ -54,7 +79,16 @@ export function useServices(organizationId?: number) {
       if (error) throw error
 
       // Actualizar la lista local
-      setServices((prev) => [...prev, data].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)))
+      setServices((prev) =>
+        [...prev, data].sort((a, b) => {
+          // Activos primero
+          if (a.active !== b.active) return b.active ? 1 : -1
+          // Luego por sort_order
+          if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order
+          // Finalmente por nombre
+          return a.name.localeCompare(b.name)
+        }),
+      )
 
       toast.success("Servicio creado correctamente")
       return data
@@ -82,7 +116,14 @@ export function useServices(organizationId?: number) {
       setServices((prev) =>
         prev
           .map((service) => (service.id === id ? data : service))
-          .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
+          .sort((a, b) => {
+            // Activos primero
+            if (a.active !== b.active) return b.active ? 1 : -1
+            // Luego por sort_order
+            if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order
+            // Finalmente por nombre
+            return a.name.localeCompare(b.name)
+          }),
       )
 
       toast.success("Servicio actualizado correctamente")
@@ -95,26 +136,85 @@ export function useServices(organizationId?: number) {
     }
   }, [])
 
-  // Función para eliminar servicio
+  // Función para "eliminar" servicio (soft delete - mantener compatibilidad con nombre anterior)
   const deleteService = useCallback(async (id: number): Promise<void> => {
     try {
-      const { error } = await supabase.from("services").delete().eq("id", id)
+      const { data, error } = await supabase
+        .from("services")
+        .update({ active: false, updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .select()
+        .single()
 
       if (error) throw error
 
       // Actualizar la lista local
-      setServices((prev) => prev.filter((service) => service.id !== id))
+      setServices((prev) =>
+        prev
+          .map((service) => (service.id === id ? data : service))
+          .sort((a, b) => {
+            // Activos primero
+            if (a.active !== b.active) return b.active ? 1 : -1
+            // Luego por sort_order
+            if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order
+            // Finalmente por nombre
+            return a.name.localeCompare(b.name)
+          }),
+      )
 
-      toast.success("Servicio eliminado correctamente")
+      toast.success("Servicio desactivado correctamente")
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Error al eliminar servicio"
-      console.error("💥 useServices: Error deleting service:", err)
+      const errorMessage = err instanceof Error ? err.message : "Error al desactivar servicio"
+      console.error("💥 useServices: Error deactivating service:", err)
       toast.error(errorMessage)
       throw err
     }
   }, [])
 
-  // Función para obtener servicios de un usuario específico
+  // Función para desactivar servicio (alias más claro)
+  const deactivateService = useCallback(
+    async (id: number): Promise<void> => {
+      return deleteService(id)
+    },
+    [deleteService],
+  )
+
+  // Función para reactivar servicio
+  const reactivateService = useCallback(async (id: number): Promise<void> => {
+    try {
+      const { data, error } = await supabase
+        .from("services")
+        .update({ active: true, updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .select()
+        .single()
+
+      if (error) throw error
+
+      // Actualizar la lista local
+      setServices((prev) =>
+        prev
+          .map((service) => (service.id === id ? data : service))
+          .sort((a, b) => {
+            // Activos primero
+            if (a.active !== b.active) return b.active ? 1 : -1
+            // Luego por sort_order
+            if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order
+            // Finalmente por nombre
+            return a.name.localeCompare(b.name)
+          }),
+      )
+
+      toast.success("Servicio reactivado correctamente")
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Error al reactivar servicio"
+      console.error("💥 useServices: Error reactivating service:", err)
+      toast.error(errorMessage)
+      throw err
+    }
+  }, [])
+
+  // Función para obtener servicios de un usuario específico (solo activos)
   const getUserServices = useCallback(
     async (userId: string) => {
       if (!organizationId) return []
@@ -216,7 +316,7 @@ export function useServices(organizationId?: number) {
     [organizationId],
   )
 
-  // Función para obtener todos los servicios disponibles para un usuario
+  // Función para obtener todos los servicios disponibles para un usuario (solo activos)
   const getAvailableServicesForUser = useCallback(
     async (userId: string) => {
       if (!organizationId) return []
@@ -298,9 +398,12 @@ export function useServices(organizationId?: number) {
     loading,
     error,
     refetch: fetchServices,
+    fetchActiveServices,
     createService,
     updateService,
-    deleteService,
+    deleteService, // Mantener para compatibilidad (hace soft delete)
+    deactivateService, // Alias más claro
+    reactivateService,
     getUserServices,
     getAvailableServicesForUser,
     assignServiceToUser,

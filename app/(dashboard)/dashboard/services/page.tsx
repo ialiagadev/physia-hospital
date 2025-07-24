@@ -4,11 +4,12 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
-import { Plus, Edit, Trash2 } from "lucide-react"
+import { Plus, Edit, Trash2, RotateCcw, Filter } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/app/contexts/auth-context"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,12 +40,20 @@ interface Service {
   updated_at: string
 }
 
+type FilterType = "all" | "active" | "inactive"
+
 export default function ServicesPage() {
   const { userProfile, isLoading: authLoading } = useAuth()
   const [services, setServices] = useState<Service[]>([])
+  const [filteredServices, setFilteredServices] = useState<Service[]>([])
   const [loading, setLoading] = useState(true)
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [serviceToDelete, setServiceToDelete] = useState<number | null>(null)
+  const [filter, setFilter] = useState<FilterType>("all")
+  const [actionDialogOpen, setActionDialogOpen] = useState(false)
+  const [serviceToAction, setServiceToAction] = useState<{
+    service: Service
+    action: "deactivate" | "reactivate"
+  } | null>(null)
+  const [processingId, setProcessingId] = useState<number | null>(null)
   const { toast } = useToast()
 
   // Cargar servicios de la organización del usuario
@@ -63,6 +72,7 @@ export default function ServicesPage() {
           .from("services")
           .select("*")
           .eq("organization_id", userProfile.organization_id)
+          .order("active", { ascending: false }) // Activos primero
           .order("sort_order", { ascending: true })
           .order("name", { ascending: true })
 
@@ -82,33 +92,74 @@ export default function ServicesPage() {
     loadServices()
   }, [userProfile, authLoading, toast])
 
-  const handleDeleteClick = (serviceId: number) => {
-    setServiceToDelete(serviceId)
-    setDeleteDialogOpen(true)
+  // Filtrar servicios según el filtro seleccionado
+  useEffect(() => {
+    let filtered = services
+
+    switch (filter) {
+      case "active":
+        filtered = services.filter((service) => service.active)
+        break
+      case "inactive":
+        filtered = services.filter((service) => !service.active)
+        break
+      default:
+        filtered = services
+    }
+
+    setFilteredServices(filtered)
+  }, [services, filter])
+
+  const handleActionClick = (service: Service, action: "deactivate" | "reactivate") => {
+    setServiceToAction({ service, action })
+    setActionDialogOpen(true)
   }
 
-  const confirmDelete = async () => {
-    if (!serviceToDelete) return
+  const confirmAction = async () => {
+    if (!serviceToAction) return
+
+    const { service, action } = serviceToAction
+    setProcessingId(service.id)
 
     try {
-      const { error } = await supabase.from("services").delete().eq("id", serviceToDelete)
+      const { error } = await supabase
+        .from("services")
+        .update({
+          active: action === "reactivate",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", service.id)
 
       if (error) throw error
 
-      setServices((prev) => prev.filter((service) => service.id !== serviceToDelete))
+      // Actualizar la lista local
+      setServices((prev) =>
+        prev
+          .map((s) => (s.id === service.id ? { ...s, active: action === "reactivate" } : s))
+          .sort((a, b) => {
+            // Activos primero
+            if (a.active !== b.active) return b.active ? 1 : -1
+            // Luego por sort_order
+            if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order
+            // Finalmente por nombre
+            return a.name.localeCompare(b.name)
+          }),
+      )
+
       toast({
-        title: "Servicio eliminado",
-        description: "El servicio ha sido eliminado correctamente",
+        title: action === "reactivate" ? "Servicio reactivado" : "Servicio desactivado",
+        description: `El servicio "${service.name}" ha sido ${action === "reactivate" ? "reactivado" : "desactivado"} correctamente`,
       })
     } catch (error) {
       toast({
         title: "Error",
-        description: "No se pudo eliminar el servicio",
+        description: `No se pudo ${action === "reactivate" ? "reactivar" : "desactivar"} el servicio`,
         variant: "destructive",
       })
     } finally {
-      setDeleteDialogOpen(false)
-      setServiceToDelete(null)
+      setProcessingId(null)
+      setActionDialogOpen(false)
+      setServiceToAction(null)
     }
   }
 
@@ -159,12 +210,27 @@ export default function ServicesPage() {
           <h1 className="text-3xl font-bold tracking-tight">Servicios</h1>
           <p className="text-muted-foreground">Gestiona tu catálogo de servicios para facturación</p>
         </div>
-        <Button asChild>
-          <Link href="/dashboard/services/new">
-            <Plus className="mr-2 h-4 w-4" />
-            Nuevo Servicio
-          </Link>
-        </Button>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-gray-500" />
+            <Select value={filter} onValueChange={(value: FilterType) => setFilter(value)}>
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="active">Activos</SelectItem>
+                <SelectItem value="inactive">Inactivos</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button asChild>
+            <Link href="/dashboard/services/new">
+              <Plus className="mr-2 h-4 w-4" />
+              Nuevo Servicio
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <div className="rounded-md border">
@@ -192,9 +258,9 @@ export default function ServicesPage() {
                   </div>
                 </TableCell>
               </TableRow>
-            ) : services.length > 0 ? (
-              services.map((service) => (
-                <TableRow key={service.id}>
+            ) : filteredServices.length > 0 ? (
+              filteredServices.map((service) => (
+                <TableRow key={service.id} className={!service.active ? "opacity-60" : ""}>
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: service.color }} />
@@ -233,14 +299,35 @@ export default function ServicesPage() {
                           <Edit className="h-4 w-4" />
                         </Link>
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDeleteClick(service.id)}
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      {service.active ? (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleActionClick(service, "deactivate")}
+                          disabled={processingId === service.id}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          {processingId === service.id ? (
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600"></div>
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleActionClick(service, "reactivate")}
+                          disabled={processingId === service.id}
+                          className="text-green-600 hover:text-green-700"
+                        >
+                          {processingId === service.id ? (
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600"></div>
+                          ) : (
+                            <RotateCcw className="h-4 w-4" />
+                          )}
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -249,8 +336,12 @@ export default function ServicesPage() {
               <TableRow>
                 <TableCell colSpan={9} className="h-24 text-center">
                   <div className="flex flex-col items-center gap-2">
-                    <p className="text-gray-500">No hay servicios registrados</p>
-                    <p className="text-sm text-gray-400">Crea tu primer servicio para comenzar</p>
+                    <p className="text-gray-500">
+                      {filter === "active" && "No hay servicios activos"}
+                      {filter === "inactive" && "No hay servicios inactivos"}
+                      {filter === "all" && "No hay servicios registrados"}
+                    </p>
+                    {filter === "all" && <p className="text-sm text-gray-400">Crea tu primer servicio para comenzar</p>}
                   </div>
                 </TableCell>
               </TableRow>
@@ -259,18 +350,43 @@ export default function ServicesPage() {
         </Table>
       </div>
 
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      <AlertDialog open={actionDialogOpen} onOpenChange={setActionDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {serviceToAction?.action === "reactivate" ? "¿Reactivar servicio?" : "¿Desactivar servicio?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción no se puede deshacer. Esto eliminará permanentemente el servicio seleccionado.
+              {serviceToAction?.action === "reactivate" ? (
+                <>
+                  ¿Estás seguro de que quieres reactivar el servicio{" "}
+                  <span className="font-semibold">"{serviceToAction.service.name}"</span>?
+                  <br />
+                  <br />
+                  El servicio volverá a estar disponible para nuevas citas y facturación.
+                </>
+              ) : (
+                <>
+                  ¿Estás seguro de que quieres desactivar el servicio{" "}
+                  <span className="font-semibold">"{serviceToAction?.service.name}"</span>?
+                  <br />
+                  <br />
+                  El servicio no estará disponible para nuevas citas, pero se mantendrán los registros existentes.
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} className="bg-red-600 hover:bg-red-700">
-              Eliminar
+            <AlertDialogAction
+              onClick={confirmAction}
+              className={
+                serviceToAction?.action === "reactivate"
+                  ? "bg-green-600 hover:bg-green-700"
+                  : "bg-red-600 hover:bg-red-700"
+              }
+            >
+              {serviceToAction?.action === "reactivate" ? "Reactivar" : "Desactivar"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
