@@ -1,6 +1,7 @@
 // Tipos para las tareas
 export type PrioridadTarea = "alta" | "media" | "baja"
 export type EstadoTarea = "pendiente" | "en_progreso" | "completada" | "archivada"
+
 export type TipoActividad =
   | "creacion"
   | "cambio_estado"
@@ -12,6 +13,7 @@ export type TipoActividad =
   | "comentario"
   | "adjunto"
   | "etiqueta"
+  | "nota" // Añadir tipo para notas
 
 export interface ActividadTarea {
   id: number
@@ -39,6 +41,17 @@ export interface Adjunto {
   subidoPor: string
 }
 
+// Nueva interfaz para las notas de tareas
+export interface NotaTarea {
+  id: number
+  task_id: number
+  organization_id: number
+  created_by: string // UUID del usuario
+  content: string
+  created_at: Date
+  updated_at: Date
+}
+
 export interface Tarea {
   id: number
   titulo: string
@@ -56,6 +69,7 @@ export interface Tarea {
   comentarios: Comentario[]
   adjuntos: Adjunto[]
   actividad: ActividadTarea[]
+  notas: NotaTarea[] // Cambiar a array de notas
   orden: number
   centro_id?: number
 }

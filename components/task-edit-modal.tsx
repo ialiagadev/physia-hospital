@@ -9,19 +9,33 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
-import { Calendar, User, MessageSquare, Paperclip, Activity } from "lucide-react"
-import type { Tarea, PrioridadTarea, Profesional } from "@/types/tasks"
+import { Calendar, User, MessageSquare, Paperclip, Activity, Users } from "lucide-react"
+import type { Tarea, PrioridadTarea, Usuario } from "@/types/tasks"
+import { TaskNotes } from "./tasks/tareas-notes"
 
 interface TaskEditModalProps {
   tarea: Tarea | null
   isOpen: boolean
   onClose: () => void
   onSave: (tarea: Tarea) => void
-  profesionales: Profesional[]
+  usuarios: Usuario[]
+  getNombreUsuario: (id?: string) => string
+  onAddNote: (taskId: number, content: string) => Promise<void>
+  onDeleteNote: (noteId: number) => Promise<void>
   modo: "editar" | "ver"
 }
 
-export function TaskEditModal({ tarea, isOpen, onClose, onSave, profesionales, modo }: TaskEditModalProps) {
+export function TaskEditModal({
+  tarea,
+  isOpen,
+  onClose,
+  onSave,
+  usuarios,
+  getNombreUsuario,
+  onAddNote,
+  onDeleteNote,
+  modo,
+}: TaskEditModalProps) {
   const [tareaEditada, setTareaEditada] = useState<Tarea | null>(null)
 
   useEffect(() => {
@@ -32,16 +46,32 @@ export function TaskEditModal({ tarea, isOpen, onClose, onSave, profesionales, m
 
   if (!tarea || !tareaEditada) return null
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (tareaEditada) {
-      onSave(tareaEditada)
+      try {
+        await onSave(tareaEditada)
+        // El estado se actualizará automáticamente cuando el hook principal recargue los datos
+      } catch (error) {
+        // Manejar error si es necesario
+      }
     }
   }
 
-  const getNombreProfesional = (id?: number) => {
-    if (!id) return "Sin asignar"
-    const profesional = profesionales.find((p) => p.id === id)
-    return profesional ? profesional.nombre : "Desconocido"
+  // Función para obtener nombres de múltiples usuarios asignados
+  const getNombresAsignados = () => {
+    if (!tareaEditada.asignadosA || tareaEditada.asignadosA.length === 0) {
+      return "Sin asignar"
+    }
+
+    if (tareaEditada.asignadosA.length === 1) {
+      return getNombreUsuario(tareaEditada.asignadosA[0])
+    }
+
+    if (tareaEditada.asignadosA.length <= 2) {
+      return tareaEditada.asignadosA.map((id) => getNombreUsuario(id)).join(", ")
+    }
+
+    return `${getNombreUsuario(tareaEditada.asignadosA[0])} +${tareaEditada.asignadosA.length - 1} más`
   }
 
   return (
@@ -54,9 +84,9 @@ export function TaskEditModal({ tarea, isOpen, onClose, onSave, profesionales, m
         <Tabs defaultValue="general" className="w-full">
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="general">General</TabsTrigger>
-            <TabsTrigger value="comentarios">
+            <TabsTrigger value="notas">
               <MessageSquare className="h-4 w-4 mr-2" />
-              Comentarios ({tarea.comentarios?.length || 0})
+              Notas ({tarea.notas?.length || 0})
             </TabsTrigger>
             <TabsTrigger value="adjuntos">
               <Paperclip className="h-4 w-4 mr-2" />
@@ -117,29 +147,6 @@ export function TaskEditModal({ tarea, isOpen, onClose, onSave, profesionales, m
               </div>
 
               <div className="space-y-2">
-                <Label>Asignado a</Label>
-                <Select
-                  value={tareaEditada.asignadoA?.toString() || "0"}
-                  onValueChange={(value) =>
-                    setTareaEditada({ ...tareaEditada, asignadoA: value === "0" ? undefined : Number(value) })
-                  }
-                  disabled={modo === "ver"}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="0">Sin asignar</SelectItem>
-                    {profesionales.map((prof) => (
-                      <SelectItem key={prof.id} value={prof.id.toString()}>
-                        {prof.nombre}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
                 <Label htmlFor="fechaVencimiento">Fecha de vencimiento</Label>
                 <Input
                   id="fechaVencimiento"
@@ -168,6 +175,41 @@ export function TaskEditModal({ tarea, isOpen, onClose, onSave, profesionales, m
             </div>
 
             <div className="space-y-2">
+              <Label>Usuarios Asignados</Label>
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <div className="flex items-center gap-2">
+                  {tareaEditada.asignadosA && tareaEditada.asignadosA.length > 1 ? (
+                    <Users className="h-4 w-4 text-gray-600" />
+                  ) : (
+                    <User className="h-4 w-4 text-gray-600" />
+                  )}
+                  <span className="text-sm font-medium">{getNombresAsignados()}</span>
+                </div>
+                {tareaEditada.asignadosA && tareaEditada.asignadosA.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {tareaEditada.asignadosA.map((userId) => {
+                      const user = usuarios.find((u) => u.id === userId)
+                      return (
+                        <Badge key={userId} variant="secondary" className="flex items-center gap-2">
+                          <div className="w-4 h-4 bg-blue-100 rounded-full flex items-center justify-center">
+                            <span className="text-xs font-medium text-blue-700">
+                              {user?.name
+                                ?.split(" ")
+                                .map((n) => n[0])
+                                .join("")
+                                .toUpperCase() || "U"}
+                            </span>
+                          </div>
+                          <span>{user?.name || "Usuario desconocido"}</span>
+                        </Badge>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2">
               <Label>Etiquetas</Label>
               <div className="flex flex-wrap gap-2">
                 {tareaEditada.etiquetas.map((etiqueta, index) => (
@@ -175,6 +217,7 @@ export function TaskEditModal({ tarea, isOpen, onClose, onSave, profesionales, m
                     {etiqueta}
                   </Badge>
                 ))}
+                {tareaEditada.etiquetas.length === 0 && <span className="text-sm text-gray-500">Sin etiquetas</span>}
               </div>
             </div>
 
@@ -191,20 +234,46 @@ export function TaskEditModal({ tarea, isOpen, onClose, onSave, profesionales, m
               )}
               <div className="flex items-center gap-2">
                 <User className="h-4 w-4" />
-                <span>Creada por: {tarea.creadoPor}</span>
+                <span>Creada por: {getNombreUsuario(tarea.creadoPor)}</span>
               </div>
             </div>
           </TabsContent>
 
-          <TabsContent value="comentarios">
+          <TabsContent value="notas">
             <div className="space-y-4">
-              <p className="text-sm text-gray-600">Los comentarios aparecerán aquí</p>
+              <TaskNotes
+                notas={tareaEditada.notas}
+                taskId={tareaEditada.id}
+                onAddNote={onAddNote}
+                onDeleteNote={onDeleteNote}
+                getNombreUsuario={getNombreUsuario}
+                usuarios={usuarios}
+              />
             </div>
           </TabsContent>
 
           <TabsContent value="adjuntos">
             <div className="space-y-4">
-              <p className="text-sm text-gray-600">Los adjuntos aparecerán aquí</p>
+              {tarea.adjuntos && tarea.adjuntos.length > 0 ? (
+                <div className="space-y-3">
+                  {tarea.adjuntos.map((adjunto) => (
+                    <div key={adjunto.id} className="flex gap-3 p-3 bg-gray-50 rounded-lg">
+                      <Paperclip className="h-4 w-4 mt-1 text-gray-500" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">{adjunto.nombre}</p>
+                        <p className="text-xs text-gray-500">
+                          {adjunto.tipo} • {(adjunto.tamaño / 1024).toFixed(1)} KB
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Subido por {adjunto.subidoPor} el {adjunto.fechaSubida.toLocaleDateString("es-ES")}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-600">No hay adjuntos</p>
+              )}
             </div>
           </TabsContent>
 
@@ -217,7 +286,8 @@ export function TaskEditModal({ tarea, isOpen, onClose, onSave, profesionales, m
                       <Activity className="h-4 w-4 mt-1 text-gray-500" />
                       <div className="flex-1">
                         <p className="text-sm">
-                          <span className="font-medium">{actividad.usuario}</span> {actividad.descripcion}
+                          <span className="font-medium">{getNombreUsuario(actividad.usuario)}</span>{" "}
+                          {actividad.descripcion}
                         </p>
                         <p className="text-xs text-gray-500 mt-1">
                           {actividad.fecha.toLocaleDateString("es-ES")} a las{" "}

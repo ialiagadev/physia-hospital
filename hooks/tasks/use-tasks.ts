@@ -10,13 +10,13 @@ export function useTasks() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Cargar tareas con consulta simplificada
+  // Cargar tareas con sus notas
   const cargarTareas = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
 
-      // Primero verificamos si la tabla tasks existe
+      // Cargar tareas
       const { data: tasksData, error: tasksError } = await supabase
         .from("tasks")
         .select("*")
@@ -27,39 +27,68 @@ export function useTasks() {
         throw tasksError
       }
 
-      // Si no hay datos, crear array vacío
       if (!tasksData) {
         setTareas([])
         return
       }
 
-      // Transformar datos básicos sin relaciones complejas por ahora
-      const tareasTransformadas: Tarea[] = tasksData.map((task) => ({
-        id: task.id,
-        titulo: task.titulo || "Sin título",
-        descripcion: task.descripcion || "",
-        estado: (task.estado as EstadoTarea) || "pendiente",
-        prioridad: (task.prioridad as PrioridadTarea) || "media",
-        asignadosA: task.assigned_to ? (Array.isArray(task.assigned_to) ? task.assigned_to : [task.assigned_to]) : [],
-        fechaVencimiento: task.fecha_vencimiento ? new Date(task.fecha_vencimiento) : undefined,
-        fechaCreacion: task.fecha_creacion ? new Date(task.fecha_creacion) : new Date(),
-        fechaCompletada: task.fecha_completada ? new Date(task.fecha_completada) : undefined,
-        fechaArchivada: task.fecha_archivada ? new Date(task.fecha_archivada) : undefined,
-        fechaEliminada: task.fecha_eliminada ? new Date(task.fecha_eliminada) : undefined,
-        creadoPor: "Usuario", // Valor por defecto hasta obtener relación
-        etiquetas: [], // Array vacío por ahora
-        comentarios: [], // Array vacío por ahora
-        adjuntos: [], // Array vacío por ahora
-        actividad: [], // Array vacío por ahora
-        orden: task.orden || 0,
-        centro_id: task.organization_id,
-      }))
+      // Cargar notas para todas las tareas
+      const taskIds = tasksData.map((task) => task.id)
+      const { data: notesData, error: notesError } = await supabase
+        .from("task_notes")
+        .select("*")
+        .in("task_id", taskIds)
+        .order("created_at", { ascending: true })
+
+      if (notesError) {
+        console.error("Error cargando notas:", notesError)
+        // No lanzar error, solo log - las notas son opcionales
+      }
+
+      // Transformar datos
+      const tareasTransformadas: Tarea[] = tasksData.map((task) => {
+        // Filtrar notas para esta tarea específica
+        const notasTarea =
+          notesData
+            ?.filter((note) => note.task_id === task.id)
+            .map((note) => ({
+              id: note.id,
+              task_id: note.task_id,
+              organization_id: note.organization_id,
+              created_by: note.created_by,
+              content: note.content,
+              created_at: new Date(note.created_at),
+              updated_at: new Date(note.updated_at),
+            })) || []
+
+        return {
+          id: task.id,
+          titulo: task.titulo || "Sin título",
+          descripcion: task.descripcion || "",
+          estado: (task.estado as EstadoTarea) || "pendiente",
+          prioridad: (task.prioridad as PrioridadTarea) || "media",
+          asignadosA: task.assigned_to ? (Array.isArray(task.assigned_to) ? task.assigned_to : [task.assigned_to]) : [],
+          fechaVencimiento: task.fecha_vencimiento ? new Date(task.fecha_vencimiento) : undefined,
+          fechaCreacion: task.fecha_creacion ? new Date(task.fecha_creacion) : new Date(),
+          fechaCompletada: task.fecha_completada ? new Date(task.fecha_completada) : undefined,
+          fechaArchivada: task.fecha_archivada ? new Date(task.fecha_archivada) : undefined,
+          fechaEliminada: task.fecha_eliminada ? new Date(task.fecha_eliminada) : undefined,
+          creadoPor: task.created_by || "Usuario desconocido",
+          etiquetas: [],
+          comentarios: [],
+          adjuntos: [],
+          actividad: [],
+          notas: notasTarea, // Array de notas
+          orden: task.orden || 0,
+          centro_id: task.organization_id,
+        }
+      })
 
       setTareas(tareasTransformadas)
     } catch (err) {
       console.error("Error cargando tareas:", err)
       setError(err instanceof Error ? err.message : "Error desconocido")
-      // Si las tablas no existen, mostrar mensaje específico
+
       if (err instanceof Error && err.message.includes("does not exist")) {
         setError("Las tablas de tareas no están creadas. Ejecuta los scripts SQL primero.")
         toast.error("Tablas de tareas no encontradas")
@@ -82,19 +111,16 @@ export function useTasks() {
       etiquetas?: string[]
     }) => {
       try {
-        // Obtener usuario actual
         const {
           data: { user },
         } = await supabase.auth.getUser()
 
         if (!user) throw new Error("Usuario no autenticado")
 
-        // Obtener organización del usuario
         const { data: userData } = await supabase.from("users").select("organization_id").eq("id", user.id).single()
 
         if (!userData?.organization_id) throw new Error("Usuario sin organización")
 
-        // Obtener el orden máximo para el estado "pendiente"
         const { data: maxOrdenData } = await supabase
           .from("tasks")
           .select("orden")
@@ -105,7 +131,6 @@ export function useTasks() {
 
         const maxOrden = maxOrdenData?.[0]?.orden || 0
 
-        // Crear la tarea con campos básicos
         const { data: taskData, error: taskError } = await supabase
           .from("tasks")
           .insert({
@@ -124,7 +149,6 @@ export function useTasks() {
 
         if (taskError) throw taskError
 
-        // Recargar tareas
         await cargarTareas()
         toast.success("Tarea creada correctamente")
         return taskData
@@ -132,6 +156,63 @@ export function useTasks() {
         console.error("Error creando tarea:", err)
         toast.error("Error al crear la tarea")
         throw err
+      }
+    },
+    [cargarTareas],
+  )
+
+  // Añadir nota a una tarea
+  const añadirNota = useCallback(
+    async (taskId: number, content: string) => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+
+        if (!user) throw new Error("Usuario no autenticado")
+
+        const { data: userData } = await supabase.from("users").select("organization_id").eq("id", user.id).single()
+
+        if (!userData?.organization_id) throw new Error("Usuario sin organización")
+
+        const { data: noteData, error: noteError } = await supabase
+          .from("task_notes")
+          .insert({
+            task_id: taskId,
+            organization_id: userData.organization_id,
+            created_by: user.id,
+            content: content.trim(),
+          })
+          .select()
+          .single()
+
+        if (noteError) throw noteError
+
+        await cargarTareas()
+        toast.success("Nota añadida correctamente")
+        return noteData
+      } catch (err) {
+        console.error("Error añadiendo nota:", err)
+        toast.error("Error al añadir la nota")
+        throw err
+      }
+    },
+    [cargarTareas],
+  )
+
+  // Eliminar nota
+  const eliminarNota = useCallback(
+    async (noteId: number) => {
+      try {
+        const { error } = await supabase.from("task_notes").delete().eq("id", noteId)
+
+        if (error) throw error
+
+        await cargarTareas()
+        toast.success("Nota eliminada")
+      } catch (err) {
+        console.error("Error eliminando nota:", err)
+        toast.error("Error al eliminar la nota")
       }
     },
     [cargarTareas],
@@ -217,6 +298,7 @@ export function useTasks() {
     async (tareaId: number, nuevoOrden: number, nuevoEstado?: EstadoTarea) => {
       try {
         const updates: any = { orden: nuevoOrden }
+
         if (nuevoEstado) {
           updates.estado = nuevoEstado
         }
@@ -258,7 +340,6 @@ export function useTasks() {
     [cargarTareas],
   )
 
-  // Cargar tareas al montar el componente
   useEffect(() => {
     cargarTareas()
   }, [cargarTareas])
@@ -274,5 +355,7 @@ export function useTasks() {
     actualizarTarea,
     reordenarTareas,
     restaurarTarea,
+    añadirNota,
+    eliminarNota,
   }
 }

@@ -44,11 +44,13 @@ import {
   Loader2,
   Users,
   X,
+  MessageSquare,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useTasks } from "@/hooks/tasks/use-tasks"
 import { useProfessionals } from "@/hooks/tasks/use-professionals"
 import type { PrioridadTarea, EstadoTarea, Tarea, Usuario } from "@/types/tasks"
+import { TaskNotes } from "@/components/tasks/tareas-notes"
 
 // Configuración de estados (sin incluir archivada en el tablero principal)
 const ESTADOS_CONFIG = {
@@ -203,6 +205,16 @@ function DraggableTaskCard({
             <p className="text-xs text-gray-600 line-clamp-2 ml-6 break-words">{tarea.descripcion}</p>
           )}
 
+          {/* Notas - mostrar solo el número */}
+          {tarea.notas && tarea.notas.length > 0 && (
+            <div className="ml-6 flex items-center gap-1 text-xs text-gray-600">
+              <MessageSquare className="h-3 w-3" />
+              <span>
+                {tarea.notas.length} nota{tarea.notas.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+          )}
+
           {/* Badges de estado */}
           <div className="flex flex-wrap gap-1 ml-6">
             <Badge variant="outline" className={`text-xs ${PRIORIDADES_CONFIG[tarea.prioridad].color}`}>
@@ -236,6 +248,10 @@ function DraggableTaskCard({
                 <span>{tarea.fechaVencimiento.toLocaleDateString("es-ES")}</span>
               </div>
             )}
+            <div className="flex items-center gap-1">
+              <User className="h-3 w-3 flex-shrink-0" />
+              <span className="truncate">Creado por: {getNombreUsuario(tarea.creadoPor)}</span>
+            </div>
           </div>
         </div>
       </CardContent>
@@ -516,6 +532,8 @@ export default function TareasPage() {
     actualizarTarea,
     reordenarTareas,
     restaurarTarea,
+    añadirNota,
+    eliminarNota,
   } = useTasks()
   const { usuarios, usuariosTipo1, loading: profesionalesLoading, getNombreUsuario } = useProfessionals()
 
@@ -528,11 +546,13 @@ export default function TareasPage() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [activeColumn, setActiveColumn] = useState<keyof typeof ESTADOS_CONFIG | null>(null)
   const [filtroEstado, setFiltroEstado] = useState<"creadas" | "archivadas" | "eliminadas">("creadas")
+  const [tareaEnEdicionId, setTareaEnEdicionId] = useState<number | null>(null)
 
   // Estados para formularios
   const [nuevaTarea, setNuevaTarea] = useState({
     titulo: "",
     descripcion: "",
+    notas: "", // Añadir este campo
     prioridad: "media" as PrioridadTarea,
     asignadosA: [] as string[],
     fechaVencimiento: "",
@@ -550,6 +570,18 @@ export default function TareasPage() {
       },
     }),
   )
+
+  // Sincronizar tarea en edición con datos actualizados
+  useEffect(() => {
+    if (tareaEnEdicionId) {
+      const tareaActualizada = tareas.find((t) => t.id === tareaEnEdicionId)
+      if (tareaActualizada) {
+        setTareaEnEdicion(tareaActualizada)
+      } else {
+        setTareaEnEdicion(null)
+      }
+    }
+  }, [tareas, tareaEnEdicionId])
 
   // Función para encontrar la columna que contiene un elemento
   const findColumnForElement = (element: HTMLElement | null): keyof typeof ESTADOS_CONFIG | null => {
@@ -662,6 +694,7 @@ export default function TareasPage() {
       setNuevaTarea({
         titulo: "",
         descripcion: "",
+        notas: "", // Añadir este campo
         prioridad: "media",
         asignadosA: [],
         fechaVencimiento: "",
@@ -674,15 +707,16 @@ export default function TareasPage() {
   }
 
   const editarTarea = (tarea: Tarea) => {
-    setTareaEnEdicion(tarea)
+    setTareaEnEdicionId(tarea.id)
     setMostrarModalEdicion(true)
   }
 
   const guardarTareaEditada = async (tareaEditada: Tarea) => {
     try {
       await actualizarTarea(tareaEditada)
-      setMostrarModalEdicion(false)
-      setTareaEnEdicion(null)
+      // No cerrar el modal aquí, dejar que el usuario lo cierre manualmente
+      // setMostrarModalEdicion(false)
+      // setTareaEnEdicion(null)
     } catch (error) {
       // Error ya manejado en el hook
     }
@@ -721,6 +755,7 @@ export default function TareasPage() {
       !busqueda ||
       tarea.titulo.toLowerCase().includes(busqueda.toLowerCase()) ||
       tarea.descripcion.toLowerCase().includes(busqueda.toLowerCase()) ||
+      (tarea.notas && tarea.notas.some((nota) => nota.content.toLowerCase().includes(busqueda.toLowerCase()))) ||
       (tarea.asignadosA &&
         tarea.asignadosA.some((id) => getNombreUsuario(id).toLowerCase().includes(busqueda.toLowerCase())))
 
@@ -962,6 +997,28 @@ export default function TareasPage() {
                             {tarea.descripcion && (
                               <p className="text-sm text-gray-600 mb-3 break-words">{tarea.descripcion}</p>
                             )}
+                            {tarea.notas && tarea.notas.length > 0 && (
+                              <div className="mb-3 p-2 bg-yellow-50 border-l-2 border-yellow-200 rounded-r">
+                                <div className="flex items-center gap-1 mb-2">
+                                  <MessageSquare className="h-3 w-3 text-gray-600" />
+                                  <span className="text-xs font-medium text-gray-600">
+                                    {tarea.notas.length} nota{tarea.notas.length !== 1 ? "s" : ""}
+                                  </span>
+                                </div>
+                                <div className="space-y-1">
+                                  {tarea.notas.slice(0, 2).map((nota) => (
+                                    <p key={nota.id} className="text-sm text-gray-700 break-words">
+                                      📝 {nota.content}
+                                    </p>
+                                  ))}
+                                  {tarea.notas.length > 2 && (
+                                    <p className="text-xs text-gray-500 italic">
+                                      ... y {tarea.notas.length - 2} nota{tarea.notas.length - 2 !== 1 ? "s" : ""} más
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                             <div className="flex flex-wrap gap-2 mb-3">
                               <Badge
                                 variant="outline"
@@ -1001,6 +1058,10 @@ export default function TareasPage() {
                                   <span>{tarea.fechaVencimiento.toLocaleDateString("es-ES")}</span>
                                 </div>
                               )}
+                              <div className="flex items-center gap-1">
+                                <User className="h-3 w-3" />
+                                <span>Creado por: {getNombreUsuario(tarea.creadoPor)}</span>
+                              </div>
                             </div>
                           </div>
                           <div className="flex items-center gap-2 flex-shrink-0">
@@ -1092,6 +1153,17 @@ export default function TareasPage() {
                 />
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="notas">Notas</Label>
+                <Textarea
+                  id="notas"
+                  value={nuevaTarea.notas}
+                  onChange={(e) => setNuevaTarea({ ...nuevaTarea, notas: e.target.value })}
+                  placeholder="Notas adicionales o comentarios"
+                  rows={2}
+                />
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Prioridad</Label>
@@ -1148,7 +1220,7 @@ export default function TareasPage() {
           open={mostrarModalEdicion}
           onOpenChange={() => {
             setMostrarModalEdicion(false)
-            setTareaEnEdicion(null)
+            setTareaEnEdicionId(null)
           }}
         >
           <DialogContent className="max-w-7xl max-h-[95vh] overflow-y-auto mx-4">
@@ -1240,6 +1312,17 @@ export default function TareasPage() {
                 </div>
 
                 <div className="space-y-2">
+                  <TaskNotes
+                    notas={tareaEnEdicion.notas}
+                    taskId={tareaEnEdicion.id}
+                    onAddNote={añadirNota}
+                    onDeleteNote={eliminarNota}
+                    getNombreUsuario={getNombreUsuario}
+                    usuarios={usuariosTipo1}
+                  />
+                </div>
+
+                <div className="space-y-2">
                   <Label>Etiquetas</Label>
                   <div className="flex flex-wrap gap-2">
                     {tareaEnEdicion.etiquetas.map((etiqueta, index) => (
@@ -1263,7 +1346,7 @@ export default function TareasPage() {
                   )}
                   <div className="flex items-center gap-2">
                     <User className="h-4 w-4" />
-                    <span>Creada por: {tareaEnEdicion.creadoPor}</span>
+                    <span>Creada por: {getNombreUsuario(tareaEnEdicion.creadoPor)}</span>
                   </div>
                 </div>
 
@@ -1272,7 +1355,7 @@ export default function TareasPage() {
                     variant="outline"
                     onClick={() => {
                       setMostrarModalEdicion(false)
-                      setTareaEnEdicion(null)
+                      setTareaEnEdicionId(null)
                     }}
                     className="w-full sm:w-auto"
                   >
