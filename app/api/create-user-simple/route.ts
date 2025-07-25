@@ -60,6 +60,13 @@ export async function POST(request: Request) {
     // 2. CREAR USUARIO EN LA TABLA INMEDIATAMENTE
     if (data.user?.id) {
       console.log("🔄 Creando usuario en la tabla users...")
+      console.log("📝 Datos para crear usuario:")
+      console.log("   - ID:", data.user.id)
+      console.log("   - Email:", email)
+      console.log("   - Name:", name)
+      console.log("   - Role:", role)
+      console.log("   - Organization ID:", organizationId)
+
       const { data: newUser, error: createUserError } = await supabaseAdmin
         .from("users")
         .insert({

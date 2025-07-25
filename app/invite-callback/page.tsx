@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2, CheckCircle, XCircle, Users, Eye, EyeOff } from 'lucide-react'
+import { Loader2, CheckCircle, XCircle, Users, Eye, EyeOff } from "lucide-react"
 
 export default function InviteCallback() {
   const [status, setStatus] = useState<"loading" | "success" | "error" | "set-password">("loading")
@@ -30,44 +30,55 @@ export default function InviteCallback() {
   // Mover la función fuera del useEffect para que sea accesible desde handleSetPassword
   const createUserFromInvitation = useCallback(async (currentUser: any, urlOrganizationId?: string | null) => {
     try {
-      console.log("👤 DATOS COMPLETOS DEL USUARIO:", currentUser);
-      
-      // Los metadatos pueden estar en diferentes lugares dependiendo de cómo llegue la invitación
-      const userMetadata = currentUser.user_metadata || {};
-      const appMetadata = currentUser.app_metadata || {};
-      
-      // Buscar organization_id en diferentes lugares
-      let organizationId = userMetadata.organization_id || appMetadata.organization_id;
-      
-      // Si no se encuentra en los metadatos, usar el de la URL
-      if (!organizationId && urlOrganizationId) {
-        organizationId = urlOrganizationId;
-        console.log("✅ Usando organization_id de la URL:", organizationId);
-      }
-      
-      // Buscar el nombre en diferentes lugares
-      const userName = userMetadata.full_name || 
-                      userMetadata.name || 
-                      appMetadata.full_name ||
-                      appMetadata.name ||
-                      currentUser.email?.split("@")[0] || 
-                      "Usuario";
-      
-      // Buscar el rol en diferentes lugares
-      const userRole = userMetadata.role || 
-                      appMetadata.role ||
-                      "user";
+      console.log("👤 DATOS COMPLETOS DEL USUARIO:", currentUser)
 
-      console.log("👤 DATOS EXTRAÍDOS DE LA INVITACIÓN:");
-      console.log("   - Organization ID:", organizationId);
-      console.log("   - Name:", userName);
-      console.log("   - Role:", userRole);
+      // Obtener parámetros de la URL como fallback
+      const urlParams = new URLSearchParams(window.location.search)
+      const urlRole = urlParams.get("role")
+
+      // Los metadatos pueden estar en diferentes lugares dependiendo de cómo llegue la invitación
+      const userMetadata = currentUser.user_metadata || {}
+      const appMetadata = currentUser.app_metadata || {}
+
+      console.log("👤 METADATOS COMPLETOS:")
+      console.log("   - user_metadata:", userMetadata)
+      console.log("   - app_metadata:", appMetadata)
+      console.log("   - URL role:", urlRole)
+
+      // Buscar organization_id en diferentes lugares
+      const organizationId = userMetadata.organization_id || appMetadata.organization_id || urlOrganizationId
+
+      // Buscar el nombre - CORREGIDO: buscar en más lugares y usar fallbacks
+      const userName =
+        userMetadata.full_name ||
+        userMetadata.name ||
+        appMetadata.full_name ||
+        appMetadata.name ||
+        userMetadata.display_name ||
+        appMetadata.display_name ||
+        currentUser.email?.split("@")[0] ||
+        "Usuario"
+
+      // Buscar el rol - CORREGIDO: usar URL como fallback y validar
+      let userRole = userMetadata.role || appMetadata.role || urlRole || "user"
+
+      // Validar que el rol sea válido
+      const validRoles = ["user", "admin", "coordinador"]
+      if (!validRoles.includes(userRole)) {
+        console.warn("⚠️ Rol inválido encontrado:", userRole, "- usando 'user' por defecto")
+        userRole = "user"
+      }
+
+      console.log("👤 DATOS EXTRAÍDOS FINALES:")
+      console.log("   - Organization ID:", organizationId)
+      console.log("   - Name:", userName)
+      console.log("   - Role:", userRole)
 
       if (!organizationId) {
-        console.error("❌ No se encontró organization_id en ninguna parte");
-        setStatus("error");
-        setMessage("Error: Invitación sin organización asociada. Contacta al administrador.");
-        return;
+        console.error("❌ No se encontró organization_id en ninguna parte")
+        setStatus("error")
+        setMessage("Error: Invitación sin organización asociada. Contacta al administrador.")
+        return
       }
 
       // Crear usuario en la tabla
@@ -83,15 +94,14 @@ export default function InviteCallback() {
           is_physia_admin: false,
         })
         .select()
-        .single();
+        .single()
 
       if (createError) {
-        console.error("❌ Error creando usuario:", createError);
-        
+        console.error("❌ Error creando usuario:", createError)
         // Verificar si es un error de duplicado
-        if (createError.code === '23505') { // Código de error de duplicado en PostgreSQL
-          console.log("⚠️ El usuario ya existe, intentando actualizar...");
-          
+        if (createError.code === "23505") {
+          // Código de error de duplicado en PostgreSQL
+          console.log("⚠️ El usuario ya existe, intentando actualizar...")
           // Intentar actualizar en lugar de insertar
           const { data: updatedUser, error: updateError } = await supabase
             .from("users")
@@ -102,108 +112,153 @@ export default function InviteCallback() {
             })
             .eq("id", currentUser.id)
             .select()
-            .single();
-            
+            .single()
+
           if (updateError) {
-            console.error("❌ Error actualizando usuario:", updateError);
-            setStatus("error");
-            setMessage(`Error al actualizar el usuario: ${updateError.message}`);
-            return;
+            console.error("❌ Error actualizando usuario:", updateError)
+            setStatus("error")
+            setMessage(`Error al actualizar el usuario: ${updateError.message}`)
+            return
           }
-          
-          console.log("✅ Usuario actualizado exitosamente:", updatedUser);
-          return;
+
+          console.log("✅ Usuario actualizado exitosamente:", updatedUser)
+          return
         }
-        
-        setStatus("error");
-        setMessage(`Error al crear el usuario: ${createError.message}`);
-        return;
+
+        setStatus("error")
+        setMessage(`Error al crear el usuario: ${createError.message}`)
+        return
       }
 
-      console.log("✅ Usuario creado exitosamente:", newUser);
+      console.log("✅ Usuario creado exitosamente:", newUser)
     } catch (error) {
-      console.error("💥 Error creando usuario:", error);
-      setStatus("error");
-      setMessage(`Error al crear el usuario: ${error instanceof Error ? error.message : "Error desconocido"}`);
+      console.error("💥 Error creando usuario:", error)
+      setStatus("error")
+      setMessage(`Error al crear el usuario: ${error instanceof Error ? error.message : "Error desconocido"}`)
     }
-  }, []);
+  }, [])
 
   // Función para procesar el usuario
-  const processUser = useCallback(async (currentUser: any, urlOrganizationId?: string | null) => {
-    try {
-      console.log("✅ PROCESANDO USUARIO:")
-      console.log("   - User ID:", currentUser.id)
-      console.log("   - Email:", currentUser.email)
-      console.log("   - Email confirmed:", currentUser.email_confirmed_at)
-      console.log("   - User Metadata:", currentUser.user_metadata)
-      console.log("   - App Metadata:", currentUser.app_metadata)
-      console.log("   - URL Organization ID:", urlOrganizationId)
+  const processUser = useCallback(
+    async (currentUser: any, urlOrganizationId?: string | null) => {
+      try {
+        console.log("✅ PROCESANDO USUARIO:")
+        console.log("   - User ID:", currentUser.id)
+        console.log("   - Email:", currentUser.email)
+        console.log("   - Email confirmed:", currentUser.email_confirmed_at)
+        console.log("   - User Metadata:", currentUser.user_metadata)
+        console.log("   - App Metadata:", currentUser.app_metadata)
+        console.log("   - URL Organization ID:", urlOrganizationId)
 
-      setUserInfo(currentUser)
+        setUserInfo(currentUser)
 
-      // Verificar si el usuario ya existe en la tabla users
-      console.log("🔍 Verificando usuario en base de datos...")
-      setMessage("Configurando tu cuenta...")
+        // Verificar si el usuario ya existe en la tabla users
+        console.log("🔍 Verificando usuario en base de datos...")
+        setMessage("Configurando tu cuenta...")
 
-      const { data: existingUser, error: userError } = await supabase
-        .from("users")
-        .select("id, organization_id, name, role")
-        .eq("id", currentUser.id)
-        .maybeSingle()
+        const { data: existingUser, error: userError } = await supabase
+          .from("users")
+          .select("id, organization_id, name, role")
+          .eq("id", currentUser.id)
+          .maybeSingle()
 
-      console.log("📊 RESULTADO DE CONSULTA DE USUARIO:")
-      console.log("   - Error:", userError)
-      console.log("   - Usuario existente:", existingUser)
+        console.log("📊 RESULTADO DE CONSULTA DE USUARIO:")
+        console.log("   - Error:", userError)
+        console.log("   - Usuario existente:", existingUser)
 
-      if (existingUser) {
-        console.log("✅ Usuario ya existe en la tabla con organización:", existingUser.organization_id)
-        
-        // Si existe pero no tiene organización, actualizar con la de la URL
-        if (urlOrganizationId && (!existingUser.organization_id || existingUser.organization_id === "null")) {
-          console.log("🔄 Actualizando organización del usuario existente...")
-          
+        if (existingUser) {
+          console.log("✅ Usuario ya existe en la tabla con organización:", existingUser.organization_id)
+
+          // Obtener datos actualizados de los metadatos
+          const urlParams = new URLSearchParams(window.location.search)
+          const urlRole = urlParams.get("role")
+          const userMetadata = currentUser.user_metadata || {}
+          const appMetadata = currentUser.app_metadata || {}
+
+          const userName =
+            userMetadata.full_name ||
+            userMetadata.name ||
+            appMetadata.full_name ||
+            appMetadata.name ||
+            userMetadata.display_name ||
+            appMetadata.display_name ||
+            currentUser.email?.split("@")[0] ||
+            "Usuario"
+
+          let userRole = userMetadata.role || appMetadata.role || urlRole || "user"
+
+          // Validar que el rol sea válido según la tabla
+          const validRoles = ["user", "admin", "coordinador"]
+          if (!validRoles.includes(userRole)) {
+            console.warn("⚠️ Rol inválido encontrado:", userRole, "- usando 'user' por defecto")
+            userRole = "user"
+          }
+
+          // ✅ SIEMPRE actualizar name y role, y organización si es necesario
+          const shouldUpdateOrg =
+            urlOrganizationId && (!existingUser.organization_id || existingUser.organization_id === "null")
+
+          console.log("🔄 Actualizando usuario existente con:")
+          console.log("   - Organization ID actual:", existingUser.organization_id)
+          console.log("   - Organization ID nuevo:", shouldUpdateOrg ? urlOrganizationId : "sin cambios")
+          console.log("   - Name actual:", existingUser.name)
+          console.log("   - Name nuevo:", userName)
+          console.log("   - Role actual:", existingUser.role)
+          console.log("   - Role nuevo:", userRole)
+
+          // ✅ SIEMPRE actualizar name y role
+          const updateData: any = {
+            name: userName,
+            role: userRole,
+          }
+
+          // Solo actualizar organización si es necesario
+          if (shouldUpdateOrg) {
+            updateData.organization_id = urlOrganizationId
+          }
+
+          console.log("📝 Datos que se van a actualizar:", updateData)
+
           const { data: updatedUser, error: updateError } = await supabase
             .from("users")
-            .update({
-              organization_id: urlOrganizationId
-            })
+            .update(updateData)
             .eq("id", currentUser.id)
             .select()
             .single()
-            
+
           if (updateError) {
-            console.error("❌ Error actualizando organización:", updateError)
+            console.error("❌ Error actualizando usuario:", updateError)
           } else {
-            console.log("✅ Organización actualizada:", updatedUser)
+            console.log("✅ Usuario actualizado completamente:", updatedUser)
           }
+        } else {
+          // Crear usuario usando los metadatos de la invitación
+          console.log("🔄 Creando usuario en la tabla...")
+          await createUserFromInvitation(currentUser, urlOrganizationId)
         }
-      } else {
-        // Crear usuario usando los metadatos de la invitación
-        console.log("🔄 Creando usuario en la tabla...")
-        await createUserFromInvitation(currentUser, urlOrganizationId)
+
+        // Actualizar el contexto de autenticación
+        console.log("🔄 Actualizando contexto de autenticación...")
+        try {
+          await refreshUserProfile()
+          console.log("✅ Contexto actualizado")
+        } catch (refreshError) {
+          console.warn("⚠️ Error actualizando contexto:", refreshError)
+        }
+
+        // Mostrar formulario de contraseña
+        console.log("🔄 Mostrando formulario de contraseña...")
+        setStatus("set-password")
+        setMessage("¡Bienvenido al equipo! Ahora establece tu contraseña.")
+        setShowPasswordForm(true)
+      } catch (error) {
+        console.error("💥 Error procesando usuario:", error)
+        setStatus("error")
+        setMessage(`Error al procesar el usuario: ${error instanceof Error ? error.message : "Error desconocido"}`)
       }
-
-      // Actualizar el contexto de autenticación
-      console.log("🔄 Actualizando contexto de autenticación...")
-      try {
-        await refreshUserProfile()
-        console.log("✅ Contexto actualizado")
-      } catch (refreshError) {
-        console.warn("⚠️ Error actualizando contexto:", refreshError)
-      }
-
-      // Mostrar formulario de contraseña
-      console.log("🔄 Mostrando formulario de contraseña...")
-      setStatus("set-password")
-      setMessage("¡Bienvenido al equipo! Ahora establece tu contraseña.")
-      setShowPasswordForm(true)
-
-    } catch (error) {
-      console.error("💥 Error procesando usuario:", error)
-      setStatus("error")
-      setMessage(`Error al procesar el usuario: ${error instanceof Error ? error.message : "Error desconocido"}`)
-    }
-  }, [createUserFromInvitation, refreshUserProfile]);
+    },
+    [createUserFromInvitation, refreshUserProfile],
+  )
 
   useEffect(() => {
     if (hasProcessed.current) return
@@ -215,19 +270,18 @@ export default function InviteCallback() {
         console.log("   - URL actual:", window.location.href)
         console.log("   - Hash:", window.location.hash)
         console.log("   - Search:", window.location.search)
-        
+
         setMessage("Confirmando invitación...")
 
         // Obtener parámetros de la URL
         const urlParams = new URLSearchParams(window.location.search)
         const hashParams = new URLSearchParams(window.location.hash.substring(1))
-        
-        const token = urlParams.get('token')
-        const type = urlParams.get('type')
-        const organizationId = urlParams.get('organization_id')
-        const accessToken = hashParams.get('access_token')
-        const refreshToken = hashParams.get('refresh_token')
-        
+        const token = urlParams.get("token")
+        const type = urlParams.get("type")
+        const organizationId = urlParams.get("organization_id")
+        const accessToken = hashParams.get("access_token")
+        const refreshToken = hashParams.get("refresh_token")
+
         console.log("🔑 PARÁMETROS ENCONTRADOS:")
         console.log("   - Token (query):", token ? "✅ Presente" : "❌ Ausente")
         console.log("   - Type:", type)
@@ -242,7 +296,7 @@ export default function InviteCallback() {
 
           const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
             access_token: accessToken,
-            refresh_token: refreshToken
+            refresh_token: refreshToken,
           })
 
           if (sessionError) {
@@ -261,13 +315,13 @@ export default function InviteCallback() {
         }
 
         // Método 2: Si tenemos token en query params
-        if (token && type === 'invite') {
+        if (token && type === "invite") {
           console.log("🔄 Método 2: Verificando token de invitación...")
           setMessage("Verificando tu invitación...")
 
           const { data, error } = await supabase.auth.verifyOtp({
             token_hash: token,
-            type: 'invite'
+            type: "invite",
           })
 
           if (error) {
@@ -288,12 +342,15 @@ export default function InviteCallback() {
         // Método 3: Esperar a que Supabase procese automáticamente
         console.log("🔄 Método 3: Esperando procesamiento automático...")
         setMessage("Procesando automáticamente...")
-        
+
         // Esperar un momento para que Supabase procese la URL
-        await new Promise(resolve => setTimeout(resolve, 2000))
-        
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-        
+        await new Promise((resolve) => setTimeout(resolve, 2000))
+
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession()
+
         if (sessionError) {
           console.error("❌ Error obteniendo sesión:", sessionError)
           setStatus("error")
@@ -310,7 +367,7 @@ export default function InviteCallback() {
         // Método 4: Intentar refresh
         console.log("🔄 Método 4: Intentando refresh de sesión...")
         const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession()
-        
+
         if (!refreshError && refreshData.session?.user) {
           console.log("✅ Sesión obtenida después del refresh")
           await processUser(refreshData.session.user, organizationId)
@@ -321,7 +378,6 @@ export default function InviteCallback() {
         console.error("❌ No se pudo obtener sesión con ningún método")
         setStatus("error")
         setMessage("Error: El enlace de invitación es inválido o ha expirado. Solicita una nueva invitación.")
-
       } catch (error) {
         console.error("💥 Error en handleInviteCallback:", error)
         setStatus("error")
@@ -335,7 +391,7 @@ export default function InviteCallback() {
   const handleSetPassword = async (e: React.FormEvent) => {
     e.preventDefault()
     setPasswordError("")
-    
+
     console.log("🔄 ESTABLECIENDO CONTRASEÑA...")
 
     if (password !== confirmPassword) {
@@ -370,18 +426,18 @@ export default function InviteCallback() {
         .from("users")
         .select("*")
         .eq("id", userInfo.id)
-        .single();
+        .single()
 
-      console.log("📊 VERIFICACIÓN FINAL DE USUARIO:");
-      console.log("   - Error:", userCheckError);
-      console.log("   - Usuario:", userCheck);
+      console.log("📊 VERIFICACIÓN FINAL DE USUARIO:")
+      console.log("   - Error:", userCheckError)
+      console.log("   - Usuario:", userCheck)
 
       if (!userCheck) {
-        console.error("❌ Usuario no encontrado en la tabla después de establecer contraseña");
+        console.error("❌ Usuario no encontrado en la tabla después de establecer contraseña")
         // Intentar crear el usuario una última vez
-        const urlParams = new URLSearchParams(window.location.search);
-        const organizationId = urlParams.get('organization_id');
-        await createUserFromInvitation(userInfo, organizationId);
+        const urlParams = new URLSearchParams(window.location.search)
+        const organizationId = urlParams.get("organization_id")
+        await createUserFromInvitation(userInfo, organizationId)
       }
 
       // Actualizar contexto final
@@ -395,12 +451,11 @@ export default function InviteCallback() {
 
       setStatus("success")
       setMessage("¡Contraseña establecida! Redirigiendo al dashboard...")
-      
+
       console.log("✅ PROCESO COMPLETADO - Redirigiendo al dashboard...")
       setTimeout(() => {
         router.push("/dashboard")
       }, 2000)
-
     } catch (error: any) {
       console.error("💥 Error estableciendo contraseña:", error)
       setPasswordError(`Error al establecer contraseña: ${error.message}`)
@@ -526,27 +581,17 @@ export default function InviteCallback() {
           </div>
           <p
             className={`text-sm ${
-              status === "success" 
-                ? "text-green-600" 
-                : status === "error" 
-                ? "text-red-600" 
-                : "text-gray-600"
+              status === "success" ? "text-green-600" : status === "error" ? "text-red-600" : "text-gray-600"
             }`}
           >
             {message}
           </p>
           {status === "error" && (
             <div className="mt-4 space-y-2">
-              <button 
-                onClick={() => router.push("/login")} 
-                className="text-blue-600 hover:underline text-sm block"
-              >
+              <button onClick={() => router.push("/login")} className="text-blue-600 hover:underline text-sm block">
                 Ir al login
               </button>
-              <button 
-                onClick={() => router.push("/register")} 
-                className="text-gray-600 hover:underline text-sm block"
-              >
+              <button onClick={() => router.push("/register")} className="text-gray-600 hover:underline text-sm block">
                 Crear cuenta nueva
               </button>
             </div>

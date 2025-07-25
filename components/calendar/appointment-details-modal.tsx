@@ -23,6 +23,7 @@ import type { AppointmentWithDetails, Service } from "@/types/calendar"
 import { IndividualBillingButton } from "./individual-billing-button"
 import { supabase } from "@/lib/supabase/client"
 import { useAuth } from "@/app/contexts/auth-context"
+import { useAppointmentConflicts } from "@/hooks/use-appointment-conflicts"
 
 interface AppointmentDetailsModalProps {
   isOpen: boolean
@@ -55,6 +56,9 @@ export function AppointmentDetailsModal({
   // Determinar si el usuario es coordinador
   const isCoordinator = userProfile?.role === "coordinador"
 
+  // Hook para verificar conflictos
+  const { conflicts, loading: conflictsLoading, checkConflicts } = useAppointmentConflicts(userProfile?.organization_id)
+
   // Form states
   const [editedAppointment, setEditedAppointment] = useState<AppointmentWithDetails>(appointment)
 
@@ -76,6 +80,37 @@ export function AppointmentDetailsModal({
       checkExistingInvoice()
     }
   }, [isOpen, appointment.id, userProfile])
+
+  // Verificar conflictos cuando se editan horarios
+  useEffect(() => {
+    if (
+      isEditing &&
+      editedAppointment.date &&
+      editedAppointment.start_time &&
+      editedAppointment.duration &&
+      editedAppointment.professional_id
+    ) {
+      const timeoutId = setTimeout(() => {
+        checkConflicts(
+          editedAppointment.date,
+          editedAppointment.start_time,
+          editedAppointment.duration,
+          editedAppointment.professional_id,
+          appointment.id, // Excluir la cita actual
+        )
+      }, 500) // Debounce para evitar muchas consultas
+
+      return () => clearTimeout(timeoutId)
+    }
+  }, [
+    isEditing,
+    editedAppointment.date,
+    editedAppointment.start_time,
+    editedAppointment.duration,
+    editedAppointment.professional_id,
+    checkConflicts,
+    appointment.id,
+  ])
 
   const checkExistingInvoice = async () => {
     if (!userProfile?.organization_id || !appointment.id) {
@@ -206,6 +241,12 @@ export function AppointmentDetailsModal({
 
   // Función de actualización mejorada
   const handleSave = async () => {
+    // Verificar conflictos antes de guardar
+    if (conflicts.length > 0) {
+      // No permitir guardar si hay conflictos
+      return
+    }
+
     setIsSaving(true)
     try {
       // Preparar los datos para la actualización
@@ -300,6 +341,36 @@ export function AppointmentDetailsModal({
         return "Cancelada"
       default:
         return status
+    }
+  }
+
+  const getConflictTypeColor = (type: string) => {
+    switch (type) {
+      case "appointment":
+        return "bg-red-100 text-red-800 border-red-200"
+      case "group_activity":
+        return "bg-orange-100 text-orange-800 border-orange-200"
+      case "work_break":
+        return "bg-yellow-100 text-yellow-800 border-yellow-200"
+      case "outside_hours":
+        return "bg-gray-100 text-gray-800 border-gray-200"
+      default:
+        return "bg-red-100 text-red-800 border-red-200"
+    }
+  }
+
+  const getConflictTypeIcon = (type: string) => {
+    switch (type) {
+      case "appointment":
+        return "👤"
+      case "group_activity":
+        return "👥"
+      case "work_break":
+        return "☕"
+      case "outside_hours":
+        return "🚫"
+      default:
+        return "⚠️"
     }
   }
 
@@ -638,6 +709,35 @@ export function AppointmentDetailsModal({
                   )}
                 </div>
 
+                {/* SECCIÓN DE CONFLICTOS - Solo mostrar si está editando y hay conflictos */}
+                {isEditing && conflicts.length > 0 && (
+                  <div className="p-3 bg-red-50 rounded-lg border border-red-200">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5" />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-sm font-medium text-red-700">Conflictos detectados:</span>
+                          {conflictsLoading && <Clock className="h-3 w-3 animate-spin text-red-600" />}
+                        </div>
+                        <div className="space-y-2">
+                          {conflicts.map((conflict, index) => (
+                            <div key={conflict.id} className="flex items-center gap-2 text-xs">
+                              <span className="text-sm">{getConflictTypeIcon(conflict.type)}</span>
+                              <Badge className={getConflictTypeColor(conflict.type)}>
+                                {conflict.start_time} - {conflict.end_time}
+                              </Badge>
+                              <span className="text-red-700 flex-1">{conflict.client_name}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-xs text-red-600 mt-2">
+                          ⚠️ Hay conflictos de horario. Revisa los horarios antes de guardar.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* SECCIÓN 5: NOTAS - Solo si hay notas o está editando */}
                 {(appointment.notes || isEditing) && (
                   <div className="p-3 bg-yellow-50 rounded-lg">
@@ -688,11 +788,13 @@ export function AppointmentDetailsModal({
                     e.stopPropagation()
                     handleSave()
                   }}
-                  disabled={isSaving}
-                  className="gap-2"
+                  disabled={isSaving || conflicts.length > 0}
+                  className={`gap-2 ${conflicts.length > 0 ? "opacity-50 cursor-not-allowed" : ""}`}
+                  title={conflicts.length > 0 ? "No se puede guardar: hay conflictos de horario" : ""}
                 >
                   <Save className="h-4 w-4" />
-                  {isSaving ? "Guardando..." : "Guardar"}
+                  {conflicts.length > 0 && <AlertTriangle className="h-3 w-3" />}
+                  {isSaving ? "Guardando..." : conflicts.length > 0 ? "No se puede guardar" : "Guardar"}
                 </Button>
               </div>
             )}
