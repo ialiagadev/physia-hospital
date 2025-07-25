@@ -10,6 +10,14 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Progress } from "@/components/ui/progress"
 import { useToast } from "@/hooks/use-toast"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
   Upload,
   File,
   Download,
@@ -54,6 +62,17 @@ export function ClientDocumentsSection({
   const [uploadProgress, setUploadProgress] = useState(0)
   const [bucketName] = useState("client-documents")
   const [dragActive, setDragActive] = useState(false)
+
+  // Estado para el diálogo de confirmación de eliminación
+  const [deleteDialog, setDeleteDialog] = useState<{
+    isOpen: boolean
+    fileName: string
+    isDeleting: boolean
+  }>({
+    isOpen: false,
+    fileName: "",
+    isDeleting: false,
+  })
 
   // Generar la ruta de la carpeta para los documentos
   const getFolderPath = useCallback(() => {
@@ -147,24 +166,31 @@ export function ClientDocumentsSection({
     if (mime?.startsWith("image/") || ["jpg", "jpeg", "png", "gif", "bmp", "svg", "webp"].includes(extension || "")) {
       return <ImageIcon className="w-5 h-5 text-blue-500" />
     }
+
     if (mime?.startsWith("video/") || ["mp4", "avi", "mov", "wmv", "flv", "webm", "mkv"].includes(extension || "")) {
       return <Video className="w-5 h-5 text-purple-500" />
     }
+
     if (mime?.startsWith("audio/") || ["mp3", "wav", "flac", "aac", "ogg", "m4a"].includes(extension || "")) {
       return <Music className="w-5 h-5 text-green-500" />
     }
+
     if (mime?.includes("pdf") || extension === "pdf") {
       return <FileText className="w-5 h-5 text-red-500" />
     }
+
     if (mime?.includes("spreadsheet") || mime?.includes("excel") || ["xls", "xlsx", "csv"].includes(extension || "")) {
       return <FileSpreadsheet className="w-5 h-5 text-green-600" />
     }
+
     if (mime?.includes("presentation") || mime?.includes("powerpoint") || ["ppt", "pptx"].includes(extension || "")) {
       return <Presentation className="w-5 h-5 text-orange-500" />
     }
+
     if (["zip", "rar", "7z", "tar", "gz"].includes(extension || "")) {
       return <Archive className="w-5 h-5 text-yellow-600" />
     }
+
     return <File className="w-5 h-5 text-gray-500" />
   }
 
@@ -172,12 +198,12 @@ export function ClientDocumentsSection({
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return "0 Bytes"
     const k = 1024
-    const sizes = ["Bytes", "KB", "MB", "GB"]
+    const sizes = ["Bytes", "KB", "MB", "GB", "TB"]
     const i = Math.floor(Math.log(bytes) / Math.log(k))
     return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
   }
 
-  // Subir archivo
+  // Subir archivo (sin limitaciones de tamaño para plan pro)
   const uploadFile = async (file: File) => {
     setIsUploading(true)
     setUploadProgress(0)
@@ -270,7 +296,6 @@ export function ClientDocumentsSection({
         const folderPath = getFolderPath()
         const filePath = `${folderPath}/${fileName}`
         const newSignedUrl = await getSignedUrl(filePath)
-
         if (newSignedUrl) {
           window.open(newSignedUrl, "_blank")
         } else {
@@ -287,11 +312,29 @@ export function ClientDocumentsSection({
     }
   }
 
+  // Abrir diálogo de confirmación para eliminar
+  const openDeleteDialog = (fileName: string) => {
+    setDeleteDialog({
+      isOpen: true,
+      fileName,
+      isDeleting: false,
+    })
+  }
+
+  // Cerrar diálogo de confirmación
+  const closeDeleteDialog = () => {
+    setDeleteDialog({
+      isOpen: false,
+      fileName: "",
+      isDeleting: false,
+    })
+  }
+
   // Eliminar archivo
-  const deleteFile = async (fileName: string) => {
-    if (!confirm(`¿Estás seguro de que quieres eliminar "${fileName}"?`)) {
-      return
-    }
+  const confirmDeleteFile = async () => {
+    const { fileName } = deleteDialog
+
+    setDeleteDialog((prev) => ({ ...prev, isDeleting: true }))
 
     try {
       const folderPath = getFolderPath()
@@ -304,11 +347,12 @@ export function ClientDocumentsSection({
       }
 
       toast({
-        title: "Éxito",
-        description: `Archivo "${fileName}" eliminado`,
+        title: "Archivo eliminado",
+        description: `El archivo "${fileName}" ha sido eliminado correctamente`,
       })
 
       await loadDocuments()
+      closeDeleteDialog()
     } catch (error) {
       console.error("Error deleting file:", error)
       toast({
@@ -316,6 +360,7 @@ export function ClientDocumentsSection({
         description: "Error al eliminar el archivo",
         variant: "destructive",
       })
+      setDeleteDialog((prev) => ({ ...prev, isDeleting: false }))
     }
   }
 
@@ -334,6 +379,7 @@ export function ClientDocumentsSection({
     e.preventDefault()
     e.stopPropagation()
     setDragActive(false)
+
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const files = Array.from(e.dataTransfer.files)
       files.forEach((file) => uploadFile(file))
@@ -381,7 +427,9 @@ export function ClientDocumentsSection({
                   <p className="text-lg font-medium text-gray-700">
                     Arrastra archivos aquí o haz clic para seleccionar
                   </p>
-                  <p className="text-sm text-gray-500 mt-1">Se aceptan todos los tipos de archivo médico</p>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Se aceptan todos los tipos de archivo médico (sin límite de tamaño con plan Pro)
+                  </p>
                 </div>
                 <input type="file" multiple onChange={handleFileSelect} className="hidden" id="file-upload" />
                 <Button asChild>
@@ -466,7 +514,7 @@ export function ClientDocumentsSection({
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => deleteFile(doc.name)}
+                      onClick={() => openDeleteDialog(doc.name)}
                       className="text-red-600 hover:text-red-700"
                       title="Eliminar archivo"
                     >
@@ -485,9 +533,45 @@ export function ClientDocumentsSection({
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
           Los documentos se almacenan de forma segura y privada, organizados por cliente. Se aceptan todos los tipos de
-          archivo médico comunes (PDF, imágenes, Word, Excel, etc.). Tamaño máximo: 50MB por archivo.
+          archivo médico comunes (PDF, imágenes, Word, Excel, etc.). 
         </AlertDescription>
       </Alert>
+
+      {/* Diálogo de confirmación para eliminar */}
+      <Dialog open={deleteDialog.isOpen} onOpenChange={closeDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-red-500" />
+              Confirmar eliminación
+            </DialogTitle>
+            <DialogDescription>
+              ¿Estás seguro de que quieres eliminar el archivo{" "}
+              <span className="font-medium text-gray-900">"{deleteDialog.fileName}"</span>?
+              <br />
+              <span className="text-red-600 font-medium">Esta acción no se puede deshacer.</span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeDeleteDialog} disabled={deleteDialog.isDeleting}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={confirmDeleteFile} disabled={deleteDialog.isDeleting}>
+              {deleteDialog.isDeleting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Eliminando...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Eliminar archivo
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
