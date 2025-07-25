@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Checkbox } from "@/components/ui/checkbox"
 import { useToast } from "@/hooks/use-toast"
 import { Save, Upload, X, Download } from "lucide-react"
 import { useAuth } from "@/app/contexts/auth-context"
@@ -59,7 +58,6 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
     notes: "",
     vat_rate: "21",
     retention_rate: "0",
-    is_deductible: true,
   })
 
   // Filtrar usuarios con type=1 (profesionales)
@@ -87,7 +85,6 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
         notes: expense.notes || "",
         vat_rate: expense.vat_rate?.toString() || "21",
         retention_rate: expense.retention_rate?.toString() || "0",
-        is_deductible: expense.is_deductible ?? true,
       })
     }
   }, [expense, open])
@@ -162,7 +159,6 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
       notes: "",
       vat_rate: "21",
       retention_rate: "0",
-      is_deductible: true,
     })
     setSelectedFile(null)
     setTempFilePath(null)
@@ -206,7 +202,7 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
         description: formData.description,
         amount: calculations.baseAmount,
         expense_date: formData.expense_date,
-        is_deductible: formData.is_deductible,
+        is_deductible: true,
         vat_rate: calculations.vatAmount > 0 ? Number.parseFloat(formData.vat_rate) : 0,
         vat_amount: calculations.vatAmount,
         retention_rate: calculations.retentionAmount > 0 ? Number.parseFloat(formData.retention_rate) : 0,
@@ -448,18 +444,6 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Opciones</Label>
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="is_deductible"
-                    checked={formData.is_deductible}
-                    onCheckedChange={(checked) => handleInputChange("is_deductible", checked as boolean)}
-                  />
-                  <Label htmlFor="is_deductible">Gasto deducible</Label>
-                </div>
               </div>
             </div>
 

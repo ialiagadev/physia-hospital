@@ -13,7 +13,7 @@ import { useUsers } from "@/hooks/use-users"
 import { useAuth } from "@/app/contexts/auth-context"
 import { EditExpenseModal } from "./edit-expense-modal"
 import { NewExpenseModal } from "./new-expense-modal"
-import { Edit, Trash2, Plus, Search, Filter, FileText, Check, X, Download, ExternalLink } from "lucide-react"
+import { Edit, Trash2, Plus, Search, Filter, FileText, Download, ExternalLink } from "lucide-react"
 import { calculateExpenseAmounts, type ExpenseWithDetails, type ExpenseFilters } from "@/types/expenses"
 import {
   AlertDialog,
@@ -236,23 +236,6 @@ export function ExpensesTable() {
           </div>
 
           <div>
-            <label className="text-sm font-medium mb-2 block">Deducible</label>
-            <Select
-              value={filters.is_deductible || "all"}
-              onValueChange={(value) => handleFilterChange("is_deductible", value)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Todos" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                <SelectItem value="true">Deducible</SelectItem>
-                <SelectItem value="false">No deducible</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
             <label className="text-sm font-medium mb-2 block">Fecha desde</label>
             <Input
               type="date"
@@ -289,7 +272,6 @@ export function ExpensesTable() {
               <TableHead>Base</TableHead>
               <TableHead>IVA</TableHead>
               <TableHead>Total</TableHead>
-              <TableHead>Deducible</TableHead>
               <TableHead>Método de Pago</TableHead>
               <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
@@ -337,18 +319,6 @@ export function ExpensesTable() {
                       </div>
                     </TableCell>
                     <TableCell className="font-medium">{formatCurrency(totalAmount)}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center">
-                        {expense.is_deductible ? (
-                          <Check className="h-4 w-4 text-green-500" />
-                        ) : (
-                          <X className="h-4 w-4 text-red-500" />
-                        )}
-                        <span className="ml-1 text-xs text-muted-foreground">
-                          {expense.is_deductible ? "Sí" : "No"}
-                        </span>
-                      </div>
-                    </TableCell>
                     <TableCell>{getPaymentMethodLabel(expense.payment_method)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex gap-1 justify-end">
