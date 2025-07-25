@@ -22,6 +22,7 @@ import { PatientConsentsSection } from "@/components/consent/patient-consents-se
 import { PatientAppointmentsSection } from "@/components/patient-appointments-section"
 import { CreditCard } from "lucide-react"
 import { LoyaltyCardsSection } from "@/components/loyalty-cards-section"
+import { ClientDocumentsSection } from "@/components/client-documents-section"
 import {
   User,
   Phone,
@@ -34,7 +35,6 @@ import {
   FolderOpen,
   TrendingUp,
   Activity,
-  Eye,
   Coffee,
   Brain,
   Heart,
@@ -72,7 +72,6 @@ interface HistorialMedicoCompleto {
   // 1. MOTIVO DE CONSULTA
   motivoConsulta: string
   tiempoEvolucion: string
-
   // 2. ENFERMEDAD ACTUAL
   descripcionDetallada: string
   inicioEvolucion: string
@@ -82,7 +81,6 @@ interface HistorialMedicoCompleto {
   frecuenciaSintomas: string
   localizacion: string
   impactoVidaDiaria: string
-
   // 3. ANTECEDENTES PERSONALES
   enfermedadesCronicas: string
   enfermedadesAgudas: string
@@ -93,13 +91,11 @@ interface HistorialMedicoCompleto {
   medicacionHabitual: string
   hospitalizacionesPrevias: string
   accidentesTraumatismos: string
-
   // 4. ANTECEDENTES FAMILIARES
   enfermedadesHereditarias: string
   patologiasPadres: string
   patologiasHermanos: string
   patologiasAbuelos: string
-
   // 5. HÁBITOS Y ESTILO DE VIDA
   alimentacion: string
   actividadFisica: string
@@ -113,7 +109,6 @@ interface HistorialMedicoCompleto {
   calidadSueno: string
   horasSueno: string
   nivelEstres: string
-
   // 6. FUNCIÓN DIGESTIVA
   apetito: string
   digestion: string
@@ -123,27 +118,23 @@ interface HistorialMedicoCompleto {
   cambiosEvacuaciones: string
   nauseasVomitos: string
   reflujo: string
-
   // 7. FUNCIÓN URINARIA
   frecuenciaUrinaria: string
   dolorUrinar: string
   incontinencia: string
   cambiosColorOrina: string
   cambiosOlorOrina: string
-
   // 8. FUNCIÓN CARDIOVASCULAR Y RESPIRATORIA
   palpitaciones: string
   disnea: string
   dolorToracico: string
   tos: string
   esputo: string
-
   // 9. FUNCIÓN MUSCULOESQUELÉTICA
   dolorArticular: string
   dolorMuscular: string
   limitacionesMovimiento: string
   debilidadFatiga: string
-
   // 10. FUNCIÓN NEUROLÓGICA
   mareosVertigo: string
   perdidaSensibilidad: string
@@ -151,19 +142,16 @@ interface HistorialMedicoCompleto {
   cefaleas: string
   alteracionesVisuales: string
   alteracionesAuditivas: string
-
   // 11. FUNCIÓN PSICOLÓGICA/EMOCIONAL
   estadoAnimo: string
   ansiedad: string
   depresion: string
   cambiosConducta: string
   trastornosSueno: string
-
   // 12. REVISIÓN POR SISTEMAS
   sistemasCutaneo: string
   sistemaEndocrino: string
   sistemaHematologico: string
-
   // EXPLORACIÓN FÍSICA
   tensionArterial: string
   frecuenciaCardiaca: string
@@ -174,10 +162,8 @@ interface HistorialMedicoCompleto {
   talla: string
   imc: string
   observacionesClinicas: string
-
   // PRUEBAS COMPLEMENTARIAS
   pruebasComplementarias: string
-
   // DIAGNÓSTICO Y TRATAMIENTO
   diagnostico: string
   medicacion: string
@@ -185,10 +171,8 @@ interface HistorialMedicoCompleto {
   derivaciones: string
   seguimiento: string
   observacionesAdicionales: string
-
   // CAMPOS PERSONALIZADOS
   camposPersonalizados: CampoPersonalizado[]
-
   // METADATOS
   fechaCreacion: string
   profesional: string
@@ -200,17 +184,14 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
   const { toast } = useToast()
   const { userProfile } = useAuth()
   const clientId = params.id
-
   // Determinar si el usuario es coordinador
   const isCoordinator = userProfile?.role === "coordinador"
-
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [organizations, setOrganizations] = useState<any[]>([])
   const [isEditing, setIsEditing] = useState(false)
   const [activeTab, setActiveTab] = useState("resumen")
-
   // Estados para historial médico
   const [showClinicalReport, setShowClinicalReport] = useState(false)
   // Agregar estos estados después de los existentes
@@ -227,14 +208,12 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
     descripcion: "",
   })
   const [expandedFields, setExpandedFields] = useState<Record<string, boolean>>({})
-
   const [clinicalStats, setClinicalStats] = useState({
     lastVisit: null,
     nextAppointment: null,
     totalRecords: 0,
-    activeRecords: 0
+    activeRecords: 0,
   })
-
   const [formData, setFormData] = useState({
     organization_id: "",
     name: "",
@@ -256,13 +235,11 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
       OficinaContable: "",
     },
   })
-
   // Historial médico completo
   const historialVacio: HistorialMedicoCompleto = {
     // Motivo de consulta
     motivoConsulta: "",
     tiempoEvolucion: "",
-
     // Enfermedad actual
     descripcionDetallada: "",
     inicioEvolucion: "",
@@ -272,7 +249,6 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
     frecuenciaSintomas: "",
     localizacion: "",
     impactoVidaDiaria: "",
-
     // Antecedentes personales
     enfermedadesCronicas: "",
     enfermedadesAgudas: "",
@@ -283,13 +259,11 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
     medicacionHabitual: "",
     hospitalizacionesPrevias: "",
     accidentesTraumatismos: "",
-
     // Antecedentes familiares
     enfermedadesHereditarias: "",
     patologiasPadres: "",
     patologiasHermanos: "",
     patologiasAbuelos: "",
-
     // Hábitos y estilo de vida
     alimentacion: "",
     actividadFisica: "",
@@ -303,7 +277,6 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
     calidadSueno: "",
     horasSueno: "",
     nivelEstres: "",
-
     // Función digestiva
     apetito: "",
     digestion: "",
@@ -313,27 +286,23 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
     cambiosEvacuaciones: "",
     nauseasVomitos: "",
     reflujo: "",
-
     // Función urinaria
     frecuenciaUrinaria: "",
     dolorUrinar: "",
     incontinencia: "",
     cambiosColorOrina: "",
     cambiosOlorOrina: "",
-
     // Función cardiovascular y respiratoria
     palpitaciones: "",
     disnea: "",
     dolorToracico: "",
     tos: "",
     esputo: "",
-
     // Función musculoesquelética
     dolorArticular: "",
     dolorMuscular: "",
     limitacionesMovimiento: "",
     debilidadFatiga: "",
-
     // Función neurológica
     mareosVertigo: "",
     perdidaSensibilidad: "",
@@ -341,19 +310,16 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
     cefaleas: "",
     alteracionesVisuales: "",
     alteracionesAuditivas: "",
-
     // Función psicológica/emocional
     estadoAnimo: "",
     ansiedad: "",
     depresion: "",
     cambiosConducta: "",
     trastornosSueno: "",
-
     // Revisión por sistemas
     sistemasCutaneo: "",
     sistemaEndocrino: "",
     sistemaHematologico: "",
-
     // EXPLORACIÓN FÍSICA
     tensionArterial: "",
     frecuenciaCardiaca: "",
@@ -364,10 +330,8 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
     talla: "",
     imc: "",
     observacionesClinicas: "",
-
     // PRUEBAS COMPLEMENTARIAS
     pruebasComplementarias: "",
-
     // DIAGNÓSTICO Y TRATAMIENTO
     diagnostico: "",
     medicacion: "",
@@ -375,19 +339,15 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
     derivaciones: "",
     seguimiento: "",
     observacionesAdicionales: "",
-
     // CAMPOS PERSONALIZADOS
     camposPersonalizados: [],
-
     // METADATOS
     fechaCreacion: "",
     profesional: "",
     ultimaActualizacion: "",
   }
-
   const [historial, setHistorial] = useState<HistorialMedicoCompleto>(historialVacio)
   const [originalHistorial, setOriginalHistorial] = useState<HistorialMedicoCompleto>(historialVacio)
-
   // Función para convertir datos de DB a formato del componente
   const convertDbToComponent = (dbData: any): HistorialMedicoCompleto => {
     return {
@@ -401,7 +361,6 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
       frecuenciaSintomas: dbData.frecuencia_sintomas || "",
       localizacion: dbData.localizacion || "",
       impactoVidaDiaria: dbData.impacto_vida_diaria || "",
-
       enfermedadesCronicas: dbData.enfermedades_cronicas || "",
       enfermedadesAgudas: dbData.enfermedades_agudas || "",
       cirugiasPrevias: dbData.cirugias_previas || "",
@@ -411,12 +370,10 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
       medicacionHabitual: dbData.medicacion_habitual || "",
       hospitalizacionesPrevias: dbData.hospitalizaciones_previas || "",
       accidentesTraumatismos: dbData.accidentes_traumatismos || "",
-
       enfermedadesHereditarias: dbData.enfermedades_hereditarias || "",
       patologiasPadres: dbData.patologias_padres || "",
       patologiasHermanos: dbData.patologias_hermanos || "",
       patologiasAbuelos: dbData.patologias_de_abuelos || "",
-
       alimentacion: dbData.alimentacion || "",
       actividadFisica: dbData.actividad_fisica || "",
       consumoTabaco: dbData.consumo_tabaco || false,
@@ -429,7 +386,6 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
       calidadSueno: dbData.calidad_sueno || "",
       horasSueno: dbData.horas_sueno || "",
       nivelEstres: dbData.nivel_estres || "",
-
       apetito: dbData.apetito || "",
       digestion: dbData.digestion || "",
       evacuaciones: dbData.evacuaciones || "",
@@ -438,41 +394,34 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
       cambiosEvacuaciones: dbData.cambios_evacuaciones || "",
       nauseasVomitos: dbData.nauseas_vomitos || "",
       reflujo: dbData.reflujo || "",
-
       frecuenciaUrinaria: dbData.frecuencia_urinaria || "",
       dolorUrinar: dbData.dolor_urinar || "",
       incontinencia: dbData.incontinencia || "",
       cambiosColorOrina: dbData.cambios_color_orina || "",
       cambiosOlorOrina: dbData.cambios_olor_orina || "",
-
       palpitaciones: dbData.palpitaciones || "",
       disnea: dbData.disnea || "",
       dolorToracico: dbData.dolor_toracico || "",
       tos: dbData.tos || "",
       esputo: dbData.esputo || "",
-
       dolorArticular: dbData.dolor_articular || "",
       dolorMuscular: dbData.dolor_muscular || "",
       limitacionesMovimiento: dbData.limitaciones_movimiento || "",
       debilidadFatiga: dbData.debilidad_fatiga || "",
-
       mareosVertigo: dbData.mareos_vertigo || "",
       perdidaSensibilidad: dbData.perdida_sensibilidad || "",
       perdidaFuerza: dbData.perdida_fuerza || "",
       cefaleas: dbData.cefaleas || "",
       alteracionesVisuales: dbData.alteraciones_visuales || "",
       alteracionesAuditivas: dbData.alteraciones_auditivas || "",
-
       estadoAnimo: dbData.estado_animo || "",
       ansiedad: dbData.ansiedad || "",
       depresion: dbData.depresion || "",
       cambiosConducta: dbData.cambios_conducta || "",
       trastornosSueno: dbData.trastornos_sueno || "",
-
       sistemasCutaneo: dbData.sistemas_cutaneo || "",
       sistemaEndocrino: dbData.sistema_endocrino || "",
       sistemaHematologico: dbData.sistema_hematologico || "",
-
       tensionArterial: dbData.tension_arterial || "",
       frecuenciaCardiaca: dbData.frecuencia_cardiaca || "",
       frecuenciaRespiratoria: dbData.frecuencia_respiratoria || "",
@@ -482,24 +431,19 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
       talla: dbData.talla || "",
       imc: dbData.imc || "",
       observacionesClinicas: dbData.observaciones_clinicas || "",
-
       pruebasComplementarias: dbData.pruebas_complementarias || "",
-
       diagnostico: dbData.diagnostico || "",
       medicacion: dbData.medicacion || "",
       recomendaciones: dbData.recomendaciones || "",
       derivaciones: dbData.derivaciones || "",
       seguimiento: dbData.seguimiento || "",
       observacionesAdicionales: dbData.observaciones_adicionales || "",
-
       camposPersonalizados: dbData.campos_personalizados || [],
-
       fechaCreacion: dbData.created_at || new Date().toISOString(),
       profesional: dbData.profesional_nombre || userProfile?.name || "Dr. Usuario",
       ultimaActualizacion: dbData.updated_at || new Date().toISOString(),
     }
   }
-
   // Función para convertir datos del componente a formato de DB
   const convertComponentToDb = (componentData: HistorialMedicoCompleto): MedicalHistoryData => {
     return {
@@ -513,7 +457,6 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
       frecuenciaSintomas: componentData.frecuenciaSintomas,
       localizacion: componentData.localizacion,
       impactoVidaDiaria: componentData.impactoVidaDiaria,
-
       enfermedadesCronicas: componentData.enfermedadesCronicas,
       enfermedadesAgudas: componentData.enfermedadesAgudas,
       cirugiasPrevias: componentData.cirugiasPrevias,
@@ -523,12 +466,10 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
       medicacionHabitual: componentData.medicacionHabitual,
       hospitalizacionesPrevias: componentData.hospitalizacionesPrevias,
       accidentesTraumatismos: componentData.accidentesTraumatismos,
-
       enfermedadesHereditarias: componentData.enfermedadesHereditarias,
       patologiasPadres: componentData.patologiasPadres,
       patologiasHermanos: componentData.patologiasHermanos,
       patologiasAbuelos: componentData.patologiasAbuelos,
-
       alimentacion: componentData.alimentacion,
       actividadFisica: componentData.actividadFisica,
       consumoTabaco: componentData.consumoTabaco,
@@ -541,7 +482,6 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
       calidadSueno: componentData.calidadSueno,
       horasSueno: componentData.horasSueno,
       nivelEstres: componentData.nivelEstres,
-
       apetito: componentData.apetito,
       digestion: componentData.digestion,
       evacuaciones: componentData.evacuaciones,
@@ -550,41 +490,34 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
       cambiosEvacuaciones: componentData.cambiosEvacuaciones,
       nauseasVomitos: componentData.nauseasVomitos,
       reflujo: componentData.reflujo,
-
       frecuenciaUrinaria: componentData.frecuenciaUrinaria,
       dolorUrinar: componentData.dolorUrinar,
       incontinencia: componentData.incontinencia,
       cambiosColorOrina: componentData.cambiosColorOrina,
       cambiosOlorOrina: componentData.cambiosOlorOrina,
-
       palpitaciones: componentData.palpitaciones,
       disnea: componentData.disnea,
       dolorToracico: componentData.dolorToracico,
       tos: componentData.tos,
       esputo: componentData.esputo,
-
       dolorArticular: componentData.dolorArticular,
       dolorMuscular: componentData.dolorMuscular,
       limitacionesMovimiento: componentData.limitacionesMovimiento,
       debilidadFatiga: componentData.debilidadFatiga,
-
       mareosVertigo: componentData.mareosVertigo,
       perdidaSensibilidad: componentData.perdidaSensibilidad,
       perdidaFuerza: componentData.perdidaFuerza,
       cefaleas: componentData.cefaleas,
       alteracionesVisuales: componentData.alteracionesVisuales,
       alteracionesAuditivas: componentData.alteracionesAuditivas,
-
       estadoAnimo: componentData.estadoAnimo,
       ansiedad: componentData.ansiedad,
       depresion: componentData.depresion,
       cambiosConducta: componentData.cambiosConducta,
       trastornosSueno: componentData.trastornosSueno,
-
       sistemasCutaneo: componentData.sistemasCutaneo,
       sistemaEndocrino: componentData.sistemaEndocrino,
       sistemaHematologico: componentData.sistemaHematologico,
-
       tensionArterial: componentData.tensionArterial,
       frecuenciaCardiaca: componentData.frecuenciaCardiaca,
       frecuenciaRespiratoria: componentData.frecuenciaRespiratoria,
@@ -594,21 +527,17 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
       talla: componentData.talla,
       imc: componentData.imc,
       observacionesClinicas: componentData.observacionesClinicas,
-
       pruebasComplementarias: componentData.pruebasComplementarias,
-
       diagnostico: componentData.diagnostico,
       medicacion: componentData.medicacion,
       recomendaciones: componentData.recomendaciones,
       derivaciones: componentData.derivaciones,
       seguimiento: componentData.seguimiento,
       observacionesAdicionales: componentData.observacionesAdicionales,
-
       camposPersonalizados: componentData.camposPersonalizados,
       profesionalNombre: userProfile?.name || "Dr. Usuario",
     }
   }
-
   // Función para formatear fechas
   const formatDate = (dateString: string | null) => {
     if (!dateString) return "Sin fecha"
@@ -619,7 +548,6 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
       return "Fecha no válida"
     }
   }
-
   // Función para calcular edad
   const calculateAge = (birthDate: string | null) => {
     if (!birthDate) return "No especificada"
@@ -636,48 +564,41 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
       return "No especificada"
     }
   }
-          // resumen citas
-
+  // resumen citas
   useEffect(() => {
     const loadClinicalStats = async () => {
       if (!clientId) return
-      
       try {
         const today = new Date()
-        const todayString = today.toISOString().split('T')[0] // Formato YYYY-MM-DD
-        
+        const todayString = today.toISOString().split("T")[0] // Formato YYYY-MM-DD
         // Buscar última visita (citas pasadas)
         const { data: pastAppointments } = await supabase
-          .from('appointments')
-          .select('date, start_time, status')
-          .eq('client_id', clientId)
-          .lt('date', todayString)
-          .order('date', { ascending: false })
+          .from("appointments")
+          .select("date, start_time, status")
+          .eq("client_id", clientId)
+          .lt("date", todayString)
+          .order("date", { ascending: false })
           .limit(1)
-  
         // Buscar próxima cita (citas futuras confirmadas o pendientes)
         const { data: futureAppointments } = await supabase
-          .from('appointments')
-          .select('date, start_time, status')
-          .eq('client_id', clientId)
-          .gte('date', todayString)
-          .in('status', ['confirmed', 'pending'])
-          .order('date', { ascending: true })
+          .from("appointments")
+          .select("date, start_time, status")
+          .eq("client_id", clientId)
+          .gte("date", todayString)
+          .in("status", ["confirmed", "pending"])
+          .order("date", { ascending: true })
           .limit(1)
-  
         const stats = {
           lastVisit: pastAppointments?.[0]?.date || null,
           nextAppointment: futureAppointments?.[0]?.date || null,
           totalRecords: 0,
-          activeRecords: 0
+          activeRecords: 0,
         }
-  
         setClinicalStats(stats)
       } catch (error) {
-        console.error('Error loading clinical stats:', error)
+        console.error("Error loading clinical stats:", error)
       }
     }
-  
     loadClinicalStats()
   }, [clientId])
   // Cargar datos del cliente y organizaciones
@@ -690,18 +611,15 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
         if (orgsData) {
           setOrganizations(orgsData)
         }
-
         // Cargar datos del cliente
         const { data: clientData, error: clientError } = await supabase
           .from("clients")
           .select("*")
           .eq("id", clientId)
           .single()
-
         if (clientError) {
           throw new Error("No se pudo cargar la información del cliente")
         }
-
         if (clientData) {
           setFormData({
             organization_id: clientData.organization_id.toString(),
@@ -724,7 +642,6 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
               OficinaContable: "",
             },
           })
-
           // Solo cargar historial médico y seguimientos si NO es coordinador
           if (!isCoordinator) {
             // Cargar historial médico desde la base de datos
@@ -734,14 +651,12 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
               setHistorial(convertedData)
               setOriginalHistorial(convertedData)
             }
-
             // Cargar seguimientos
             const { data: seguimientosData } = await supabase
               .from("patient_follow_ups")
               .select("*")
               .eq("client_id", clientId)
               .order("created_at", { ascending: false })
-
             if (seguimientosData) {
               setSeguimientos(seguimientosData)
             }
@@ -753,10 +668,8 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
         setIsLoading(false)
       }
     }
-
     fetchData()
   }, [clientId, isCoordinator])
-
   // Función para calcular IMC automáticamente
   useEffect(() => {
     if (historial.peso && historial.talla) {
@@ -775,23 +688,18 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
     const { name, value } = e.target
     setFormData((prev) => ({ ...prev, [name]: value }))
   }
-
   // Función para manejar la generación del reporte
   const handleGenerateReport = async () => {
     console.log("=== INICIANDO GENERACIÓN DE REPORTE ===")
     console.log("Client ID:", clientId)
-
     setIsLoadingReport(true)
     setReportError(null)
-
     try {
       console.log("Llamando a getClinicalReportData...")
       const { data, error } = await getClinicalReportData(clientId)
-
       console.log("Respuesta de getClinicalReportData:")
       console.log("- Data:", data)
       console.log("- Error:", error)
-
       if (error) {
         console.log("❌ Error encontrado:", error)
         setReportError(error)
@@ -802,13 +710,11 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
         })
         return
       }
-
       if (!data) {
         console.log("❌ No hay datos disponibles")
         setReportError("No se pudieron obtener los datos del paciente")
         return
       }
-
       console.log("✅ Datos obtenidos correctamente, abriendo modal")
       setReportData(data)
       setShowClinicalReport(true)
@@ -843,12 +749,10 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
     e.preventDefault()
     setIsSaving(true)
     setError(null)
-
     try {
       if (!formData.organization_id) {
         throw new Error("Debes seleccionar una organización")
       }
-
       const { error: updateError } = await supabase
         .from("clients")
         .update({
@@ -868,11 +772,9 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
           dir3_codes: formData.client_type === "public" ? formData.dir3_codes : null,
         })
         .eq("id", clientId)
-
       if (updateError) {
         throw new Error(updateError.message)
       }
-
       setIsEditing(false)
       router.refresh()
     } catch (err) {
@@ -881,7 +783,6 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
       setIsSaving(false)
     }
   }
-
   // Funciones para el historial médico
   const updateMedicalField = (field: keyof HistorialMedicoCompleto, value: string | boolean) => {
     setHistorial((prev) => ({
@@ -890,24 +791,20 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
     }))
   }
   // Función para actualizar estadísticas clínicas
-const updateClinicalStats = (newStats: any) => {
-  setClinicalStats(newStats)
-}
-
+  const updateClinicalStats = (newStats: any) => {
+    setClinicalStats(newStats)
+  }
   // Función para guardar historial médico
   const handleSaveMedical = async () => {
     setIsSaving(true)
     try {
       const dbData = convertComponentToDb(historial)
       const { data, error } = await saveMedicalHistory(clientId, dbData)
-
       if (error) {
         throw new Error(error)
       }
-
       setOriginalHistorial(historial)
       setIsEditingMedical(false)
-
       toast({
         title: "Guardado exitoso",
         description: "El historial médico se ha guardado correctamente",
@@ -940,7 +837,6 @@ const updateClinicalStats = (newStats: any) => {
       })
       return
     }
-
     const nuevoCampo: CampoPersonalizado = {
       id: `campo_${Date.now()}`,
       titulo: newField.titulo,
@@ -949,15 +845,12 @@ const updateClinicalStats = (newStats: any) => {
       seccion,
       orden: historial.camposPersonalizados.filter((c) => c.seccion === seccion).length + 1,
     }
-
     setHistorial((prev) => ({
       ...prev,
       camposPersonalizados: [...prev.camposPersonalizados, nuevoCampo],
     }))
-
     setNewField({ titulo: "", subtitulo: "", descripcion: "" })
     setShowAddField(null)
-
     toast({
       title: "Campo añadido",
       description: "El nuevo campo se ha añadido correctamente",
@@ -978,7 +871,6 @@ const updateClinicalStats = (newStats: any) => {
       ...prev,
       camposPersonalizados: prev.camposPersonalizados.filter((campo) => campo.id !== id),
     }))
-
     toast({
       title: "Campo eliminado",
       description: "El campo personalizado se ha eliminado",
@@ -996,7 +888,6 @@ const updateClinicalStats = (newStats: any) => {
     const camposSeccion = historial.camposPersonalizados
       .filter((campo) => campo.seccion === seccion)
       .sort((a, b) => a.orden - b.orden)
-
     return (
       <div className="space-y-4">
         {camposSeccion.map((campo) => (
@@ -1075,7 +966,6 @@ const updateClinicalStats = (newStats: any) => {
             )}
           </Card>
         ))}
-
         {/* Formulario para añadir nuevo campo */}
         {isEditingMedical && (
           <div className="space-y-4">
@@ -1199,9 +1089,12 @@ const updateClinicalStats = (newStats: any) => {
           )}
         </div>
       </div>
-
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-      <TabsList className={`grid w-full gap-1 ${isCoordinator ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5' : 'grid-cols-2 sm:grid-cols-4 lg:grid-cols-7'}`}>          <TabsTrigger value="resumen" className="flex items-center gap-2">
+        <TabsList
+          className={`grid w-full gap-1 ${isCoordinator ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6" : "grid-cols-2 sm:grid-cols-4 lg:grid-cols-8"}`}
+        >
+          {" "}
+          <TabsTrigger value="resumen" className="flex items-center gap-2">
             <User className="h-4 w-4" />
             Resumen
           </TabsTrigger>
@@ -1221,6 +1114,10 @@ const updateClinicalStats = (newStats: any) => {
               Seguimiento
             </TabsTrigger>
           )}
+          <TabsTrigger value="documentos" className="flex items-center gap-2">
+            <FolderOpen className="h-4 w-4" />
+            Documentos
+          </TabsTrigger>
           <TabsTrigger value="loyalty-cards" className="flex items-center gap-2">
             <CreditCard className="h-4 w-4" />
             Tarjetas
@@ -1234,7 +1131,6 @@ const updateClinicalStats = (newStats: any) => {
             Consentimientos
           </TabsTrigger>
         </TabsList>
-
         {/* Pestaña Resumen */}
         <TabsContent value="resumen" className="space-y-6">
           {error && (
@@ -1242,7 +1138,6 @@ const updateClinicalStats = (newStats: any) => {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Información Personal */}
             <Card>
@@ -1261,7 +1156,6 @@ const updateClinicalStats = (newStats: any) => {
                     <p className="font-medium mt-1">{formData.name}</p>
                   )}
                 </div>
-
                 <div>
                   <Label className="text-sm text-gray-500">Fecha de nacimiento</Label>
                   {isEditing ? (
@@ -1276,12 +1170,10 @@ const updateClinicalStats = (newStats: any) => {
                     <p className="font-medium mt-1">{formatDate(formData.birth_date)}</p>
                   )}
                 </div>
-
                 <div>
                   <Label className="text-sm text-gray-500">Edad</Label>
                   <p className="font-medium mt-1">{calculateAge(formData.birth_date)}</p>
                 </div>
-
                 <div>
                   <Label className="text-sm text-gray-500">ID Paciente</Label>
                   {isEditing ? (
@@ -1292,7 +1184,6 @@ const updateClinicalStats = (newStats: any) => {
                 </div>
               </CardContent>
             </Card>
-
             {/* Información de Contacto */}
             <Card>
               <CardHeader>
@@ -1313,7 +1204,6 @@ const updateClinicalStats = (newStats: any) => {
                     <p className="font-medium mt-1">{formData.phone || "No registrado"}</p>
                   )}
                 </div>
-
                 <div>
                   <Label className="text-sm text-gray-500 flex items-center gap-1">
                     <Mail className="h-3 w-3" />
@@ -1325,7 +1215,6 @@ const updateClinicalStats = (newStats: any) => {
                     <p className="font-medium mt-1">{formData.email || "No registrado"}</p>
                   )}
                 </div>
-
                 <div>
                   <Label className="text-sm text-gray-500 flex items-center gap-1">
                     <MapPin className="h-3 w-3" />
@@ -1337,7 +1226,6 @@ const updateClinicalStats = (newStats: any) => {
                     <p className="font-medium mt-1">{formData.address || "No registrada"}</p>
                   )}
                 </div>
-
                 {isEditing && (
                   <div className="grid grid-cols-2 gap-2">
                     <div>
@@ -1352,34 +1240,31 @@ const updateClinicalStats = (newStats: any) => {
                 )}
               </CardContent>
             </Card>
-
             {/* Historial de Visitas */}
-           {/* Historial de Visitas */}
-<Card>
-  <CardHeader>
-    <CardTitle className="flex items-center gap-2">
-      <Calendar className="h-5 w-5 text-purple-500" />
-      Historial de Visitas
-    </CardTitle>
-  </CardHeader>
-  <CardContent className="space-y-4">
-    <div>
-      <Label className="text-sm text-gray-500">Última visita</Label>
-      <p className="font-medium mt-1">
-        {clinicalStats.lastVisit ? formatDate(clinicalStats.lastVisit) : "Sin visitas registradas"}
-      </p>
-    </div>
-    <div>
-      <Label className="text-sm text-gray-500">Próxima cita</Label>
-      <p className="font-medium mt-1 text-green-600">
-        {clinicalStats.nextAppointment ? formatDate(clinicalStats.nextAppointment) : "No programada"}
-      </p>
-    </div>
-   
-  </CardContent>
-</Card>
+            {/* Historial de Visitas */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Calendar className="h-5 w-5 text-purple-500" />
+                  Historial de Visitas
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label className="text-sm text-gray-500">Última visita</Label>
+                  <p className="font-medium mt-1">
+                    {clinicalStats.lastVisit ? formatDate(clinicalStats.lastVisit) : "Sin visitas registradas"}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-sm text-gray-500">Próxima cita</Label>
+                  <p className="font-medium mt-1 text-green-600">
+                    {clinicalStats.nextAppointment ? formatDate(clinicalStats.nextAppointment) : "No programada"}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
           </div>
-
           {/* Botones de acción para el resumen */}
           {isEditing && (
             <Card>
@@ -1422,7 +1307,6 @@ const updateClinicalStats = (newStats: any) => {
                       </div>
                     </div>
                   )}
-
                   <div className="flex justify-between">
                     <Button type="button" variant="outline" onClick={() => setIsEditing(false)}>
                       Cancelar
@@ -1436,7 +1320,6 @@ const updateClinicalStats = (newStats: any) => {
             </Card>
           )}
         </TabsContent>
-
         {/* Pestaña Información Personal */}
         <TabsContent value="informacion-personal" className="space-y-6">
           {error && (
@@ -1444,7 +1327,6 @@ const updateClinicalStats = (newStats: any) => {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-
           <form onSubmit={handleSubmit}>
             <Card>
               <CardHeader>
@@ -1481,7 +1363,6 @@ const updateClinicalStats = (newStats: any) => {
                     </div>
                   )}
                 </div>
-
                 <div className="space-y-3">
                   <Label htmlFor="name" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
                     Nombre o Razón Social
@@ -1494,7 +1375,6 @@ const updateClinicalStats = (newStats: any) => {
                     </div>
                   )}
                 </div>
-
                 <div className="space-y-3">
                   <Label htmlFor="tax_id" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
                     CIF/NIF
@@ -1507,7 +1387,6 @@ const updateClinicalStats = (newStats: any) => {
                     </div>
                   )}
                 </div>
-
                 {/* Campos de fecha de nacimiento y género */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-3">
@@ -1530,7 +1409,6 @@ const updateClinicalStats = (newStats: any) => {
                       </div>
                     )}
                   </div>
-
                   <div className="space-y-3">
                     <Label htmlFor="gender" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
                       Género
@@ -1556,7 +1434,6 @@ const updateClinicalStats = (newStats: any) => {
                     )}
                   </div>
                 </div>
-
                 <div className="space-y-3">
                   <Label htmlFor="address" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
                     Dirección
@@ -1571,7 +1448,6 @@ const updateClinicalStats = (newStats: any) => {
                     </div>
                   )}
                 </div>
-
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-3">
                     <Label htmlFor="postal_code" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
@@ -1593,7 +1469,6 @@ const updateClinicalStats = (newStats: any) => {
                       </div>
                     )}
                   </div>
-
                   <div className="space-y-3">
                     <Label htmlFor="city" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
                       Ciudad
@@ -1609,7 +1484,6 @@ const updateClinicalStats = (newStats: any) => {
                     )}
                   </div>
                 </div>
-
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-3">
                     <Label htmlFor="province" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
@@ -1625,7 +1499,6 @@ const updateClinicalStats = (newStats: any) => {
                       </div>
                     )}
                   </div>
-
                   <div className="space-y-3">
                     <Label htmlFor="country" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
                       País
@@ -1639,7 +1512,6 @@ const updateClinicalStats = (newStats: any) => {
                     )}
                   </div>
                 </div>
-
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-3">
                     <Label htmlFor="email" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
@@ -1655,7 +1527,6 @@ const updateClinicalStats = (newStats: any) => {
                       </div>
                     )}
                   </div>
-
                   <div className="space-y-3">
                     <Label htmlFor="phone" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
                       Teléfono
@@ -1671,7 +1542,6 @@ const updateClinicalStats = (newStats: any) => {
                     )}
                   </div>
                 </div>
-
                 {/* Campo de notas médicas */}
                 <div className="space-y-3">
                   <Label htmlFor="medical_notes" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
@@ -1694,7 +1564,6 @@ const updateClinicalStats = (newStats: any) => {
                     </div>
                   )}
                 </div>
-
                 <div className="space-y-3">
                   <Label className="text-sm font-semibold text-gray-700 dark:text-gray-300">Tipo de Cliente</Label>
                   {isEditing ? (
@@ -1720,7 +1589,6 @@ const updateClinicalStats = (newStats: any) => {
                     </div>
                   )}
                 </div>
-
                 {formData.client_type === "public" && (
                   <div className="space-y-4 border-2 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950 p-4 rounded-lg">
                     <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100 border-b border-blue-300 dark:border-blue-700 pb-2">
@@ -1746,7 +1614,6 @@ const updateClinicalStats = (newStats: any) => {
                         </div>
                       )}
                     </div>
-
                     <div className="space-y-3">
                       <Label
                         htmlFor="UnidadTramitadora"
@@ -1770,7 +1637,6 @@ const updateClinicalStats = (newStats: any) => {
                         </div>
                       )}
                     </div>
-
                     <div className="space-y-3">
                       <Label
                         htmlFor="OficinaContable"
@@ -1809,7 +1675,6 @@ const updateClinicalStats = (newStats: any) => {
               )}
             </Card>
           </form>
-
           {!isEditing && (
             <div className="flex justify-end">
               <Button onClick={() => setIsEditing(true)}>
@@ -1819,7 +1684,6 @@ const updateClinicalStats = (newStats: any) => {
             </div>
           )}
         </TabsContent>
-
         {/* Pestaña Historial Médico - Solo visible si NO es coordinador */}
         {!isCoordinator && (
           <TabsContent value="historial" className="space-y-6">
@@ -1832,7 +1696,6 @@ const updateClinicalStats = (newStats: any) => {
                     Editar Historial
                   </Button>
                 )}
-
                 {isEditingMedical && (
                   <>
                     <Button onClick={handleSaveMedical} className="bg-green-600 hover:bg-green-700">
@@ -1847,7 +1710,6 @@ const updateClinicalStats = (newStats: any) => {
                 )}
               </div>
             </div>
-
             <Tabs value={medicalTab} onValueChange={setMedicalTab} className="w-full">
               <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 mb-6 h-auto gap-1">
                 <TabsTrigger value="motivo" className="flex flex-col items-center gap-1 p-3">
@@ -1883,7 +1745,6 @@ const updateClinicalStats = (newStats: any) => {
                   <span className="text-xs">Diagnóstico</span>
                 </TabsTrigger>
               </TabsList>
-
               {/* Pestaña Motivo de Consulta */}
               <TabsContent value="motivo">
                 <div className="space-y-6">
@@ -1930,12 +1791,10 @@ const updateClinicalStats = (newStats: any) => {
                       </div>
                     </CardContent>
                   </Card>
-
                   {/* Campos personalizados para motivo */}
                   {renderCustomFields("motivo")}
                 </div>
               </TabsContent>
-
               {/* Pestaña Enfermedad Actual */}
               <TabsContent value="enfermedad">
                 <div className="space-y-6">
@@ -1964,7 +1823,6 @@ const updateClinicalStats = (newStats: any) => {
                           </div>
                         )}
                       </div>
-
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Inicio y evolución</label>
@@ -1997,7 +1855,6 @@ const updateClinicalStats = (newStats: any) => {
                           )}
                         </div>
                       </div>
-
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Factores agravantes</label>
@@ -2028,7 +1885,6 @@ const updateClinicalStats = (newStats: any) => {
                           )}
                         </div>
                       </div>
-
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Intensidad</label>
@@ -2075,12 +1931,10 @@ const updateClinicalStats = (newStats: any) => {
                       </div>
                     </CardContent>
                   </Card>
-
                   {/* Campos personalizados para enfermedad */}
                   {renderCustomFields("enfermedad")}
                 </div>
               </TabsContent>
-
               {/* Pestaña Antecedentes */}
               <TabsContent value="antecedentes">
                 <div className="space-y-6">
@@ -2125,7 +1979,6 @@ const updateClinicalStats = (newStats: any) => {
                           )}
                         </div>
                       </div>
-
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Cirugías previas</label>
                         {isEditingMedical ? (
@@ -2140,7 +1993,6 @@ const updateClinicalStats = (newStats: any) => {
                           </div>
                         )}
                       </div>
-
                       {/* Alergias */}
                       <div className="border-l-4 border-red-500 bg-red-50 p-4 rounded-r-lg">
                         <div className="flex items-center gap-2 mb-3">
@@ -2195,7 +2047,6 @@ const updateClinicalStats = (newStats: any) => {
                           </div>
                         </div>
                       </div>
-
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Medicación habitual</label>
@@ -2228,7 +2079,6 @@ const updateClinicalStats = (newStats: any) => {
                           )}
                         </div>
                       </div>
-
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
                           Accidentes o traumatismos
@@ -2247,7 +2097,6 @@ const updateClinicalStats = (newStats: any) => {
                       </div>
                     </CardContent>
                   </Card>
-
                   {/* Antecedentes Familiares */}
                   <Card>
                     <CardHeader>
@@ -2274,7 +2123,6 @@ const updateClinicalStats = (newStats: any) => {
                           </div>
                         )}
                       </div>
-
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Patologías en padres</label>
@@ -2321,12 +2169,10 @@ const updateClinicalStats = (newStats: any) => {
                       </div>
                     </CardContent>
                   </Card>
-
                   {/* Campos personalizados para antecedentes */}
                   {renderCustomFields("antecedentes")}
                 </div>
               </TabsContent>
-
               {/* Pestaña Hábitos y Estilo de Vida */}
               <TabsContent value="habitos">
                 <div className="space-y-6">
@@ -2368,7 +2214,6 @@ const updateClinicalStats = (newStats: any) => {
                           )}
                         </div>
                       </div>
-
                       {/* Consumo de sustancias */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="border rounded-lg p-4">
@@ -2410,7 +2255,6 @@ const updateClinicalStats = (newStats: any) => {
                             </div>
                           )}
                         </div>
-
                         <div className="border rounded-lg p-4">
                           <div className="flex items-center gap-2 mb-3">
                             <label className="block text-sm font-medium text-gray-700">Consumo de alcohol</label>
@@ -2434,7 +2278,7 @@ const updateClinicalStats = (newStats: any) => {
                                   <Input
                                     value={historial.cantidadAlcohol}
                                     onChange={(e) => updateMedicalField("cantidadAlcohol", e.target.value)}
-                                    placeholder="Cantidad (ej: 2 copas de vino)"
+                                    placeholder="Cantidad (ej: 2 copas/día)"
                                   />
                                   <Input
                                     value={historial.frecuenciaAlcohol}
@@ -2447,20 +2291,19 @@ const updateClinicalStats = (newStats: any) => {
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
                               {historial.consumoAlcohol
-                                ? `Sí - ${historial.cantidadAlcohol} (${historial.frecuenciaAlcohol})`
+                                ? `Sí - ${historial.cantidadAlcohol}${historial.frecuenciaAlcohol ? ` (${historial.frecuenciaAlcohol})` : ""}`
                                 : "No"}
                             </div>
                           )}
                         </div>
                       </div>
-
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Otras sustancias</label>
                         {isEditingMedical ? (
                           <Textarea
                             value={historial.otrasSustancias}
                             onChange={(e) => updateMedicalField("otrasSustancias", e.target.value)}
-                            placeholder="Drogas recreativas, suplementos, etc..."
+                            placeholder="Drogas, medicamentos no prescritos..."
                           />
                         ) : (
                           <div className="p-3 bg-gray-50 rounded-lg border">
@@ -2468,12 +2311,11 @@ const updateClinicalStats = (newStats: any) => {
                           </div>
                         )}
                       </div>
-
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Calidad del sueño</label>
                           {isEditingMedical ? (
-                            <Textarea
+                            <Input
                               value={historial.calidadSueno}
                               onChange={(e) => updateMedicalField("calidadSueno", e.target.value)}
                               placeholder="Buena, regular, mala..."
@@ -2501,20 +2343,11 @@ const updateClinicalStats = (newStats: any) => {
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Nivel de estrés</label>
                           {isEditingMedical ? (
-                            <Select
+                            <Input
                               value={historial.nivelEstres}
-                              onValueChange={(value) => updateMedicalField("nivelEstres", value)}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Seleccionar nivel" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="bajo">Bajo</SelectItem>
-                                <SelectItem value="moderado">Moderado</SelectItem>
-                                <SelectItem value="alto">Alto</SelectItem>
-                                <SelectItem value="muy-alto">Muy alto</SelectItem>
-                              </SelectContent>
-                            </Select>
+                              onChange={(e) => updateMedicalField("nivelEstres", e.target.value)}
+                              placeholder="Bajo, moderado, alto..."
+                            />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
                               {historial.nivelEstres || "No registrado"}
@@ -2524,12 +2357,10 @@ const updateClinicalStats = (newStats: any) => {
                       </div>
                     </CardContent>
                   </Card>
-
                   {/* Campos personalizados para hábitos */}
                   {renderCustomFields("habitos")}
                 </div>
               </TabsContent>
-
               {/* Pestaña Revisión por Sistemas */}
               <TabsContent value="sistemas">
                 <div className="space-y-6">
@@ -2546,20 +2377,11 @@ const updateClinicalStats = (newStats: any) => {
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Apetito</label>
                           {isEditingMedical ? (
-                            <Select
+                            <Input
                               value={historial.apetito}
-                              onValueChange={(value) => updateMedicalField("apetito", value)}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Seleccionar" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="normal">Normal</SelectItem>
-                                <SelectItem value="aumentado">Aumentado</SelectItem>
-                                <SelectItem value="disminuido">Disminuido</SelectItem>
-                                <SelectItem value="ausente">Ausente</SelectItem>
-                              </SelectContent>
-                            </Select>
+                              onChange={(e) => updateMedicalField("apetito", e.target.value)}
+                              placeholder="Normal, aumentado, disminuido..."
+                            />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
                               {historial.apetito || "No registrado"}
@@ -2569,10 +2391,10 @@ const updateClinicalStats = (newStats: any) => {
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Digestión</label>
                           {isEditingMedical ? (
-                            <Textarea
+                            <Input
                               value={historial.digestion}
                               onChange={(e) => updateMedicalField("digestion", e.target.value)}
-                              placeholder="Normal, pesada, con gases..."
+                              placeholder="Normal, pesada, con molestias..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -2581,30 +2403,28 @@ const updateClinicalStats = (newStats: any) => {
                           )}
                         </div>
                       </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Evacuaciones</label>
-                        {isEditingMedical ? (
-                          <Textarea
-                            value={historial.evacuaciones}
-                            onChange={(e) => updateMedicalField("evacuaciones", e.target.value)}
-                            placeholder="Descripción general de las evacuaciones..."
-                          />
-                        ) : (
-                          <div className="p-3 bg-gray-50 rounded-lg border">
-                            {historial.evacuaciones || "No registrado"}
-                          </div>
-                        )}
-                      </div>
-
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Evacuaciones</label>
+                          {isEditingMedical ? (
+                            <Input
+                              value={historial.evacuaciones}
+                              onChange={(e) => updateMedicalField("evacuaciones", e.target.value)}
+                              placeholder="Normales, estreñimiento, diarrea..."
+                            />
+                          ) : (
+                            <div className="p-3 bg-gray-50 rounded-lg border">
+                              {historial.evacuaciones || "No registrado"}
+                            </div>
+                          )}
+                        </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Frecuencia</label>
                           {isEditingMedical ? (
                             <Input
                               value={historial.frecuenciaEvacuaciones}
                               onChange={(e) => updateMedicalField("frecuenciaEvacuaciones", e.target.value)}
-                              placeholder="Ej: 1 vez/día"
+                              placeholder="Ej: 1 vez/día, 3 veces/semana..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -2615,33 +2435,26 @@ const updateClinicalStats = (newStats: any) => {
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Consistencia</label>
                           {isEditingMedical ? (
-                            <Select
+                            <Input
                               value={historial.consistenciaEvacuaciones}
-                              onValueChange={(value) => updateMedicalField("consistenciaEvacuaciones", value)}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Seleccionar" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="normal">Normal</SelectItem>
-                                <SelectItem value="dura">Dura</SelectItem>
-                                <SelectItem value="blanda">Blanda</SelectItem>
-                                <SelectItem value="liquida">Líquida</SelectItem>
-                              </SelectContent>
-                            </Select>
+                              onChange={(e) => updateMedicalField("consistenciaEvacuaciones", e.target.value)}
+                              placeholder="Normal, dura, blanda, líquida..."
+                            />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
                               {historial.consistenciaEvacuaciones || "No registrado"}
                             </div>
                           )}
                         </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Cambios recientes</label>
                           {isEditingMedical ? (
                             <Textarea
                               value={historial.cambiosEvacuaciones}
                               onChange={(e) => updateMedicalField("cambiosEvacuaciones", e.target.value)}
-                              placeholder="Cambios en patrón..."
+                              placeholder="Cambios en el patrón intestinal..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -2649,16 +2462,13 @@ const updateClinicalStats = (newStats: any) => {
                             </div>
                           )}
                         </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Náuseas/Vómitos</label>
                           {isEditingMedical ? (
-                            <Textarea
+                            <Input
                               value={historial.nauseasVomitos}
                               onChange={(e) => updateMedicalField("nauseasVomitos", e.target.value)}
-                              placeholder="Frecuencia, relación con comidas..."
+                              placeholder="Frecuencia, características..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -2669,7 +2479,7 @@ const updateClinicalStats = (newStats: any) => {
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Reflujo</label>
                           {isEditingMedical ? (
-                            <Textarea
+                            <Input
                               value={historial.reflujo}
                               onChange={(e) => updateMedicalField("reflujo", e.target.value)}
                               placeholder="Acidez, regurgitación..."
@@ -2683,7 +2493,6 @@ const updateClinicalStats = (newStats: any) => {
                       </div>
                     </CardContent>
                   </Card>
-
                   {/* Función Urinaria */}
                   <Card>
                     <CardHeader>
@@ -2700,7 +2509,7 @@ const updateClinicalStats = (newStats: any) => {
                             <Input
                               value={historial.frecuenciaUrinaria}
                               onChange={(e) => updateMedicalField("frecuenciaUrinaria", e.target.value)}
-                              placeholder="Ej: 5-6 veces/día"
+                              placeholder="Normal, aumentada, disminuida..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -2711,20 +2520,11 @@ const updateClinicalStats = (newStats: any) => {
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Dolor al orinar</label>
                           {isEditingMedical ? (
-                            <Select
+                            <Input
                               value={historial.dolorUrinar}
-                              onValueChange={(value) => updateMedicalField("dolorUrinar", value)}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Seleccionar" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="no">No</SelectItem>
-                                <SelectItem value="ocasional">Ocasional</SelectItem>
-                                <SelectItem value="frecuente">Frecuente</SelectItem>
-                                <SelectItem value="siempre">Siempre</SelectItem>
-                              </SelectContent>
-                            </Select>
+                              onChange={(e) => updateMedicalField("dolorUrinar", e.target.value)}
+                              placeholder="No, sí (describir)..."
+                            />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
                               {historial.dolorUrinar || "No registrado"}
@@ -2732,25 +2532,15 @@ const updateClinicalStats = (newStats: any) => {
                           )}
                         </div>
                       </div>
-
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Incontinencia</label>
                           {isEditingMedical ? (
-                            <Select
+                            <Input
                               value={historial.incontinencia}
-                              onValueChange={(value) => updateMedicalField("incontinencia", value)}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Seleccionar" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="no">No</SelectItem>
-                                <SelectItem value="esfuerzo">De esfuerzo</SelectItem>
-                                <SelectItem value="urgencia">De urgencia</SelectItem>
-                                <SelectItem value="mixta">Mixta</SelectItem>
-                              </SelectContent>
-                            </Select>
+                              onChange={(e) => updateMedicalField("incontinencia", e.target.value)}
+                              placeholder="No, de esfuerzo, de urgencia..."
+                            />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
                               {historial.incontinencia || "No registrado"}
@@ -2760,10 +2550,10 @@ const updateClinicalStats = (newStats: any) => {
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Cambios en color</label>
                           {isEditingMedical ? (
-                            <Textarea
+                            <Input
                               value={historial.cambiosColorOrina}
                               onChange={(e) => updateMedicalField("cambiosColorOrina", e.target.value)}
-                              placeholder="Amarillo, rojizo, turbio..."
+                              placeholder="Normal, oscura, rojiza..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -2774,10 +2564,10 @@ const updateClinicalStats = (newStats: any) => {
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Cambios en olor</label>
                           {isEditingMedical ? (
-                            <Textarea
+                            <Input
                               value={historial.cambiosOlorOrina}
                               onChange={(e) => updateMedicalField("cambiosOlorOrina", e.target.value)}
-                              placeholder="Fuerte, dulce, fétido..."
+                              placeholder="Normal, fuerte, dulce..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -2788,7 +2578,6 @@ const updateClinicalStats = (newStats: any) => {
                       </div>
                     </CardContent>
                   </Card>
-
                   {/* Función Cardiovascular y Respiratoria */}
                   <Card>
                     <CardHeader>
@@ -2802,10 +2591,10 @@ const updateClinicalStats = (newStats: any) => {
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Palpitaciones</label>
                           {isEditingMedical ? (
-                            <Textarea
+                            <Input
                               value={historial.palpitaciones}
                               onChange={(e) => updateMedicalField("palpitaciones", e.target.value)}
-                              placeholder="Frecuencia, duración, desencadenantes..."
+                              placeholder="No, ocasionales, frecuentes..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -2814,14 +2603,12 @@ const updateClinicalStats = (newStats: any) => {
                           )}
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Disnea (dificultad respiratoria)
-                          </label>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Disnea (falta de aire)</label>
                           {isEditingMedical ? (
-                            <Textarea
+                            <Input
                               value={historial.disnea}
                               onChange={(e) => updateMedicalField("disnea", e.target.value)}
-                              placeholder="En reposo, al esfuerzo, nocturna..."
+                              placeholder="No, de esfuerzo, en reposo..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -2830,15 +2617,14 @@ const updateClinicalStats = (newStats: any) => {
                           )}
                         </div>
                       </div>
-
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Dolor torácico</label>
                           {isEditingMedical ? (
-                            <Textarea
+                            <Input
                               value={historial.dolorToracico}
                               onChange={(e) => updateMedicalField("dolorToracico", e.target.value)}
-                              placeholder="Localización, tipo, duración..."
+                              placeholder="No, opresivo, punzante..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -2849,10 +2635,10 @@ const updateClinicalStats = (newStats: any) => {
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Tos</label>
                           {isEditingMedical ? (
-                            <Textarea
+                            <Input
                               value={historial.tos}
                               onChange={(e) => updateMedicalField("tos", e.target.value)}
-                              placeholder="Seca, productiva, nocturna..."
+                              placeholder="No, seca, productiva..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">{historial.tos || "No registrado"}</div>
@@ -2861,10 +2647,10 @@ const updateClinicalStats = (newStats: any) => {
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Esputo</label>
                           {isEditingMedical ? (
-                            <Textarea
+                            <Input
                               value={historial.esputo}
                               onChange={(e) => updateMedicalField("esputo", e.target.value)}
-                              placeholder="Color, consistencia, cantidad..."
+                              placeholder="No, claro, amarillento, con sangre..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -2875,7 +2661,6 @@ const updateClinicalStats = (newStats: any) => {
                       </div>
                     </CardContent>
                   </Card>
-
                   {/* Función Musculoesquelética */}
                   <Card>
                     <CardHeader>
@@ -2892,7 +2677,7 @@ const updateClinicalStats = (newStats: any) => {
                             <Textarea
                               value={historial.dolorArticular}
                               onChange={(e) => updateMedicalField("dolorArticular", e.target.value)}
-                              placeholder="Localización, intensidad, horario..."
+                              placeholder="Localización, intensidad, características..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -2906,7 +2691,7 @@ const updateClinicalStats = (newStats: any) => {
                             <Textarea
                               value={historial.dolorMuscular}
                               onChange={(e) => updateMedicalField("dolorMuscular", e.target.value)}
-                              placeholder="Localización, tipo, desencadenantes..."
+                              placeholder="Localización, intensidad, características..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -2915,7 +2700,6 @@ const updateClinicalStats = (newStats: any) => {
                           )}
                         </div>
                       </div>
-
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -2925,7 +2709,7 @@ const updateClinicalStats = (newStats: any) => {
                             <Textarea
                               value={historial.limitacionesMovimiento}
                               onChange={(e) => updateMedicalField("limitacionesMovimiento", e.target.value)}
-                              placeholder="Rigidez, bloqueos, rango limitado..."
+                              placeholder="Rigidez, limitación de rango..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -2934,12 +2718,12 @@ const updateClinicalStats = (newStats: any) => {
                           )}
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Debilidad o fatiga</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Debilidad/Fatiga</label>
                           {isEditingMedical ? (
                             <Textarea
                               value={historial.debilidadFatiga}
                               onChange={(e) => updateMedicalField("debilidadFatiga", e.target.value)}
-                              placeholder="Generalizada, localizada, horario..."
+                              placeholder="Generalizada, localizada, horarios..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -2950,13 +2734,12 @@ const updateClinicalStats = (newStats: any) => {
                       </div>
                     </CardContent>
                   </Card>
-
-                  {/* Revisión por Sistemas Adicionales */}
+                  {/* Otros Sistemas */}
                   <Card>
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
-                        <Shield className="w-5 h-5 text-purple-600" />
-                        10. Revisión por Sistemas
+                        <Shield className="w-5 h-5 text-indigo-600" />
+                        12. Otros Sistemas
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
@@ -2967,7 +2750,7 @@ const updateClinicalStats = (newStats: any) => {
                             <Textarea
                               value={historial.sistemasCutaneo}
                               onChange={(e) => updateMedicalField("sistemasCutaneo", e.target.value)}
-                              placeholder="Cambios en piel, heridas, erupciones..."
+                              placeholder="Lesiones, cambios de color, sequedad..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -2981,7 +2764,7 @@ const updateClinicalStats = (newStats: any) => {
                             <Textarea
                               value={historial.sistemaEndocrino}
                               onChange={(e) => updateMedicalField("sistemaEndocrino", e.target.value)}
-                              placeholder="Sudoración, intolerancia frío/calor..."
+                              placeholder="Cambios de peso, intolerancia al calor/frío..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -2995,7 +2778,7 @@ const updateClinicalStats = (newStats: any) => {
                             <Textarea
                               value={historial.sistemaHematologico}
                               onChange={(e) => updateMedicalField("sistemaHematologico", e.target.value)}
-                              placeholder="Hematomas, sangrados, petequias..."
+                              placeholder="Sangrados, hematomas, adenopatías..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -3006,13 +2789,11 @@ const updateClinicalStats = (newStats: any) => {
                       </div>
                     </CardContent>
                   </Card>
-
                   {/* Campos personalizados para sistemas */}
                   {renderCustomFields("sistemas")}
                 </div>
               </TabsContent>
-
-              {/* Pestaña Neurológica y Psicológica */}
+              {/* Pestaña Neurológica/Psicológica */}
               <TabsContent value="neuropsico">
                 <div className="space-y-6">
                   {/* Función Neurológica */}
@@ -3020,18 +2801,18 @@ const updateClinicalStats = (newStats: any) => {
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
                         <Brain className="w-5 h-5 text-purple-600" />
-                        11. Función Neurológica
+                        10. Función Neurológica
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Mareos o vértigo</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Mareos/Vértigo</label>
                           {isEditingMedical ? (
-                            <Textarea
+                            <Input
                               value={historial.mareosVertigo}
                               onChange={(e) => updateMedicalField("mareosVertigo", e.target.value)}
-                              placeholder="Frecuencia, duración, desencadenantes..."
+                              placeholder="Frecuencia, características..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -3042,10 +2823,10 @@ const updateClinicalStats = (newStats: any) => {
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Cefaleas</label>
                           {isEditingMedical ? (
-                            <Textarea
+                            <Input
                               value={historial.cefaleas}
                               onChange={(e) => updateMedicalField("cefaleas", e.target.value)}
-                              placeholder="Tipo, localización, intensidad, frecuencia..."
+                              placeholder="Tipo, frecuencia, intensidad..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -3054,7 +2835,6 @@ const updateClinicalStats = (newStats: any) => {
                           )}
                         </div>
                       </div>
-
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -3064,7 +2844,7 @@ const updateClinicalStats = (newStats: any) => {
                             <Textarea
                               value={historial.perdidaSensibilidad}
                               onChange={(e) => updateMedicalField("perdidaSensibilidad", e.target.value)}
-                              placeholder="Localización, tipo, duración..."
+                              placeholder="Localización, características..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -3078,7 +2858,7 @@ const updateClinicalStats = (newStats: any) => {
                             <Textarea
                               value={historial.perdidaFuerza}
                               onChange={(e) => updateMedicalField("perdidaFuerza", e.target.value)}
-                              placeholder="Localización, grado, progresión..."
+                              placeholder="Localización, grado..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -3087,15 +2867,14 @@ const updateClinicalStats = (newStats: any) => {
                           )}
                         </div>
                       </div>
-
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Alteraciones visuales</label>
                           {isEditingMedical ? (
-                            <Textarea
+                            <Input
                               value={historial.alteracionesVisuales}
                               onChange={(e) => updateMedicalField("alteracionesVisuales", e.target.value)}
-                              placeholder="Visión borrosa, diplopia, escotomas..."
+                              placeholder="Visión borrosa, diplopia..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -3106,10 +2885,10 @@ const updateClinicalStats = (newStats: any) => {
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Alteraciones auditivas</label>
                           {isEditingMedical ? (
-                            <Textarea
+                            <Input
                               value={historial.alteracionesAuditivas}
                               onChange={(e) => updateMedicalField("alteracionesAuditivas", e.target.value)}
-                              placeholder="Hipoacusia, acúfenos, otalgia..."
+                              placeholder="Hipoacusia, acúfenos..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -3120,13 +2899,12 @@ const updateClinicalStats = (newStats: any) => {
                       </div>
                     </CardContent>
                   </Card>
-
                   {/* Función Psicológica/Emocional */}
                   <Card>
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
-                        <Eye className="w-5 h-5 text-indigo-600" />
-                        12. Función Psicológica/Emocional
+                        <Heart className="w-5 h-5 text-pink-600" />
+                        11. Función Psicológica/Emocional
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
@@ -3134,22 +2912,11 @@ const updateClinicalStats = (newStats: any) => {
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Estado de ánimo</label>
                           {isEditingMedical ? (
-                            <Select
+                            <Input
                               value={historial.estadoAnimo}
-                              onValueChange={(value) => updateMedicalField("estadoAnimo", value)}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Seleccionar" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="estable">Estable</SelectItem>
-                                <SelectItem value="elevado">Elevado</SelectItem>
-                                <SelectItem value="deprimido">Deprimido</SelectItem>
-                                <SelectItem value="irritable">Irritable</SelectItem>
-                                <SelectItem value="ansioso">Ansioso</SelectItem>
-                                <SelectItem value="variable">Variable</SelectItem>
-                              </SelectContent>
-                            </Select>
+                              onChange={(e) => updateMedicalField("estadoAnimo", e.target.value)}
+                              placeholder="Estable, deprimido, eufórico..."
+                            />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
                               {historial.estadoAnimo || "No registrado"}
@@ -3159,10 +2926,10 @@ const updateClinicalStats = (newStats: any) => {
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Ansiedad</label>
                           {isEditingMedical ? (
-                            <Textarea
+                            <Input
                               value={historial.ansiedad}
                               onChange={(e) => updateMedicalField("ansiedad", e.target.value)}
-                              placeholder="Nivel, desencadenantes, síntomas..."
+                              placeholder="No, leve, moderada, severa..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -3171,15 +2938,14 @@ const updateClinicalStats = (newStats: any) => {
                           )}
                         </div>
                       </div>
-
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">Depresión</label>
                           {isEditingMedical ? (
-                            <Textarea
+                            <Input
                               value={historial.depresion}
                               onChange={(e) => updateMedicalField("depresion", e.target.value)}
-                              placeholder="Síntomas, duración, severidad..."
+                              placeholder="No, leve, moderada, severa..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -3193,7 +2959,7 @@ const updateClinicalStats = (newStats: any) => {
                             <Textarea
                               value={historial.cambiosConducta}
                               onChange={(e) => updateMedicalField("cambiosConducta", e.target.value)}
-                              placeholder="Agresividad, aislamiento, impulsividad..."
+                              placeholder="Irritabilidad, aislamiento..."
                             />
                           ) : (
                             <div className="p-3 bg-gray-50 rounded-lg border">
@@ -3202,14 +2968,13 @@ const updateClinicalStats = (newStats: any) => {
                           )}
                         </div>
                       </div>
-
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Trastornos del sueño</label>
                         {isEditingMedical ? (
                           <Textarea
                             value={historial.trastornosSueno}
                             onChange={(e) => updateMedicalField("trastornosSueno", e.target.value)}
-                            placeholder="Insomnio, pesadillas, sonambulismo..."
+                            placeholder="Insomnio, pesadillas, somnolencia..."
                           />
                         ) : (
                           <div className="p-3 bg-gray-50 rounded-lg border">
@@ -3219,143 +2984,168 @@ const updateClinicalStats = (newStats: any) => {
                       </div>
                     </CardContent>
                   </Card>
-
                   {/* Campos personalizados para neuropsico */}
                   {renderCustomFields("neuropsico")}
                 </div>
               </TabsContent>
-
               {/* Pestaña Exploración Física */}
               <TabsContent value="exploracion">
                 <div className="space-y-6">
                   <Card>
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
-                        <Activity className="w-5 h-5 text-green-600" />
-                        Signos Vitales y Antropometría
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">TA (mmHg)</label>
-                          {isEditingMedical ? (
-                            <Input
-                              value={historial.tensionArterial}
-                              onChange={(e) => updateMedicalField("tensionArterial", e.target.value)}
-                              placeholder="120/80"
-                            />
-                          ) : (
-                            <div className="p-2 bg-gray-50 rounded border text-center">
-                              {historial.tensionArterial || "---"}
-                            </div>
-                          )}
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">FC (lpm)</label>
-                          {isEditingMedical ? (
-                            <Input
-                              value={historial.frecuenciaCardiaca}
-                              onChange={(e) => updateMedicalField("frecuenciaCardiaca", e.target.value)}
-                              placeholder="72"
-                            />
-                          ) : (
-                            <div className="p-2 bg-gray-50 rounded border text-center">
-                              {historial.frecuenciaCardiaca || "---"}
-                            </div>
-                          )}
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">FR (rpm)</label>
-                          {isEditingMedical ? (
-                            <Input
-                              value={historial.frecuenciaRespiratoria}
-                              onChange={(e) => updateMedicalField("frecuenciaRespiratoria", e.target.value)}
-                              placeholder="16"
-                            />
-                          ) : (
-                            <div className="p-2 bg-gray-50 rounded border text-center">
-                              {historial.frecuenciaRespiratoria || "---"}
-                            </div>
-                          )}
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">T° (°C)</label>
-                          {isEditingMedical ? (
-                            <Input
-                              value={historial.temperatura}
-                              onChange={(e) => updateMedicalField("temperatura", e.target.value)}
-                              placeholder="36.5"
-                            />
-                          ) : (
-                            <div className="p-2 bg-gray-50 rounded border text-center">
-                              {historial.temperatura || "---"}
-                            </div>
-                          )}
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">SatO₂ (%)</label>
-                          {isEditingMedical ? (
-                            <Input
-                              value={historial.saturacionO2}
-                              onChange={(e) => updateMedicalField("saturacionO2", e.target.value)}
-                              placeholder="98"
-                            />
-                          ) : (
-                            <div className="p-2 bg-gray-50 rounded border text-center">
-                              {historial.saturacionO2 || "---"}
-                            </div>
-                          )}
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Peso (kg)</label>
-                          {isEditingMedical ? (
-                            <Input
-                              value={historial.peso}
-                              onChange={(e) => updateMedicalField("peso", e.target.value)}
-                              placeholder="70"
-                            />
-                          ) : (
-                            <div className="p-2 bg-gray-50 rounded border text-center">{historial.peso || "---"}</div>
-                          )}
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Talla (cm)</label>
-                          {isEditingMedical ? (
-                            <Input
-                              value={historial.talla}
-                              onChange={(e) => updateMedicalField("talla", e.target.value)}
-                              placeholder="170"
-                            />
-                          ) : (
-                            <div className="p-2 bg-gray-50 rounded border text-center">{historial.talla || "---"}</div>
-                          )}
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">IMC</label>
-                          <div className="p-2 bg-blue-50 rounded border text-center font-medium text-blue-800">
-                            {historial.imc || "---"}
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <Stethoscope className="w-5 h-5 text-blue-600" />
+                        <Stethoscope className="w-5 h-5 text-green-600" />
                         Exploración Física
                       </CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-4">
+                    <CardContent className="space-y-6">
+                      {/* Signos Vitales */}
+                      <div className="border-l-4 border-green-500 bg-green-50 p-4 rounded-r-lg">
+                        <h4 className="font-medium text-green-700 mb-4">Signos Vitales</h4>
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-green-700 mb-2">Tensión Arterial</label>
+                            {isEditingMedical ? (
+                              <Input
+                                value={historial.tensionArterial}
+                                onChange={(e) => updateMedicalField("tensionArterial", e.target.value)}
+                                placeholder="120/80 mmHg"
+                                className="border-green-200 focus:border-green-400"
+                              />
+                            ) : (
+                              <div className="p-3 bg-white rounded-lg border border-green-200">
+                                {historial.tensionArterial || "No registrado"}
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-green-700 mb-2">FC (lpm)</label>
+                            {isEditingMedical ? (
+                              <Input
+                                value={historial.frecuenciaCardiaca}
+                                onChange={(e) => updateMedicalField("frecuenciaCardiaca", e.target.value)}
+                                placeholder="70"
+                                className="border-green-200 focus:border-green-400"
+                              />
+                            ) : (
+                              <div className="p-3 bg-white rounded-lg border border-green-200">
+                                {historial.frecuenciaCardiaca || "No registrado"}
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-green-700 mb-2">FR (rpm)</label>
+                            {isEditingMedical ? (
+                              <Input
+                                value={historial.frecuenciaRespiratoria}
+                                onChange={(e) => updateMedicalField("frecuenciaRespiratoria", e.target.value)}
+                                placeholder="16"
+                                className="border-green-200 focus:border-green-400"
+                              />
+                            ) : (
+                              <div className="p-3 bg-white rounded-lg border border-green-200">
+                                {historial.frecuenciaRespiratoria || "No registrado"}
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-green-700 mb-2">Temperatura (°C)</label>
+                            {isEditingMedical ? (
+                              <Input
+                                value={historial.temperatura}
+                                onChange={(e) => updateMedicalField("temperatura", e.target.value)}
+                                placeholder="36.5"
+                                className="border-green-200 focus:border-green-400"
+                              />
+                            ) : (
+                              <div className="p-3 bg-white rounded-lg border border-green-200">
+                                {historial.temperatura || "No registrado"}
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-green-700 mb-2">SatO2 (%)</label>
+                            {isEditingMedical ? (
+                              <Input
+                                value={historial.saturacionO2}
+                                onChange={(e) => updateMedicalField("saturacionO2", e.target.value)}
+                                placeholder="98"
+                                className="border-green-200 focus:border-green-400"
+                              />
+                            ) : (
+                              <div className="p-3 bg-white rounded-lg border border-green-200">
+                                {historial.saturacionO2 || "No registrado"}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      {/* Medidas Antropométricas */}
+                      <div className="border-l-4 border-blue-500 bg-blue-50 p-4 rounded-r-lg">
+                        <h4 className="font-medium text-blue-700 mb-4">Medidas Antropométricas</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-blue-700 mb-2">Peso (kg)</label>
+                            {isEditingMedical ? (
+                              <Input
+                                value={historial.peso}
+                                onChange={(e) => updateMedicalField("peso", e.target.value)}
+                                placeholder="70"
+                                className="border-blue-200 focus:border-blue-400"
+                              />
+                            ) : (
+                              <div className="p-3 bg-white rounded-lg border border-blue-200">
+                                {historial.peso || "No registrado"}
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-blue-700 mb-2">Talla (cm)</label>
+                            {isEditingMedical ? (
+                              <Input
+                                value={historial.talla}
+                                onChange={(e) => updateMedicalField("talla", e.target.value)}
+                                placeholder="170"
+                                className="border-blue-200 focus:border-blue-400"
+                              />
+                            ) : (
+                              <div className="p-3 bg-white rounded-lg border border-blue-200">
+                                {historial.talla || "No registrado"}
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-blue-700 mb-2">IMC</label>
+                            <div className="p-3 bg-white rounded-lg border border-blue-200">
+                              {historial.imc || "Calculado automáticamente"}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-blue-700 mb-2">Estado nutricional</label>
+                            <div className="p-3 bg-white rounded-lg border border-blue-200 text-sm">
+                              {historial.imc
+                                ? Number.parseFloat(historial.imc) < 18.5
+                                  ? "Bajo peso"
+                                  : Number.parseFloat(historial.imc) < 25
+                                    ? "Normal"
+                                    : Number.parseFloat(historial.imc) < 30
+                                      ? "Sobrepeso"
+                                      : "Obesidad"
+                                : "No calculado"}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      {/* Observaciones Clínicas */}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Observaciones clínicas</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Observaciones de la exploración física
+                        </label>
                         {isEditingMedical ? (
                           <Textarea
                             value={historial.observacionesClinicas}
                             onChange={(e) => updateMedicalField("observacionesClinicas", e.target.value)}
-                            placeholder="Descripción detallada de la exploración física por aparatos y sistemas..."
+                            placeholder="Hallazgos relevantes de la exploración física..."
                             className="min-h-32"
                           />
                         ) : (
@@ -3364,16 +3154,14 @@ const updateClinicalStats = (newStats: any) => {
                           </div>
                         )}
                       </div>
-
+                      {/* Pruebas Complementarias */}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Pruebas complementarias solicitadas
-                        </label>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Pruebas complementarias</label>
                         {isEditingMedical ? (
                           <Textarea
                             value={historial.pruebasComplementarias}
                             onChange={(e) => updateMedicalField("pruebasComplementarias", e.target.value)}
-                            placeholder="Analíticas, radiografías, ecografías, resultados disponibles..."
+                            placeholder="Analíticas, radiografías, ECG, etc..."
                             className="min-h-24"
                           />
                         ) : (
@@ -3384,12 +3172,10 @@ const updateClinicalStats = (newStats: any) => {
                       </div>
                     </CardContent>
                   </Card>
-
                   {/* Campos personalizados para exploración */}
                   {renderCustomFields("exploracion")}
                 </div>
               </TabsContent>
-
               {/* Pestaña Diagnóstico y Tratamiento */}
               <TabsContent value="diagnostico">
                 <div className="space-y-6">
@@ -3397,19 +3183,17 @@ const updateClinicalStats = (newStats: any) => {
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2">
                         <FileText className="w-5 h-5 text-indigo-600" />
-                        Diagnóstico
+                        Diagnóstico y Plan de Tratamiento
                       </CardTitle>
                     </CardHeader>
-                    <CardContent>
+                    <CardContent className="space-y-6">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Diagnóstico provisional o definitivo
-                        </label>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Diagnóstico</label>
                         {isEditingMedical ? (
                           <Textarea
                             value={historial.diagnostico}
                             onChange={(e) => updateMedicalField("diagnostico", e.target.value)}
-                            placeholder="Diagnóstico principal y diagnósticos secundarios con códigos CIE-10 si es posible..."
+                            placeholder="Diagnóstico principal y diagnósticos diferenciales..."
                             className="min-h-24"
                           />
                         ) : (
@@ -3418,24 +3202,17 @@ const updateClinicalStats = (newStats: any) => {
                           </div>
                         )}
                       </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <Pill className="w-5 h-5 text-green-600" />
-                        Plan Terapéutico
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Medicación</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <Pill className="w-4 h-4 inline mr-1" />
+                          Medicación prescrita
+                        </label>
                         {isEditingMedical ? (
                           <Textarea
                             value={historial.medicacion}
                             onChange={(e) => updateMedicalField("medicacion", e.target.value)}
-                            placeholder="Medicamentos prescritos con dosis, frecuencia y duración..."
+                            placeholder="Medicamentos, dosis, frecuencia, duración..."
+                            className="min-h-24"
                           />
                         ) : (
                           <div className="p-3 bg-gray-50 rounded-lg border">
@@ -3443,14 +3220,14 @@ const updateClinicalStats = (newStats: any) => {
                           </div>
                         )}
                       </div>
-
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Recomendaciones</label>
                         {isEditingMedical ? (
                           <Textarea
                             value={historial.recomendaciones}
                             onChange={(e) => updateMedicalField("recomendaciones", e.target.value)}
-                            placeholder="Recomendaciones generales, cambios en el estilo de vida, medidas no farmacológicas..."
+                            placeholder="Recomendaciones de estilo de vida, cuidados, etc..."
+                            className="min-h-24"
                           />
                         ) : (
                           <div className="p-3 bg-gray-50 rounded-lg border">
@@ -3458,14 +3235,13 @@ const updateClinicalStats = (newStats: any) => {
                           </div>
                         )}
                       </div>
-
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Derivaciones</label>
                         {isEditingMedical ? (
                           <Textarea
                             value={historial.derivaciones}
                             onChange={(e) => updateMedicalField("derivaciones", e.target.value)}
-                            placeholder="Derivaciones a especialistas, pruebas adicionales, interconsultas..."
+                            placeholder="Especialistas, pruebas adicionales..."
                           />
                         ) : (
                           <div className="p-3 bg-gray-50 rounded-lg border">
@@ -3473,14 +3249,13 @@ const updateClinicalStats = (newStats: any) => {
                           </div>
                         )}
                       </div>
-
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Plan de seguimiento</label>
                         {isEditingMedical ? (
                           <Textarea
                             value={historial.seguimiento}
                             onChange={(e) => updateMedicalField("seguimiento", e.target.value)}
-                            placeholder="Próximas citas, controles, revisiones, criterios de alarma..."
+                            placeholder="Próximas citas, controles, revisiones..."
                           />
                         ) : (
                           <div className="p-3 bg-gray-50 rounded-lg border">
@@ -3488,20 +3263,15 @@ const updateClinicalStats = (newStats: any) => {
                           </div>
                         )}
                       </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Observaciones Adicionales</CardTitle>
-                    </CardHeader>
-                    <CardContent>
                       <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Observaciones adicionales
+                        </label>
                         {isEditingMedical ? (
                           <Textarea
                             value={historial.observacionesAdicionales}
                             onChange={(e) => updateMedicalField("observacionesAdicionales", e.target.value)}
-                            placeholder="Cualquier información adicional relevante, evolución esperada, pronóstico..."
+                            placeholder="Cualquier información adicional relevante..."
                             className="min-h-24"
                           />
                         ) : (
@@ -3512,7 +3282,41 @@ const updateClinicalStats = (newStats: any) => {
                       </div>
                     </CardContent>
                   </Card>
-
+                  {/* Información del profesional */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <User className="w-5 h-5 text-gray-600" />
+                        Información del Profesional
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Profesional</label>
+                          <div className="p-3 bg-gray-50 rounded-lg border">
+                            {historial.profesional || userProfile?.name || "Dr. Usuario"}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Fecha de creación</label>
+                          <div className="p-3 bg-gray-50 rounded-lg border">
+                            {historial.fechaCreacion
+                              ? format(new Date(historial.fechaCreacion), "dd/MM/yyyy HH:mm", { locale: es })
+                              : "No registrada"}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Última actualización</label>
+                          <div className="p-3 bg-gray-50 rounded-lg border">
+                            {historial.ultimaActualizacion
+                              ? format(new Date(historial.ultimaActualizacion), "dd/MM/yyyy HH:mm", { locale: es })
+                              : "No registrada"}
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
                   {/* Campos personalizados para diagnóstico */}
                   {renderCustomFields("diagnostico")}
                 </div>
@@ -3520,55 +3324,51 @@ const updateClinicalStats = (newStats: any) => {
             </Tabs>
           </TabsContent>
         )}
-
         {/* Pestaña Seguimiento - Solo visible si NO es coordinador */}
         {!isCoordinator && (
           <TabsContent value="seguimiento" className="space-y-6">
-            <PatientFollowUpSection clientId={clientId} clientName={formData.name} />
+           <PatientFollowUpSection
+  clientId={clientId}
+  clientName={formData.name}
+/>
           </TabsContent>
         )}
-
-        {/* Pestaña Tarjetas de Fidelización */}
+        {/* Pestaña Documentos */}
+        <TabsContent value="documentos" className="space-y-6">
+          <ClientDocumentsSection
+            clientId={clientId}
+            clientName={formData.name}
+            organizationId={formData.organization_id}
+            organizationName={
+              organizations.find((org) => org.id.toString() === formData.organization_id)?.name || "Organización"
+            }
+          />
+        </TabsContent>
+        {/* Pestaña Tarjetas de Fidelidad */}
         <TabsContent value="loyalty-cards" className="space-y-6">
           <LoyaltyCardsSection clientId={clientId} clientName={formData.name} />
         </TabsContent>
+       {/* Pestaña Citas */}
+<TabsContent value="citas" className="space-y-6">
+  <PatientAppointmentsSection
+    clientId={clientId}
+    clientName={formData.name}
+  />
+</TabsContent>
 
-        {/* Pestaña Citas */}
-        <TabsContent value="citas" className="space-y-6">
-          <PatientAppointmentsSection clientId={clientId} clientName={formData.name} />
-        </TabsContent>
-
-        {/* Pestaña Documentos */}
-        <TabsContent value="documentos" className="space-y-6">
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <FolderOpen className="h-12 w-12 text-gray-300 mb-4" />
-              <h3 className="text-lg font-medium">Documentos</h3>
-              <p className="text-gray-500 mt-2">Funcionalidad en desarrollo</p>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Pestaña Consentimientos */}
-        <TabsContent value="consentimientos" className="space-y-6">
-          <PatientConsentsSection
-            clientId={Number.parseInt(clientId)}
-            clientName={formData.name}
-            clientEmail={formData.email}
-            clientPhone={formData.phone}
-          />
-        </TabsContent>
-      </Tabs>
-
-      {/* Modal de Informe Clínico - Solo visible si NO es coordinador */}
-      {!isCoordinator && (
+{/* Pestaña Consentimientos */}
+<TabsContent value="consentimientos" className="space-y-6">
+  <PatientConsentsSection 
+    clientId={clientId} 
+    clientName={formData.name}
+  />
+</TabsContent>
+</Tabs>
+      {/* Modal del Informe Clínico */}
+      {showClinicalReport && reportData && (
         <ClinicalReportModal
           isOpen={showClinicalReport}
-          onClose={() => {
-            setShowClinicalReport(false)
-            setReportData(null)
-            setReportError(null)
-          }}
+          onClose={() => setShowClinicalReport(false)}
           reportData={reportData}
           isLoading={isLoadingReport}
           error={reportError}
