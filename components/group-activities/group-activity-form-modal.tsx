@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import {
   Dialog,
   DialogContent,
@@ -56,6 +56,21 @@ const quickColorOptions = [
   { value: "#F97316", label: "Naranja" },
 ]
 
+// 🚀 ESTADO INICIAL PARA RESETEAR
+const getInitialFormData = () => ({
+  name: "",
+  service_id: "",
+  description: "",
+  date: new Date().toISOString().split("T")[0],
+  start_time: "09:00",
+  end_time: "10:00",
+  professional_id: "",
+  consultation_id: "",
+  max_participants: 10,
+  color: "#3B82F6",
+  recurrence: null as any,
+})
+
 export function GroupActivityFormModal({
   isOpen,
   onClose,
@@ -68,24 +83,17 @@ export function GroupActivityFormModal({
   const { services, loading: servicesLoading } = useServices(organizationId)
   const { getServicesByUser, loading: userServicesLoading, error: userServicesError } = useUserServices(organizationId)
 
-  const [formData, setFormData] = useState({
-    name: "",
-    service_id: "",
-    description: "",
-    date: new Date().toISOString().split("T")[0],
-    start_time: "09:00",
-    end_time: "10:00",
-    professional_id: "",
-    consultation_id: "",
-    max_participants: 10,
-    color: "#3B82F6",
-    recurrence: null as any,
-  })
+  // 🚀 REFS PARA CONTROLAR CLEANUP
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const isMountedRef = useRef(true)
+  const isSubmittingRef = useRef(false)
 
+  const [formData, setFormData] = useState(getInitialFormData())
   const [filteredServices, setFilteredServices] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [recurrenceEnabled, setRecurrenceEnabled] = useState(false)
   const [validationErrors, setValidationErrors] = useState<string[]>([])
+
   const isEditing = !!activity
 
   // Hook para detectar conflictos
@@ -95,84 +103,128 @@ export function GroupActivityFormModal({
   const professionals = users.filter((user) => user.type === 1)
 
   // ✅ FUNCIÓN PARA OBTENER EL NOMBRE DEL PROFESIONAL SELECCIONADO
-  const getSelectedProfessionalName = () => {
+  const getSelectedProfessionalName = useCallback(() => {
     if (!formData.professional_id) return ""
     const professional = professionals.find((p) => p.id.toString() === formData.professional_id.toString())
     return professional?.name || ""
-  }
+  }, [formData.professional_id, professionals])
 
   // ✅ FUNCIÓN PARA OBTENER EL NOMBRE DEL SERVICIO SELECCIONADO
-  const getSelectedServiceName = () => {
+  const getSelectedServiceName = useCallback(() => {
     if (!formData.service_id) return ""
     const service = filteredServices.find((s) => s.id.toString() === formData.service_id.toString())
     return service?.name || ""
-  }
+  }, [formData.service_id, filteredServices])
 
-  // Initialize form data when editing
-  useEffect(() => {
-    if (activity) {
-      setFormData({
-        name: activity.name || "",
-        service_id: activity.service_id?.toString() || "",
-        description: activity.description || "",
-        date: new Date(activity.date).toISOString().split("T")[0],
-        start_time: activity.start_time,
-        end_time: activity.end_time,
-        professional_id: activity.professional_id?.toString() || "",
-        consultation_id: activity.consultation_id || "",
-        max_participants: activity.max_participants,
-        color: activity.color,
-        recurrence: null,
-      })
-      setRecurrenceEnabled(false)
-    } else {
-      // Reset form for new activity
-      setFormData({
-        name: "",
-        service_id: "",
-        description: "",
-        date: new Date().toISOString().split("T")[0],
-        start_time: "09:00",
-        end_time: "10:00",
-        professional_id: "",
-        consultation_id: "",
-        max_participants: 10,
-        color: "#3B82F6",
-        recurrence: null,
-      })
-      setRecurrenceEnabled(false)
+  // 🚀 FUNCIÓN DE CLEANUP MEJORADA
+  const cleanupModal = useCallback(() => {
+    // Cancelar timeout pendiente
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current)
+      timeoutRef.current = null
     }
-    setValidationErrors([])
-  }, [activity])
 
-  // ✅ MEMOIZAR LA FUNCIÓN DE ACTUALIZACIÓN DE SERVICIOS
+    // Resetear estados
+    setFormData(getInitialFormData())
+    setFilteredServices([])
+    setLoading(false)
+    setRecurrenceEnabled(false)
+    setValidationErrors([])
+    isSubmittingRef.current = false
+  }, [])
+
+  // 🚀 MANEJAR CIERRE DEL MODAL CON CLEANUP
+  const handleClose = useCallback(() => {
+    if (isSubmittingRef.current) {
+      // Si está enviando, no permitir cerrar
+      return
+    }
+
+    cleanupModal()
+    onClose()
+  }, [cleanupModal, onClose])
+
+  // 🚀 EFECTO PARA INICIALIZAR/RESETEAR CUANDO CAMBIA isOpen
+  useEffect(() => {
+    isMountedRef.current = true
+
+    if (isOpen) {
+      if (activity) {
+        setFormData({
+          name: activity.name || "",
+          service_id: activity.service_id?.toString() || "",
+          description: activity.description || "",
+          date: new Date(activity.date).toISOString().split("T")[0],
+          start_time: activity.start_time,
+          end_time: activity.end_time,
+          professional_id: activity.professional_id?.toString() || "",
+          consultation_id: activity.consultation_id || "",
+          max_participants: activity.max_participants,
+          color: activity.color,
+          recurrence: null,
+        })
+        setRecurrenceEnabled(false)
+      } else {
+        setFormData(getInitialFormData())
+        setRecurrenceEnabled(false)
+      }
+      setValidationErrors([])
+    } else {
+      // Modal cerrado - cleanup
+      cleanupModal()
+    }
+
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [isOpen, activity, cleanupModal])
+
+  // ✅ MEMOIZAR LA FUNCIÓN DE ACTUALIZACIÓN DE SERVICIOS CON CLEANUP
   const updateServices = useCallback(
     async (professionalId: string) => {
-      if (!professionalId) {
+      if (!professionalId || !isMountedRef.current) {
         setFilteredServices([])
         return
       }
+
       try {
         const professionalServices = await getServicesByUser(professionalId)
-        setFilteredServices(professionalServices)
+
+        // Solo actualizar si el componente sigue montado
+        if (isMountedRef.current) {
+          setFilteredServices(professionalServices)
+        }
       } catch (error) {
         console.error("Error fetching professional services:", error)
-        setFilteredServices([])
-        toast.error("Error al cargar los servicios del profesional")
+        if (isMountedRef.current) {
+          setFilteredServices([])
+          toast.error("Error al cargar los servicios del profesional")
+        }
       }
     },
     [getServicesByUser],
   )
 
-  // ✅ OBTENER SERVICIOS DEL PROFESIONAL SELECCIONADO - ARREGLADO
+  // ✅ OBTENER SERVICIOS DEL PROFESIONAL SELECCIONADO CON CLEANUP
   useEffect(() => {
-    updateServices(formData.professional_id)
-  }, [formData.professional_id, updateServices])
+    if (isOpen && formData.professional_id) {
+      updateServices(formData.professional_id)
+    }
+  }, [isOpen, formData.professional_id, updateServices])
 
-  // ✅ VERIFICACIÓN DE CONFLICTOS MEJORADA
+  // ✅ VERIFICACIÓN DE CONFLICTOS CON CLEANUP MEJORADO
   useEffect(() => {
+    if (!isOpen) return
+
     if (formData.date && formData.start_time && formData.end_time && formData.professional_id) {
-      const timeoutId = setTimeout(() => {
+      // Cancelar timeout anterior
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+      }
+
+      timeoutRef.current = setTimeout(() => {
+        if (!isMountedRef.current) return
+
         const duration = calculateDurationInMinutes(formData.start_time, formData.end_time)
         if (duration > 0) {
           checkConflicts(
@@ -185,9 +237,16 @@ export function GroupActivityFormModal({
           )
         }
       }, 500)
-      return () => clearTimeout(timeoutId)
+    }
+
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+        timeoutRef.current = null
+      }
     }
   }, [
+    isOpen,
     formData.date,
     formData.start_time,
     formData.end_time,
@@ -198,7 +257,7 @@ export function GroupActivityFormModal({
   ])
 
   // Función de validación
-  const validateForm = () => {
+  const validateForm = useCallback(() => {
     const errors: string[] = []
 
     if (!formData.name.trim()) {
@@ -222,10 +281,16 @@ export function GroupActivityFormModal({
 
     setValidationErrors(errors)
     return errors.length === 0
-  }
+  }, [formData, conflicts])
 
+  // 🚀 SUBMIT CON MEJOR MANEJO DE ESTADOS
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // Prevenir múltiples envíos
+    if (isSubmittingRef.current || loading) {
+      return
+    }
 
     // Validar formulario
     if (!validateForm()) {
@@ -233,7 +298,9 @@ export function GroupActivityFormModal({
     }
 
     try {
+      isSubmittingRef.current = true
       setLoading(true)
+
       const submitData = {
         ...formData,
         service_id: Number(formData.service_id),
@@ -241,55 +308,78 @@ export function GroupActivityFormModal({
         consultation_id: formData.consultation_id === "none" ? null : formData.consultation_id || null,
         recurrence: recurrenceEnabled && formData.recurrence ? formData.recurrence : null,
       }
+
       await onSubmit(submitData)
-      toast.success(isEditing ? "Actividad actualizada correctamente" : "Actividad creada correctamente")
-      onClose()
+
+      if (isMountedRef.current) {
+        toast.success(isEditing ? "Actividad actualizada correctamente" : "Actividad creada correctamente")
+        handleClose()
+      }
     } catch (error) {
       console.error("Error submitting form:", error)
-      toast.error("Error al guardar la actividad")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleTimeChange = (field: "start_time" | "end_time", value: string) => {
-    setFormData((prev) => {
-      const newData = { ...prev, [field]: value }
-      if (field === "start_time") {
-        const [hours, minutes] = value.split(":").map(Number)
-        const endHours = hours + 1
-        const endTime = `${endHours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`
-        newData.end_time = endTime
+      if (isMountedRef.current) {
+        toast.error("Error al guardar la actividad")
+        setLoading(false)
+        isSubmittingRef.current = false
       }
-      return newData
-    })
-    // Limpiar errores de validación cuando el usuario hace cambios
-    if (validationErrors.length > 0) {
-      setValidationErrors([])
     }
   }
 
-  const handleRecurrenceChange = (config: any) => {
+  const handleTimeChange = useCallback(
+    (field: "start_time" | "end_time", value: string) => {
+      setFormData((prev) => {
+        const newData = { ...prev, [field]: value }
+        if (field === "start_time") {
+          const [hours, minutes] = value.split(":").map(Number)
+          const endHours = hours + 1
+          const endTime = `${endHours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`
+          newData.end_time = endTime
+        }
+        return newData
+      })
+
+      // Limpiar errores de validación cuando el usuario hace cambios
+      if (validationErrors.length > 0) {
+        setValidationErrors([])
+      }
+    },
+    [validationErrors.length],
+  )
+
+  const handleRecurrenceChange = useCallback((config: any) => {
     setFormData((prev) => ({
       ...prev,
       recurrence: config,
     }))
-  }
+  }, [])
 
-  const resetToDefaultColor = () => {
+  const resetToDefaultColor = useCallback(() => {
     setFormData((prev) => ({ ...prev, color: "#3B82F6" }))
-  }
+  }, [])
 
   // Limpiar errores cuando el usuario hace cambios en los campos
-  const handleFieldChange = (field: string, value: any) => {
-    setFormData((prev) => ({ ...prev, [field]: value }))
-    if (validationErrors.length > 0) {
-      setValidationErrors([])
+  const handleFieldChange = useCallback(
+    (field: string, value: any) => {
+      setFormData((prev) => ({ ...prev, [field]: value }))
+      if (validationErrors.length > 0) {
+        setValidationErrors([])
+      }
+    },
+    [validationErrors.length],
+  )
+
+  // 🚀 CLEANUP AL DESMONTAR
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+      }
+      isMountedRef.current = false
     }
-  }
+  }, [])
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{activity ? "Editar Actividad Grupal" : "Nueva Actividad Grupal"}</DialogTitle>
@@ -333,7 +423,7 @@ export function GroupActivityFormModal({
             />
           </div>
 
-          {/* Professional - PRIMERO - ✅ ARREGLADO */}
+          {/* Professional - PRIMERO */}
           <div className="space-y-2">
             <Label>Profesional responsable *</Label>
             <Select
@@ -364,7 +454,7 @@ export function GroupActivityFormModal({
             </Select>
           </div>
 
-          {/* Service Selection - SEGUNDO - ✅ ARREGLADO */}
+          {/* Service Selection - SEGUNDO */}
           <div className="space-y-2">
             <Label htmlFor="service">Servicio *</Label>
             <Select
@@ -415,7 +505,6 @@ export function GroupActivityFormModal({
             {formData.professional_id && !userServicesLoading && filteredServices.length === 0 && (
               <p className="text-sm text-amber-600">Este profesional no tiene servicios asignados</p>
             )}
-
             {formData.professional_id && !userServicesLoading && filteredServices.length > 0 && (
               <p className="text-sm text-blue-600">
                 {filteredServices.length} servicio(s) disponible(s) para este profesional
@@ -627,7 +716,7 @@ export function GroupActivityFormModal({
           )}
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
+            <Button type="button" variant="outline" onClick={handleClose} disabled={loading}>
               Cancelar
             </Button>
             <Button type="submit" disabled={loading || conflictsLoading}>
@@ -648,4 +737,3 @@ export function GroupActivityFormModal({
     </Dialog>
   )
 }
-  
