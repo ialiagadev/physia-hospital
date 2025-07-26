@@ -3,8 +3,10 @@
 import { useState, useEffect } from "react"
 import { UserService } from "@/lib/services/professionals"
 import type { Professional } from "@/types/calendar"
+import { useAuth } from "@/app/contexts/auth-context"
 
 export function useProfessionals() {
+  const { userProfile } = useAuth()
   const [professionals, setProfessionals] = useState<Professional[]>([])
   const [currentUser, setCurrentUser] = useState<Professional | null>(null)
   const [allUsers, setAllUsers] = useState<Professional[]>([])
@@ -22,9 +24,21 @@ export function useProfessionals() {
         UserService.getUsersInOrganization(),
       ])
 
-      setProfessionals(professionalsData)
+      // 🆕 FILTRAR SEGÚN EL ROL DEL USUARIO
+      const isUserRole = userProfile?.role === "user"
+
+      if (isUserRole && currentUserData) {
+        // Para usuarios 'user', solo mostrar a sí mismos
+        const currentUserAsProfessional = professionalsData.find((p) => p.id === currentUserData.id)
+        setProfessionals(currentUserAsProfessional ? [currentUserAsProfessional] : [])
+        setAllUsers([currentUserData])
+      } else {
+        // Para admin/coordinador, mostrar todos como antes
+        setProfessionals(professionalsData)
+        setAllUsers(allUsersData)
+      }
+
       setCurrentUser(currentUserData)
-      setAllUsers(allUsersData)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error fetching data")
       console.error("Error in useProfessionals:", err)
@@ -35,12 +49,12 @@ export function useProfessionals() {
 
   useEffect(() => {
     fetchData()
-  }, [])
+  }, [userProfile?.role]) // 🆕 Recargar cuando cambie el rol
 
   return {
-    professionals, // Solo usuarios con rol "professional"
+    professionals, // Solo usuarios con rol "professional" (filtrado por rol del usuario actual)
     currentUser, // Usuario actual logueado
-    allUsers, // Todos los usuarios de la organización
+    allUsers, // Todos los usuarios de la organización (filtrado por rol del usuario actual)
     loading,
     error,
     refetch: fetchData,

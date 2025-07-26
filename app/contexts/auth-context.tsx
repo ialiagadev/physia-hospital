@@ -37,73 +37,104 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  // Ref para rastrear el userId actual y evitar condiciones de carrera
+  // 🚀 NUEVO: Ref para evitar doble inicialización
+  const isInitializedRef = useRef(false)
   const currentUserIdRef = useRef<string | null>(null)
   const currentUserRef = useRef<User | null>(null)
+  const subscriptionRef = useRef<any>(null)
 
   useEffect(() => {
+    // 🚀 PREVENIR DOBLE INICIALIZACIÓN
+    if (isInitializedRef.current) {
+      console.log("⚠️ AuthProvider ya inicializado, saltando...")
+      return
+    }
+
     console.log("🔄 AuthProvider iniciado")
+    isInitializedRef.current = true
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      const newUser = session?.user ?? null
-      console.log("📋 Sesión inicial:", newUser?.email || "sin usuario")
+    const initializeAuth = async () => {
+      try {
+        // Get initial session
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+        const newUser = session?.user ?? null
 
-      setUser(newUser)
-      currentUserRef.current = newUser
-
-      if (newUser) {
-        currentUserIdRef.current = newUser.id
-        getUserProfile(newUser.id)
-      } else {
-        currentUserIdRef.current = null
-        setUserProfile(null)
-        setIsLoading(false)
-      }
-    })
-
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      const newUser = session?.user ?? null
-      const newUserId = newUser?.id ?? null
-      const previousUserId = currentUserIdRef.current
-      const previousUser = currentUserRef.current
-
-      // Solo actualizar si realmente cambió el usuario
-      const userChanged = (!previousUser && newUser) || (previousUser && !newUser) || previousUser?.id !== newUser?.id
-
-      if (userChanged) {
-        console.log("🔄 Usuario cambió:", {
-          de: previousUser?.email || "null",
-          a: newUser?.email || "null",
-        })
+        console.log("📋 Sesión inicial:", newUser?.email || "sin usuario")
 
         setUser(newUser)
         currentUserRef.current = newUser
 
-        if (newUser && newUserId) {
-          // Si es un usuario diferente, limpiar el perfil anterior inmediatamente
-          if (newUserId !== previousUserId) {
-            console.log("🧹 Limpiando perfil anterior")
-            setUserProfile(null)
-            setIsLoading(true)
-          }
-
-          currentUserIdRef.current = newUserId
-          getUserProfile(newUserId)
+        if (newUser) {
+          currentUserIdRef.current = newUser.id
+          await getUserProfile(newUser.id)
         } else {
-          // No hay usuario, limpiar todo
           currentUserIdRef.current = null
           setUserProfile(null)
           setIsLoading(false)
         }
-      }
-    })
 
-    return () => subscription.unsubscribe()
-  }, [])
+        // 🚀 OPTIMIZADO: Solo crear suscripción si no existe
+        if (!subscriptionRef.current) {
+          // Listen for auth changes
+          const {
+            data: { subscription },
+          } = supabase.auth.onAuthStateChange((_event, session) => {
+            const newUser = session?.user ?? null
+            const newUserId = newUser?.id ?? null
+            const previousUserId = currentUserIdRef.current
+            const previousUser = currentUserRef.current
+
+            // Solo actualizar si realmente cambió el usuario
+            const userChanged =
+              (!previousUser && newUser) || (previousUser && !newUser) || previousUser?.id !== newUser?.id
+
+            if (userChanged) {
+              console.log("🔄 Usuario cambió:", {
+                de: previousUser?.email || "null",
+                a: newUser?.email || "null",
+              })
+
+              setUser(newUser)
+              currentUserRef.current = newUser
+
+              if (newUser && newUserId) {
+                // Si es un usuario diferente, limpiar el perfil anterior inmediatamente
+                if (newUserId !== previousUserId) {
+                  console.log("🧹 Limpiando perfil anterior")
+                  setUserProfile(null)
+                  setIsLoading(true)
+                }
+                currentUserIdRef.current = newUserId
+                getUserProfile(newUserId)
+              } else {
+                // No hay usuario, limpiar todo
+                currentUserIdRef.current = null
+                setUserProfile(null)
+                setIsLoading(false)
+              }
+            }
+          })
+
+          subscriptionRef.current = subscription
+        }
+      } catch (error) {
+        console.error("💥 Error inicializando auth:", error)
+        setIsLoading(false)
+      }
+    }
+
+    initializeAuth()
+
+    // Cleanup function
+    return () => {
+      if (subscriptionRef.current) {
+        subscriptionRef.current.unsubscribe()
+        subscriptionRef.current = null
+      }
+    }
+  }, []) // 🚀 DEPENDENCIAS VACÍAS - solo se ejecuta una vez
 
   const getUserProfile = async (userId: string) => {
     try {

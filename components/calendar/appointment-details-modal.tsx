@@ -443,6 +443,7 @@ export function AppointmentDetailsModal({
                 <div className="flex items-center gap-2">
                   {!isEditing && (
                     <>
+                    {userProfile?.role !== "user" && (
                       <IndividualBillingButton
                         appointment={appointment}
                         onBillingComplete={() => {
@@ -450,6 +451,7 @@ export function AppointmentDetailsModal({
                           checkExistingInvoice()
                         }}
                       />
+                    )}
                       <Button
                         variant="outline"
                         size="sm"

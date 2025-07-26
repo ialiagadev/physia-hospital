@@ -9,7 +9,22 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Loader2, Phone, User, CheckCircle, AlertTriangle, MapPin, Info, Briefcase, Search, CalendarIcon, Clock, ClipboardList, Repeat, Ban } from 'lucide-react'
+import {
+  Loader2,
+  Phone,
+  User,
+  CheckCircle,
+  AlertTriangle,
+  MapPin,
+  Info,
+  Briefcase,
+  Search,
+  CalendarIcon,
+  Clock,
+  ClipboardList,
+  Repeat,
+  Ban,
+} from "lucide-react"
 import { useClients } from "@/hooks/use-clients"
 import { useUsers } from "@/hooks/use-users"
 import { useUserServices } from "../services/use-user-services"
@@ -83,6 +98,9 @@ export function AppointmentFormModal({
   const { userProfile } = useAuth()
   const organizationId = userProfile?.organization_id ? Number(userProfile.organization_id) : undefined
 
+  // 🆕 VERIFICAR SI ES USUARIO 'USER'
+  const isUserRole = userProfile?.role === "user"
+
   // Hooks centralizados
   const { clients } = useClients(organizationId)
   const { users } = useUsers(organizationId)
@@ -141,6 +159,16 @@ export function AppointmentFormModal({
   // 🔧 ESTADO DEL FORMULARIO CON FECHAS Y PROFESIONAL CORREGIDOS
   const [formData, setFormData] = useState(() => {
     const waitingListProfessionalId = getWaitingListProfessionalId()
+
+    // 🆕 PARA USUARIOS 'USER', FORZAR SU PROPIO ID
+    let defaultProfessionalId = citaExistente?.profesionalId || waitingListProfessionalId || profesionalId || 0
+
+    if (isUserRole && userProfile?.id) {
+      // Convertir UUID a número para usuarios 'user'
+      const userIdAsNumber = Number.parseInt(userProfile.id.slice(-8), 16)
+      defaultProfessionalId = userIdAsNumber
+    }
+
     return {
       telefonoPaciente: citaExistente?.telefonoPaciente || waitingListEntry?.client_phone || "",
       nombrePaciente: citaExistente?.nombrePaciente || waitingListEntry?.client_name?.split(" ")[0] || "",
@@ -151,16 +179,16 @@ export function AppointmentFormModal({
       hora: citaExistente?.hora || hora,
       duracion: citaExistente?.duracion || waitingListEntry?.service_duration || 45,
       notas: citaExistente?.notas || waitingListEntry?.notes || "",
-      // 🔧 PROFESIONAL ID CORREGIDO - priorizar lista de espera
-      profesionalId: citaExistente?.profesionalId || waitingListProfessionalId || profesionalId || 0,
+      // 🆕 PROFESIONAL ID CORREGIDO - forzar para usuarios 'user'
+      profesionalId: defaultProfessionalId,
       estado: citaExistente?.estado || ("pendiente" as EstadoCita),
       consultationId:
         citaExistente?.consultationId && citaExistente.consultationId !== "" ? citaExistente.consultationId : "none",
       service_id: citaExistente?.service_id
         ? Number(citaExistente.service_id)
         : waitingListEntry?.service_id
-        ? Number(waitingListEntry.service_id)
-        : null, // ✅ Mantener servicio de lista de espera si existe
+          ? Number(waitingListEntry.service_id)
+          : null, // ✅ Mantener servicio de lista de espera si existe
       // 🆕 CAMPOS PARA RECURRENCIA - Añadida opción "daily"
       isRecurring: citaExistente?.isRecurring || false,
       recurrenceType: citaExistente?.recurrenceType || "weekly",
@@ -345,7 +373,13 @@ export function AppointmentFormModal({
 
   // ✅ ACTUALIZAR USUARIOS FILTRADOS - SIMPLIFICADO (ya no filtra por servicio)
   const updateFilteredUsers = useCallback(async () => {
-    const usersToFilter = users.filter((user) => user.type === 1) // Solo profesionales
+    let usersToFilter = users.filter((user) => user.type === 1) // Solo profesionales
+
+    // 🆕 PARA USUARIOS 'USER', SOLO MOSTRAR A SÍ MISMOS
+    if (isUserRole && userProfile?.id) {
+      usersToFilter = usersToFilter.filter((user) => user.id === userProfile.id)
+    }
+
     // Filtrar por vacaciones
     const availableUsers = getAvailableUsers(usersToFilter, formData.fecha)
     setFilteredUsers(availableUsers)
@@ -358,14 +392,24 @@ export function AppointmentFormModal({
       formData.profesionalId &&
       formData.profesionalId !== profesionalId && // No resetear si viene del calendario
       formData.profesionalId !== waitingListProfessionalId && // 🔧 No resetear si viene de lista de espera
-      !availableUsers.find((user) => Number.parseInt(user.id.slice(-8), 16) === formData.profesionalId)
+      !availableUsers.find((user) => Number.parseInt(user.id.slice(-8), 16) === formData.profesionalId) &&
+      !isUserRole // 🆕 No resetear para usuarios 'user'
     ) {
       setFormData((prev) => ({
         ...prev,
         profesionalId: waitingListProfessionalId || profesionalId || 0,
       }))
     }
-  }, [formData.fecha, formData.profesionalId, users, getAvailableUsers, profesionalId, getWaitingListProfessionalId])
+  }, [
+    formData.fecha,
+    formData.profesionalId,
+    users,
+    getAvailableUsers,
+    profesionalId,
+    getWaitingListProfessionalId,
+    isUserRole,
+    userProfile?.id,
+  ])
 
   // Función para buscar clientes
   const searchClients = useCallback(
@@ -548,6 +592,11 @@ export function AppointmentFormModal({
   // ✅ HANDLER MEJORADO: Para cambio de profesional con reset de servicio
   const handleProfessionalChange = useCallback(
     (value: string) => {
+      // 🆕 BLOQUEAR CAMBIO PARA USUARIOS 'USER'
+      if (isUserRole) {
+        return // No permitir cambios
+      }
+
       const newProfessionalId = Number.parseInt(value)
       setFormData((prev) => ({
         ...prev,
@@ -555,7 +604,7 @@ export function AppointmentFormModal({
         service_id: null, // ✅ Reset service when professional changes
       }))
     },
-    [],
+    [isUserRole],
   )
 
   // ✅ HANDLER MEJORADO: Para cambio de servicio con validación
@@ -727,10 +776,19 @@ export function AppointmentFormModal({
             {citaExistente ? "Editar Cita" : waitingListEntry ? "Programar desde Lista de Espera" : "Nueva Cita"}
             {clienteEncontrado && <CheckCircle className="h-4 w-4 text-green-600" />}
             {formData.isRecurring && <Repeat className="h-4 w-4 text-blue-600" />}
+            {/* 🆕 INDICADOR PARA USUARIOS 'USER' */}
+            {isUserRole && <User className="h-4 w-4 text-blue-600" />}
           </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 px-1">
+          {/* 🆕 ALERTA PARA USUARIOS 'USER' */}
+          {isUserRole && (
+              <User className="h-4 w-4" />
+              
+            
+          )}
+
           {/* Indicador de lista de espera */}
           {waitingListEntry && (
             <Alert className="border-blue-200 bg-blue-50">
@@ -780,8 +838,8 @@ export function AppointmentFormModal({
                   filteredServices.length > 0 &&
                   !filteredServices.find((s) => s.id === waitingListEntry.service_id) && (
                     <div className="text-sm mt-2 text-amber-700 bg-amber-100 p-2 rounded">
-                      ⚠️ <strong>Atención:</strong> El servicio "{waitingListEntry.service_name}" no está disponible
-                      para el profesional seleccionado. Selecciona un servicio compatible.
+                      ⚠️ <strong>Atención:</strong> El servicio "{waitingListEntry.service_name}" no está disponible para
+                      el profesional seleccionado. Selecciona un servicio compatible.
                     </div>
                   )}
               </AlertDescription>
@@ -920,10 +978,15 @@ export function AppointmentFormModal({
           {/* ✅ PROFESIONAL PRIMERO - MOVIDO ANTES DEL SERVICIO */}
           <div className="space-y-2">
             <Label htmlFor="profesional" className="flex items-center gap-2 text-sm font-medium">
-              Profesional *
+              Profesional *{/* 🆕 INDICADOR PARA USUARIOS 'USER' */}
+              {isUserRole && <span className="text-xs text-blue-600"></span>}
             </Label>
-            <Select value={formData.profesionalId.toString()} onValueChange={handleProfessionalChange}>
-              <SelectTrigger className="w-full">
+            <Select
+              value={formData.profesionalId.toString()}
+              onValueChange={handleProfessionalChange}
+              disabled={isUserRole} // 🆕 DESHABILITAR PARA USUARIOS 'USER'
+            >
+              <SelectTrigger className={`w-full ${isUserRole ? "bg-gray-50 cursor-not-allowed" : ""}`}>
                 <SelectValue placeholder="Selecciona un profesional *" />
               </SelectTrigger>
               <SelectContent>
@@ -932,12 +995,18 @@ export function AppointmentFormModal({
                     <div className="flex items-center gap-2 w-full">
                       <span className="truncate">{user.name || user.email}</span>
                       <span className="text-xs text-gray-500 flex-shrink-0">({user.role})</span>
+                      {/* 🆕 INDICADOR SI ES EL USUARIO ACTUAL */}
+                      {isUserRole && <span className="text-xs text-blue-600">(Tú)</span>}
                     </div>
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             {errors.profesional && <p className="text-sm text-red-600">{errors.profesional}</p>}
+            {/* 🆕 MENSAJE EXPLICATIVO PARA USUARIOS 'USER' */}
+            {isUserRole && (
+              <p className="text-xs text-blue-600">Como usuario, solo puedes crear citas para ti mismo.</p>
+            )}
           </div>
 
           {/* ✅ SERVICIO SEGUNDO - FILTRADO POR PROFESIONAL */}
@@ -959,10 +1028,10 @@ export function AppointmentFormModal({
                     !formData.profesionalId
                       ? "Primero selecciona un profesional"
                       : loadingProfessionalServices || userServicesLoading
-                      ? "Cargando servicios..."
-                      : filteredServices.length === 0
-                      ? "No hay servicios disponibles"
-                      : "Selecciona un servicio"
+                        ? "Cargando servicios..."
+                        : filteredServices.length === 0
+                          ? "No hay servicios disponibles"
+                          : "Selecciona un servicio"
                   }
                 />
               </SelectTrigger>
@@ -1114,8 +1183,8 @@ export function AppointmentFormModal({
                       {formData.recurrenceType === "daily"
                         ? "días"
                         : formData.recurrenceType === "weekly"
-                        ? "semanas"
-                        : "meses"}
+                          ? "semanas"
+                          : "meses"}
                     </Label>
                     <Select
                       value={formData.recurrenceInterval.toString()}
@@ -1133,16 +1202,16 @@ export function AppointmentFormModal({
                               </SelectItem>
                             ))
                           : formData.recurrenceType === "weekly"
-                          ? [1, 2, 3, 4].map((interval) => (
-                              <SelectItem key={interval} value={interval.toString()}>
-                                {interval} {interval === 1 ? "semana" : "semanas"}
-                              </SelectItem>
-                            ))
-                          : [1, 2, 3, 4, 6, 8, 12].map((interval) => (
-                              <SelectItem key={interval} value={interval.toString()}>
-                                {interval} {interval === 1 ? "mes" : "meses"}
-                              </SelectItem>
-                            ))}
+                            ? [1, 2, 3, 4].map((interval) => (
+                                <SelectItem key={interval} value={interval.toString()}>
+                                  {interval} {interval === 1 ? "semana" : "semanas"}
+                                </SelectItem>
+                              ))
+                            : [1, 2, 3, 4, 6, 8, 12].map((interval) => (
+                                <SelectItem key={interval} value={interval.toString()}>
+                                  {interval} {interval === 1 ? "mes" : "meses"}
+                                </SelectItem>
+                              ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -1386,6 +1455,10 @@ export function AppointmentFormModal({
               <p className="text-blue-600">
                 • ✅ El sistema garantiza que solo se asignen servicios compatibles con el profesional
               </p>
+            )}
+            {/* 🆕 CONSEJO PARA USUARIOS 'USER' */}
+            {isUserRole && (
+              <p className="text-blue-600">• 👤 Como usuario, solo puedes crear citas asignadas a ti mismo</p>
             )}
           </div>
 

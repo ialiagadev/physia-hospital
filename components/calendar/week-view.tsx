@@ -1,15 +1,14 @@
 "use client"
-
 import type React from "react"
-
 import { useState } from "react"
 import { format, startOfWeek, addDays, isSameDay, isToday } from "date-fns"
 import { es } from "date-fns/locale"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { calcularHoraFin } from "@/utils/calendar-utils"
 import type { Cita, Profesional, IntervaloTiempo } from "@/types/calendar"
-import { Phone } from "lucide-react"
+import { Phone } from 'lucide-react'
 import { toast } from "sonner"
+import { useAuth } from "@/app/contexts/auth-context"
 
 interface WeekViewProps {
   date: Date
@@ -60,6 +59,15 @@ const ensureDate = (fecha: Date | string): Date => {
   return parsedDate
 }
 
+// Función helper para convertir UUID a número
+const uuidToNumber = (uuid: string): number => {
+  try {
+    return parseInt(uuid.slice(-8), 16)
+  } catch {
+    return 0
+  }
+}
+
 export function WeekView({
   date,
   citas,
@@ -70,10 +78,12 @@ export function WeekView({
   onUpdateCita,
   onAddCita,
   onDateSelect,
-  vacationRequests,
-  isUserOnVacationDate,
-  getUserVacationOnDate,
+  vacationRequests = [],
+  isUserOnVacationDate = () => false,
+  getUserVacationOnDate = () => null,
 }: WeekViewProps) {
+  const { user, userProfile } = useAuth()
+  
   // Estados para drag and drop
   const [draggedCita, setDraggedCita] = useState<Cita | null>(null)
   const [dragOverDay, setDragOverDay] = useState<Date | null>(null)
@@ -82,15 +92,81 @@ export function WeekView({
   const weekStart = startOfWeek(date, { weekStartsOn: 1 })
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
 
+  // Verificar si el usuario actual tiene rol 'user'
+  const isUserRole = userProfile?.role === "user"
+
+  // 🚀 ENCONTRAR EL PROFESIONAL ACTUAL - CORRIGIENDO COMPARACIÓN DE TIPOS
+  const currentUserProfessional = isUserRole && userProfile?.id
+    ? profesionales.find((prof) => {
+        // Si prof.id es número y userProfile.id es string (UUID)
+        if (typeof prof.id === 'number' && typeof userProfile.id === 'string') {
+          // Convertir UUID a número para comparar
+          const userIdAsNumber = uuidToNumber(userProfile.id)
+          return prof.id === userIdAsNumber
+        }
+        
+        // Si prof.id es string y userProfile.id es string
+        if (typeof prof.id === 'string' && typeof userProfile.id === 'string') {
+          return prof.id === userProfile.id
+        }
+        
+        // Intentar con propiedades adicionales si existen
+        const profAny = prof as any
+        return (
+          profAny.userId === userProfile.id ||
+          profAny.user_id === userProfile.id
+        )
+      })
+    : null
+
+  // 🚀 FILTRAR CITAS SEGÚN EL ROL DEL USUARIO
+  const filteredCitas = isUserRole && currentUserProfessional
+    ? citas.filter((cita) => {
+        // Manejar diferentes tipos de profesionalId
+        if (typeof cita.profesionalId === 'string' && typeof currentUserProfessional.id === 'number') {
+          // Si cita tiene UUID y profesional tiene número
+          const citaIdAsNumber = uuidToNumber(cita.profesionalId)
+          return citaIdAsNumber === currentUserProfessional.id
+        }
+        
+        if (typeof cita.profesionalId === 'number' && typeof currentUserProfessional.id === 'string') {
+          // Si cita tiene número y profesional tiene UUID
+          const profIdAsNumber = uuidToNumber(currentUserProfessional.id)
+          return cita.profesionalId === profIdAsNumber
+        }
+        
+        // Comparación directa si son del mismo tipo
+        return cita.profesionalId === currentUserProfessional.id
+      })
+    : citas
+
   // Función para manejar clic en el header del día
   const handleHeaderClick = (targetDate: Date, event: React.MouseEvent) => {
     event.preventDefault()
     event.stopPropagation()
-
     if (onDateSelect) {
       onDateSelect(targetDate)
       toast.success(`Cambiando a vista diaria: ${format(targetDate, "EEEE d 'de' MMMM", { locale: es })}`)
     }
+  }
+
+  // Función para manejar clic en día vacío (crear cita)
+  const handleDayClick = (targetDate: Date, event: React.MouseEvent) => {
+    event.preventDefault()
+    event.stopPropagation()
+    
+    // Preparar datos para nueva cita
+    const newCitaData: Partial<Cita> = {
+      fecha: targetDate,
+      hora: "09:00",
+    }
+
+    // Si es usuario con rol 'user', asignar automáticamente su profesional
+    if (isUserRole && currentUserProfessional) {
+      newCitaData.profesionalId = currentUserProfessional.id
+    }
+
+    onAddCita(newCitaData)
   }
 
   // Handlers para drag and drop
@@ -134,10 +210,7 @@ export function WeekView({
     const citaActualizada = {
       ...draggedCita,
       fecha: targetDate,
-      profesionalId:
-        typeof draggedCita.profesionalId === "string"
-          ? Number.parseInt(draggedCita.profesionalId)
-          : draggedCita.profesionalId,
+      profesionalId: draggedCita.profesionalId,
     }
 
     // Actualizar la cita
@@ -145,7 +218,7 @@ export function WeekView({
 
     // Mostrar notificación
     toast.success(
-      `Cita de ${draggedCita.nombrePaciente} ${draggedCita.apellidosPaciente} movida a ${format(targetDate, "EEEE d 'de' MMMM", { locale: es })}`,
+      `Cita de ${draggedCita.nombrePaciente} ${draggedCita.apellidosPaciente} movida a ${format(targetDate, "EEEE d 'de' MMMM", { locale: es })}`
     )
 
     setDraggedCita(null)
@@ -156,12 +229,27 @@ export function WeekView({
       {/* Grid de días */}
       <div className="flex-1 grid grid-cols-7 gap-px bg-gray-200">
         {weekDays.map((day, dayIndex) => {
-          const citasDelDia = citas
+          // Filtrar citas del día usando las citas ya filtradas
+          const citasDelDia = filteredCitas
             .filter((cita) => {
               const citaFecha = ensureDate(cita.fecha)
-              const profesionalIdNum =
-                typeof cita.profesionalId === "string" ? Number.parseInt(cita.profesionalId) : cita.profesionalId
-              return isSameDay(citaFecha, day) && profesionalesSeleccionados.includes(profesionalIdNum)
+              
+              // Para usuarios no-admin, también verificar profesionales seleccionados
+              if (!isUserRole) {
+                // Convertir profesionalId para comparar con profesionalesSeleccionados
+                let profesionalIdNum: number
+                if (typeof cita.profesionalId === "string") {
+                  // Si es UUID, convertir a número para comparación
+                  profesionalIdNum = uuidToNumber(cita.profesionalId)
+                } else {
+                  profesionalIdNum = cita.profesionalId
+                }
+                
+                const isProfesionalSelected = profesionalesSeleccionados.includes(profesionalIdNum)
+                return isSameDay(citaFecha, day) && isProfesionalSelected
+              }
+              
+              return isSameDay(citaFecha, day)
             })
             .sort((a, b) => a.hora.localeCompare(b.hora))
 
@@ -173,13 +261,17 @@ export function WeekView({
             <div
               key={day.toISOString()}
               className={`bg-white flex flex-col transition-colors ${
-                isDayToday ? "bg-blue-50/30" : isWeekend ? "bg-gray-50/50" : "bg-white"
+                isDayToday 
+                  ? "bg-blue-50/30" 
+                  : isWeekend 
+                    ? "bg-gray-50/50" 
+                    : "bg-white"
               } ${isDragOver ? "bg-blue-100/50 ring-2 ring-blue-300" : ""}`}
               onDragOver={(e) => handleDragOver(e, day)}
               onDragLeave={handleDragLeave}
               onDrop={(e) => handleDrop(e, day)}
             >
-              {/* Header del día - AHORA CLICKEABLE */}
+              {/* Header del día - CLICKEABLE */}
               <div
                 className={`p-4 border-b border-gray-200 text-center cursor-pointer hover:bg-blue-100/30 transition-colors ${
                   isDayToday ? "bg-blue-100/50" : "bg-gray-50"
@@ -202,22 +294,44 @@ export function WeekView({
               </div>
 
               {/* Contenido del día */}
-              <div className="flex-1 p-3 space-y-2 min-h-[500px]">
+              <div
+                className="flex-1 p-3 space-y-2 min-h-[500px] cursor-pointer"
+                onClick={(e) => {
+                  // Solo crear cita si se hace clic en área vacía
+                  if (e.target === e.currentTarget && citasDelDia.length === 0) {
+                    handleDayClick(day, e)
+                  }
+                }}
+              >
                 {citasDelDia.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-32 text-gray-400">
                     <p className="text-sm">Sin citas</p>
-                    {isDragOver && draggedCita && <p className="text-xs text-blue-600 mt-2">Soltar aquí para mover</p>}
+                    {isDragOver && draggedCita && (
+                      <p className="text-xs text-blue-600 mt-2">Soltar aquí para mover</p>
+                    )}
                   </div>
                 ) : (
                   <>
                     {citasDelDia.map((cita) => {
+                      // 🚀 BÚSQUEDA DE PROFESIONAL CON MANEJO DE TIPOS
                       const profesional = profesionales.find((p) => {
-                        const citaProfesionalId =
-                          typeof cita.profesionalId === "string"
-                            ? Number.parseInt(cita.profesionalId)
-                            : cita.profesionalId
-                        return p.id === citaProfesionalId
+                        // Manejar diferentes combinaciones de tipos
+                        if (typeof p.id === 'number' && typeof cita.profesionalId === 'string') {
+                          // Profesional tiene número, cita tiene UUID
+                          const citaIdAsNumber = uuidToNumber(cita.profesionalId)
+                          return p.id === citaIdAsNumber
+                        }
+                        
+                        if (typeof p.id === 'string' && typeof cita.profesionalId === 'number') {
+                          // Profesional tiene UUID, cita tiene número
+                          const profIdAsNumber = uuidToNumber(p.id)
+                          return profIdAsNumber === cita.profesionalId
+                        }
+                        
+                        // Comparación directa si son del mismo tipo
+                        return p.id === cita.profesionalId
                       })
+
                       if (!profesional) return null
 
                       const colorStyles = getColorProfesional(profesional)
@@ -249,18 +363,15 @@ export function WeekView({
                                   </span>
                                   <div className={`w-2 h-2 rounded-full ${getColorEstado(cita.estado)}`} />
                                 </div>
-
                                 <div className="text-sm font-medium text-gray-700 mb-1">
                                   {cita.hora} - {calcularHoraFin(cita.hora, cita.duracion)}
                                 </div>
-
                                 {cita.telefonoPaciente && (
                                   <div className="flex items-center gap-1 text-xs text-gray-600">
                                     <Phone className="w-3 h-3" />
                                     {cita.telefonoPaciente}
                                   </div>
                                 )}
-
                               </div>
                             </TooltipTrigger>
                             <TooltipContent>
@@ -271,9 +382,13 @@ export function WeekView({
                                 <p className="text-sm">
                                   {cita.hora} - {calcularHoraFin(cita.hora, cita.duracion)} ({cita.duracion} min)
                                 </p>
-                                <p className="text-sm">{profesional?.name}</p>
-                                {cita.telefonoPaciente && <p className="text-sm">📞 {cita.telefonoPaciente}</p>}
-                                <p className="text-xs text-yellow-200 mt-2">🖱️ Arrastra para mover a otro día</p>
+                                <p className="text-sm">{profesional?.name || profesional?.nombre}</p>
+                                {cita.telefonoPaciente && (
+                                  <p className="text-sm">📞 {cita.telefonoPaciente}</p>
+                                )}
+                                <p className="text-xs text-yellow-200 mt-2">
+                                  🖱️ Arrastra para mover a otro día
+                                </p>
                               </div>
                             </TooltipContent>
                           </Tooltip>

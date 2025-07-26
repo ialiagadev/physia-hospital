@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Calendar, Clock, Plus, Edit } from "lucide-react"
+import { Calendar, Clock, Plus, Edit } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -99,6 +99,10 @@ export function ProfesionalesView({
   const { userProfile } = useAuth()
   const organizationId = userProfile?.organization_id?.toString()
 
+  // 🚀 VERIFICAR SI EL USUARIO TIENE ROL 'user'
+  const isUserRole = userProfile?.role === "user"
+  const currentUserId = userProfile?.id
+
   // CORREGIDO: Usar el hook correctamente
   const {
     schedules,
@@ -111,13 +115,23 @@ export function ProfesionalesView({
   // Filtrar solo usuarios de tipo 1 (profesionales)
   const professionalUsers = users.filter((user) => user.type === 1)
 
-  // MEJORADO: Lógica más clara para filtrar profesionales
+  // 🚀 FILTRAR PROFESIONALES SEGÚN EL ROL DEL USUARIO
   const filteredProfesionales = profesionales.filter((profesional) => {
-    return professionalUsers.some((user) => {
+    const matchingUser = professionalUsers.find((user) => {
       // Comparar IDs de manera más robusta
       const userIdNumber = Number.parseInt(user.id.slice(-8), 16)
       return userIdNumber === profesional.id
     })
+
+    if (!matchingUser) return false
+
+    // Si es usuario con rol 'user', solo mostrar su propio perfil
+    if (isUserRole && currentUserId) {
+      return matchingUser.id === currentUserId
+    }
+
+    // Para admin y coordinador, mostrar todos
+    return true
   })
 
   const [selectedProfesional, setSelectedProfesional] = useState<Profesional | null>(null)
@@ -132,32 +146,70 @@ export function ProfesionalesView({
   const [showScheduleModal, setShowScheduleModal] = useState(false)
   const [selectedUserForSchedule, setSelectedUserForSchedule] = useState<User | null>(null)
 
-  // Obtener estadísticas de un profesional
+  // 🚀 FUNCIÓN PARA VERIFICAR SI EL USUARIO PUEDE EDITAR UN PROFESIONAL
+  const canEditProfessional = (profesional: Profesional) => {
+    // Admin y coordinador pueden editar todos
+    if (!isUserRole) return true
+    
+    // Usuario 'user' solo puede editar su propio perfil
+    if (isUserRole && currentUserId) {
+      const matchingUser = professionalUsers.find((user) => {
+        const userIdNumber = Number.parseInt(user.id.slice(-8), 16)
+        return userIdNumber === profesional.id
+      })
+      return matchingUser?.id === currentUserId
+    }
+    
+    return false
+  }
+
+  // 🚀 OBTENER ESTADÍSTICAS MEJORADAS DE UN PROFESIONAL
   const getEstadisticasProfesional = (profesionalId: number) => {
     const citasProfesional = citas.filter((c) => c.profesionalId === profesionalId)
     const hoy = new Date()
+    const ahora = new Date()
+    
+    // Citas de hoy
     const citasHoy = citasProfesional.filter((c) => {
       const fechaCita = typeof c.fecha === "string" ? new Date(c.fecha) : c.fecha
       return fechaCita.toDateString() === hoy.toDateString()
     })
 
+    // 🚀 PRÓXIMAS CITAS (futuras, incluyendo las de hoy que aún no han pasado)
+    const proximasCitas = citasProfesional.filter((c) => {
+      const fechaCita = typeof c.fecha === "string" ? new Date(c.fecha) : c.fecha
+      
+      // Si es hoy, verificar que la hora no haya pasado
+      if (fechaCita.toDateString() === hoy.toDateString()) {
+        const [hora, minutos] = c.hora.split(':').map(Number)
+        const horaCita = new Date(fechaCita)
+        horaCita.setHours(hora, minutos, 0, 0)
+        return horaCita > ahora
+      }
+      
+      // Si es fecha futura
+      return fechaCita > hoy
+    })
+
     return {
-      totalCitas: citasProfesional.length,
-      citasHoy: citasHoy.length,
+      totalCitas: citasProfesional.length, // 🚀 TODAS las citas del profesional
+      citasHoy: citasHoy.length, // Citas específicas de hoy
+      proximasCitas: proximasCitas.length, // 🚀 TODAS las citas futuras
       citasConfirmadas: citasProfesional.filter((c) => c.estado === "confirmada").length,
       citasPendientes: citasProfesional.filter((c) => c.estado === "pendiente").length,
       citasCanceladas: citasProfesional.filter((c) => c.estado === "cancelada").length,
     }
   }
 
-  // Obtener próximas citas de un profesional
+  // Obtener próximas citas de un profesional para mostrar en la lista
   const getProximasCitas = (profesionalId: number, limit = 5) => {
     const ahora = new Date()
     return citas
       .filter((c) => {
         const fechaCita = typeof c.fecha === "string" ? new Date(c.fecha) : c.fecha
         return (
-          c.profesionalId === profesionalId && (fechaCita > ahora || fechaCita.toDateString() === ahora.toDateString())
+          c.profesionalId === profesionalId &&
+          (fechaCita > ahora || fechaCita.toDateString() === ahora.toDateString())
         )
       })
       .sort((a, b) => {
@@ -318,6 +370,7 @@ export function ProfesionalesView({
     if (user.specialty === "otros" && user.specialty_other) {
       return user.specialty_other
     }
+
     return getSpecialtyLabel(user.specialty || "")
   }
 
@@ -327,19 +380,34 @@ export function ProfesionalesView({
       <div className="h-full p-4">
         <div className="flex justify-between items-center mb-6">
           <div>
-            <h2 className="text-2xl font-bold">Gestión de Profesionales</h2>
-            <p className="text-sm text-muted-foreground">No hay profesionales disponibles</p>
+            <h2 className="text-2xl font-bold">
+              {isUserRole ? "Mi Perfil Profesional" : "Gestión de Profesionales"}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {isUserRole 
+                ? "Tu información como profesional" 
+                : "No hay profesionales disponibles"
+              }
+            </p>
           </div>
         </div>
-
         <div className="flex flex-col items-center justify-center h-64 text-center">
           <div className="text-6xl mb-4">👨‍⚕️</div>
-          <h3 className="text-lg font-semibold mb-2">No hay profesionales</h3>
-          <p className="text-muted-foreground mb-4">Añade el primer profesional para comenzar</p>
-          <Button onClick={() => setShowAddModal(true)} className="gap-2">
-            <Plus className="h-4 w-4" />
-            Añadir Primer Profesional
-          </Button>
+          <h3 className="text-lg font-semibold mb-2">
+            {isUserRole ? "Perfil no encontrado" : "No hay profesionales"}
+          </h3>
+          <p className="text-muted-foreground mb-4">
+            {isUserRole 
+              ? "No se encontró tu perfil profesional" 
+              : "Añade el primer profesional para comenzar"
+            }
+          </p>
+          {/* 🚀 BOTÓN AÑADIR - SOLO PARA ADMIN Y COORDINADOR */}
+          {!isUserRole && (
+            <Button onClick={() => setShowAddModal(true)} className="gap-2">
+              
+            </Button>
+          )}
         </div>
       </div>
     )
@@ -349,8 +417,15 @@ export function ProfesionalesView({
     <div className="h-full p-4">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h2 className="text-2xl font-bold">Gestión de Profesionales</h2>
-          <p className="text-sm text-muted-foreground">{filteredProfesionales.length} profesionales disponibles</p>
+          <h2 className="text-2xl font-bold">
+            {isUserRole ? "Mi Perfil Profesional" : "Gestión de Profesionales"}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {isUserRole 
+              ? "Tu información y estadísticas" 
+              : `${filteredProfesionales.length} profesionales disponibles`
+            }
+          </p>
         </div>
       </div>
 
@@ -363,6 +438,9 @@ export function ProfesionalesView({
           const professionalSchedules = getProfessionalSchedules(profesional.id)
           const hasSchedules = professionalSchedules.length > 0
           const specialty = getProfessionalSpecialty(profesional.id)
+
+          // 🚀 VERIFICAR SI PUEDE EDITAR ESTE PROFESIONAL
+          const canEdit = canEditProfessional(profesional)
 
           return (
             <Card key={profesional.id} className="h-fit">
@@ -391,23 +469,31 @@ export function ProfesionalesView({
                     </div>
                   </div>
                   <div className="flex gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleEditProfesional(profesional)}
-                      className="h-8 w-8 p-0"
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleScheduleConfig(profesional)}
-                      className="h-8 w-8 p-0"
-                      title="Configurar horarios"
-                    >
-                      <Clock className={`h-4 w-4 ${hasSchedules ? "text-green-600" : "text-gray-400"}`} />
-                    </Button>
+                    {/* 🚀 BOTÓN EDITAR - PARA ADMIN/COORDINADOR Y PARA EL PROPIO USUARIO */}
+                    {canEdit && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleEditProfesional(profesional)}
+                        className="h-8 w-8 p-0"
+                        title={isUserRole ? "Editar mi perfil" : "Editar profesional"}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    )}
+                    
+                    {/* 🚀 BOTÓN CONFIGURAR HORARIOS - PARA ADMIN/COORDINADOR Y PARA EL PROPIO USUARIO */}
+                    {canEdit && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleScheduleConfig(profesional)}
+                        className="h-8 w-8 p-0"
+                        title={isUserRole ? "Configurar mis horarios" : "Configurar horarios"}
+                      >
+                        <Clock className={`h-4 w-4 ${hasSchedules ? "text-green-600" : "text-gray-400"}`} />
+                      </Button>
+                    )}
                   </div>
                 </div>
               </CardHeader>
@@ -420,14 +506,24 @@ export function ProfesionalesView({
                   </TabsList>
 
                   <TabsContent value="estadisticas" className="space-y-4 mt-4">
-                    <div className="grid grid-cols-2 gap-4">
+                    {/* 🚀 GRID DE 3 COLUMNAS CON ESTADÍSTICAS MEJORADAS */}
+                    <div className="grid grid-cols-3 gap-3">
+                      {/* 🚀 CITAS DE HOY */}
                       <div className="text-center p-3 bg-blue-50 rounded-lg">
-                        <div className="text-2xl font-bold text-blue-600">{estadisticas.citasHoy}</div>
-                        <div className="text-sm text-blue-600">Hoy</div>
+                        <div className="text-xl font-bold text-blue-600">{estadisticas.citasHoy}</div>
+                        <div className="text-xs text-blue-600">Hoy</div>
                       </div>
+                      
+                      {/* 🚀 PRÓXIMAS CITAS (futuras) */}
+                      <div className="text-center p-3 bg-green-50 rounded-lg">
+                        <div className="text-xl font-bold text-green-600">{estadisticas.proximasCitas}</div>
+                        <div className="text-xs text-green-600">Próximas</div>
+                      </div>
+                      
+                      {/* 🚀 TOTAL DE CITAS */}
                       <div className="text-center p-3 bg-gray-50 rounded-lg">
-                        <div className="text-2xl font-bold text-gray-600">{estadisticas.totalCitas}</div>
-                        <div className="text-sm text-gray-600">Total</div>
+                        <div className="text-xl font-bold text-gray-600">{estadisticas.totalCitas}</div>
+                        <div className="text-xs text-gray-600">Total</div>
                       </div>
                     </div>
 
@@ -481,9 +577,13 @@ export function ProfesionalesView({
                               </div>
                               <div className="text-xs text-gray-500 flex items-center gap-1 mt-1">
                                 <Calendar className="h-3 w-3" />
-                                {format(typeof cita.fecha === "string" ? new Date(cita.fecha) : cita.fecha, "d MMM", {
-                                  locale: es,
-                                })}
+                                {format(
+                                  typeof cita.fecha === "string" ? new Date(cita.fecha) : cita.fecha,
+                                  "d MMM",
+                                  {
+                                    locale: es,
+                                  }
+                                )}
                                 <Clock className="h-3 w-3 ml-2" />
                                 {cita.hora}
                               </div>
@@ -493,8 +593,8 @@ export function ProfesionalesView({
                                 cita.estado === "confirmada"
                                   ? "bg-green-100 text-green-800"
                                   : cita.estado === "pendiente"
-                                    ? "bg-yellow-100 text-yellow-800"
-                                    : "bg-red-100 text-red-800"
+                                  ? "bg-yellow-100 text-yellow-800"
+                                  : "bg-red-100 text-red-800"
                               }
                             >
                               {cita.estado}
@@ -520,7 +620,9 @@ export function ProfesionalesView({
       <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Editar Profesional</DialogTitle>
+            <DialogTitle>
+              {isUserRole ? "Editar Mi Perfil" : "Editar Profesional"}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -531,7 +633,6 @@ export function ProfesionalesView({
                 onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })}
               />
             </div>
-
             <div>
               <Label htmlFor="edit-especialidad">Especialidad</Label>
               <Select
@@ -550,7 +651,6 @@ export function ProfesionalesView({
                 </SelectContent>
               </Select>
             </div>
-
             {editForm.especialidad === "otros" && (
               <div>
                 <Label htmlFor="edit-especialidad-otra">Especifica la especialidad</Label>
@@ -562,7 +662,6 @@ export function ProfesionalesView({
                 />
               </div>
             )}
-
             <div>
               <Label htmlFor="edit-color">Color</Label>
               <div className="flex items-center gap-3">
@@ -576,7 +675,6 @@ export function ProfesionalesView({
                 <div className="text-sm text-muted-foreground">{editForm.color}</div>
               </div>
             </div>
-
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowEditModal(false)}>
                 Cancelar
@@ -603,7 +701,6 @@ export function ProfesionalesView({
                 placeholder="Ej: Dr. Juan Pérez"
               />
             </div>
-
             <div>
               <Label htmlFor="add-especialidad">Especialidad</Label>
               <Select
@@ -622,7 +719,6 @@ export function ProfesionalesView({
                 </SelectContent>
               </Select>
             </div>
-
             {editForm.especialidad === "otros" && (
               <div>
                 <Label htmlFor="add-especialidad-otra">Especifica la especialidad</Label>
@@ -634,7 +730,6 @@ export function ProfesionalesView({
                 />
               </div>
             )}
-
             <div>
               <Label htmlFor="add-color">Color</Label>
               <Select value={editForm.color} onValueChange={(value) => setEditForm({ ...editForm, color: value })}>
@@ -653,7 +748,6 @@ export function ProfesionalesView({
                 </SelectContent>
               </Select>
             </div>
-
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowAddModal(false)}>
                 Cancelar

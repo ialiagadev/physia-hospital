@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useMemo } from "react"
+import { useState, useMemo } from "react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { AppointmentFormModal } from "./appointment-form-modal"
 import { HoraPreviewTooltip } from "./hora-preview-tooltip"
@@ -107,14 +107,12 @@ const generateDefaultTimeSlots = (intervaloTiempo: IntervaloTiempo): string[] =>
   const slots: string[] = []
   const startHour = 8 // 8:00 AM
   const endHour = 18 // 6:00 PM
-
   for (let hour = startHour; hour < endHour; hour++) {
     for (let minute = 0; minute < 60; minute += intervaloTiempo) {
       const timeString = `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`
       slots.push(timeString)
     }
   }
-
   return slots
 }
 
@@ -146,12 +144,9 @@ export function HorarioViewDynamic({
   const [previewHora, setPreviewHora] = useState<string | null>(null)
   const [previewPosition, setPreviewPosition] = useState({ x: 0, y: 0 })
 
-  // NUEVO: Estado para controlar la carga inicial
-  const [isInitialLoad, setIsInitialLoad] = useState(true)
-
   const dayOfWeek = date.getDay()
 
-  // MEJORADO: Usar useMemo para cálculos costosos y detectar cambios
+  // OPTIMIZADO: Usar useMemo con dependencias más específicas
   const professionalUsers = useMemo(() => {
     return users.filter((user) => user.type === 1)
   }, [users])
@@ -177,63 +172,36 @@ export function HorarioViewDynamic({
     )
   }, [professionalUsers, profesionalesFiltrados])
 
-  // 🚀 MODIFICADO: timeSlots ahora siempre tiene valores por defecto
+  // 🚀 OPTIMIZADO: timeSlots con dependencias más específicas
   const timeSlots = useMemo(() => {
     if (usuariosActivos.length === 0) {
       return generateDefaultTimeSlots(intervaloTiempo)
     }
-
     if (workSchedules.length === 0) {
       return generateDefaultTimeSlots(intervaloTiempo)
     }
-
     const generatedSlots = generateTimeSlots(usuariosActivos, dayOfWeek, intervaloTiempo)
-
     // Si no se generaron slots (sin horarios configurados), usar por defecto
     if (generatedSlots.length === 0) {
       return generateDefaultTimeSlots(intervaloTiempo)
     }
-
     return generatedSlots
   }, [usuariosActivos, dayOfWeek, intervaloTiempo, workSchedules])
 
-  // 🚀 MODIFICADO: Calcular rango por defecto cuando no hay horarios
+  // 🚀 OPTIMIZADO: Calcular rango con dependencias más específicas
   const { start: startMinutes, end: endMinutes } = useMemo(() => {
     if (usuariosActivos.length === 0 || workSchedules.length === 0) {
       return { start: timeToMinutes("08:00"), end: timeToMinutes("18:00") }
     }
-
     const range = getCalendarTimeRange(usuariosActivos, dayOfWeek)
-
     // Si no hay rango válido, usar por defecto
     if (range.start >= range.end) {
       return { start: timeToMinutes("08:00"), end: timeToMinutes("18:00") }
     }
-
     return range
   }, [usuariosActivos, dayOfWeek, workSchedules])
 
   const duracionDia = endMinutes - startMinutes
-
-  // NUEVO: useEffect para manejar la carga inicial
-  useEffect(() => {
-    // Verificar si tenemos todos los datos necesarios
-    const hasRequiredData = users.length > 0 && profesionales.length > 0 && workSchedules.length >= 0
-    if (hasRequiredData && isInitialLoad) {
-      // Pequeño delay para asegurar que todos los cálculos se completen
-      const timer = setTimeout(() => {
-        setIsInitialLoad(false)
-      }, 100)
-      return () => clearTimeout(timer)
-    }
-  }, [users, profesionales, workSchedules, isInitialLoad])
-
-  // NUEVO: useEffect para detectar cambios en datos críticos
-  useEffect(() => {
-    if (!isInitialLoad) {
-      // Los datos han cambiado después de la inicialización
-    }
-  }, [users, profesionales, workSchedules, timeSlots, isInitialLoad])
 
   // Funciones de vacaciones
   const isProfessionalOnVacation = (profesionalId: number | string) => {
@@ -318,10 +286,8 @@ export function HorarioViewDynamic({
     if (isProfessionalOnVacation(profesionalId)) {
       return false
     }
-
     const user = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesionalId)
     if (!user) return false
-
     const normalizedTime = normalizeTimeFormat(hora)
     const timeInMinutes = timeToMinutes(normalizedTime)
 
@@ -358,14 +324,11 @@ export function HorarioViewDynamic({
   const handleDragOver = (e: React.DragEvent, profesionalId: number) => {
     e.preventDefault()
     if (!draggedCita) return
-
     setDragOverProfesional(profesionalId)
-
     const container = e.currentTarget as HTMLElement
     const rect = container.getBoundingClientRect()
     const y = e.clientY - rect.top
     const nuevaHora = calcularHoraDesdePosicion(y, rect.height)
-
     setPreviewHora(nuevaHora)
     setPreviewPosition({ x: 0, y: e.clientY })
 
@@ -434,7 +397,6 @@ export function HorarioViewDynamic({
 
   const handleContainerClick = (e: React.MouseEvent, profesionalId: number) => {
     if (e.target !== e.currentTarget) return
-
     const container = e.currentTarget as HTMLElement
     const rect = container.getBoundingClientRect()
     const y = e.clientY - rect.top
@@ -697,8 +659,8 @@ export function HorarioViewDynamic({
     return descansos
   }
 
-  // MEJORADO: Condición más robusta para mostrar el estado de carga
-  if (isInitialLoad) {
+  // 🚀 OPTIMIZADO: Condición de carga más simple y eficiente
+  if (users.length === 0 || profesionales.length === 0) {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="text-center">
@@ -709,9 +671,6 @@ export function HorarioViewDynamic({
       </div>
     )
   }
-
-  // 🚀 REMOVIDO: La condición que impedía mostrar el grid cuando no había timeSlots
-  // Ahora timeSlots siempre tiene valores por defecto
 
   return (
     <div className="flex flex-col h-full">
@@ -959,7 +918,6 @@ export function HorarioViewDynamic({
                                       {normalizedStartTime}-{normalizedEndTime} ({cita.duracion} min)
                                     </p>
                                     {cita.telefonoPaciente && <p className="text-xs">Tel: {cita.telefonoPaciente}</p>}
-                                    
                                   </div>
                                 </TooltipContent>
                               </Tooltip>

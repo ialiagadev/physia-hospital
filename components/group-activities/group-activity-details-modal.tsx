@@ -469,30 +469,35 @@ export function GroupActivityDetailsModal({
           </div>
 
           {/* Footer fijo */}
-          <DialogFooter className="flex-shrink-0 border-t bg-gray-50 px-6 py-4">
-            <GroupActivityBillingButton
-              activity={{
-                ...currentActivity,
-                participants: participants,
-              }}
-              organizationId={organizationId}
-              services={services}
-              onBillingComplete={() => {
-                console.log("Facturación completada para la actividad")
-              }}
-            />
-            <Button variant="outline" onClick={handleClose} disabled={loading || deleting}>
-              Cerrar
-            </Button>
-            <Button variant="outline" onClick={() => setShowEditModal(true)} disabled={loading || deleting}>
-              <Edit className="h-4 w-4 mr-1" />
-              Editar
-            </Button>
-            <Button variant="destructive" onClick={() => setShowDeleteConfirm(true)} disabled={loading || deleting}>
-              <Trash2 className="h-4 w-4 mr-1" />
-              {deleting ? "Eliminando..." : "Eliminar"}
-            </Button>
-          </DialogFooter>
+        
+<DialogFooter className="flex-shrink-0 border-t bg-gray-50 px-6 py-4">
+  {/* 🚀 BOTÓN DE FACTURACIÓN DE ACTIVIDAD GRUPAL - SOLO PARA ADMIN Y COORDINADOR */}
+  {userProfile?.role !== "user" && (
+    <GroupActivityBillingButton
+      activity={{
+        ...currentActivity,
+        participants: participants,
+      }}
+      organizationId={organizationId}
+      services={services}
+      onBillingComplete={() => {
+        console.log("Facturación completada para la actividad")
+      }}
+    />
+  )}
+  
+  <Button variant="outline" onClick={handleClose} disabled={loading || deleting}>
+    Cerrar
+  </Button>
+  <Button variant="outline" onClick={() => setShowEditModal(true)} disabled={loading || deleting}>
+    <Edit className="h-4 w-4 mr-1" />
+    Editar
+  </Button>
+  <Button variant="destructive" onClick={() => setShowDeleteConfirm(true)} disabled={loading || deleting}>
+    <Trash2 className="h-4 w-4 mr-1" />
+    {deleting ? "Eliminando..." : "Eliminar"}
+  </Button>
+</DialogFooter>
         </DialogContent>
       </Dialog>
 

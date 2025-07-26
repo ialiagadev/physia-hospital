@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { AppointmentService } from "@/lib/services/appointments"
 import type { AppointmentWithDetails, AppointmentInsert, AppointmentUpdate } from "@/types/calendar"
 import { toast } from "sonner"
+import { useAuth } from "@/app/contexts/auth-context"
 
 export function useAppointments(
   organizationId?: number,
@@ -14,6 +15,9 @@ export function useAppointments(
   const [appointments, setAppointments] = useState<AppointmentWithDetails[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  const { userProfile } = useAuth()
+  const isUserRole = userProfile?.role === "user"
 
   const fetchAppointments = async () => {
     try {
@@ -26,7 +30,10 @@ export function useAppointments(
         return
       }
 
-      const data = await AppointmentService.getAppointmentsWithDetails(startDate, endDate, professionalIds)
+      // Si es usuario 'user', forzar filtro por su propio ID
+      const finalProfessionalIds = isUserRole && userProfile?.id ? [userProfile.id] : professionalIds
+
+      const data = await AppointmentService.getAppointmentsWithDetails(startDate, endDate, finalProfessionalIds)
       setAppointments(data)
     } catch (err) {
       console.error("Error fetching appointments:", err)
@@ -38,7 +45,7 @@ export function useAppointments(
 
   useEffect(() => {
     fetchAppointments()
-  }, [organizationId, startDate, endDate, professionalIds?.join(",")])
+  }, [organizationId, startDate, endDate, professionalIds?.join(","), isUserRole, userProfile?.id])
 
   const createAppointment = async (appointment: AppointmentInsert) => {
     try {

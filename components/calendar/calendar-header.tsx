@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback } from "react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { ChevronLeft, ChevronRight, Plus, FileText, Calendar, List, Users, Clock } from "lucide-react"
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { DailyBillingModal } from "./daily-billing-modal"
+import { useAuth } from "@/app/contexts/auth-context"
 
 interface CalendarHeaderProps {
   currentDate: Date
@@ -31,33 +32,48 @@ export function CalendarHeader({
   onNewAppointment,
   appointmentCounts,
 }: CalendarHeaderProps) {
+  const { userProfile } = useAuth()
   const [billingModalOpen, setBillingModalOpen] = useState(false)
 
-  const navigateDate = (direction: "prev" | "next") => {
-    const newDate = new Date(currentDate)
+  const isUserRole = userProfile?.role === "user"
 
-    switch (view) {
-      case "month":
-        newDate.setMonth(newDate.getMonth() + (direction === "next" ? 1 : -1))
-        break
-      case "week":
-        newDate.setDate(newDate.getDate() + (direction === "next" ? 7 : -7))
-        break
-      case "day":
-        newDate.setDate(newDate.getDate() + (direction === "next" ? 1 : -1))
-        break
-      default:
-        newDate.setDate(newDate.getDate() + (direction === "next" ? 1 : -1))
+  // 🚀 OPTIMIZACIÓN: Usar useCallback para evitar re-creaciones innecesarias
+  const navigateDate = useCallback(
+    (direction: "prev" | "next") => {
+      const newDate = new Date(currentDate)
+
+      switch (view) {
+        case "month":
+          newDate.setMonth(newDate.getMonth() + (direction === "next" ? 1 : -1))
+          break
+        case "week":
+          newDate.setDate(newDate.getDate() + (direction === "next" ? 7 : -7))
+          break
+        case "day":
+          newDate.setDate(newDate.getDate() + (direction === "next" ? 1 : -1))
+          break
+        default:
+          newDate.setDate(newDate.getDate() + (direction === "next" ? 1 : -1))
+      }
+
+      // 🚀 OPTIMIZACIÓN: Solo actualizar si la fecha realmente cambió
+      if (newDate.getTime() !== currentDate.getTime()) {
+        onDateChange(newDate)
+      }
+    },
+    [currentDate, view, onDateChange],
+  )
+
+  const goToToday = useCallback(() => {
+    const today = new Date()
+    // 🚀 OPTIMIZACIÓN: Solo actualizar si no es el día actual
+    if (today.toDateString() !== currentDate.toDateString()) {
+      onDateChange(today)
     }
+  }, [currentDate, onDateChange])
 
-    onDateChange(newDate)
-  }
-
-  const goToToday = () => {
-    onDateChange(new Date())
-  }
-
-  const getDateRangeText = () => {
+  // 🚀 OPTIMIZACIÓN: Memoizar el cálculo del texto de fecha
+  const getDateRangeText = useCallback(() => {
     switch (view) {
       case "month":
         return format(currentDate, "MMMM yyyy", { locale: es })
@@ -72,7 +88,7 @@ export function CalendarHeader({
       default:
         return format(currentDate, "MMMM yyyy", { locale: es })
     }
-  }
+  }, [currentDate, view])
 
   const getViewIcon = (viewType: string) => {
     switch (viewType) {
@@ -100,16 +116,13 @@ export function CalendarHeader({
             <Button variant="outline" size="sm" onClick={() => navigateDate("prev")} className="h-8 w-8 p-0">
               <ChevronLeft className="h-4 w-4" />
             </Button>
-
             <Button variant="outline" size="sm" onClick={goToToday} className="px-3 h-8 text-sm bg-transparent">
               Hoy
             </Button>
-
             <Button variant="outline" size="sm" onClick={() => navigateDate("next")} className="h-8 w-8 p-0">
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
-
           <div className="text-lg font-semibold text-gray-900 capitalize">{getDateRangeText()}</div>
         </div>
 
@@ -133,16 +146,17 @@ export function CalendarHeader({
 
         {/* Right section - Actions and View */}
         <div className="flex items-center gap-2">
-          {/* Billing button - now always visible */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setBillingModalOpen(true)}
-            className="gap-2 text-green-600 hover:text-green-700 hover:bg-green-50 bg-transparent"
-          >
-            <FileText className="h-4 w-4" />
-            Facturar Día
-          </Button>
+          {!isUserRole && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setBillingModalOpen(true)}
+              className="gap-2 text-green-600 hover:text-green-700 hover:bg-green-50 bg-transparent"
+            >
+              <FileText className="h-4 w-4" />
+              Facturar Día
+            </Button>
+          )}
 
           <Button onClick={onNewAppointment} size="sm" className="gap-2 bg-blue-600 hover:bg-blue-700">
             <Plus className="h-4 w-4" />
@@ -200,12 +214,13 @@ export function CalendarHeader({
         </div>
       </div>
 
-      {/* Daily Billing Modal */}
-      <DailyBillingModal
-        isOpen={billingModalOpen}
-        onClose={() => setBillingModalOpen(false)}
-        selectedDate={currentDate}
-      />
+      {!isUserRole && (
+        <DailyBillingModal
+          isOpen={billingModalOpen}
+          onClose={() => setBillingModalOpen(false)}
+          selectedDate={currentDate}
+        />
+      )}
     </>
   )
 }

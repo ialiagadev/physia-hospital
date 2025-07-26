@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft, ChevronRight, Plus, Search, Clock, FileText, CalendarIcon } from "lucide-react"
@@ -177,6 +177,10 @@ const MedicalCalendarSystem: React.FC = () => {
   const { userProfile } = useAuth()
   const organizationId = userProfile?.organization_id ? Number(userProfile.organization_id) : undefined
 
+  // 🆕 AÑADIR ESTA LÍNEA - Verificar si el usuario actual es de tipo 'user'
+  const isUserRole = userProfile?.role === "user"
+  const currentUserId = userProfile?.id
+
   // Estados principales
   const [currentDate, setCurrentDate] = useState(new Date())
   const [tabPrincipal, setTabPrincipal] = useState<TabPrincipal>("calendario")
@@ -203,7 +207,7 @@ const MedicalCalendarSystem: React.FC = () => {
   const [isSystemReady, setIsSystemReady] = useState(false)
 
   // Función para eliminar entrada de lista de espera
-  const removeFromWaitingList = async (entryId: string) => {
+  const removeFromWaitingList = useCallback(async (entryId: string) => {
     try {
       const { error } = await supabase.from("waiting_list").delete().eq("id", entryId)
       if (error) throw error
@@ -212,7 +216,7 @@ const MedicalCalendarSystem: React.FC = () => {
       console.error("Error removing from waiting list:", error)
       toast.error("Error al eliminar de la lista de espera")
     }
-  }
+  }, [])
 
   // 🚀 HOOKS OPTIMIZADOS - SIN CLIENTES
   const { users, currentUser, loading: usersLoading, refetch: refetchUsers } = useUsers(organizationId)
@@ -302,8 +306,8 @@ const MedicalCalendarSystem: React.FC = () => {
     }
   }, [criticalDataReady, isSystemReady, organizationId])
 
-  // Calcular rango de fechas para las citas
-  const getDateRange = () => {
+  // 🚀 OPTIMIZADO: Calcular rango de fechas para las citas
+  const dateRange = useMemo(() => {
     let startDate: string, endDate: string
 
     switch (vistaCalendario) {
@@ -329,9 +333,9 @@ const MedicalCalendarSystem: React.FC = () => {
     }
 
     return { startDate, endDate }
-  }
+  }, [currentDate, vistaCalendario])
 
-  const { startDate, endDate } = getDateRange()
+  const { startDate, endDate } = dateRange
 
   const {
     appointments,
@@ -347,49 +351,64 @@ const MedicalCalendarSystem: React.FC = () => {
   )
 
   // ✅ FUNCIÓN MEJORADA PARA VERIFICAR CITAS DEL DÍA
-  const hasAppointmentsToday = () => {
+  const hasAppointmentsToday = useCallback(() => {
     const today = format(currentDate, "yyyy-MM-dd")
     return appointments.some((apt) => format(new Date(apt.date), "yyyy-MM-dd") === today)
-  }
+  }, [appointments, currentDate])
 
   // ✅ FUNCIÓN ESPECÍFICA PARA CITAS COMPLETADAS (OPCIONAL)
-  const hasCompletedAppointmentsToday = () => {
+  const hasCompletedAppointmentsToday = useCallback(() => {
     const today = format(currentDate, "yyyy-MM-dd")
     return appointments.some((apt) => format(new Date(apt.date), "yyyy-MM-dd") === today && apt.status === "completed")
-  }
+  }, [appointments, currentDate])
 
   // Inicializar con todos los usuarios seleccionados
   useEffect(() => {
     if (users.length > 0 && usuariosSeleccionados.length === 0) {
-      setUsuariosSeleccionados(users.map((u) => u.id))
+      // 🆕 MODIFICAR ESTA LÓGICA - Si es usuario 'user', solo seleccionar a sí mismo
+      if (isUserRole && currentUserId) {
+        setUsuariosSeleccionados([currentUserId])
+      } else {
+        setUsuariosSeleccionados(users.map((u) => u.id))
+      }
     }
-  }, [users, usuariosSeleccionados.length])
+  }, [users, usuariosSeleccionados.length, isUserRole, currentUserId])
 
-  // Navegación de fechas
-  const navigateDate = (direction: "prev" | "next") => {
-    const newDate = new Date(currentDate)
+  // 🚀 OPTIMIZADO: Navegación de fechas
+  const navigateDate = useCallback(
+    (direction: "prev" | "next") => {
+      setCurrentDate((prevDate) => {
+        const newDate = new Date(prevDate)
 
-    switch (vistaCalendario) {
-      case "dia":
-        newDate.setDate(newDate.getDate() + (direction === "next" ? 1 : -1))
-        break
-      case "semana":
-        newDate.setDate(newDate.getDate() + (direction === "next" ? 7 : -7))
-        break
-      case "mes":
-        newDate.setMonth(newDate.getMonth() + (direction === "next" ? 1 : -1))
-        break
-    }
+        switch (vistaCalendario) {
+          case "dia":
+            newDate.setDate(newDate.getDate() + (direction === "next" ? 1 : -1))
+            break
+          case "semana":
+            newDate.setDate(newDate.getDate() + (direction === "next" ? 7 : -7))
+            break
+          case "mes":
+            newDate.setMonth(newDate.getMonth() + (direction === "next" ? 1 : -1))
+            break
+        }
 
-    setCurrentDate(newDate)
-  }
+        // Solo actualizar si la fecha realmente cambió
+        return newDate.getTime() !== prevDate.getTime() ? newDate : prevDate
+      })
+    },
+    [vistaCalendario],
+  )
 
-  const goToToday = () => {
-    setCurrentDate(new Date())
-  }
+  const goToToday = useCallback(() => {
+    const today = new Date()
+    setCurrentDate((prevDate) => {
+      // Solo actualizar si no es el día actual
+      return today.toDateString() !== prevDate.toDateString() ? today : prevDate
+    })
+  }, [])
 
   // Función para obtener o crear tipo de cita por defecto
-  const getDefaultAppointmentType = async (userId: string) => {
+  const getDefaultAppointmentType = useCallback(async (userId: string) => {
     try {
       const { data: existingType } = await supabase
         .from("appointment_types")
@@ -422,208 +441,243 @@ const MedicalCalendarSystem: React.FC = () => {
     } catch (error) {
       throw error
     }
-  }
+  }, [])
 
   // 🚀 HANDLER OPTIMIZADO PARA CREAR CITAS - CON MEJOR MANEJO DE ERRORES
-  const handleAddAppointment = async (appointmentData: any) => {
-    try {
-      if (!currentUser || !organizationId) {
-        toast.error("Error: No se pudo obtener la información del usuario")
-        return
-      }
-
-      let clientId: number
-
-      // Si ya hay un cliente seleccionado desde el modal, usarlo
-      if (appointmentData.clienteEncontrado) {
-        clientId = appointmentData.clienteEncontrado.id
-      } else {
-        // 🚀 USAR EL SERVICIO SIMPLE CON MEJOR MANEJO DE ERRORES
-        const clientData = {
-          name: `${appointmentData.nombrePaciente} ${appointmentData.apellidosPaciente || ""}`.trim(),
-          phone: appointmentData.telefonoPaciente,
-        }
-
-        try {
-          const client = await ClientService.findOrCreateClient(organizationId, clientData)
-          clientId = client.id
-        } catch (clientError) {
-          console.error("Error al gestionar cliente:", clientError)
-          toast.error("Error al crear o encontrar el cliente")
+  const handleAddAppointment = useCallback(
+    async (appointmentData: any) => {
+      try {
+        if (!currentUser || !organizationId) {
+          toast.error("Error: No se pudo obtener la información del usuario")
           return
         }
-      }
 
-      // Determinar el profesional
-      let professionalUuid = currentUser.id
-      if (appointmentData.profesionalId) {
-        const prof = users.find((u) => {
-          const numericId = Number.parseInt(u.id.slice(-8), 16)
-          return numericId === appointmentData.profesionalId
-        })
-        if (prof) {
-          professionalUuid = prof.id
+        let clientId: number
+
+        // Si ya hay un cliente seleccionado desde el modal, usarlo
+        if (appointmentData.clienteEncontrado) {
+          clientId = appointmentData.clienteEncontrado.id
+        } else {
+          // 🚀 USAR EL SERVICIO SIMPLE CON MEJOR MANEJO DE ERRORES
+          const clientData = {
+            name: `${appointmentData.nombrePaciente} ${appointmentData.apellidosPaciente || ""}`.trim(),
+            phone: appointmentData.telefonoPaciente,
+          }
+
+          try {
+            const client = await ClientService.findOrCreateClient(organizationId, clientData)
+            clientId = client.id
+          } catch (clientError) {
+            console.error("Error al gestionar cliente:", clientError)
+            toast.error("Error al crear o encontrar el cliente")
+            return
+          }
         }
-      }
 
-      let appointmentTypeId: string
-      try {
-        appointmentTypeId = await getDefaultAppointmentType(professionalUuid)
-      } catch (typeError) {
-        console.error("Error al obtener tipo de cita:", typeError)
-        toast.error("Error al configurar el tipo de cita")
-        return
-      }
+        // Determinar el profesional
+        let professionalUuid = currentUser.id
+        if (appointmentData.profesionalId) {
+          const prof = users.find((u) => {
+            const numericId = Number.parseInt(u.id.slice(-8), 16)
+            return numericId === appointmentData.profesionalId
+          })
+          if (prof) {
+            professionalUuid = prof.id
+          }
+        }
 
-      let consultationId = null
-      if (appointmentData.consultationId && appointmentData.consultationId !== "none") {
-        consultationId = appointmentData.consultationId
-      }
-
-      const newAppointment: AppointmentInsert = {
-        user_id: currentUser.id,
-        organization_id: currentUser.organization_id,
-        professional_id: professionalUuid,
-        client_id: clientId,
-        appointment_type_id: appointmentTypeId,
-        consultation_id: consultationId,
-        date: format(appointmentData.fecha, "yyyy-MM-dd"),
-        start_time: appointmentData.hora,
-        end_time: appointmentData.horaFin || calculateEndTime(appointmentData.hora, appointmentData.duracion),
-        duration: appointmentData.duracion || 30,
-        status: mapEstadoToStatus(appointmentData.estado) || "confirmed",
-        notes: appointmentData.notas || undefined,
-        created_by: currentUser.id,
-        service_id: appointmentData.service_id || null,
-        // Campos de recurrencia
-        is_recurring: appointmentData.isRecurring || false,
-        recurrence_type: appointmentData.isRecurring ? appointmentData.recurrenceType || "weekly" : null,
-        recurrence_interval: appointmentData.isRecurring ? appointmentData.recurrenceInterval || 1 : null,
-        recurrence_end_date:
-          appointmentData.isRecurring && appointmentData.recurrenceEndDate
-            ? format(appointmentData.recurrenceEndDate, "yyyy-MM-dd")
-            : null,
-        parent_appointment_id: appointmentData.parentAppointmentId || null,
-      }
-
-      await createAppointment(newAppointment)
-
-      // Si viene de lista de espera, eliminarla después de crear la cita
-      if (waitingListEntry?.id) {
+        let appointmentTypeId: string
         try {
-          await removeFromWaitingList(waitingListEntry.id)
-        } catch (waitingError) {
-          console.error("Error al eliminar de lista de espera:", waitingError)
-          // No mostrar error al usuario, la cita ya se creó correctamente
+          appointmentTypeId = await getDefaultAppointmentType(professionalUuid)
+        } catch (typeError) {
+          console.error("Error al obtener tipo de cita:", typeError)
+          toast.error("Error al configurar el tipo de cita")
+          return
         }
+
+        let consultationId = null
+        if (appointmentData.consultationId && appointmentData.consultationId !== "none") {
+          consultationId = appointmentData.consultationId
+        }
+
+        const newAppointment: AppointmentInsert = {
+          user_id: currentUser.id,
+          organization_id: currentUser.organization_id,
+          professional_id: professionalUuid,
+          client_id: clientId,
+          appointment_type_id: appointmentTypeId,
+          consultation_id: consultationId,
+          date: format(appointmentData.fecha, "yyyy-MM-dd"),
+          start_time: appointmentData.hora,
+          end_time: appointmentData.horaFin || calculateEndTime(appointmentData.hora, appointmentData.duracion),
+          duration: appointmentData.duracion || 30,
+          status: mapEstadoToStatus(appointmentData.estado) || "confirmed",
+          notes: appointmentData.notas || undefined,
+          created_by: currentUser.id,
+          service_id: appointmentData.service_id || null,
+          // Campos de recurrencia
+          is_recurring: appointmentData.isRecurring || false,
+          recurrence_type: appointmentData.isRecurring ? appointmentData.recurrenceType || "weekly" : null,
+          recurrence_interval: appointmentData.isRecurring ? appointmentData.recurrenceInterval || 1 : null,
+          recurrence_end_date:
+            appointmentData.isRecurring && appointmentData.recurrenceEndDate
+              ? format(appointmentData.recurrenceEndDate, "yyyy-MM-dd")
+              : null,
+          parent_appointment_id: appointmentData.parentAppointmentId || null,
+        }
+
+        await createAppointment(newAppointment)
+
+        // Si viene de lista de espera, eliminarla después de crear la cita
+        if (waitingListEntry?.id) {
+          try {
+            await removeFromWaitingList(waitingListEntry.id)
+          } catch (waitingError) {
+            console.error("Error al eliminar de lista de espera:", waitingError)
+            // No mostrar error al usuario, la cita ya se creó correctamente
+          }
+        }
+
+        toast.success("Cita creada correctamente")
+      } catch (error) {
+        console.error("Error creating appointment:", error)
+        toast.error("Error al crear la cita")
       }
+    },
+    [
+      currentUser,
+      organizationId,
+      users,
+      getDefaultAppointmentType,
+      createAppointment,
+      waitingListEntry,
+      removeFromWaitingList,
+    ],
+  )
 
-      toast.success("Cita creada correctamente")
-    } catch (error) {
-      console.error("Error creating appointment:", error)
-      toast.error("Error al crear la cita")
-    }
-  }
+  const handleUpdateAppointment = useCallback(
+    async (appointment: AppointmentWithDetails) => {
+      try {
+        await updateAppointment(appointment.id, {
+          date: format(new Date(appointment.date), "yyyy-MM-dd"),
+          start_time: appointment.start_time,
+          end_time: appointment.end_time,
+          duration: appointment.duration,
+          status: appointment.status,
+          notes: appointment.notes || undefined,
+          professional_id: appointment.professional_id,
+          consultation_id: appointment.consultation_id,
+        })
+      } catch (error) {
+        throw error
+      }
+    },
+    [updateAppointment],
+  )
 
-  const handleUpdateAppointment = async (appointment: AppointmentWithDetails) => {
-    try {
-      await updateAppointment(appointment.id, {
-        date: format(new Date(appointment.date), "yyyy-MM-dd"),
-        start_time: appointment.start_time,
-        end_time: appointment.end_time,
-        duration: appointment.duration,
-        status: appointment.status,
-        notes: appointment.notes || undefined,
-        professional_id: appointment.professional_id,
-        consultation_id: appointment.consultation_id,
-      })
-    } catch (error) {
-      throw error
-    }
-  }
+  const handleDeleteAppointment = useCallback(
+    async (appointmentId: string) => {
+      try {
+        await deleteAppointment(appointmentId)
+      } catch (error) {
+        console.error("Error al eliminar la cita:", error)
+      } finally {
+        setSelectedAppointment(null)
+        setShowDetailsModal(false)
+      }
+    },
+    [deleteAppointment],
+  )
 
-  const handleDeleteAppointment = async (appointmentId: string) => {
-    try {
-      await deleteAppointment(appointmentId)
-    } catch (error) {
-      console.error("Error al eliminar la cita:", error)
-    } finally {
-      setSelectedAppointment(null)
-      setShowDetailsModal(false)
-    }
-  }
-
-  const handleSelectAppointment = (appointment: AppointmentWithDetails) => {
+  const handleSelectAppointment = useCallback((appointment: AppointmentWithDetails) => {
     setSelectedAppointment(appointment)
     setShowDetailsModal(true)
-  }
+  }, [])
 
   // Handler para actividades grupales
-  const handleSelectGroupActivity = (cita: any) => {
+  const handleSelectGroupActivity = useCallback((cita: any) => {
     if (cita.isGroupActivity && cita.groupActivityData) {
       setSelectedGroupActivity(cita.groupActivityData)
       setShowGroupActivityDetails(true)
     }
-  }
+  }, [])
 
   // Handler para citas en formato legacy - ACTUALIZADO
-  const handleSelectLegacyAppointment = (cita: any) => {
-    if (cita.isGroupActivity) {
-      handleSelectGroupActivity(cita)
-      return
-    }
-
-    const originalAppointment = appointments.find((apt) => {
-      const numericId = Number.parseInt(apt.id.slice(-8), 16)
-      return numericId === cita.id
-    })
-
-    if (originalAppointment) {
-      handleSelectAppointment(originalAppointment)
-    }
-  }
-
-  // Handler para actualizar citas en formato legacy
-  const handleUpdateLegacyAppointment = async (cita: any) => {
-    const originalAppointment = appointments.find((apt) => Number.parseInt(apt.id.slice(-8), 16) === cita.id)
-
-    if (originalAppointment) {
-      const updatedAppointment = {
-        ...originalAppointment,
-        date: format(cita.fecha, "yyyy-MM-dd"),
-        start_time: cita.hora,
-        end_time: cita.horaFin || calculateEndTime(cita.hora, cita.duracion),
-        duration: cita.duracion,
-        professional_id:
-          users.find((u) => Number.parseInt(u.id.slice(-8), 16) === cita.profesionalId)?.id ||
-          originalAppointment.professional_id,
+  const handleSelectLegacyAppointment = useCallback(
+    (cita: any) => {
+      if (cita.isGroupActivity) {
+        handleSelectGroupActivity(cita)
+        return
       }
 
-      await handleUpdateAppointment(updatedAppointment)
-    }
-  }
+      const originalAppointment = appointments.find((apt) => {
+        const numericId = Number.parseInt(apt.id.slice(-8), 16)
+        return numericId === cita.id
+      })
 
-  // Handlers de usuarios
-  const handleToggleUsuario = (userId: string) => {
-    setUsuariosSeleccionados((prev) => (prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]))
-  }
+      if (originalAppointment) {
+        handleSelectAppointment(originalAppointment)
+      }
+    },
+    [appointments, handleSelectGroupActivity, handleSelectAppointment],
+  )
 
-  const handleToggleAllUsuarios = () => {
-    const todosSeleccionados = usuariosSeleccionados.length === users.length
-    setUsuariosSeleccionados(todosSeleccionados ? [] : users.map((u) => u.id))
-  }
+  // Handler para actualizar citas en formato legacy
+  const handleUpdateLegacyAppointment = useCallback(
+    async (cita: any) => {
+      const originalAppointment = appointments.find((apt) => Number.parseInt(apt.id.slice(-8), 16) === cita.id)
+
+      if (originalAppointment) {
+        const updatedAppointment = {
+          ...originalAppointment,
+          date: format(cita.fecha, "yyyy-MM-dd"),
+          start_time: cita.hora,
+          end_time: cita.horaFin || calculateEndTime(cita.hora, cita.duracion),
+          duration: cita.duracion,
+          professional_id:
+            users.find((u) => Number.parseInt(u.id.slice(-8), 16) === cita.profesionalId)?.id ||
+            originalAppointment.professional_id,
+        }
+
+        await handleUpdateAppointment(updatedAppointment)
+      }
+    },
+    [appointments, users, handleUpdateAppointment],
+  )
+
+  const handleToggleUsuario = useCallback(
+    (userId: string) => {
+      // 🆕 AÑADIR ESTA VERIFICACIÓN - No permitir cambios si es usuario 'user'
+      if (isUserRole) return
+
+      setUsuariosSeleccionados((prev) =>
+        prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
+      )
+    },
+    [isUserRole],
+  )
+
+  const handleToggleAllUsuarios = useCallback(() => {
+    // 🆕 AÑADIR ESTA VERIFICACIÓN - No permitir cambios si es usuario 'user'
+    if (isUserRole) return
+
+    setUsuariosSeleccionados((prev) => {
+      const todosSeleccionados = prev.length === users.length
+      return todosSeleccionados ? [] : users.map((u) => u.id)
+    })
+  }, [isUserRole, users])
 
   // Utility functions
-  const calculateEndTime = (startTime: string, duration: number): string => {
+  const calculateEndTime = useCallback((startTime: string, duration: number): string => {
     const [hours, minutes] = startTime.split(":").map(Number)
     const totalMinutes = hours * 60 + minutes + duration
     const endHours = Math.floor(totalMinutes / 60)
     const endMinutes = totalMinutes % 60
     return `${endHours.toString().padStart(2, "0")}:${endMinutes.toString().padStart(2, "0")}`
-  }
+  }, [])
 
-  // Formatear título de fecha
-  const getDateTitle = () => {
+  // 🚀 OPTIMIZADO: Formatear título de fecha
+  const getDateTitle = useCallback(() => {
     const options: Intl.DateTimeFormatOptions = {
       weekday: "long",
       year: "numeric",
@@ -641,14 +695,14 @@ const MedicalCalendarSystem: React.FC = () => {
       default:
         return ""
     }
-  }
+  }, [currentDate, vistaCalendario])
 
   // Funciones helper para vacaciones
   const isUserOnVacationDate = isUserOnVacationHook
   const getUserVacationOnDate = getUserVacation
 
-  // FUNCIONES DE CONVERSIÓN SIMPLIFICADAS PARA OTRAS VISTAS
-  const convertAppointmentsToLegacyFormat = (appointments: AppointmentWithDetails[]) => {
+  // 🚀 ARREGLADO: FUNCIONES DE CONVERSIÓN CON TIPOS CORRECTOS
+  const convertAppointmentsToLegacyFormat = useCallback((appointments: AppointmentWithDetails[]) => {
     return appointments.map((apt) => ({
       id: Number.parseInt(apt.id.slice(-8), 16),
       nombrePaciente: apt.client?.name?.split(" ")[0] || "Sin nombre",
@@ -667,9 +721,10 @@ const MedicalCalendarSystem: React.FC = () => {
       consultation: apt.consultation,
       clienteId: apt.client_id,
     }))
-  }
+  }, [])
 
-  const convertUsersToLegacyFormat = (users: any[]) => {
+  // 🚀 ARREGLADO: Conversión de usuarios con tipos correctos
+  const convertUsersToLegacyFormat = useCallback((users: any[]) => {
     const medicalProfessionals = users.filter((user) => user.type === 1)
     return medicalProfessionals.map((user) => ({
       id: Number.parseInt(user.id.slice(-8), 16),
@@ -678,9 +733,16 @@ const MedicalCalendarSystem: React.FC = () => {
       especialidad: user.settings?.specialty || "Medicina General",
       color: user.settings?.calendar_color || "#3B82F6",
       type: user.type,
-      settings: user.settings,
+      // 🚀 ARREGLADO: Convertir null a undefined para compatibilidad de tipos
+      settings: user.settings
+        ? {
+            specialty: user.settings.specialty || undefined,
+            specialty_other: user.settings.specialty_other || undefined,
+            calendar_color: user.settings.calendar_color || undefined,
+          }
+        : undefined,
     }))
-  }
+  }, [])
 
   // COMPONENTE PARA HANDLERS DE ACTIVIDADES GRUPALES
   function GroupActivityHandlers({ children }: { children: React.ReactNode }) {
@@ -691,55 +753,67 @@ const MedicalCalendarSystem: React.FC = () => {
       removeParticipant: removeGroupActivityParticipant,
     } = useGroupActivitiesContext()
 
-    const handleAddGroupActivityParticipant = async (activityId: string, clientId: number, notes?: string) => {
-      try {
-        await addGroupActivityParticipant(activityId, clientId, notes)
-        toast.success("Participante añadido correctamente")
-        setShowGroupActivityDetails(false)
-        setSelectedGroupActivity(null)
-      } catch (error) {
-        console.error("Error adding participant:", error)
-        toast.error("Error al añadir participante")
-        throw error
-      }
-    }
+    const handleAddGroupActivityParticipant = useCallback(
+      async (activityId: string, clientId: number, notes?: string) => {
+        try {
+          await addGroupActivityParticipant(activityId, clientId, notes)
+          toast.success("Participante añadido correctamente")
+          setShowGroupActivityDetails(false)
+          setSelectedGroupActivity(null)
+        } catch (error) {
+          console.error("Error adding participant:", error)
+          toast.error("Error al añadir participante")
+          throw error
+        }
+      },
+      [addGroupActivityParticipant],
+    )
 
-    const handleRemoveGroupActivityParticipant = async (participantId: string) => {
-      try {
-        await removeGroupActivityParticipant(participantId)
-        toast.success("Participante eliminado correctamente")
-        setShowGroupActivityDetails(false)
-        setSelectedGroupActivity(null)
-      } catch (error) {
-        console.error("Error removing participant:", error)
-        toast.error("Error al eliminar participante")
-        throw error
-      }
-    }
+    const handleRemoveGroupActivityParticipant = useCallback(
+      async (participantId: string) => {
+        try {
+          await removeGroupActivityParticipant(participantId)
+          toast.success("Participante eliminado correctamente")
+          setShowGroupActivityDetails(false)
+          setSelectedGroupActivity(null)
+        } catch (error) {
+          console.error("Error removing participant:", error)
+          toast.error("Error al eliminar participante")
+          throw error
+        }
+      },
+      [removeGroupActivityParticipant],
+    )
 
-    const handleUpdateGroupActivity = async (id: string, updates: any) => {
-      try {
-        await updateGroupActivity(id, updates)
-        toast.success("Actividad actualizada correctamente")
-      } catch (error) {
-        console.error("Error updating group activity:", error)
-        toast.error("Error al actualizar la actividad")
-        throw error
-      }
-    }
+    const handleUpdateGroupActivity = useCallback(
+      async (id: string, updates: any) => {
+        try {
+          await updateGroupActivity(id, updates)
+          toast.success("Actividad actualizada correctamente")
+        } catch (error) {
+          console.error("Error updating group activity:", error)
+          toast.error("Error al actualizar la actividad")
+          throw error
+        }
+      },
+      [updateGroupActivity],
+    )
 
-    const handleDeleteGroupActivity = async (id: string) => {
-      try {
-        await deleteGroupActivity(id)
-        toast.success("Actividad eliminada correctamente")
-        setShowGroupActivityDetails(false)
-        setSelectedGroupActivity(null)
-      } catch (error) {
-        console.error("Error deleting group activity:", error)
-        toast.error("Error al eliminar la actividad")
-        throw error
-      }
-    }
+    const handleDeleteGroupActivity = useCallback(
+      async (id: string) => {
+        try {
+          await deleteGroupActivity(id)
+          toast.success("Actividad eliminada correctamente")
+          setShowGroupActivityDetails(false)
+          setSelectedGroupActivity(null)
+        } catch (error) {
+          console.error("Error deleting group activity:", error)
+          toast.error("Error al eliminar la actividad")
+          throw error
+        }
+      },
+      [deleteGroupActivity],
+    )
 
     return (
       <>
@@ -764,6 +838,13 @@ const MedicalCalendarSystem: React.FC = () => {
       </>
     )
   }
+
+  // Handler para cambiar a vista diaria
+  const handleDateSelect = useCallback((date: Date) => {
+    setCurrentDate(date)
+    setVistaCalendario("dia")
+    toast.success(`Cambiando a vista diaria: ${format(date, "EEEE d 'de' MMMM")}`)
+  }, [])
 
   // 🚀 MEJORADO: Mostrar loading SIN clientes
   if (!organizationId) {
@@ -816,13 +897,6 @@ const MedicalCalendarSystem: React.FC = () => {
   }
 
   const legacyUsers = convertUsersToLegacyFormat(users)
-
-  // Handler para cambiar a vista diaria
-  const handleDateSelect = (date: Date) => {
-    setCurrentDate(date)
-    setVistaCalendario("dia")
-    toast.success(`Cambiando a vista diaria: ${format(date, "EEEE d 'de' MMMM")}`)
-  }
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -927,31 +1001,33 @@ const MedicalCalendarSystem: React.FC = () => {
                           )}
                         </div>
 
-                        {/* Profesionales - SOLO ICONO */}
-                        <div className="relative">
-                          <ProfesionalesLegend
-                            profesionales={wrapperLegacyUsers}
-                            profesionalesSeleccionados={usuariosSeleccionados.map((id) => {
-                              try {
-                                return Number.parseInt(id.slice(-8), 16)
-                              } catch {
-                                return 0
-                              }
-                            })}
-                            onToggleProfesional={(profesionalId) => {
-                              const userId = users.find((u) => {
+                        {/* Profesionales - SOLO ICONO - 🆕 OCULTAR PARA USUARIOS 'user' */}
+                        {!isUserRole && (
+                          <div className="relative">
+                            <ProfesionalesLegend
+                              profesionales={wrapperLegacyUsers}
+                              profesionalesSeleccionados={usuariosSeleccionados.map((id) => {
                                 try {
-                                  return Number.parseInt(u.id.slice(-8), 16) === profesionalId
+                                  return Number.parseInt(id.slice(-8), 16)
                                 } catch {
-                                  return false
+                                  return 0
                                 }
-                              })?.id
-                              if (userId) handleToggleUsuario(userId)
-                            }}
-                            onToggleAll={handleToggleAllUsuarios}
-                            iconOnly={true}
-                          />
-                        </div>
+                              })}
+                              onToggleProfesional={(profesionalId) => {
+                                const userId = users.find((u) => {
+                                  try {
+                                    return Number.parseInt(u.id.slice(-8), 16) === profesionalId
+                                  } catch {
+                                    return false
+                                  }
+                                })?.id
+                                if (userId) handleToggleUsuario(userId)
+                              }}
+                              onToggleAll={handleToggleAllUsuarios}
+                              iconOnly={true}
+                            />
+                          </div>
+                        )}
 
                         {/* Tiempo - SOLO ICONO */}
                         <Select
@@ -974,8 +1050,8 @@ const MedicalCalendarSystem: React.FC = () => {
                           <Plus className="h-4 w-4" />
                         </Button>
 
-                        {/* ✅ BOTÓN FACTURAR DÍA MEJORADO - Solo en vista día y si hay citas */}
-                        {vistaCalendario === "dia" && (
+                        {/* ✅ BOTÓN FACTURAR DÍA MEJORADO - Solo en vista día, si hay citas Y si no es usuario 'user' */}
+                        {vistaCalendario === "dia" && !isUserRole && (
                           <Button
                             onClick={() => setShowDailyBillingModal(true)}
                             size="sm"
@@ -1052,7 +1128,7 @@ const MedicalCalendarSystem: React.FC = () => {
                             onUpdateCita={handleUpdateLegacyAppointment}
                             onAddCita={handleAddAppointment}
                             vacationRequests={vacationRequests}
-                            isUserOnVacationDate={isUserOnVacationDate}
+                            isUserOnVacationDate={isUserOnVacationHook}
                             getUserVacationOnDate={getUserVacationOnDate}
                           />
                         )}
@@ -1074,7 +1150,7 @@ const MedicalCalendarSystem: React.FC = () => {
                             onAddCita={handleAddAppointment}
                             onDateSelect={handleDateSelect}
                             vacationRequests={vacationRequests}
-                            isUserOnVacationDate={isUserOnVacationDate}
+                            isUserOnVacationDate={isUserOnVacationHook}
                             getUserVacationOnDate={getUserVacationOnDate}
                           />
                         )}
@@ -1095,7 +1171,7 @@ const MedicalCalendarSystem: React.FC = () => {
                             onAddCita={handleAddAppointment}
                             onDateSelect={handleDateSelect}
                             vacationRequests={vacationRequests}
-                            isUserOnVacationDate={isUserOnVacationDate}
+                            isUserOnVacationDate={isUserOnVacationHook}
                             getUserVacationOnDate={getUserVacationOnDate}
                           />
                         )}
@@ -1160,7 +1236,7 @@ const MedicalCalendarSystem: React.FC = () => {
                 onSelectCita={handleSelectLegacyAppointment}
                 onRefreshUsers={refetchUsers}
                 vacationRequests={vacationRequests}
-                isUserOnVacationDate={isUserOnVacationDate}
+                isUserOnVacationDate={isUserOnVacationHook}
                 getUserVacationOnDate={getUserVacationOnDate}
               />
             </div>
