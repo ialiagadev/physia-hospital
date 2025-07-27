@@ -21,6 +21,29 @@ import { format } from "date-fns"
 import type { WorkSchedule } from "@/types/calendar"
 import type { JSX } from "react"
 
+// Add this CSS-in-JS style for the floating animation
+const floatingAnimation = `
+  @keyframes float {
+    0%, 100% {
+      transform: translateY(0px);
+    }
+    50% {
+      transform: translateY(-10px);
+    }
+  }
+  
+  .animate-float {
+    animation: float 3s ease-in-out infinite;
+  }
+`
+
+// Inject the styles
+if (typeof document !== "undefined") {
+  const styleSheet = document.createElement("style")
+  styleSheet.textContent = floatingAnimation
+  document.head.appendChild(styleSheet)
+}
+
 interface HorarioViewDynamicProps {
   date: Date
   citas: Cita[]
@@ -662,11 +685,25 @@ export function HorarioViewDynamic({
   // 🚀 OPTIMIZADO: Condición de carga más simple y eficiente
   if (users.length === 0 || profesionales.length === 0) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className="h-full flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <h3 className="text-lg font-semibold mb-2">Cargando horarios...</h3>
-          <p className="text-gray-600">Preparando la vista del calendario</p>
+          <div className="relative mb-6">
+            <img
+              src="/images/logo.jpeg"
+              alt="Physia Logo"
+              className="w-20 h-20 mx-auto animate-float opacity-80"
+            />
+            <div className="absolute inset-0 w-20 h-20 mx-auto rounded-full bg-blue-200 animate-ping opacity-20"></div>
+          </div>
+          <h3 className="text-xl font-semibold mb-3 text-gray-800">Cargando horarios...</h3>
+          <p className="text-gray-600 max-w-sm">Preparando la vista del calendario médico</p>
+          <div className="mt-4 flex justify-center">
+            <div className="flex space-x-1">
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: "0.1s" }}></div>
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></div>
+            </div>
+          </div>
         </div>
       </div>
     )

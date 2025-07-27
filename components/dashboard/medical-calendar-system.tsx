@@ -24,6 +24,7 @@ import { useServices } from "@/hooks/use-services"
 import { useVacations } from "@/hooks/use-vacations"
 import { useWorkSchedules } from "@/hooks/use-work-schedules"
 import { useAuth } from "@/app/contexts/auth-context"
+import Loading from "@/components/loading"
 import { supabase } from "@/lib/supabase/client"
 import { WaitingListView } from "../waiting-list/waiting-list-view"
 import type {
@@ -862,22 +863,7 @@ const MedicalCalendarSystem: React.FC = () => {
   if (!isSystemReady) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <h2 className="text-xl font-semibold mb-2">Cargando sistema...</h2>
-          <p className="text-gray-600">Configurando tu calendario médico</p>
-          <div className="mt-4 space-y-1 text-sm text-gray-500">
-            <div className={`flex items-center justify-center gap-2 ${!usersLoading ? "text-green-600" : ""}`}>
-              {!usersLoading ? "✓" : "⏳"} Usuarios
-            </div>
-            <div className={`flex items-center justify-center gap-2 ${!schedulesLoading ? "text-green-600" : ""}`}>
-              {!schedulesLoading ? "✓" : "⏳"} Horarios
-            </div>
-            <div className={`flex items-center justify-center gap-2 ${!appointmentsLoading ? "text-green-600" : ""}`}>
-              {!appointmentsLoading ? "✓" : "⏳"} Citas
-            </div>
-          </div>
-        </div>
+        <Loading size="lg" text="Cargando sistema..." />
       </div>
     )
   }
