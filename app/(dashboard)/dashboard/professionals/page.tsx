@@ -527,6 +527,7 @@ export default function ProfessionalsPage() {
                 <h5 className="text-xs font-semibold text-red-700 mb-2 uppercase tracking-wide">Restricciones:</h5>
                 <ul className="text-sm space-y-1">
                   <li className="text-red-600">• No puede acceder a facturación</li>
+                  <li className="text-red-600">• Solo tiene acceso a su calendario</li>
                   <li className="text-red-600">• No puede crear otros usuarios</li>
                   <li className="text-red-600">• No puede acceder a configuración avanzada</li>
                 </ul>
@@ -553,7 +554,7 @@ export default function ProfessionalsPage() {
               <div className="mb-4">
                 <h5 className="text-xs font-semibold text-red-700 mb-2 uppercase tracking-wide">Restricciones:</h5>
                 <ul className="text-sm space-y-1">
-                  <li className="text-red-600">• EXCEPTO historial médico e informes</li>
+                  <li className="text-red-600">•No accede a historial médico e informes</li>
                   <li className="text-red-600">• No puede crear otros usuarios</li>
                 </ul>
               </div>
