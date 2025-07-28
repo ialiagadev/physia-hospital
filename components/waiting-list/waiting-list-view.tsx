@@ -27,7 +27,7 @@ import { AddToWaitingListModal } from "./add-to-waiting-list-modal"
 
 interface WaitingListViewProps {
   organizationId: number
-  onScheduleAppointment?: (entry: any) => void
+  onScheduleAppointment?: (entry: any) => Promise<boolean>
 }
 
 export function WaitingListView({ organizationId, onScheduleAppointment }: WaitingListViewProps) {
@@ -53,9 +53,16 @@ export function WaitingListView({ organizationId, onScheduleAppointment }: Waiti
     return matchesSearch && matchesProfessional && matchesService
   })
 
-  const handleScheduleAppointment = (entry: any) => {
+  const handleScheduleAppointment = async (entry: any) => {
     if (onScheduleAppointment) {
-      onScheduleAppointment(entry)
+      // Call the parent's schedule appointment function
+      const success = await onScheduleAppointment(entry)
+
+      // If the appointment was scheduled successfully, refresh the waiting list
+      if (success) {
+        // Remove the entry from waiting list since it was scheduled
+        await removeFromWaitingList(entry.id)
+      }
     }
   }
 

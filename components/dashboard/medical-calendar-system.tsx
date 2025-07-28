@@ -540,6 +540,8 @@ const MedicalCalendarSystem: React.FC = () => {
         }
 
         toast.success("Cita creada correctamente")
+        // Limpiar el estado de lista de espera
+        setWaitingListEntry(null)
       } catch (error) {
         console.error("Error creating appointment:", error)
         toast.error("Error al crear la cita")
@@ -1189,9 +1191,10 @@ const MedicalCalendarSystem: React.FC = () => {
             <div className="flex-1 overflow-auto p-4">
               <WaitingListView
                 organizationId={organizationId}
-                onScheduleAppointment={(entry) => {
+                onScheduleAppointment={async (entry) => {
                   setWaitingListEntry(entry)
                   setShowNewAppointmentModal(true)
+                  return true // Indica que se abrió el modal exitosamente
                 }}
               />
             </div>
