@@ -250,37 +250,18 @@ export function MainSidebar() {
     },
   ]
 
-  const renderMenuSection = (title: string, items: MenuItem[]) => (
-    <div className="mb-6">
-      <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4 px-3">{title}</h2>
-      <nav className="space-y-1">
-        {items
-          .filter((item) => !item.hidden)
-          .map((item) => {
-            const Icon = item.icon
-            if (item.hidden) return null
+  const renderMenuSection = (title: string, items: MenuItem[]) => {
+    // Separar items disponibles y próximamente
+    const availableItems = items.filter((item) => !item.hidden && !item.disabled)
+    const comingSoonItems = items.filter((item) => !item.hidden && item.disabled)
 
-            // Si el item está deshabilitado, renderizar como div en lugar de Link
-            if (item.disabled) {
-              return (
-                <div key={item.id} className="relative">
-                  <div className="flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium cursor-not-allowed opacity-60">
-                    <div className="flex items-center space-x-3">
-                      <Icon className="h-5 w-5 text-gray-400" />
-                      <span className="text-gray-500">{item.label}</span>
-                    </div>
-                  </div>
-                  {item.comingSoon && (
-                    <Badge
-                      variant="secondary"
-                      className="absolute top-1 right-1 h-4 text-xs bg-orange-100 text-orange-700 hover:bg-orange-100 px-1.5"
-                    >
-                      Pronto
-                    </Badge>
-                  )}
-                </div>
-              )
-            }
+    return (
+      <div className="mb-6">
+        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4 px-3">{title}</h2>
+        <nav className="space-y-1">
+          {/* Renderizar primero los items disponibles */}
+          {availableItems.map((item) => {
+            const Icon = item.icon
 
             return (
               <Link
@@ -303,9 +284,41 @@ export function MainSidebar() {
               </Link>
             )
           })}
-      </nav>
-    </div>
-  )
+
+          {/* Separador visual si hay items de ambos tipos */}
+          {availableItems.length > 0 && comingSoonItems.length > 0 && (
+            <div className="py-2">
+              <div className="border-t border-gray-100"></div>
+            </div>
+          )}
+
+          {/* Renderizar después los items de próximamente */}
+          {comingSoonItems.map((item) => {
+            const Icon = item.icon
+
+            return (
+              <div key={item.id} className="relative">
+                <div className="flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium cursor-not-allowed opacity-60">
+                  <div className="flex items-center space-x-3">
+                    <Icon className="h-5 w-5 text-gray-400" />
+                    <span className="text-gray-500">{item.label}</span>
+                  </div>
+                </div>
+                {item.comingSoon && (
+                  <Badge
+                    variant="secondary"
+                    className="absolute top-1 right-1 h-4 text-xs bg-orange-100 text-orange-700 hover:bg-orange-100 px-1.5"
+                  >
+                    Pronto
+                  </Badge>
+                )}
+              </div>
+            )
+          })}
+        </nav>
+      </div>
+    )
+  }
 
   if (isCollapsed) {
     return (
@@ -320,28 +333,11 @@ export function MainSidebar() {
 
         {/* Iconos colapsados */}
         <div className="flex flex-col space-y-2">
+          {/* Primero los disponibles de todas las secciones */}
           {[...principalItems, ...configItems, ...generalItems]
-            .filter((item) => !item.hidden)
+            .filter((item) => !item.hidden && !item.disabled)
             .map((item) => {
               const Icon = item.icon
-              if (item.hidden) return null
-
-              // Si está deshabilitado, mostrar como div
-              if (item.disabled) {
-                return (
-                  <div key={item.id} className="relative">
-                    <div
-                      className="p-2 rounded-lg cursor-not-allowed opacity-60 text-gray-400"
-                      title={`${item.label} - Pronto`}
-                    >
-                      <Icon className="h-5 w-5" />
-                    </div>
-                    {item.comingSoon && (
-                      <div className="absolute -top-1 -right-1 h-3 w-3 bg-orange-500 rounded-full"></div>
-                    )}
-                  </div>
-                )
-              }
 
               return (
                 <div key={item.id} className="relative">
@@ -364,6 +360,33 @@ export function MainSidebar() {
                     >
                       {item.badge > 9 ? "9+" : item.badge}
                     </Badge>
+                  )}
+                </div>
+              )
+            })}
+
+          {/* Separador visual */}
+          {[...principalItems, ...configItems, ...generalItems].some((item) => !item.hidden && !item.disabled) &&
+            [...principalItems, ...configItems, ...generalItems].some((item) => !item.hidden && item.disabled) && (
+              <div className="w-8 h-px bg-gray-200 mx-auto my-2"></div>
+            )}
+
+          {/* Después los de próximamente */}
+          {[...principalItems, ...configItems, ...generalItems]
+            .filter((item) => !item.hidden && item.disabled)
+            .map((item) => {
+              const Icon = item.icon
+
+              return (
+                <div key={item.id} className="relative">
+                  <div
+                    className="p-2 rounded-lg cursor-not-allowed opacity-60 text-gray-400"
+                    title={`${item.label} - Pronto`}
+                  >
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  {item.comingSoon && (
+                    <div className="absolute -top-1 -right-1 h-3 w-3 bg-orange-500 rounded-full"></div>
                   )}
                 </div>
               )
