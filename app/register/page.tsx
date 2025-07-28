@@ -14,6 +14,7 @@ export default function RegisterPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [name, setName] = useState("")
+  const [phone, setPhone] = useState("")
   const [organizationName, setOrganizationName] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
@@ -29,13 +30,19 @@ export default function RegisterPage() {
       console.log("🔄 Iniciando proceso de registro...")
 
       // Validaciones básicas
-      if (!email || !password || !name || !organizationName) {
+      if (!email || !password || !name || !phone || !organizationName) {
         setError("Todos los campos son obligatorios")
         return
       }
 
       if (password.length < 6) {
         setError("La contraseña debe tener al menos 6 caracteres")
+        return
+      }
+
+      // Validación de teléfono (ahora obligatorio)
+      if (phone.length < 7) {
+        setError("El número de teléfono debe tener al menos 7 dígitos")
         return
       }
 
@@ -47,6 +54,7 @@ export default function RegisterPage() {
           emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
           data: {
             name: name.trim(),
+            phone: phone.trim(),
             organization_name: organizationName.trim(),
           },
         },
@@ -118,6 +126,7 @@ export default function RegisterPage() {
                 setEmail("")
                 setPassword("")
                 setName("")
+                setPhone("")
                 setOrganizationName("")
                 setError("")
               }}
@@ -194,6 +203,22 @@ export default function RegisterPage() {
                 </div>
 
                 <div className="space-y-2">
+                  <Label htmlFor="phone" className="text-sm font-medium text-gray-700">
+                    Teléfono
+                  </Label>
+                  <Input
+                    id="phone"
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    required
+                    disabled={isLoading}
+                    className="h-12 px-4 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:ring-0 transition-all duration-200 bg-white hover:border-gray-300"
+                    placeholder="+34 600 123 456"
+                  />
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="password" className="text-sm font-medium text-gray-700">
                     Contraseña
                   </Label>
@@ -229,7 +254,7 @@ export default function RegisterPage() {
                 <Button
                   type="submit"
                   className="w-full h-12 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-semibold rounded-xl transition-all duration-200 transform hover:-translate-y-0.5 mt-8"
-                  disabled={isLoading || !email || !password || !name || !organizationName}
+                  disabled={isLoading || !email || !password || !name || !phone || !organizationName}
                 >
                   {isLoading ? (
                     <div className="flex items-center">

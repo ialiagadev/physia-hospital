@@ -47,6 +47,8 @@ export default function AuthCallback() {
         }
 
         const user = sessionData.user
+        const userMetadata = user.user_metadata || {}
+        const userPhone = userMetadata.phone || null
 
         // Verificar cuenta en DB
         setMessage("Verificando cuenta...")
@@ -74,9 +76,13 @@ export default function AuthCallback() {
           }
 
           if (retryUser.organization_id) {
+            // Actualizar teléfono del usuario existente
+            setMessage("Actualizando información...")
+            await supabase.from("users").update({ phone: userPhone }).eq("id", user.id)
+
             setStatus("success")
             setMessage("¡Cuenta configurada! Redirigiendo al login...")
-            await refreshUserProfile() // Agregar esta línea
+            await refreshUserProfile()
             setTimeout(() => {
               router.push("/login")
             }, 1500)
@@ -84,9 +90,13 @@ export default function AuthCallback() {
           }
         } else {
           if (existingUser.organization_id) {
+            // Actualizar teléfono del usuario existente
+            setMessage("Actualizando información...")
+            await supabase.from("users").update({ phone: userPhone }).eq("id", user.id)
+
             setStatus("success")
             setMessage("¡Cuenta configurada! Redirigiendo al login...")
-            await refreshUserProfile() // Agregar esta línea
+            await refreshUserProfile()
             setTimeout(() => {
               router.push("/login")
             }, 1500)
@@ -110,6 +120,7 @@ export default function AuthCallback() {
         const userMetadata = user.user_metadata || {}
         const organizationName = userMetadata.organization_name || "Mi Organización"
         const userName = userMetadata.name || existingUser?.name || user.email?.split("@")[0] || "Usuario"
+        const userPhone = userMetadata.phone || null
 
         const { data: orgResult, error: orgError } = await supabase.rpc("create_organization_during_registration", {
           p_name: organizationName,
@@ -144,6 +155,7 @@ export default function AuthCallback() {
           .from("users")
           .update({
             name: userName,
+            phone: userPhone,
             organization_id: organizationId,
             role: "admin",
           })
@@ -182,7 +194,7 @@ export default function AuthCallback() {
 
         setStatus("success")
         setMessage("¡Cuenta creada! Redirigiendo al login...")
-        await refreshUserProfile() // Agregar esta línea
+        await refreshUserProfile()
         setTimeout(() => {
           router.push("/login")
         }, 2000)

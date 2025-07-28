@@ -10,15 +10,23 @@ import { Separator } from "@/components/ui/separator"
 import { toast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase/client"
 import type { User } from "@/types/database"
-import { UserIcon, Mail, Edit3, Save, X } from "lucide-react"
+import { UserIcon, Mail, Edit3, Save, X, Phone } from "lucide-react"
+
+// Extender el tipo User para incluir campos adicionales de la base de datos
+interface ExtendedUser extends User {
+  phone?: string | null
+  specialty?: string | null
+  specialty_other?: string | null
+}
 
 export default function ProfilePage() {
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUser] = useState<ExtendedUser | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [formData, setFormData] = useState({
     name: "",
+    phone: "",
   })
 
   useEffect(() => {
@@ -28,11 +36,11 @@ export default function ProfilePage() {
   const fetchUserData = async () => {
     try {
       setIsLoading(true)
-
       // Obtener usuario actual
       const {
         data: { user: authUser },
       } = await supabase.auth.getUser()
+
       if (!authUser) {
         toast({
           title: "Error",
@@ -59,9 +67,10 @@ export default function ProfilePage() {
         return
       }
 
-      setUser(userData)
+      setUser(userData as ExtendedUser)
       setFormData({
         name: userData.name || "",
+        phone: userData.phone || "",
       })
     } catch (error) {
       console.error("Error:", error)
@@ -80,11 +89,11 @@ export default function ProfilePage() {
 
     try {
       setIsSaving(true)
-
       const { error } = await supabase
         .from("users")
         .update({
           name: formData.name || null,
+          phone: formData.phone || null,
         })
         .eq("id", user.id)
 
@@ -104,6 +113,7 @@ export default function ProfilePage() {
           ? {
               ...prev,
               name: formData.name || null,
+              phone: formData.phone || null,
             }
           : null,
       )
@@ -127,9 +137,9 @@ export default function ProfilePage() {
 
   const handleCancel = () => {
     if (!user) return
-
     setFormData({
       name: user.name || "",
+      phone: user.phone || "",
     })
     setIsEditing(false)
   }
@@ -244,6 +254,25 @@ export default function ProfilePage() {
             </Label>
             <Input value={user.email || ""} disabled className="bg-muted" />
             <p className="text-xs text-muted-foreground">El email no se puede modificar por seguridad</p>
+          </div>
+
+          {/* Teléfono */}
+          <div className="space-y-2">
+            <Label htmlFor="phone" className="flex items-center gap-2">
+              <Phone className="w-4 h-4" />
+              Teléfono
+            </Label>
+            {isEditing ? (
+              <Input
+                id="phone"
+                type="tel"
+                value={formData.phone}
+                onChange={(e) => setFormData((prev) => ({ ...prev, phone: e.target.value }))}
+                placeholder="Ingresa tu número de teléfono"
+              />
+            ) : (
+              <Input value={user.phone || "Sin teléfono"} disabled className="bg-muted" />
+            )}
           </div>
         </CardContent>
       </Card>
