@@ -92,9 +92,11 @@ export function MainSidebar() {
     {
       id: "chat",
       label: "Chat",
-      href: "/dashboard/chat",
+      href: "#",
       icon: MessageSquare,
-      isActive: isInSection("chat"),
+      isActive: false,
+      disabled: true,
+      comingSoon: true,
     },
     {
       id: "clientes",
@@ -140,16 +142,20 @@ export function MainSidebar() {
     {
       id: "agents",
       label: "Agentes IA",
-      href: "/dashboard/agents",
+      href: "#",
       icon: Bot,
-      isActive: isInSection("agents"),
+      isActive: false,
+      disabled: true,
+      comingSoon: true,
     },
     {
       id: "physia-ai",
       label: "PHYSIA AI",
-      href: "/dashboard/physia-ai",
+      href: "#",
       icon: Brain,
-      isActive: isInSection("physia-ai"),
+      isActive: false,
+      disabled: true,
+      comingSoon: true,
     },
     {
       id: "fichaje",
@@ -181,9 +187,11 @@ export function MainSidebar() {
     {
       id: "templates",
       label: "Plantillas",
-      href: "/dashboard/templates",
+      href: "#",
       icon: FileTemplate,
-      isActive: isInSection("templates"),
+      isActive: false,
+      disabled: true,
+      comingSoon: true,
     },
     {
       id: "consent-forms",
@@ -227,9 +235,11 @@ export function MainSidebar() {
     {
       id: "help",
       label: "Ayuda",
-      href: "/dashboard/help",
+      href: "#",
       icon: HelpCircle,
-      isActive: isInSection("help"),
+      isActive: false,
+      disabled: true,
+      comingSoon: true,
     },
     {
       id: "logout",
