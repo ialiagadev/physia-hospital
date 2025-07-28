@@ -12,6 +12,8 @@ import { ImportClientsDialog } from "@/components/import-clients-dialog"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/app/contexts/auth-context"
 import { Loader2 } from "lucide-react"
+import Loading from "@/components/loading"
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -400,15 +402,12 @@ export default function ClientsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={userProfile?.is_physia_admin ? 7 : 6} className="h-24 text-center">
-                  <div className="flex items-center justify-center">
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Cargando clientes...
-                  </div>
-                </TableCell>
-              </TableRow>
+  {loading ? (
+    <TableRow>
+      <TableCell colSpan={userProfile?.is_physia_admin ? 7 : 6} className="h-24 text-center">
+        <Loading size="sm" text="Cargando clientes..." />
+      </TableCell>
+    </TableRow>
             ) : clients.length > 0 ? (
               clients.map((client) => (
                 <TableRow
