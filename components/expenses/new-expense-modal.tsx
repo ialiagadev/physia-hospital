@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
-import { Save, Upload, X } from "lucide-react"
+import { Save, Upload, X, Download, RefreshCw } from "lucide-react"
 import { useAuth } from "@/app/contexts/auth-context"
 import { useUsers } from "@/hooks/use-users"
 import { StorageService } from "@/lib/storage-service"
@@ -44,6 +44,8 @@ export function NewExpenseModal({ open, onOpenChange, onExpenseCreated }: NewExp
   const [uploadingFile, setUploadingFile] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [tempFilePath, setTempFilePath] = useState<string | null>(null)
+  const [tempFileUrl, setTempFileUrl] = useState<string | null>(null)
+  const [refreshingUrl, setRefreshingUrl] = useState(false)
 
   const [formData, setFormData] = useState({
     description: "",
@@ -87,6 +89,7 @@ export function NewExpenseModal({ open, onOpenChange, onExpenseCreated }: NewExp
       if (result.success && result.path) {
         setSelectedFile(file)
         setTempFilePath(result.path)
+        setTempFileUrl(result.url || null)
         toast({
           title: "Archivo subido",
           description: "El documento se ha subido correctamente",
@@ -115,6 +118,63 @@ export function NewExpenseModal({ open, onOpenChange, onExpenseCreated }: NewExp
     }
     setSelectedFile(null)
     setTempFilePath(null)
+    setTempFileUrl(null)
+  }
+
+  const handleDownloadFile = async () => {
+    if (!tempFilePath) return
+
+    setRefreshingUrl(true)
+    try {
+      const downloadUrl = await StorageService.getDownloadUrl(tempFilePath)
+      if (downloadUrl) {
+        window.open(downloadUrl, "_blank")
+      } else {
+        toast({
+          title: "Error",
+          description: "No se pudo generar la URL de descarga",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Error al descargar el archivo",
+        variant: "destructive",
+      })
+    } finally {
+      setRefreshingUrl(false)
+    }
+  }
+
+  const handleRefreshUrl = async () => {
+    if (!tempFilePath) return
+
+    setRefreshingUrl(true)
+    try {
+      const newUrl = await StorageService.refreshSignedUrl(tempFilePath)
+      if (newUrl) {
+        setTempFileUrl(newUrl)
+        toast({
+          title: "URL actualizada",
+          description: "La URL del archivo se ha actualizado",
+        })
+      } else {
+        toast({
+          title: "Error",
+          description: "No se pudo actualizar la URL",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Error al actualizar la URL",
+        variant: "destructive",
+      })
+    } finally {
+      setRefreshingUrl(false)
+    }
   }
 
   const resetForm = () => {
@@ -132,6 +192,7 @@ export function NewExpenseModal({ open, onOpenChange, onExpenseCreated }: NewExp
     })
     setSelectedFile(null)
     setTempFilePath(null)
+    setTempFileUrl(null)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -389,7 +450,7 @@ export function NewExpenseModal({ open, onOpenChange, onExpenseCreated }: NewExp
               </div>
             )}
 
-            {/* Método de pago y deducible */}
+            {/* Método de pago */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="payment_method">Método de Pago</Label>
@@ -424,9 +485,34 @@ export function NewExpenseModal({ open, onOpenChange, onExpenseCreated }: NewExp
                         <div className="text-gray-500">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</div>
                       </div>
                     </div>
-                    <Button type="button" variant="ghost" size="sm" onClick={handleRemoveFile}>
-                      <X className="h-4 w-4" />
-                    </Button>
+                    <div className="flex space-x-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleDownloadFile}
+                        disabled={refreshingUrl}
+                      >
+                        {refreshingUrl ? (
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Download className="h-4 w-4" />
+                        )}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleRefreshUrl}
+                        disabled={refreshingUrl}
+                        title="Actualizar URL"
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                      </Button>
+                      <Button type="button" variant="ghost" size="sm" onClick={handleRemoveFile}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 ) : (
                   <div className="text-center">
@@ -444,7 +530,7 @@ export function NewExpenseModal({ open, onOpenChange, onExpenseCreated }: NewExp
                         />
                       </label>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">JPG, PNG o PDF (máx. 5MB)</p>
+                    <p className="text-xs text-gray-500 mt-1">JPG, PNG o PDF </p>
                   </div>
                 )}
               </div>

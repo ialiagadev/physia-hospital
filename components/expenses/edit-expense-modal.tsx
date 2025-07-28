@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
-import { Save, Upload, X, Download } from "lucide-react"
+import { Save, Upload, X, Download, RefreshCw } from "lucide-react"
 import { useAuth } from "@/app/contexts/auth-context"
 import { useUsers } from "@/hooks/use-users"
 import { StorageService } from "@/lib/storage-service"
@@ -46,6 +46,8 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
   const [uploadingFile, setUploadingFile] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [tempFilePath, setTempFilePath] = useState<string | null>(null)
+  const [currentFileUrl, setCurrentFileUrl] = useState<string | null>(null)
+  const [refreshingUrl, setRefreshingUrl] = useState(false)
 
   const [formData, setFormData] = useState({
     description: "",
@@ -86,8 +88,22 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
         vat_rate: expense.vat_rate?.toString() || "21",
         retention_rate: expense.retention_rate?.toString() || "0",
       })
+
+      // Generar URL firmada para el archivo existente si existe
+      if (expense.receipt_path && userProfile?.organization_id) {
+        refreshExistingFileUrl(expense.receipt_path)
+      }
     }
-  }, [expense, open])
+  }, [expense, open, userProfile?.organization_id])
+
+  const refreshExistingFileUrl = async (filePath: string) => {
+    try {
+      const signedUrl = await StorageService.getSignedUrl(filePath)
+      setCurrentFileUrl(signedUrl)
+    } catch (error) {
+      console.error("Error refreshing existing file URL:", error)
+    }
+  }
 
   const handleInputChange = (field: string, value: string | boolean) => {
     setFormData((prev) => ({
@@ -107,6 +123,7 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
       if (result.success && result.path) {
         setSelectedFile(file)
         setTempFilePath(result.path)
+        setCurrentFileUrl(result.url || null)
         toast({
           title: "Archivo subido",
           description: "El documento se ha subido correctamente",
@@ -139,11 +156,64 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
       setTempFilePath("DELETE_EXISTING")
     }
     setSelectedFile(null)
+    setCurrentFileUrl(null)
   }
 
-  const handleDownloadFile = () => {
-    if (expense.receipt_url) {
-      window.open(expense.receipt_url, "_blank")
+  const handleDownloadFile = async () => {
+    const filePath = tempFilePath && tempFilePath !== "DELETE_EXISTING" ? tempFilePath : expense.receipt_path
+    if (!filePath) return
+
+    setRefreshingUrl(true)
+    try {
+      const downloadUrl = await StorageService.getDownloadUrl(filePath)
+      if (downloadUrl) {
+        window.open(downloadUrl, "_blank")
+      } else {
+        toast({
+          title: "Error",
+          description: "No se pudo generar la URL de descarga",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Error al descargar el archivo",
+        variant: "destructive",
+      })
+    } finally {
+      setRefreshingUrl(false)
+    }
+  }
+
+  const handleRefreshUrl = async () => {
+    const filePath = tempFilePath && tempFilePath !== "DELETE_EXISTING" ? tempFilePath : expense.receipt_path
+    if (!filePath) return
+
+    setRefreshingUrl(true)
+    try {
+      const newUrl = await StorageService.refreshSignedUrl(filePath)
+      if (newUrl) {
+        setCurrentFileUrl(newUrl)
+        toast({
+          title: "URL actualizada",
+          description: "La URL del archivo se ha actualizado",
+        })
+      } else {
+        toast({
+          title: "Error",
+          description: "No se pudo actualizar la URL",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Error al actualizar la URL",
+        variant: "destructive",
+      })
+    } finally {
+      setRefreshingUrl(false)
     }
   }
 
@@ -162,6 +232,7 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
     })
     setSelectedFile(null)
     setTempFilePath(null)
+    setCurrentFileUrl(null)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -251,7 +322,9 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
       } else if (tempFilePath) {
         // Nuevo archivo subido
         expenseData.receipt_path = tempFilePath
-        expenseData.receipt_url = StorageService.getPublicUrl(tempFilePath)
+        // Generar nueva URL firmada
+        const signedUrl = await StorageService.getSignedUrl(tempFilePath)
+        expenseData.receipt_url = signedUrl
       }
 
       const { error } = await supabase.from("expenses").update(expenseData).eq("id", expense.id)
@@ -286,6 +359,9 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
     }
     onOpenChange(newOpen)
   }
+
+  const hasExistingFile = expense.receipt_path && tempFilePath !== "DELETE_EXISTING"
+  const hasNewFile = selectedFile && tempFilePath && tempFilePath !== "DELETE_EXISTING"
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -424,7 +500,7 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
               </div>
             )}
 
-            {/* Método de pago y deducible */}
+            {/* Método de pago */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="payment_method">Método de Pago</Label>
@@ -451,34 +527,44 @@ export function EditExpenseModal({ open, onOpenChange, expense, onExpenseUpdated
             <div className="space-y-2">
               <Label>Documento/Factura</Label>
               <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
-                {expense.receipt_path && !selectedFile && tempFilePath !== "DELETE_EXISTING" ? (
+                {hasExistingFile || hasNewFile ? (
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2">
                       <div className="text-sm">
-                        <div className="font-medium">Documento existente</div>
-                        <div className="text-gray-500">Archivo adjunto</div>
+                        <div className="font-medium">{hasNewFile ? selectedFile?.name : "Documento existente"}</div>
+                        <div className="text-gray-500">
+                          {hasNewFile ? `${(selectedFile!.size / 1024 / 1024).toFixed(2)} MB` : "Archivo adjunto"}
+                        </div>
                       </div>
                     </div>
                     <div className="flex space-x-2">
-                      <Button type="button" variant="ghost" size="sm" onClick={handleDownloadFile}>
-                        <Download className="h-4 w-4" />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleDownloadFile}
+                        disabled={refreshingUrl}
+                      >
+                        {refreshingUrl ? (
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Download className="h-4 w-4" />
+                        )}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleRefreshUrl}
+                        disabled={refreshingUrl}
+                        title="Actualizar URL"
+                      >
+                        <RefreshCw className="h-4 w-4" />
                       </Button>
                       <Button type="button" variant="ghost" size="sm" onClick={handleRemoveFile}>
                         <X className="h-4 w-4" />
                       </Button>
                     </div>
-                  </div>
-                ) : selectedFile ? (
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <div className="text-sm">
-                        <div className="font-medium">{selectedFile.name}</div>
-                        <div className="text-gray-500">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</div>
-                      </div>
-                    </div>
-                    <Button type="button" variant="ghost" size="sm" onClick={handleRemoveFile}>
-                      <X className="h-4 w-4" />
-                    </Button>
                   </div>
                 ) : (
                   <div className="text-center">

@@ -15,6 +15,7 @@ import { EditExpenseModal } from "./edit-expense-modal"
 import { NewExpenseModal } from "./new-expense-modal"
 import { Edit, Trash2, Plus, Search, Filter, FileText, Download, ExternalLink } from "lucide-react"
 import { calculateExpenseAmounts, type ExpenseWithDetails, type ExpenseFilters } from "@/types/expenses"
+import { StorageService } from "@/lib/storage-service"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -118,9 +119,9 @@ export function ExpensesTable() {
     return totalAmount
   }
 
-  // Función para descargar archivo usando fetch
+  // Función para descargar archivo usando StorageService
   const handleDownloadReceipt = async (expense: ExpenseWithDetails) => {
-    if (!expense.receipt_url) {
+    if (!expense.receipt_path) {
       toast({
         title: "Error",
         description: "No hay archivo adjunto para descargar",
@@ -130,16 +131,27 @@ export function ExpensesTable() {
     }
 
     try {
-      // Usar fetch para obtener el archivo
-      const response = await fetch(expense.receipt_url)
+      console.log("Downloading file with path:", expense.receipt_path)
+
+      // Usar StorageService para obtener URL firmada
+      const downloadUrl = await StorageService.getDownloadUrl(expense.receipt_path)
+
+      if (!downloadUrl) {
+        throw new Error("No se pudo generar la URL de descarga")
+      }
+
+      console.log("Download URL generated:", downloadUrl)
+
+      // Descargar usando fetch con la URL firmada
+      const response = await fetch(downloadUrl)
       if (!response.ok) {
-        throw new Error("Error al obtener el archivo")
+        throw new Error(`Error al obtener el archivo: ${response.status} ${response.statusText}`)
       }
 
       const blob = await response.blob()
-      // Obtener la extensión del archivo desde la URL o usar un nombre genérico
-      const urlParts = expense.receipt_url.split("/")
-      const fileName = urlParts[urlParts.length - 1] || `archivo_gasto_${expense.id}`
+
+      // Obtener el nombre del archivo desde la ruta
+      const fileName = expense.receipt_path.split("/").pop() || `archivo_gasto_${expense.id}`
 
       // Crear URL temporal y descargar
       const url = window.URL.createObjectURL(blob)
@@ -159,15 +171,15 @@ export function ExpensesTable() {
       console.error("Error downloading file:", error)
       toast({
         title: "Error",
-        description: "No se pudo descargar el archivo. Intenta abrirlo en una nueva pestaña.",
+        description: error instanceof Error ? error.message : "No se pudo descargar el archivo",
         variant: "destructive",
       })
     }
   }
 
-  // Función para abrir archivo en nueva pestaña
-  const handleViewReceipt = (expense: ExpenseWithDetails) => {
-    if (!expense.receipt_url) {
+  // Función para abrir archivo en nueva pestaña usando StorageService
+  const handleViewReceipt = async (expense: ExpenseWithDetails) => {
+    if (!expense.receipt_path) {
       toast({
         title: "Error",
         description: "No hay archivo adjunto para visualizar",
@@ -175,7 +187,27 @@ export function ExpensesTable() {
       })
       return
     }
-    window.open(expense.receipt_url, "_blank")
+
+    try {
+      console.log("Viewing file with path:", expense.receipt_path)
+
+      // Usar StorageService para obtener URL firmada
+      const viewUrl = await StorageService.getSignedUrl(expense.receipt_path)
+
+      if (!viewUrl) {
+        throw new Error("No se pudo generar la URL de visualización")
+      }
+
+      console.log("View URL generated:", viewUrl)
+      window.open(viewUrl, "_blank")
+    } catch (error) {
+      console.error("Error viewing file:", error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "No se pudo abrir el archivo",
+        variant: "destructive",
+      })
+    }
   }
 
   if (loading) {
@@ -300,7 +332,7 @@ export function ExpensesTable() {
                         {expense.supplier_tax_id && (
                           <div className="text-sm text-muted-foreground">NIF/CIF: {expense.supplier_tax_id}</div>
                         )}
-                        {expense.receipt_url && (
+                        {expense.receipt_path && (
                           <div className="mt-1">
                             <Badge variant="outline" className="flex items-center gap-1 w-fit">
                               <FileText className="h-3 w-3" />
@@ -322,7 +354,7 @@ export function ExpensesTable() {
                     <TableCell>{getPaymentMethodLabel(expense.payment_method)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex gap-1 justify-end">
-                        {expense.receipt_url && (
+                        {expense.receipt_path && (
                           <>
                             <TooltipProvider>
                               <Tooltip>

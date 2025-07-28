@@ -11,6 +11,7 @@ export class StorageService {
   private static readonly BUCKET_NAME = "expense-receipts"
   private static readonly MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
   private static readonly ALLOWED_TYPES = ["image/jpeg", "image/png", "application/pdf"]
+  private static readonly DEFAULT_EXPIRY = 3600 // 1 hora
 
   /**
    * Sube un archivo de recibo/factura para un gasto
@@ -33,6 +34,17 @@ export class StorageService {
         }
       }
 
+      // Verificar autenticación
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) {
+        return {
+          success: false,
+          error: "Usuario no autenticado",
+        }
+      }
+
       // Generar nombre único para el archivo
       const timestamp = Date.now()
       const extension = file.name.split(".").pop()
@@ -42,7 +54,7 @@ export class StorageService {
       const folder = expenseId ? expenseId.toString() : "temp"
       const filePath = `${organizationId}/${folder}/${fileName}`
 
-      // Subir archivo
+      // Subir archivo con autenticación
       const { data, error } = await supabase.storage.from(this.BUCKET_NAME).upload(filePath, file, {
         cacheControl: "3600",
         upsert: false,
@@ -56,13 +68,13 @@ export class StorageService {
         }
       }
 
-      // Obtener URL pública
-      const { data: urlData } = supabase.storage.from(this.BUCKET_NAME).getPublicUrl(filePath)
+      // Generar URL firmada para acceso inmediato
+      const signedUrl = await this.getSignedUrl(filePath)
 
       return {
         success: true,
         path: filePath,
-        url: urlData.publicUrl,
+        url: signedUrl || undefined,
       }
     } catch (error) {
       console.error("Error in uploadExpenseReceipt:", error)
@@ -78,6 +90,15 @@ export class StorageService {
    */
   static async deleteExpenseReceipt(filePath: string): Promise<boolean> {
     try {
+      // Verificar autenticación
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) {
+        console.error("Usuario no autenticado")
+        return false
+      }
+
       const { error } = await supabase.storage.from(this.BUCKET_NAME).remove([filePath])
 
       if (error) {
@@ -97,6 +118,17 @@ export class StorageService {
    */
   static async moveExpenseReceipt(tempPath: string, organizationId: number, expenseId: number): Promise<UploadResult> {
     try {
+      // Verificar autenticación
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) {
+        return {
+          success: false,
+          error: "Usuario no autenticado",
+        }
+      }
+
       // Extraer el nombre del archivo de la ruta temporal
       const fileName = tempPath.split("/").pop()
       if (!fileName) {
@@ -120,13 +152,13 @@ export class StorageService {
         }
       }
 
-      // Obtener nueva URL
-      const { data: urlData } = supabase.storage.from(this.BUCKET_NAME).getPublicUrl(newPath)
+      // Generar nueva URL firmada
+      const signedUrl = await this.getSignedUrl(newPath)
 
       return {
         success: true,
         path: newPath,
-        url: urlData.publicUrl,
+        url: signedUrl || undefined,
       }
     } catch (error) {
       console.error("Error in moveExpenseReceipt:", error)
@@ -138,18 +170,19 @@ export class StorageService {
   }
 
   /**
-   * Obtiene la URL pública de un archivo
+   * Obtiene una URL firmada con expiración para bucket privado
    */
-  static getPublicUrl(filePath: string): string {
-    const { data } = supabase.storage.from(this.BUCKET_NAME).getPublicUrl(filePath)
-    return data.publicUrl
-  }
-
-  /**
-   * Obtiene una URL firmada con expiración
-   */
-  static async getSignedUrl(filePath: string, expiresIn = 3600): Promise<string | null> {
+  static async getSignedUrl(filePath: string, expiresIn = this.DEFAULT_EXPIRY): Promise<string | null> {
     try {
+      // Verificar autenticación
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) {
+        console.error("Usuario no autenticado")
+        return null
+      }
+
       const { data, error } = await supabase.storage.from(this.BUCKET_NAME).createSignedUrl(filePath, expiresIn)
 
       if (error) {
@@ -165,10 +198,43 @@ export class StorageService {
   }
 
   /**
+   * Obtiene una URL firmada para descarga
+   */
+  static async getDownloadUrl(filePath: string): Promise<string | null> {
+    return this.getSignedUrl(filePath, 300) // 5 minutos para descarga
+  }
+
+  /**
+   * Verifica si un archivo existe
+   */
+  static async fileExists(filePath: string): Promise<boolean> {
+    try {
+      const { data, error } = await supabase.storage
+        .from(this.BUCKET_NAME)
+        .list(filePath.substring(0, filePath.lastIndexOf("/")), {
+          search: filePath.split("/").pop(),
+        })
+
+      return !error && data && data.length > 0
+    } catch (error) {
+      console.error("Error checking file existence:", error)
+      return false
+    }
+  }
+
+  /**
    * Lista archivos en una carpeta específica
    */
   static async listFiles(organizationId: number, expenseId?: number): Promise<string[]> {
     try {
+      // Verificar autenticación
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) {
+        return []
+      }
+
       const folder = expenseId ? `${organizationId}/${expenseId}` : `${organizationId}/temp`
 
       const { data, error } = await supabase.storage.from(this.BUCKET_NAME).list(folder)
@@ -190,6 +256,14 @@ export class StorageService {
    */
   static async cleanupTempFiles(organizationId: number): Promise<void> {
     try {
+      // Verificar autenticación
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) {
+        return
+      }
+
       const tempFolder = `${organizationId}/temp`
 
       const { data, error } = await supabase.storage.from(this.BUCKET_NAME).list(tempFolder)
@@ -214,5 +288,28 @@ export class StorageService {
     } catch (error) {
       console.error("Error in cleanupTempFiles:", error)
     }
+  }
+
+  /**
+   * Valida que el usuario tenga acceso a un archivo específico
+   */
+  static async validateUserAccess(filePath: string, organizationId: number): Promise<boolean> {
+    try {
+      // Verificar que la ruta del archivo corresponde a la organización del usuario
+      const pathParts = filePath.split("/")
+      const fileOrgId = Number.parseInt(pathParts[0])
+
+      return fileOrgId === organizationId
+    } catch (error) {
+      console.error("Error validating user access:", error)
+      return false
+    }
+  }
+
+  /**
+   * Regenera una URL firmada si ha expirado
+   */
+  static async refreshSignedUrl(filePath: string): Promise<string | null> {
+    return this.getSignedUrl(filePath)
   }
 }
