@@ -863,7 +863,7 @@ const MedicalCalendarSystem: React.FC = () => {
   if (!isSystemReady) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <Loading size="lg" text="Cargando sistema..." />
+        <Loading size="lg" text="Cargando..." />
       </div>
     )
   }
