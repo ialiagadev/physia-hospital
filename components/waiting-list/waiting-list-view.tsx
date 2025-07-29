@@ -33,7 +33,6 @@ interface WaitingListViewProps {
 export function WaitingListView({ organizationId, onScheduleAppointment }: WaitingListViewProps) {
   const { entries, loading, addToWaitingList, removeFromWaitingList, getDaysWaiting, getTimePreferenceLabel } =
     useWaitingList(organizationId)
-
   const { professionals, services } = useWaitingListData(organizationId)
 
   const [showAddModal, setShowAddModal] = useState(false)
@@ -53,16 +52,12 @@ export function WaitingListView({ organizationId, onScheduleAppointment }: Waiti
     return matchesSearch && matchesProfessional && matchesService
   })
 
+  // 🔧 CORREGIDO: No eliminar automáticamente de la lista de espera
   const handleScheduleAppointment = async (entry: any) => {
     if (onScheduleAppointment) {
-      // Call the parent's schedule appointment function
-      const success = await onScheduleAppointment(entry)
-
-      // If the appointment was scheduled successfully, refresh the waiting list
-      if (success) {
-        // Remove the entry from waiting list since it was scheduled
-        await removeFromWaitingList(entry.id)
-      }
+      // Solo abrir el modal, no eliminar de la lista todavía
+      // La eliminación se hará después de crear la cita exitosamente
+      await onScheduleAppointment(entry)
     }
   }
 
@@ -72,7 +67,6 @@ export function WaitingListView({ organizationId, onScheduleAppointment }: Waiti
 
   const getStatusBadge = (entry: any) => {
     const daysWaiting = getDaysWaiting(entry.created_at)
-
     if (daysWaiting >= 7) {
       return <Badge variant="destructive">Urgente ({daysWaiting} días)</Badge>
     } else if (daysWaiting >= 3) {
@@ -106,7 +100,6 @@ export function WaitingListView({ organizationId, onScheduleAppointment }: Waiti
             </p>
           </div>
         </div>
-
         <Button onClick={() => setShowAddModal(true)} className="gap-2">
           <Plus className="h-4 w-4" />
           Añadir a Lista
@@ -220,9 +213,7 @@ export function WaitingListView({ organizationId, onScheduleAppointment }: Waiti
                       )}
                     </div>
                   </TableCell>
-
                   <TableCell>{entry.professional_name || <Badge variant="outline">Cualquiera</Badge>}</TableCell>
-
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 rounded-full" style={{ backgroundColor: entry.service_color }} />
@@ -232,7 +223,6 @@ export function WaitingListView({ organizationId, onScheduleAppointment }: Waiti
                       </div>
                     </div>
                   </TableCell>
-
                   <TableCell>
                     <div className="flex items-center gap-1 text-sm">
                       <Calendar className="h-3 w-3" />
@@ -244,16 +234,13 @@ export function WaitingListView({ organizationId, onScheduleAppointment }: Waiti
                       </div>
                     )}
                   </TableCell>
-
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <Clock className="h-3 w-3" />
                       {getTimePreferenceLabel(entry.preferred_time_preference)}
                     </div>
                   </TableCell>
-
                   <TableCell>{getStatusBadge(entry)}</TableCell>
-
                   <TableCell>
                     {entry.notes && (
                       <div className="text-sm text-muted-foreground max-w-32 truncate" title={entry.notes}>
@@ -261,14 +248,12 @@ export function WaitingListView({ organizationId, onScheduleAppointment }: Waiti
                       </div>
                     )}
                   </TableCell>
-
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-2">
                       <Button size="sm" onClick={() => handleScheduleAppointment(entry)} className="gap-1">
                         <CalendarPlus className="h-3 w-3" />
                         Programar
                       </Button>
-
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <Button size="sm" variant="outline" className="gap-1 bg-transparent">

@@ -630,7 +630,8 @@ export function ProfesionalesView({
               <Input
                 id="edit-nombre"
                 value={editForm.nombre}
-                onChange={(e) => setEditForm({ ...editForm, nombre: e.target.value })}
+                disabled
+                className="bg-muted"
               />
             </div>
             <div>

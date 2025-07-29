@@ -207,7 +207,30 @@ const MedicalCalendarSystem: React.FC = () => {
   // NUEVO: Estado para controlar la inicialización completa
   const [isSystemReady, setIsSystemReady] = useState(false)
 
-  // Función para eliminar entrada de lista de espera
+  // 🔧 FUNCIÓN CORREGIDA: Eliminar entrada de lista de espera con conexión correcta a Supabase
+  const removeFromWaitingListAfterAppointment = useCallback(
+    async (entryId: number) => {
+      try {
+        const { error } = await supabase
+          .from("waiting_list")
+          .delete()
+          .eq("id", entryId)
+          .eq("organization_id", organizationId)
+
+        if (error) throw error
+
+        toast.success("Paciente eliminado de la lista de espera")
+        return true
+      } catch (error) {
+        console.error("Error removing from waiting list:", error)
+        toast.error("Error al eliminar de la lista de espera")
+        return false
+      }
+    },
+    [organizationId],
+  )
+
+  // Función para eliminar entrada de lista de espera (mantenida para compatibilidad)
   const removeFromWaitingList = useCallback(async (entryId: string) => {
     try {
       const { error } = await supabase.from("waiting_list").delete().eq("id", entryId)
@@ -529,10 +552,10 @@ const MedicalCalendarSystem: React.FC = () => {
 
         await createAppointment(newAppointment)
 
-        // Si viene de lista de espera, eliminarla después de crear la cita
+        // 🔧 CORREGIDO: Si viene de lista de espera, eliminarla después de crear la cita exitosamente
         if (waitingListEntry?.id) {
           try {
-            await removeFromWaitingList(waitingListEntry.id)
+            await removeFromWaitingListAfterAppointment(waitingListEntry.id)
           } catch (waitingError) {
             console.error("Error al eliminar de lista de espera:", waitingError)
             // No mostrar error al usuario, la cita ya se creó correctamente
@@ -554,7 +577,7 @@ const MedicalCalendarSystem: React.FC = () => {
       getDefaultAppointmentType,
       createAppointment,
       waitingListEntry,
-      removeFromWaitingList,
+      removeFromWaitingListAfterAppointment,
     ],
   )
 
@@ -1192,9 +1215,11 @@ const MedicalCalendarSystem: React.FC = () => {
               <WaitingListView
                 organizationId={organizationId}
                 onScheduleAppointment={async (entry) => {
+                  // 🔧 CORREGIDO: Solo abrir el modal, no eliminar de la lista todavía
                   setWaitingListEntry(entry)
                   setShowNewAppointmentModal(true)
-                  return true // Indica que se abrió el modal exitosamente
+                  // No retornar true para evitar eliminación prematura
+                  return false
                 }}
               />
             </div>
