@@ -8,13 +8,17 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { InvoiceStatusSelector } from "@/components/invoices/invoice-status-selector"
 import { useToast } from "@/hooks/use-toast"
-import { Loader2 } from "lucide-react"
+import { Loader2, Download, Lock, AlertTriangle } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
+
+type InvoiceStatus = "draft" | "issued" | "sent" | "paid"
 
 interface InvoiceData {
   id: number
   invoice_number: string
   issue_date: string
-  status: string
+  status: InvoiceStatus
   notes?: string
   base_amount: number
   vat_amount: number
@@ -23,6 +27,7 @@ interface InvoiceData {
   total_amount: number
   payment_method: string
   payment_method_other: string
+  validated_at?: string
   clients?: {
     name: string
     tax_id: string
@@ -90,7 +95,16 @@ export default function InvoiceDetailPage() {
         return
       }
 
-      setInvoice(invoiceData)
+      // Asegurar que el status sea un tipo válido
+      const validStatuses: InvoiceStatus[] = ["draft", "issued", "sent", "paid"]
+      const status = validStatuses.includes(invoiceData.status as InvoiceStatus)
+        ? (invoiceData.status as InvoiceStatus)
+        : "draft"
+
+      setInvoice({
+        ...invoiceData,
+        status,
+      })
 
       const { data: linesData, error: linesError } = await supabase
         .from("invoice_lines")
@@ -123,21 +137,57 @@ export default function InvoiceDetailPage() {
 
   const handleStatusChange = (newStatus: string) => {
     if (invoice) {
-      setInvoice({ ...invoice, status: newStatus })
+      const validStatuses: InvoiceStatus[] = ["draft", "issued", "sent", "paid"]
+      const status = validStatuses.includes(newStatus as InvoiceStatus) ? (newStatus as InvoiceStatus) : "draft"
+
+      setInvoice({ ...invoice, status })
     }
   }
 
-  const getStatusText = (status: string) => {
+  const getStatusText = (status: InvoiceStatus) => {
     switch (status) {
+      case "draft":
+        return "Borrador"
       case "issued":
         return "Emitida"
+      case "sent":
+        return "Enviada"
       case "paid":
         return "Pagada"
-      case "rejected":
-        return "Rechazada"
       default:
         return status
     }
+  }
+
+  const getStatusBadgeVariant = (status: InvoiceStatus) => {
+    switch (status) {
+      case "draft":
+        return "secondary" as const
+      case "issued":
+        return "default" as const
+      case "sent":
+        return "default" as const
+      case "paid":
+        return "default" as const
+      default:
+        return "default" as const
+    }
+  }
+
+  const isDraft = invoice?.status === "draft"
+  const isValidated = invoice?.validated_at != null
+
+  const handleDownloadPDF = () => {
+    if (isDraft) {
+      toast({
+        title: "Acción no permitida",
+        description: "No se puede descargar una factura en borrador",
+        variant: "destructive",
+      })
+      return
+    }
+    // Aquí iría la lógica de descarga normal
+    window.open(`/api/invoices/${invoiceId}/pdf`, "_blank")
   }
 
   if (loading) {
@@ -199,15 +249,77 @@ export default function InvoiceDetailPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Factura {invoice.invoice_number}</h1>
+          <div className="flex items-center gap-3 mb-2">
+            <h1 className="text-3xl font-bold tracking-tight">
+              {isDraft ? "Borrador de Factura" : `Factura ${invoice.invoice_number}`}
+            </h1>
+            <Badge variant={getStatusBadgeVariant(invoice.status)}>{getStatusText(invoice.status)}</Badge>
+            {isValidated && (
+              <Badge variant="outline" className="flex items-center gap-1">
+                <Lock className="h-3 w-3" />
+                Validada
+              </Badge>
+            )}
+          </div>
           <p className="text-muted-foreground">{new Date(invoice.issue_date).toLocaleDateString("es-ES")}</p>
         </div>
         <div className="flex space-x-2">
+          {!isDraft && (
+            <Button onClick={handleDownloadPDF} variant="outline" className="flex items-center gap-2 bg-transparent">
+              <Download className="h-4 w-4" />
+              Descargar PDF
+            </Button>
+          )}
+          {isDraft && (
+            <Button
+              disabled
+              variant="outline"
+              className="flex items-center gap-2 opacity-50 cursor-not-allowed bg-transparent"
+              title="No se puede descargar una factura en borrador"
+            >
+              <Lock className="h-4 w-4" />
+              Descargar PDF
+            </Button>
+          )}
           <Button asChild variant="outline">
             <Link href="/dashboard/facturacion/invoices">Volver</Link>
           </Button>
         </div>
       </div>
+
+      {/* Alerta para borradores */}
+      {isDraft && (
+        <Alert className="border-amber-200 bg-amber-50">
+          <AlertTriangle className="h-4 w-4 text-amber-600" />
+          <AlertDescription className="text-amber-800">
+            <strong>Esta factura está en borrador.</strong> No se puede descargar, imprimir ni enviar hasta que sea
+            validada. Para validarla, cambia su estado a "Emitida".
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Alerta para facturas validadas */}
+      {isValidated && !isDraft && (
+        <Alert className="border-blue-200 bg-blue-50">
+          <Lock className="h-4 w-4 text-blue-600" />
+          <AlertDescription className="text-blue-800">
+            <strong>Factura validada.</strong> Los campos sensibles de esta factura no pueden modificarse para mantener
+            la integridad fiscal.
+            {invoice.validated_at && (
+              <span className="block text-sm mt-1">
+                Validada el{" "}
+                {new Date(invoice.validated_at).toLocaleDateString("es-ES", {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </span>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
@@ -219,7 +331,7 @@ export default function InvoiceDetailPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Número</p>
-                <p>{invoice.invoice_number}</p>
+                <p>{isDraft ? "BORRADOR" : invoice.invoice_number}</p>
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Fecha</p>
