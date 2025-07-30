@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
-import { Plus, Calendar, Filter, X, ChevronDown, FileText, Download } from "lucide-react"
+import { Plus, Calendar, Filter, X, Download, Lock } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Checkbox } from "@/components/ui/checkbox"
 import { useToast } from "@/hooks/use-toast"
@@ -18,7 +18,7 @@ import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { BulkDownloadButton } from "@/components/invoices/bulk-download-button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { BulkStatusSelector } from "@/components/invoices/bulk-status-selector"
 import { generateUniqueInvoiceNumber } from "@/lib/invoice-utils"
 import { useAuth } from "@/app/contexts/auth-context"
 import {
@@ -36,14 +36,6 @@ interface DateFilters {
   year?: string
   month?: string
 }
-
-const statusOptions = [
-  { value: "sent", label: "Enviada", color: "bg-blue-100 text-blue-800" },
-  { value: "paid", label: "Pagada", color: "bg-green-100 text-green-800" },
-  { value: "cancelled", label: "Cancelada", color: "bg-red-100 text-red-800" },
-  { value: "rectified", label: "Rectificada", color: "bg-purple-100 text-purple-800" },
-  { value: "overdue", label: "Vencida", color: "bg-orange-100 text-orange-800" },
-]
 
 // Función para formatear el método de pago
 const formatPaymentMethod = (paymentMethod: string | null, paymentMethodOther: string | null) => {
@@ -68,7 +60,6 @@ export default function InvoicesPage() {
   const [selectedInvoices, setSelectedInvoices] = useState<Set<number>>(new Set())
   const [dateFilters, setDateFilters] = useState<DateFilters>({})
   const [showFilters, setShowFilters] = useState(false)
-  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
   const [isExportingCSV, setIsExportingCSV] = useState(false)
   const [downloadingInvoices, setDownloadingInvoices] = useState<Set<number>>(new Set())
   const { toast } = useToast()
@@ -87,6 +78,7 @@ export default function InvoicesPage() {
   const loadInvoices = async () => {
     setLoading(true)
     try {
+      // ✅ Incluir campos de Verifactu en la consulta
       let query = supabase
         .from("invoices")
         .select(`
@@ -157,46 +149,12 @@ export default function InvoicesPage() {
     )
   }
 
-  const handleBulkStatusChange = async (newStatus: string) => {
-    if (selectedInvoices.size === 0) return
-
-    setIsUpdatingStatus(true)
-    try {
-      const invoiceIds = Array.from(selectedInvoices)
-
-      setInvoices((currentInvoices) => {
-        return currentInvoices.map((invoice) => {
-          if (selectedInvoices.has(invoice.id)) {
-            return { ...invoice, status: newStatus }
-          }
-          return invoice
-        })
-      })
-
-      const { error } = await supabase.from("invoices").update({ status: newStatus }).in("id", invoiceIds)
-
-      if (error) {
-        throw new Error(`Error al actualizar el estado: ${error.message}`)
-      }
-
-      const statusLabel = statusOptions.find((option) => option.value === newStatus)?.label || newStatus
-
-      toast({
-        title: "Estado actualizado",
-        description: `Se ha cambiado el estado de ${selectedInvoices.size} factura${selectedInvoices.size !== 1 ? "s" : ""} a "${statusLabel}".`,
-      })
-
-      setSelectedInvoices(new Set())
-    } catch (error) {
-      await loadInvoices()
-      toast({
-        title: "Error",
-        description: "No se pudo actualizar el estado de las facturas",
-        variant: "destructive",
-      })
-    } finally {
-      setIsUpdatingStatus(false)
-    }
+  // ✅ FUNCIÓN ACTUALIZADA PARA MANEJAR CAMBIOS DE ESTADO MASIVOS
+  const handleBulkStatusChanged = () => {
+    // Recargar la lista de facturas después del cambio masivo
+    loadInvoices()
+    // Limpiar la selección
+    setSelectedInvoices(new Set())
   }
 
   const handleInvoicesDownloaded = (invoiceIds: number[]) => {
@@ -336,14 +294,11 @@ export default function InvoicesPage() {
         .filter((name, index, arr) => arr.indexOf(name) === index) // Eliminar duplicados
         .join("; ")
 
-      // Obtener etiqueta del estado
-      const statusLabel = statusOptions.find((opt) => opt.value === invoice.status)?.label || invoice.status
-
       return [
         invoice.invoice_number || "",
         invoice.issue_date ? format(new Date(invoice.issue_date), "dd/MM/yyyy") : "",
         invoice.invoice_type === "rectificative" ? "Rectificativa" : "Normal",
-        statusLabel,
+        invoice.status,
         client?.name || "",
         client?.tax_id || "",
         client?.address || "",
@@ -594,6 +549,7 @@ export default function InvoicesPage() {
           const clientInfoText = `Cliente: ${client.name}${client.tax_id ? `, CIF/NIF: ${client.tax_id}` : ""}${client.address ? `, Dirección: ${client.address}` : ""}${client.postal_code ? `, ${client.postal_code}` : ""} ${client.city || ""}${client.province ? `, ${client.province}` : ""}`
 
           const additionalNotes = `Factura generada automáticamente para citas del ${format(new Date(selectedDateString), "dd/MM/yyyy", { locale: es })}`
+
           const fullNotes = clientInfoText + `\n\nNotas adicionales: ${additionalNotes}`
 
           // Crear factura - estructura idéntica a nueva factura + MÉTODO DE PAGO POR DEFECTO
@@ -661,7 +617,6 @@ export default function InvoicesPage() {
 
       // Actualizar lista de facturas
       await loadInvoices()
-
       setGenerationResults(results)
 
       toast({
@@ -679,12 +634,22 @@ export default function InvoicesPage() {
     }
   }
 
-  const handleDownloadInvoice = async (invoiceId: number) => {
+  const handleDownloadInvoice = async (invoiceId: number, invoiceStatus: string) => {
+    // ✅ VERIFICAR SI ES BORRADOR
+    if (invoiceStatus === "draft") {
+      toast({
+        title: "Acción no permitida",
+        description: "No se puede descargar una factura en borrador",
+        variant: "destructive",
+      })
+      return
+    }
+
     // Añadir el ID a la lista de facturas que se están descargando
     setDownloadingInvoices((prev) => new Set([...prev, invoiceId]))
 
     try {
-      // Obtener datos completos de la factura
+      // ✅ Obtener datos completos de la factura INCLUYENDO CAMPOS DE VERIFACTU
       const { data: invoiceData, error: invoiceError } = await supabase
         .from("invoices")
         .select(`
@@ -710,26 +675,30 @@ export default function InvoicesPage() {
         throw new Error("No se pudieron obtener las líneas de la factura")
       }
 
-      // Importar la función generatePdf
+      // ✅ Importar la función generatePdf (mantener el nombre original)
       const { generatePdf } = await import("@/lib/pdf-generator")
 
-      // Preparar los datos para el PDF
+      // ✅ Preparar los datos para el PDF INCLUYENDO VERIFACTU
       const invoiceForPdf = {
         id: invoiceData.id,
         invoice_number: invoiceData.invoice_number,
         issue_date: invoiceData.issue_date,
         invoice_type: invoiceData.invoice_type,
         status: invoiceData.status,
-        base_amount: invoiceData.base_amount,
-        vat_amount: invoiceData.vat_amount,
-        irpf_amount: invoiceData.irpf_amount,
-        retention_amount: invoiceData.retention_amount,
-        total_amount: invoiceData.total_amount,
-        discount_amount: invoiceData.discount_amount || 0,
+        base_amount: Number(invoiceData.base_amount) || 0,
+        vat_amount: Number(invoiceData.vat_amount) || 0,
+        irpf_amount: Number(invoiceData.irpf_amount) || 0,
+        retention_amount: Number(invoiceData.retention_amount) || 0,
+        total_amount: Number(invoiceData.total_amount) || 0,
+        discount_amount: Number(invoiceData.discount_amount) || 0,
         notes: invoiceData.notes,
         signature: invoiceData.signature,
         payment_method: invoiceData.payment_method,
         payment_method_other: invoiceData.payment_method_other,
+        // ✅ CAMPOS DE VERIFACTU
+        verifactu_qr_code: invoiceData.verifactu_qr_code || null,
+        verifactu_status: invoiceData.verifactu_status || null,
+        verifactu_response: invoiceData.verifactu_response || null,
         organization: {
           name: invoiceData.organizations?.name || "",
           tax_id: invoiceData.organizations?.tax_id,
@@ -762,15 +731,23 @@ export default function InvoicesPage() {
       const linesForPdf = (invoiceLines || []).map((line) => ({
         id: crypto.randomUUID(),
         description: line.description,
-        quantity: line.quantity || 0,
-        unit_price: line.unit_price || 0,
-        discount_percentage: line.discount_percentage || 0,
-        vat_rate: line.vat_rate || 0,
-        irpf_rate: line.irpf_rate || 0,
-        retention_rate: line.retention_rate || 0,
-        line_amount: line.line_amount || 0,
+        quantity: Number(line.quantity) || 0,
+        unit_price: Number(line.unit_price) || 0,
+        discount_percentage: Number(line.discount_percentage) || 0,
+        vat_rate: Number(line.vat_rate) || 0,
+        irpf_rate: Number(line.irpf_rate) || 0,
+        retention_rate: Number(line.retention_rate) || 0,
+        line_amount: Number(line.line_amount) || 0,
         professional_id: line.professional_id,
       }))
+
+      // ✅ Debug: Verificar datos de Verifactu
+      console.log("Datos de Verifactu para PDF:", {
+        invoice_number: invoiceForPdf.invoice_number,
+        verifactu_status: invoiceForPdf.verifactu_status,
+        has_qr: !!invoiceForPdf.verifactu_qr_code,
+        qr_length: invoiceForPdf.verifactu_qr_code?.length || 0,
+      })
 
       // Generar el PDF
       const filename = `factura-${invoiceData.invoice_number || invoiceId}.pdf`
@@ -793,7 +770,7 @@ export default function InvoicesPage() {
 
       toast({
         title: "Descarga completada",
-        description: `La factura ${invoiceData.invoice_number} se ha descargado correctamente`,
+        description: `La factura ${invoiceData.invoice_number} se ha descargado correctamente${invoiceForPdf.verifactu_status === "sent" ? " (incluye QR Verifactu)" : ""}`,
       })
     } catch (error) {
       console.error("Error al descargar factura:", error)
@@ -826,7 +803,6 @@ export default function InvoicesPage() {
             )}
           </p>
         </div>
-
         <div className="flex gap-2">
           <Button
             variant="outline"
@@ -839,9 +815,6 @@ export default function InvoicesPage() {
               <span className="ml-1 text-xs bg-primary text-primary-foreground rounded-full px-1">•</span>
             )}
           </Button>
-
-         
-
           <Button asChild>
             <Link href="/dashboard/facturacion/invoices/new">
               <Plus className="mr-2 h-4 w-4" />
@@ -966,33 +939,15 @@ export default function InvoicesPage() {
                   <Download className="mr-2 h-4 w-4" />
                   {isExportingCSV ? "Exportando..." : "Exportar CSV"}
                 </Button>
-
                 <BulkDownloadButton
                   selectedInvoiceIds={Array.from(selectedInvoices)}
                   onDownloadComplete={handleInvoicesDownloaded}
                 />
-
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" disabled={isUpdatingStatus}>
-                      {isUpdatingStatus ? "Actualizando..." : "Cambiar estado"}
-                      <ChevronDown className="ml-1 h-3 w-3" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    {statusOptions.map((status) => (
-                      <DropdownMenuItem
-                        key={status.value}
-                        onClick={() => handleBulkStatusChange(status.value)}
-                        className="flex items-center gap-2"
-                      >
-                        <div className={`w-2 h-2 rounded-full ${status.color.split(" ")[0]}`} />
-                        {status.label}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-
+                {/* ✅ COMPONENTE DE CAMBIO DE ESTADO MASIVO */}
+                <BulkStatusSelector
+                  selectedInvoiceIds={Array.from(selectedInvoices)}
+                  onStatusChanged={handleBulkStatusChanged}
+                />
                 <Button variant="ghost" size="sm" onClick={() => setSelectedInvoices(new Set())}>
                   Limpiar selección
                 </Button>
@@ -1021,7 +976,7 @@ export default function InvoicesPage() {
               <TableHead>Fecha</TableHead>
               <TableHead>Cliente</TableHead>
               <TableHead>Estado</TableHead>
-              <TableHead>Método de Pago</TableHead> {/* NUEVA COLUMNA */}
+              <TableHead>Método de Pago</TableHead>
               <TableHead className="text-right">Importe</TableHead>
               <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
@@ -1042,7 +997,9 @@ export default function InvoicesPage() {
                       onCheckedChange={(checked) => handleSelectInvoice(invoice.id, checked as boolean)}
                     />
                   </TableCell>
-                  <TableCell className="font-medium">{invoice.invoice_number}</TableCell>
+                  <TableCell className="font-medium">
+                    {invoice.status === "draft" ? "BORRADOR" : invoice.invoice_number}
+                  </TableCell>
                   <TableCell>{new Date(invoice.issue_date).toLocaleDateString("es-ES")}</TableCell>
                   <TableCell>{invoice.clients?.name || "-"}</TableCell>
                   <TableCell>
@@ -1054,8 +1011,6 @@ export default function InvoicesPage() {
                     />
                   </TableCell>
                   <TableCell>
-                    {" "}
-                    {/* NUEVA CELDA */}
                     <span className="text-sm text-muted-foreground">
                       {formatPaymentMethod(invoice.payment_method, invoice.payment_method_other)}
                     </span>
@@ -1063,15 +1018,28 @@ export default function InvoicesPage() {
                   <TableCell className="text-right">{invoice.total_amount.toFixed(2)} €</TableCell>
                   <TableCell className="text-right">
                     <div className="flex gap-1 justify-end">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDownloadInvoice(invoice.id)}
-                        disabled={downloadingInvoices.has(invoice.id)}
-                        className="transition-colors hover:bg-primary/10"
-                      >
-                        <Download className="h-4 w-4" />
-                      </Button>
+                      {/* ✅ BOTÓN DE DESCARGA CONDICIONAL */}
+                      {invoice.status === "draft" ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled
+                          className="opacity-50 cursor-not-allowed"
+                          title="No se puede descargar una factura en borrador"
+                        >
+                          <Lock className="h-4 w-4" />
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDownloadInvoice(invoice.id, invoice.status)}
+                          disabled={downloadingInvoices.has(invoice.id)}
+                          className="transition-colors hover:bg-primary/10"
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
+                      )}
                       <Button variant="ghost" size="sm" asChild className="transition-colors hover:bg-primary/10">
                         <Link href={`/dashboard/facturacion/invoices/${invoice.id}`}>Ver</Link>
                       </Button>
@@ -1100,7 +1068,6 @@ export default function InvoicesPage() {
               Selecciona la fecha para generar facturas de todas las citas completadas
             </DialogDescription>
           </DialogHeader>
-
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="selected_date">Fecha</Label>
@@ -1112,7 +1079,6 @@ export default function InvoicesPage() {
                 className="w-full"
               />
             </div>
-
             {generationResults && (
               <div className="space-y-2">
                 <div className="p-3 bg-green-50 border border-green-200 rounded-md">
@@ -1121,7 +1087,6 @@ export default function InvoicesPage() {
                     <p className="text-sm text-yellow-800">⚠️ {generationResults.skipped} citas omitidas</p>
                   )}
                 </div>
-
                 {generationResults.errors.length > 0 && (
                   <div className="p-3 bg-red-50 border border-red-200 rounded-md max-h-32 overflow-y-auto">
                     <p className="text-sm text-red-800 font-medium mb-1">Errores:</p>
@@ -1135,7 +1100,6 @@ export default function InvoicesPage() {
               </div>
             )}
           </div>
-
           <DialogFooter>
             <Button
               variant="outline"

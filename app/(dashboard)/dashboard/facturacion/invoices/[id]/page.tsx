@@ -1,5 +1,7 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
@@ -8,9 +10,14 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { InvoiceStatusSelector } from "@/components/invoices/invoice-status-selector"
 import { useToast } from "@/hooks/use-toast"
-import { Loader2, Download, Lock, AlertTriangle } from "lucide-react"
+import { Loader2, Download, Lock, AlertTriangle, Edit, Plus, Trash2 } from 'lucide-react'
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 type InvoiceStatus = "draft" | "issued" | "sent" | "paid"
 
@@ -51,10 +58,437 @@ interface InvoiceLine {
   description: string
   quantity: number
   unit_price: number
+  discount_percentage?: number
   vat_rate: number
   irpf_rate: number
   retention_rate: number
   line_amount: number
+  professional_id?: number | null
+}
+
+interface EditInvoiceFormProps {
+  invoice: InvoiceData
+  invoiceLines: InvoiceLine[]
+  onSuccess: () => void
+  onCancel: () => void
+}
+
+function EditInvoiceForm({ invoice, invoiceLines, onSuccess, onCancel }: EditInvoiceFormProps) {
+  const { toast } = useToast()
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const [formData, setFormData] = useState({
+    notes: invoice.notes || "",
+    payment_method: invoice.payment_method || "tarjeta",
+    payment_method_other: invoice.payment_method_other || "",
+  })
+
+  const [editableLines, setEditableLines] = useState<InvoiceLine[]>(
+    invoiceLines.map((line) => ({
+      ...line,
+      discount_percentage: line.discount_percentage || 0,
+    })),
+  )
+
+  const calculateLineAmount = (line: InvoiceLine) => {
+    const subtotal = line.quantity * line.unit_price
+    const discount = (subtotal * (line.discount_percentage || 0)) / 100
+    return subtotal - discount
+  }
+
+  const handleLineChange = (id: number, field: string, value: string | number) => {
+    setEditableLines((prev) =>
+      prev.map((line) => {
+        if (line.id === id) {
+          const updatedLine = { ...line, [field]: value }
+
+          // Recalcular el importe de línea cuando cambie cantidad, precio unitario o descuento
+          if (field === "quantity" || field === "unit_price" || field === "discount_percentage") {
+            updatedLine.line_amount = calculateLineAmount(updatedLine)
+          }
+
+          return updatedLine
+        }
+        return line
+      }),
+    )
+  }
+
+  const addLine = () => {
+    const newLine: InvoiceLine = {
+      id: Date.now(), // ID temporal para nuevas líneas
+      description: "",
+      quantity: 1,
+      unit_price: 0,
+      discount_percentage: 0,
+      vat_rate: 21,
+      irpf_rate: 0,
+      retention_rate: 0,
+      line_amount: 0,
+      professional_id: null,
+    }
+    setEditableLines((prev) => [...prev, newLine])
+  }
+
+  const removeLine = (id: number) => {
+    if (editableLines.length > 1) {
+      setEditableLines((prev) => prev.filter((line) => line.id !== id))
+    }
+  }
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target
+    setFormData((prev) => ({ ...prev, [name]: value }))
+  }
+
+  const handleSelectChange = (name: string, value: string) => {
+    setFormData((prev) => ({ ...prev, [name]: value }))
+  }
+
+  // Calcular totales
+  const subtotalAmount = editableLines.reduce((sum, line) => {
+    const lineSubtotal = line.quantity * line.unit_price
+    return sum + lineSubtotal
+  }, 0)
+
+  const totalDiscountAmount = editableLines.reduce((sum, line) => {
+    const lineSubtotal = line.quantity * line.unit_price
+    const lineDiscount = (lineSubtotal * (line.discount_percentage || 0)) / 100
+    return sum + lineDiscount
+  }, 0)
+
+  const baseAmount = subtotalAmount - totalDiscountAmount
+
+  const vatAmount = editableLines.reduce((sum, line) => {
+    const lineSubtotal = line.quantity * line.unit_price
+    const lineDiscount = (lineSubtotal * (line.discount_percentage || 0)) / 100
+    const lineBase = lineSubtotal - lineDiscount
+    const lineVat = (lineBase * line.vat_rate) / 100
+    return sum + lineVat
+  }, 0)
+
+  const irpfAmount = editableLines.reduce((sum, line) => {
+    const lineSubtotal = line.quantity * line.unit_price
+    const lineDiscount = (lineSubtotal * (line.discount_percentage || 0)) / 100
+    const lineBase = lineSubtotal - lineDiscount
+    const lineIrpf = (lineBase * line.irpf_rate) / 100
+    return sum + lineIrpf
+  }, 0)
+
+  const retentionAmount = editableLines.reduce((sum, line) => {
+    const lineSubtotal = line.quantity * line.unit_price
+    const lineDiscount = (lineSubtotal * (line.discount_percentage || 0)) / 100
+    const lineBase = lineSubtotal - lineDiscount
+    const lineRetention = (lineBase * line.retention_rate) / 100
+    return sum + lineRetention
+  }, 0)
+
+  const totalAmount = baseAmount + vatAmount - irpfAmount - retentionAmount
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      // Actualizar la factura (sin incluir issue_date)
+      const { error: invoiceError } = await supabase
+        .from("invoices")
+        .update({
+          notes: formData.notes,
+          payment_method: formData.payment_method,
+          payment_method_other: formData.payment_method === "otro" ? formData.payment_method_other : null,
+          base_amount: baseAmount,
+          vat_amount: vatAmount,
+          irpf_amount: irpfAmount,
+          retention_amount: retentionAmount,
+          total_amount: totalAmount,
+        })
+        .eq("id", invoice.id)
+
+      if (invoiceError) {
+        throw new Error(`Error al actualizar la factura: ${invoiceError.message}`)
+      }
+
+      // Eliminar líneas existentes
+      const { error: deleteError } = await supabase.from("invoice_lines").delete().eq("invoice_id", invoice.id)
+
+      if (deleteError) {
+        throw new Error(`Error al eliminar líneas existentes: ${deleteError.message}`)
+      }
+
+      // Insertar líneas actualizadas
+      const linesToInsert = editableLines.map((line) => ({
+        invoice_id: invoice.id,
+        description: line.description,
+        quantity: line.quantity,
+        unit_price: line.unit_price,
+        discount_percentage: line.discount_percentage || 0,
+        vat_rate: line.vat_rate,
+        irpf_rate: line.irpf_rate,
+        retention_rate: line.retention_rate,
+        line_amount: line.line_amount,
+        professional_id: line.professional_id,
+      }))
+
+      const { error: linesError } = await supabase.from("invoice_lines").insert(linesToInsert)
+
+      if (linesError) {
+        throw new Error(`Error al guardar las líneas: ${linesError.message}`)
+      }
+
+      onSuccess()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al actualizar la factura")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="issue_date_readonly">Fecha de Emisión</Label>
+          <Input
+            id="issue_date_readonly"
+            type="date"
+            value={invoice.issue_date}
+            readOnly
+            className="bg-muted cursor-not-allowed"
+            title="La fecha de emisión no puede modificarse"
+          />
+          <p className="text-xs text-muted-foreground">La fecha de emisión no puede modificarse</p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="payment_method">Método de Pago</Label>
+          <Select
+            value={formData.payment_method}
+            onValueChange={(value) => handleSelectChange("payment_method", value)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Selecciona método de pago" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="tarjeta">Tarjeta</SelectItem>
+              <SelectItem value="efectivo">Efectivo</SelectItem>
+              <SelectItem value="transferencia">Transferencia</SelectItem>
+              <SelectItem value="paypal">PayPal</SelectItem>
+              <SelectItem value="bizum">Bizum</SelectItem>
+              <SelectItem value="otro">Otro</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {formData.payment_method === "otro" && (
+        <div className="space-y-2">
+          <Label htmlFor="payment_method_other">Especificar método de pago</Label>
+          <Input
+            id="payment_method_other"
+            name="payment_method_other"
+            value={formData.payment_method_other}
+            onChange={handleChange}
+            placeholder="Especifica el método de pago..."
+            required
+          />
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <Label htmlFor="notes">Notas</Label>
+        <Textarea
+          id="notes"
+          name="notes"
+          value={formData.notes}
+          onChange={handleChange}
+          placeholder="Notas adicionales para la factura"
+          rows={3}
+        />
+      </div>
+
+      <div className="space-y-4">
+        <div className="flex justify-between items-center">
+          <h3 className="text-lg font-medium">Líneas de Factura</h3>
+          <Button type="button" onClick={addLine} variant="outline" size="sm">
+            <Plus className="h-4 w-4 mr-2" />
+            Añadir Línea
+          </Button>
+        </div>
+
+        {editableLines.map((line, index) => (
+          <div key={line.id} className="border p-4 rounded-md space-y-4">
+            <div className="flex justify-between items-center">
+              <h4 className="font-medium">Línea {index + 1}</h4>
+              {editableLines.length > 1 && (
+                <Button type="button" variant="ghost" size="sm" onClick={() => removeLine(line.id)}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Descripción</Label>
+                <Input
+                  value={line.description}
+                  onChange={(e) => handleLineChange(line.id, "description", e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Cantidad</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={line.quantity}
+                  onChange={(e) => handleLineChange(line.id, "quantity", Number.parseFloat(e.target.value) || 0)}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>Precio Unitario (€)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={line.unit_price}
+                  onChange={(e) => handleLineChange(line.id, "unit_price", Number.parseFloat(e.target.value) || 0)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Descuento (%)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={line.discount_percentage || 0}
+                  onChange={(e) =>
+                    handleLineChange(line.id, "discount_percentage", Number.parseFloat(e.target.value) || 0)
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>IVA (%)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={line.vat_rate}
+                  onChange={(e) => handleLineChange(line.id, "vat_rate", Number.parseFloat(e.target.value) || 0)}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>IRPF (%)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={line.irpf_rate}
+                  onChange={(e) => handleLineChange(line.id, "irpf_rate", Number.parseFloat(e.target.value) || 0)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Retención (%)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={line.retention_rate}
+                  onChange={(e) => handleLineChange(line.id, "retention_rate", Number.parseFloat(e.target.value) || 0)}
+                />
+              </div>
+            </div>
+
+            <div className="text-right space-y-1">
+              <div className="text-sm text-muted-foreground">
+                Subtotal: {(line.quantity * line.unit_price).toFixed(2)} €
+              </div>
+              {(line.discount_percentage || 0) > 0 && (
+                <div className="text-sm text-red-600">
+                  Descuento ({line.discount_percentage}%): -
+                  {((line.quantity * line.unit_price * (line.discount_percentage || 0)) / 100).toFixed(2)} €
+                </div>
+              )}
+              <div className="font-medium">Importe: {line.line_amount.toFixed(2)} €</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Resumen de Totales</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            <div className="flex justify-between">
+              <span>Subtotal:</span>
+              <span>{subtotalAmount.toFixed(2)} €</span>
+            </div>
+            {totalDiscountAmount > 0 && (
+              <div className="flex justify-between text-red-600">
+                <span>Descuentos totales:</span>
+                <span>-{totalDiscountAmount.toFixed(2)} €</span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span>Base imponible:</span>
+              <span>{baseAmount.toFixed(2)} €</span>
+            </div>
+            <div className="flex justify-between">
+              <span>IVA:</span>
+              <span>{vatAmount.toFixed(2)} €</span>
+            </div>
+            {irpfAmount > 0 && (
+              <div className="flex justify-between">
+                <span>IRPF:</span>
+                <span>-{irpfAmount.toFixed(2)} €</span>
+              </div>
+            )}
+            {retentionAmount > 0 && (
+              <div className="flex justify-between">
+                <span>Retención:</span>
+                <span>-{retentionAmount.toFixed(2)} €</span>
+              </div>
+            )}
+            <hr />
+            <div className="flex justify-between font-bold text-lg">
+              <span>Total:</span>
+              <span>{totalAmount.toFixed(2)} €</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="flex justify-end space-x-4">
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancelar
+        </Button>
+        <Button type="submit" disabled={isLoading}>
+          {isLoading ? "Guardando..." : "Guardar Cambios"}
+        </Button>
+      </div>
+    </form>
+  )
 }
 
 export default function InvoiceDetailPage() {
@@ -64,6 +498,7 @@ export default function InvoiceDetailPage() {
   const [invoiceLines, setInvoiceLines] = useState<InvoiceLine[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [editModalOpen, setEditModalOpen] = useState(false)
 
   const invoiceId = params.id as string
 
@@ -139,9 +574,17 @@ export default function InvoiceDetailPage() {
     if (invoice) {
       const validStatuses: InvoiceStatus[] = ["draft", "issued", "sent", "paid"]
       const status = validStatuses.includes(newStatus as InvoiceStatus) ? (newStatus as InvoiceStatus) : "draft"
-
       setInvoice({ ...invoice, status })
     }
+  }
+
+  const handleEditSuccess = () => {
+    setEditModalOpen(false)
+    loadInvoice() // Recargar los datos después de editar
+    toast({
+      title: "Borrador actualizado",
+      description: "Los cambios se han guardado correctamente",
+    })
   }
 
   const getStatusText = (status: InvoiceStatus) => {
@@ -186,6 +629,7 @@ export default function InvoiceDetailPage() {
       })
       return
     }
+
     // Aquí iría la lógica de descarga normal
     window.open(`/api/invoices/${invoiceId}/pdf`, "_blank")
   }
@@ -263,24 +707,16 @@ export default function InvoiceDetailPage() {
           </div>
           <p className="text-muted-foreground">{new Date(invoice.issue_date).toLocaleDateString("es-ES")}</p>
         </div>
+
         <div className="flex space-x-2">
-          {!isDraft && (
-            <Button onClick={handleDownloadPDF} variant="outline" className="flex items-center gap-2 bg-transparent">
-              <Download className="h-4 w-4" />
-              Descargar PDF
-            </Button>
-          )}
+          {/* Botón de Editar - Solo visible para borradores */}
           {isDraft && (
-            <Button
-              disabled
-              variant="outline"
-              className="flex items-center gap-2 opacity-50 cursor-not-allowed bg-transparent"
-              title="No se puede descargar una factura en borrador"
-            >
-              <Lock className="h-4 w-4" />
-              Descargar PDF
+            <Button onClick={() => setEditModalOpen(true)} variant="default" className="flex items-center gap-2">
+              <Edit className="h-4 w-4" />
+              Editar Borrador
             </Button>
           )}
+
           <Button asChild variant="outline">
             <Link href="/dashboard/facturacion/invoices">Volver</Link>
           </Button>
@@ -293,7 +729,7 @@ export default function InvoiceDetailPage() {
           <AlertTriangle className="h-4 w-4 text-amber-600" />
           <AlertDescription className="text-amber-800">
             <strong>Esta factura está en borrador.</strong> No se puede descargar, imprimir ni enviar hasta que sea
-            validada. Para validarla, cambia su estado a "Emitida".
+            validada. Puedes editarla usando el botón "Editar Borrador" o validarla cambiando su estado a "Emitida".
           </AlertDescription>
         </Alert>
       )}
@@ -495,6 +931,23 @@ export default function InvoiceDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Modal de Edición */}
+      <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Editar Borrador de Factura</DialogTitle>
+          </DialogHeader>
+          {invoice && (
+            <EditInvoiceForm
+              invoice={invoice}
+              invoiceLines={invoiceLines}
+              onSuccess={handleEditSuccess}
+              onCancel={() => setEditModalOpen(false)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

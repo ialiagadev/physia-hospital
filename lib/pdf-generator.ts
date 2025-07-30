@@ -20,6 +20,17 @@ export interface InvoiceData {
   rectification_reason?: string
   rectification_type?: "cancellation" | "amount_correction"
   organization_id?: number
+  // ✅ Campos de Verifactu según documentación oficial
+  verifactu_qr_code?: string | null
+  verifactu_status?: string
+  verifactu_response?: {
+    data?: {
+      items?: Array<{
+        url_qr?: string
+        qr_image?: string
+      }>
+    }
+  }
   organization?: {
     id?: number
     name: string
@@ -77,9 +88,7 @@ interface OriginalInvoiceData {
   }
 }
 
-/**
- * Obtiene los datos de la factura original para comparación
- */
+/** * Obtiene los datos de la factura original para comparación */
 async function getOriginalInvoiceData(
   originalInvoiceNumber: string,
   organizationId: number,
@@ -141,9 +150,7 @@ async function getOriginalInvoiceData(
   }
 }
 
-/**
- * Carga una imagen desde una URL y la convierte a base64
- */
+/** * Carga una imagen desde una URL y la convierte a base64 */
 async function loadImageAsBase64(url: string): Promise<string | null> {
   try {
     const response = await fetch(url, { mode: "cors" })
@@ -161,9 +168,7 @@ async function loadImageAsBase64(url: string): Promise<string | null> {
   }
 }
 
-/**
- * Valida y sanitiza los datos de la factura
- */
+/** * Valida y sanitiza los datos de la factura */
 function validateInvoiceData(invoice: InvoiceData): InvoiceData {
   return {
     ...invoice,
@@ -178,9 +183,7 @@ function validateInvoiceData(invoice: InvoiceData): InvoiceData {
   }
 }
 
-/**
- * Valida y sanitiza las líneas de factura
- */
+/** * Valida y sanitiza las líneas de factura */
 function validateInvoiceLines(lines: InvoiceLine[]): InvoiceLine[] {
   return lines.map((line) => ({
     ...line,
@@ -196,8 +199,106 @@ function validateInvoiceLines(lines: InvoiceLine[]): InvoiceLine[] {
 }
 
 /**
- * Genera el PDF de la factura con diseño compacto mejorado
+ * Añade el QR de Verifactu según especificaciones oficiales de la AEAT
+ * Debe ir al principio de la factura, antes del contenido
  */
+function addVerifactuQR(doc: jsPDF, invoice: InvoiceData, yPosition: number): number {
+  if (!invoice.verifactu_qr_code || invoice.verifactu_status !== "sent") {
+    return yPosition
+  }
+
+  try {
+    // ✅ Especificaciones oficiales AEAT:
+    // - Tamaño: 30x30mm a 40x40mm (usamos 40mm)
+    // - Margen blanco: mínimo 2mm, recomendado 6mm
+    // - Alto contraste
+    // - Posición: al principio, antes del contenido
+
+    const qrSize = 40 // 40mm según especificaciones
+    const margin = 6 // 6mm de margen recomendado
+    const qrX = 20 // Posición X (superior izquierdo según documentación)
+
+    // ✅ TEXTO SUPERIOR: "QR tributario:" (centrado encima del QR)
+    doc.setFont("helvetica", "bold")
+    doc.setFontSize(10)
+    doc.setTextColor(0, 0, 0)
+
+    const upperText = "QR tributario:"
+    const textWidth = doc.getTextWidth(upperText)
+    const centeredTextX = qrX + (qrSize - textWidth) / 2
+
+    doc.text(upperText, centeredTextX, yPosition)
+    yPosition += 8
+
+    // ✅ AÑADIR EL QR CON MARGEN BLANCO
+    let qrBase64 = invoice.verifactu_qr_code
+    if (!qrBase64.startsWith("data:image/")) {
+      qrBase64 = `data:image/png;base64,${qrBase64}`
+    }
+
+    // Crear un fondo blanco para el margen (especificación AEAT)
+    doc.setFillColor(255, 255, 255) // Blanco
+    doc.rect(qrX - margin, yPosition - margin, qrSize + margin * 2, qrSize + margin * 2, "F")
+
+    // Añadir el QR centrado en el área con margen
+    doc.addImage(qrBase64, "PNG", qrX, yPosition, qrSize, qrSize)
+
+    yPosition += qrSize + 4
+
+    // ✅ TEXTO INFERIOR: "Factura verificable en la sede electrónica de la AEAT"
+    // o "VERI*FACTU" (centrado debajo del QR)
+    doc.setFont("helvetica", "normal")
+    doc.setFontSize(8)
+
+    const lowerTexts = ["Factura verificable en la sede", "electrónica de la AEAT"]
+
+    lowerTexts.forEach((text, index) => {
+      const lowerTextWidth = doc.getTextWidth(text)
+      const centeredLowerTextX = qrX + (qrSize - lowerTextWidth) / 2
+      doc.text(text, centeredLowerTextX, yPosition + index * 4)
+    })
+
+    yPosition += 12 // Espacio después del texto inferior
+
+    // ✅ INFORMACIÓN ADICIONAL (opcional): URL de verificación
+    if (invoice.verifactu_response?.data?.items?.[0]?.url_qr) {
+      doc.setFont("helvetica", "normal")
+      doc.setFontSize(6)
+      doc.setTextColor(100, 100, 100) // Gris claro
+
+      const urlText = "URL: " + invoice.verifactu_response.data.items[0].url_qr
+      const urlLines = doc.splitTextToSize(urlText, qrSize + 40)
+
+      urlLines.forEach((line: string, index: number) => {
+        doc.text(line, qrX, yPosition + index * 3)
+      })
+
+      yPosition += urlLines.length * 3 + 5
+      doc.setTextColor(0, 0, 0) // Volver al negro
+    }
+
+    // ✅ LÍNEA SEPARADORA para distinguir del resto del contenido
+    doc.setDrawColor(200, 200, 200) // Gris claro
+    doc.setLineWidth(0.5)
+    doc.line(20, yPosition, 190, yPosition)
+    yPosition += 10
+
+    console.log("✅ QR de Verifactu añadido según especificaciones oficiales AEAT")
+  } catch (error) {
+    console.error("❌ Error al añadir QR de Verifactu:", error)
+
+    // Fallback: mostrar texto indicativo
+    doc.setFont("helvetica", "normal")
+    doc.setFontSize(9)
+    doc.setTextColor(100, 100, 100)
+    doc.text("QR tributario: (Error al cargar)", 20, yPosition)
+    yPosition += 10
+  }
+
+  return yPosition
+}
+
+/** * Genera el PDF de la factura con diseño compacto mejorado y QR Verifactu oficial */
 export async function generatePdf(
   invoice: InvoiceData,
   invoiceLines: InvoiceLine[],
@@ -208,10 +309,12 @@ export async function generatePdf(
     const validatedInvoice = validateInvoiceData(invoice)
     const validatedLines = validateInvoiceLines(invoiceLines)
 
-    console.log("📄 Generando PDF compacto mejorado:", {
+    console.log("📄 Generando PDF con QR Verifactu oficial:", {
       invoice: validatedInvoice,
       lines: validatedLines,
       fileName,
+      hasVerifactuQR: !!validatedInvoice.verifactu_qr_code,
+      verifactuStatus: validatedInvoice.verifactu_status,
     })
 
     const doc = new jsPDF()
@@ -222,6 +325,9 @@ export async function generatePdf(
 
     const isRectificative = validatedInvoice.invoice_type === "rectificativa"
     const isSimplified = validatedInvoice.invoice_type === "simplificada"
+
+    // === ✅ QR DE VERIFACTU AL PRINCIPIO (según especificaciones oficiales) ===
+    yPosition = addVerifactuQR(doc, validatedInvoice, yPosition)
 
     // === HEADER COMPACTO ===
     doc.setFontSize(16)
@@ -246,7 +352,6 @@ export async function generatePdf(
             if (logoBase64) {
               const tempImg = new Image()
               tempImg.src = logoBase64
-
               await new Promise((resolve) => {
                 tempImg.onload = resolve
                 tempImg.onerror = resolve
@@ -314,7 +419,6 @@ export async function generatePdf(
       doc.setFontSize(9)
       yPosition += 5
 
-      // ✅ AÑADIR CIF/NIF DE LA EMPRESA
       if (validatedInvoice.organization.tax_id) {
         doc.setFont("helvetica", "bold")
         doc.text(`CIF/NIF: ${validatedInvoice.organization.tax_id}`, leftColumnX, yPosition)
@@ -346,10 +450,10 @@ export async function generatePdf(
       doc.setFont("helvetica", "normal")
       doc.setFontSize(9)
       clientY += 5
+
       doc.text(validatedInvoice.client_data.name, rightColumnX, clientY)
       clientY += 4
 
-      // ✅ AÑADIR CIF/NIF DEL CLIENTE
       if (validatedInvoice.client_data.tax_id) {
         doc.setFont("helvetica", "bold")
         doc.text(`CIF/NIF: ${validatedInvoice.client_data.tax_id}`, rightColumnX, clientY)
@@ -366,6 +470,7 @@ export async function generatePdf(
       )
       clientY += 4
       doc.text(validatedInvoice.client_data.country, rightColumnX, clientY)
+
       if (validatedInvoice.client_data.phone) {
         clientY += 4
         doc.text(validatedInvoice.client_data.phone, rightColumnX, clientY)
@@ -475,7 +580,7 @@ export async function generatePdf(
     doc.line(20, yPosition, 190, yPosition)
     yPosition += 8
 
-    // ✅ FILAS DE DATOS MEJORADAS - SIN ESTADO DE CITA
+    // Filas de datos
     doc.setFont("helvetica", "normal")
     doc.setFontSize(9)
 
@@ -497,7 +602,6 @@ export async function generatePdf(
         doc.setFont("helvetica", "normal")
       }
 
-      // ✅ DESCRIPCIÓN LIMPIA - SIN ESTADO
       let description = line.description
       if (line.discount_percentage && line.discount_percentage > 0) {
         description += ` (Desc. ${line.discount_percentage}%)`
@@ -533,7 +637,7 @@ export async function generatePdf(
 
     yPosition += 10
 
-    // === TOTALES MEJORADOS SIN SOLAPAMIENTOS ===
+    // === TOTALES MEJORADOS ===
     const totalsX = 120
     const amountX = 185
 
@@ -550,7 +654,7 @@ export async function generatePdf(
     doc.text(`${validatedInvoice.base_amount.toFixed(2)} €`, amountX, yPosition, { align: "right" })
     yPosition += 5
 
-    // ✅ IVA MEJORADO SIN SOLAPAMIENTOS
+    // IVA
     if (validatedInvoice.vat_amount > 0) {
       const vatRate = validatedLines.length > 0 ? validatedLines[0].vat_rate : 21
 
@@ -559,7 +663,7 @@ export async function generatePdf(
       doc.text(`${validatedInvoice.vat_amount.toFixed(2)} €`, amountX, yPosition, { align: "right" })
       yPosition += 4
 
-      // Línea secundaria con base imponible (más pequeña y en gris)
+      // Línea secundaria con base imponible
       doc.setFontSize(8)
       doc.setTextColor(100, 100, 100)
       doc.text(`Base: ${validatedInvoice.base_amount.toFixed(2)} €`, totalsX + 5, yPosition)
@@ -639,6 +743,7 @@ export async function generatePdf(
         default:
           paymentMethodText = "No especificado"
       }
+
       doc.text(paymentMethodText, 20, yPosition)
       yPosition += 10
     }
@@ -711,6 +816,12 @@ export async function generatePdf(
       legalText = "Factura emitida conforme a la normativa fiscal vigente."
     }
 
+    // ✅ Información sobre Verifactu según documentación oficial
+    if (validatedInvoice.verifactu_status === "sent") {
+      legalText +=
+        " Esta factura ha sido registrada en el sistema Veri*Factu de la AEAT y cumple con las especificaciones del Real Decreto 1007/2023."
+    }
+
     const legalLines = doc.splitTextToSize(legalText, 170)
     doc.text(legalLines, 20, yPosition)
 
@@ -726,7 +837,7 @@ export async function generatePdf(
 
     // Generar el blob
     const pdfBlob = doc.output("blob")
-    console.log("✅ PDF compacto mejorado generado exitosamente")
+    console.log("✅ PDF con QR Verifactu oficial generado exitosamente")
 
     if (autoDownload) {
       doc.save(fileName)
@@ -739,9 +850,7 @@ export async function generatePdf(
   }
 }
 
-/**
- * Función para dibujar tablas compactas
- */
+/** * Función para dibujar tablas compactas */
 function drawCompactTable(doc: jsPDF, data: string[][], x: number, y: number, width: number): number {
   const rowHeight = 6
   const colWidths = calculateColumnWidths(data, width)
@@ -749,7 +858,6 @@ function drawCompactTable(doc: jsPDF, data: string[][], x: number, y: number, wi
 
   data.forEach((row, rowIndex) => {
     let currentX = x
-
     if (rowIndex === 0) {
       doc.setFont("helvetica", "bold")
       doc.setFontSize(8)
@@ -775,27 +883,20 @@ function drawCompactTable(doc: jsPDF, data: string[][], x: number, y: number, wi
   return currentY + 5
 }
 
-/**
- * Calcula el ancho de las columnas
- */
+/** * Calcula el ancho de las columnas */
 function calculateColumnWidths(data: string[][], totalWidth: number): number[] {
   const numCols = data[0].length
-
   if (numCols === 5) {
     return [80, 15, 25, 25, 25]
   }
-
   if (numCols === 4) {
     return [45, 35, 35, 35]
   }
-
   const baseWidth = totalWidth / numCols
   return Array(numCols).fill(baseWidth)
 }
 
-/**
- * Traduce el estado de la factura
- */
+/** * Traduce el estado de la factura */
 function getStatusText(status: string): string {
   switch (status) {
     case "issued":
