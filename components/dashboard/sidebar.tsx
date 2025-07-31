@@ -1,4 +1,3 @@
-// components/dashboard/sidebar.tsx
 "use client"
 
 import { useState, useEffect, useRef } from "react"
@@ -9,21 +8,14 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
   LayoutDashboard,
-  Users,
-  Building2,
   FileText,
   Settings,
-  Package,
-  UserRound,
   BarChart2,
   GripVertical,
   Save,
   RotateCcw,
   ClipboardList,
   ChevronLeft,
-  Gift,
-  UserPlus,
-  LogOut,
   Menu,
 } from "lucide-react"
 import {
@@ -136,14 +128,11 @@ interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {}
 
 export function Sidebar({ className }: SidebarProps) {
   // Lista predeterminada de elementos de navegación con colores
-  // components/dashboard/sidebar.tsx
-  // ... (mantener todo el código anterior hasta defaultNavItems)
-
   const defaultNavItems: NavItem[] = [
     {
       id: "dashboard",
       label: "Dashboard",
-      href: "/dashboard/facturacion", // ✅ CORREGIDO
+      href: "/dashboard/facturacion",
       icon: <LayoutDashboard />,
       matchPattern: "/dashboard/facturacion∫",
       iconColor: "#4285F4",
@@ -151,14 +140,10 @@ export function Sidebar({ className }: SidebarProps) {
       hoverColor: "bg-blue-50/50",
       activeColor: "#4285F4",
     },
-    
-    
-   
-   
     {
       id: "invoices",
       label: "Facturas",
-      href: "/dashboard/facturacion/invoices", // ✅ CORREGIDO
+      href: "/dashboard/facturacion/invoices",
       icon: <FileText />,
       matchPattern: "/dashboard/facturacion/invoices",
       iconColor: "#10B981",
@@ -177,23 +162,28 @@ export function Sidebar({ className }: SidebarProps) {
       hoverColor: "bg-amber-50/50",
       activeColor: "#F59E0B",
     },
-   
-  
     {
       id: "statistics",
       label: "Estadísticas",
-      href: "/dashboard/facturacion/statistics", // ✅ CORREGIDO
+      href: "/dashboard/facturacion/statistics",
       icon: <BarChart2 />,
       matchPattern: "/dashboard/facturacion/statistics",
       iconColor: "#F43F5E",
       bgColor: "bg-rose-50",
       hoverColor: "bg-rose-50/50",
       activeColor: "#F43F5E",
-    }
-
-  
-   
-     
+    },
+    {
+      id: "settings",
+      label: "Ajustes",
+      href: "/dashboard/facturacion/ajustes",
+      icon: <Settings />,
+      matchPattern: "/dashboard/facturacion/ajustes",
+      iconColor: "#8B5CF6",
+      bgColor: "bg-violet-50",
+      hoverColor: "bg-violet-50/50",
+      activeColor: "#8B5CF6",
+    },
   ]
 
   // Estado para los elementos de navegación
@@ -204,14 +194,12 @@ export function Sidebar({ className }: SidebarProps) {
   const pathname = usePathname()
 
   // Cargar el estado de colapso guardado al iniciar
-
   // Función para convertir string a boolean de forma segura
   const parseBoolean = (value: string | null): boolean => {
     return value === "true"
   }
 
   // Actualizar el índice activo cuando cambia la ruta
-
   useEffect(() => {
     const savedCollapsedState = localStorage.getItem("facturacionSidebarCollapsed")
     setIsCollapsed(parseBoolean(savedCollapsedState))
@@ -228,7 +216,6 @@ export function Sidebar({ className }: SidebarProps) {
     if (savedOrder) {
       try {
         const parsedOrder = JSON.parse(savedOrder) as StoredNavItem[]
-
         // Verificar que todos los elementos predeterminados estén presentes
         const allItemsPresent = defaultNavItems.every((item) =>
           parsedOrder.some((savedItem) => savedItem.id === item.id),
@@ -241,7 +228,6 @@ export function Sidebar({ className }: SidebarProps) {
             const bOrder = parsedOrder.find((item) => item.id === b.id)?.order || 0
             return aOrder - bOrder
           })
-
           setNavItems(orderedItems)
         }
       } catch (error) {
@@ -270,7 +256,6 @@ export function Sidebar({ className }: SidebarProps) {
       setNavItems((items) => {
         const oldIndex = items.findIndex((item) => item.id === active.id)
         const newIndex = items.findIndex((item) => item.id === over.id)
-
         const newOrder = arrayMove(items, oldIndex, newIndex)
         setHasChanges(true)
         return newOrder
@@ -313,7 +298,6 @@ export function Sidebar({ className }: SidebarProps) {
   }
 
   // Calcular la posición del indicador
-
   return (
     <div className={cn("pb-12 relative transition-all duration-200", isCollapsed ? "w-16" : "w-64", className)}>
       <div className="space-y-4 py-4">
@@ -321,7 +305,6 @@ export function Sidebar({ className }: SidebarProps) {
           {/* Header con botón de colapso integrado */}
           <div className="flex items-center justify-between mb-4">
             {!isCollapsed && <h2 className="text-lg font-semibold">Sistema de Facturación</h2>}
-
             {/* Botón mejorado */}
             <Button
               variant="ghost"
@@ -338,7 +321,6 @@ export function Sidebar({ className }: SidebarProps) {
 
           <div className="relative">
             {/* Indicador animado */}
-
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={navItems.map((item) => item.id)} strategy={verticalListSortingStrategy}>
                 <div className="space-y-1">
@@ -347,6 +329,7 @@ export function Sidebar({ className }: SidebarProps) {
                     const isActive: boolean = Boolean(
                       pathname === item.href || (item.matchPattern && pathname.includes(item.matchPattern)),
                     )
+
                     return <SortableNavItem key={item.id} item={item} active={isActive} isCollapsed={isCollapsed} />
                   })}
                 </div>
@@ -368,7 +351,7 @@ export function Sidebar({ className }: SidebarProps) {
                 onClick={resetOrder}
                 size="sm"
                 variant="outline"
-                className="w-full flex items-center justify-center border-slate-200 hover:bg-slate-50"
+                className="w-full flex items-center justify-center border-slate-200 hover:bg-slate-50 bg-transparent"
               >
                 <RotateCcw className="mr-2 h-4 w-4" />
                 Restablecer

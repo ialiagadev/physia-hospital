@@ -15,12 +15,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { generateUniqueInvoiceNumber } from "@/lib/invoice-utils"
 
 type InvoiceStatus = "draft" | "issued" | "sent" | "paid"
 
 interface InvoiceStatusSelectorProps {
   invoiceId: number
   currentStatus: InvoiceStatus
+  organizationId: number
+  invoiceType: string
   onStatusChange?: (newStatus: string) => void
   disabled?: boolean
   size?: "sm" | "default" | "lg"
@@ -71,6 +74,8 @@ const defaultStatusConfig = {
 export function InvoiceStatusSelector({
   invoiceId,
   currentStatus,
+  organizationId,
+  invoiceType,
   onStatusChange,
   disabled = false,
   size = "sm",
@@ -78,7 +83,7 @@ export function InvoiceStatusSelector({
   const [isUpdating, setIsUpdating] = useState(false)
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
   const [pendingStatus, setPendingStatus] = useState<InvoiceStatus | null>(null)
-  const [dropdownOpen, setDropdownOpen] = useState(false) // ✅ CONTROLAR DROPDOWN
+  const [dropdownOpen, setDropdownOpen] = useState(false)
   const { toast } = useToast()
 
   const getStatusConfig = (status: string) => {
@@ -90,7 +95,7 @@ export function InvoiceStatusSelector({
       draft: ["issued"],
       issued: ["sent", "paid"],
       sent: ["issued", "paid"],
-      paid: ["issued", "sent"], // ✅ AÑADIDO "sent"
+      paid: ["issued", "sent"],
     }
     return validTransitions[from]?.includes(to) || false
   }
@@ -100,7 +105,7 @@ export function InvoiceStatusSelector({
       draft: ["issued"],
       issued: ["sent", "paid"],
       sent: ["issued", "paid"],
-      paid: ["issued", "sent"], // ✅ AÑADIDO "sent"
+      paid: ["issued", "sent"],
     }
     return validTransitions[currentStatus] || []
   }
@@ -109,7 +114,7 @@ export function InvoiceStatusSelector({
     switch (status) {
       case "issued":
         return currentStatus === "draft"
-          ? "Validar y emitir la factura (se enviará a VeriFactu)"
+          ? "Validar y emitir la factura (se asignará número y enviará a VeriFactu)"
           : "Marcar como emitida"
       case "sent":
         return "Marcar como enviada al cliente"
@@ -120,29 +125,56 @@ export function InvoiceStatusSelector({
     }
   }
 
-  // ✅ FUNCIÓN PARA CANCELAR LIMPIAMENTE
   const handleCancel = () => {
     setShowConfirmDialog(false)
     setPendingStatus(null)
     setIsUpdating(false)
-    // ✅ NO reabrir el dropdown
   }
 
-  // ✅ FUNCIÓN PARA ACTUALIZAR ESTADO
   const updateInvoiceStatus = async (newStatus: InvoiceStatus) => {
     setIsUpdating(true)
-
     try {
       const isFromDraftToIssued = currentStatus === "draft" && newStatus === "issued"
 
       if (isFromDraftToIssued) {
         console.log("🔄 Iniciando cambio de draft a issued...")
 
-        // Actualizar estado en BD
+        // ✅ GENERAR Y ASIGNAR NÚMERO DE FACTURA
+        const { invoiceNumberFormatted, newInvoiceNumber } = await generateUniqueInvoiceNumber(
+          organizationId,
+          invoiceType as any,
+        )
+
+        // ✅ ACTUALIZAR CONTADOR EN ORGANIZACIÓN
+        const getFieldNameForUpdate = (type: string): string => {
+          switch (type) {
+            case "rectificativa":
+              return "last_rectificative_invoice_number"
+            case "simplificada":
+              return "last_simplified_invoice_number"
+            case "normal":
+            default:
+              return "last_invoice_number"
+          }
+        }
+
+        const fieldName = getFieldNameForUpdate(invoiceType)
+        const { error: updateOrgError } = await supabase
+          .from("organizations")
+          .update({ [fieldName]: newInvoiceNumber })
+          .eq("id", organizationId)
+
+        if (updateOrgError) {
+          console.error("Error updating organization:", updateOrgError)
+          throw new Error("Error al reservar el número de factura")
+        }
+
+        // ✅ ACTUALIZAR FACTURA CON NÚMERO Y ESTADO
         const { error: dbError } = await supabase
           .from("invoices")
           .update({
             status: newStatus,
+            invoice_number: invoiceNumberFormatted, // ✅ ASIGNAR NÚMERO AQUÍ
             validated_at: new Date().toISOString(),
           })
           .eq("id", invoiceId)
@@ -151,7 +183,7 @@ export function InvoiceStatusSelector({
           throw new Error(`Error al actualizar el estado: ${dbError.message}`)
         }
 
-        // Enviar a Verifactu
+        // ✅ ENVIAR A VERIFACTU
         try {
           const res = await fetch(`/api/verifactu/send-invoice?invoice_id=${invoiceId}`)
           const data = await res.json()
@@ -162,19 +194,26 @@ export function InvoiceStatusSelector({
 
           toast({
             title: "✅ Factura emitida correctamente",
-            description: "La factura se ha validado y enviado a VeriFactu exitosamente",
+            description: `La factura ${invoiceNumberFormatted} se ha validado y enviado a VeriFactu exitosamente`,
           })
         } catch (verifactuError) {
           console.error("❌ Error en Verifactu, haciendo rollback...")
 
-          // Rollback
+          // ✅ ROLLBACK COMPLETO
           await supabase
             .from("invoices")
             .update({
               status: "draft",
+              invoice_number: null, // ✅ QUITAR NÚMERO EN ROLLBACK
               validated_at: null,
             })
             .eq("id", invoiceId)
+
+          // ✅ ROLLBACK DEL CONTADOR
+          await supabase
+            .from("organizations")
+            .update({ [fieldName]: newInvoiceNumber - 1 })
+            .eq("id", organizationId)
 
           toast({
             title: "Error en Verifactu",
@@ -184,7 +223,7 @@ export function InvoiceStatusSelector({
           return
         }
       } else {
-        // Otros cambios de estado
+        // ✅ OTROS CAMBIOS DE ESTADO (SIN CAMBIAR NÚMERO)
         const { error: dbError } = await supabase.from("invoices").update({ status: newStatus }).eq("id", invoiceId)
 
         if (dbError) {
@@ -197,7 +236,7 @@ export function InvoiceStatusSelector({
         })
       }
 
-      // Notificar cambio
+      // ✅ NOTIFICAR CAMBIO
       if (onStatusChange) {
         onStatusChange(newStatus)
       }
@@ -213,16 +252,13 @@ export function InvoiceStatusSelector({
     }
   }
 
-  // ✅ CONFIRMAR CAMBIO DESDE EL MODAL
   const confirmStatusChange = async () => {
     if (!pendingStatus) return
-
-    setShowConfirmDialog(false) // ✅ CERRAR MODAL PRIMERO
+    setShowConfirmDialog(false)
     await updateInvoiceStatus(pendingStatus)
     setPendingStatus(null)
   }
 
-  // ✅ MANEJAR CLICK EN ESTADO
   const handleStatusClick = (newStatus: InvoiceStatus) => {
     if (newStatus === currentStatus || disabled || isUpdating) return
 
@@ -237,18 +273,14 @@ export function InvoiceStatusSelector({
       return
     }
 
-    // ✅ CERRAR DROPDOWN PRIMERO
     setDropdownOpen(false)
 
-    // ✅ SI ES DRAFT -> ISSUED, MOSTRAR CONFIRMACIÓN
     if (currentStatus === "draft" && newStatus === "issued") {
       setPendingStatus(newStatus)
-      // ✅ USAR setTimeout PARA EVITAR CONFLICTOS DE FOCUS
       setTimeout(() => {
         setShowConfirmDialog(true)
       }, 100)
     } else {
-      // ✅ OTROS CAMBIOS DIRECTOS
       updateInvoiceStatus(newStatus)
     }
   }
@@ -268,7 +300,6 @@ export function InvoiceStatusSelector({
 
   return (
     <>
-      {/* ✅ DROPDOWN CONTROLADO */}
       <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
         <DropdownMenuTrigger asChild>
           <Button
@@ -289,12 +320,10 @@ export function InvoiceStatusSelector({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-80">
           <div className="px-2 py-1.5 text-sm font-medium text-gray-700 border-b">Cambiar estado de la factura</div>
-
           {availableStatuses.map((status) => {
             const statusCfg = getStatusConfig(status)
             const StatusIcon = statusCfg.icon
             const isCurrent = status === currentStatus
-
             return (
               <DropdownMenuItem
                 key={status}
@@ -312,33 +341,29 @@ export function InvoiceStatusSelector({
             )
           })}
 
-          {/* Mensajes informativos */}
           {currentStatus === "draft" && (
             <div className="px-3 py-2 text-xs text-yellow-600 bg-yellow-50 border-t flex items-start gap-2">
               <AlertTriangle className="w-3 h-3 flex-shrink-0 mt-0.5" />
               <div>
                 <div className="font-medium">📝 Factura en borrador</div>
                 <div className="text-yellow-700 mt-0.5">
-                  Al emitir se validará fiscalmente con VeriFactu y no podrá volver a borrador.
+                  Al emitir se asignará número, se validará fiscalmente con VeriFactu y no podrá volver a borrador.
                 </div>
               </div>
             </div>
           )}
-
           {currentStatus === "issued" && (
             <div className="px-3 py-2 text-xs text-blue-600 bg-blue-50 border-t">
               <div className="font-medium">✅ Factura validada (VeriFactu)</div>
               <div className="text-blue-700 mt-0.5">Puede enviarse al cliente o marcarse como pagada.</div>
             </div>
           )}
-
           {currentStatus === "sent" && (
             <div className="px-3 py-2 text-xs text-purple-600 bg-purple-50 border-t">
               <div className="font-medium">📤 Factura enviada</div>
               <div className="text-purple-700 mt-0.5">Puede marcarse como pagada o volver al estado emitida.</div>
             </div>
           )}
-
           {currentStatus === "paid" && (
             <div className="px-3 py-2 text-xs text-green-600 bg-green-50 border-t">
               <div className="font-medium">💰 Factura pagada</div>
@@ -348,7 +373,6 @@ export function InvoiceStatusSelector({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* ✅ MODAL INDEPENDIENTE */}
       <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -360,6 +384,10 @@ export function InvoiceStatusSelector({
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
                 <p className="text-sm text-amber-800 font-medium mb-2">⚠️ Esta acción es IRREVERSIBLE</p>
                 <div className="text-sm text-amber-700 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1 h-1 bg-amber-600 rounded-full"></div>
+                    <span>Se asignará automáticamente el número de factura</span>
+                  </div>
                   <div className="flex items-center gap-2">
                     <div className="w-1 h-1 bg-amber-600 rounded-full"></div>
                     <span>Se enviará automáticamente a VeriFactu</span>
@@ -374,7 +402,6 @@ export function InvoiceStatusSelector({
                   </div>
                 </div>
               </div>
-
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
                 <p className="text-sm text-blue-800">
                   <strong>📋 Qué sucederá:</strong> La factura se marcará como "Emitida", se generará el código QR de

@@ -9,7 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Shield, CheckCircle, AlertCircle, Building2, Mail, Phone, MapPin, Stethoscope } from "lucide-react"
+import { Shield, CheckCircle, AlertCircle, Building2, Mail, Phone, MapPin, Stethoscope } from 'lucide-react'
 import { SignaturePad } from "@/components/signature-pad"
 
 interface OrganizationData {
@@ -62,11 +62,12 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
   const [dni, setDni] = useState("")
   const [signature, setSignature] = useState<string | null>(null)
 
-  // ✅ CHECKBOXES SEGÚN LA BASE DE DATOS Y CATEGORÍA
+  // ✅ CHECKBOXES CON IDs ÚNICOS
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [documentReadUnderstood, setDocumentReadUnderstood] = useState(false)
+  const [aiCommunicationsAccepted, setAiCommunicationsAccepted] = useState(false) // ✅ OPCIONAL
   const [marketingNotificationsAccepted, setMarketingNotificationsAccepted] = useState(false)
-  const [medicalTreatmentAccepted, setMedicalTreatmentAccepted] = useState(false) // ✅ NUEVO
+  const [medicalTreatmentAccepted, setMedicalTreatmentAccepted] = useState(false)
 
   useEffect(() => {
     validateToken()
@@ -89,7 +90,7 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
         hasOrganization: !!data.data?.organization,
         organizationName: data.data?.organization?.name,
         placeholdersReplaced: data.data?.processing_info?.placeholders_replaced,
-        category: data.data?.consent_form?.category, // ✅ LOG CATEGORÍA
+        category: data.data?.consent_form?.category,
       })
 
       if (!response.ok || !data.success) {
@@ -115,20 +116,45 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
     return consentData?.consent_form?.category !== "general"
   }
 
+  // ✅ FUNCIÓN PARA VERIFICAR SI TODOS LOS CAMPOS OBLIGATORIOS ESTÁN COMPLETOS
+  const areRequiredFieldsValid = () => {
+    const basicFieldsValid = fullName.trim() && dni.trim() && signature
+    const requiredCheckboxesValid = termsAccepted && documentReadUnderstood
+    const medicalTreatmentValid = !requiresMedicalTreatment() || medicalTreatmentAccepted
+    
+    console.log("🔍 VALIDATION DEBUG:", {
+      basicFieldsValid: !!basicFieldsValid,
+      termsAccepted,
+      documentReadUnderstood,
+      aiCommunicationsAccepted, // ✅ SOLO PARA DEBUG - NO AFECTA VALIDACIÓN
+      medicalTreatmentRequired: requiresMedicalTreatment(),
+      medicalTreatmentAccepted,
+      medicalTreatmentValid,
+      finalResult: !!(basicFieldsValid && requiredCheckboxesValid && medicalTreatmentValid)
+    })
+    
+    return basicFieldsValid && requiredCheckboxesValid && medicalTreatmentValid
+  }
+
   const handleSign = async () => {
     if (!fullName.trim() || !dni.trim() || !signature) {
       setError("Por favor, complete todos los campos requeridos")
       return
     }
 
-    // ✅ VALIDAR CHECKBOXES OBLIGATORIOS (INCLUYENDO TRATAMIENTO SI ES NECESARIO)
-    const requiredCheckboxes = [termsAccepted, documentReadUnderstood]
-    if (requiresMedicalTreatment()) {
-      requiredCheckboxes.push(medicalTreatmentAccepted)
+    // ✅ VALIDACIÓN EXPLÍCITA SIN aiCommunicationsAccepted
+    if (!termsAccepted) {
+      setError("Debe aceptar el consentimiento para el tratamiento de datos")
+      return
     }
 
-    if (!requiredCheckboxes.every(Boolean)) {
-      setError("Debe aceptar todos los consentimientos obligatorios marcados con *")
+    if (!documentReadUnderstood) {
+      setError("Debe confirmar que ha leído y entendido el documento")
+      return
+    }
+
+    if (requiresMedicalTreatment() && !medicalTreatmentAccepted) {
+      setError("Debe aceptar el consentimiento para el tratamiento médico específico")
       return
     }
 
@@ -143,8 +169,9 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
         hasSignature: !!signature,
         termsAccepted,
         documentReadUnderstood,
+        aiCommunicationsAccepted, // ✅ OPCIONAL - Solo para log
         marketingNotificationsAccepted,
-        medicalTreatmentAccepted: requiresMedicalTreatment() ? medicalTreatmentAccepted : undefined, // ✅ CONDICIONAL
+        medicalTreatmentAccepted: requiresMedicalTreatment() ? medicalTreatmentAccepted : undefined,
         category: consentData?.consent_form?.category,
         requiresMedicalTreatment: requiresMedicalTreatment(),
       })
@@ -157,6 +184,7 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
         terms_accepted: termsAccepted,
         document_read_understood: documentReadUnderstood,
         marketing_notifications_accepted: marketingNotificationsAccepted,
+        // ✅ NOTA: aiCommunicationsAccepted no se envía al backend
       }
 
       // ✅ AGREGAR TRATAMIENTO MÉDICO SOLO SI ES REQUERIDO
@@ -312,7 +340,7 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
             </Card>
           </div>
 
-          {/* ✅ FORMULARIO DE FIRMA SIMPLIFICADO */}
+          {/* ✅ FORMULARIO DE FIRMA CORREGIDO */}
           <div className="lg:col-span-1">
             <Card className="sticky top-8">
               <CardHeader>
@@ -351,43 +379,58 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
 
                 <Separator />
 
-                {/* ✅ CHECKBOXES SEGÚN BASE DE DATOS Y CATEGORÍA */}
+                {/* ✅ CHECKBOXES CON IDs ÚNICOS */}
                 <div className="space-y-3">
                   <Label className="text-sm font-medium">Consentimientos requeridos:</Label>
 
                   <div className="space-y-3">
+                    {/* ✅ TRATAMIENTO DE DATOS (OBLIGATORIO) */}
                     <div className="flex items-start space-x-2">
                       <Checkbox
-                        id="terms"
+                        id="consent-terms-data-treatment"
                         checked={termsAccepted}
                         onCheckedChange={(checked) => setTermsAccepted(checked as boolean)}
                       />
-                      <Label htmlFor="terms" className="text-xs leading-relaxed">
+                      <Label htmlFor="consent-terms-data-treatment" className="text-xs leading-relaxed">
                         <span className="text-red-500">*</span> Doy mi consentimiento para el tratamiento de mis datos
                         conforme a las finalidades descritas.
                       </Label>
                     </div>
 
-                                            <div className="flex items-start space-x-2">
-                        <Checkbox
-                            id="document"
-                            checked={documentReadUnderstood}
-                            onCheckedChange={(checked) => setDocumentReadUnderstood(checked as boolean)}
-                        />
-                        <Label htmlFor="document" className="text-xs leading-relaxed">
-                            Autorizo las comunicaciones automatizadas por asistente virtual de IA y el uso de los canales indicados. 
-                        </Label>
-                        </div>
+                    {/* ✅ DOCUMENTO LEÍDO (OBLIGATORIO) */}
+                    <div className="flex items-start space-x-2">
+                      <Checkbox
+                        id="consent-document-read-understood"
+                        checked={documentReadUnderstood}
+                        onCheckedChange={(checked) => setDocumentReadUnderstood(checked as boolean)}
+                      />
+                      <Label htmlFor="consent-document-read-understood" className="text-xs leading-relaxed">
+                        <span className="text-red-500">*</span> He leído y entendido el documento completo.
+                      </Label>
+                    </div>
+
+                    {/* ✅ COMUNICACIONES DE IA (OPCIONAL) - ID ÚNICO */}
+                    <div className="flex items-start space-x-2">
+                      <Checkbox
+                        id="consent-ai-communications-optional"
+                        checked={aiCommunicationsAccepted}
+                        onCheckedChange={(checked) => setAiCommunicationsAccepted(checked as boolean)}
+                      />
+                      <Label htmlFor="consent-ai-communications-optional" className="text-xs leading-relaxed">
+                        Autorizo las comunicaciones automatizadas por asistente virtual de IA y el uso de los canales
+                        indicados.
+                      </Label>
+                    </div>
 
                     {/* ✅ CHECKBOX DE TRATAMIENTO MÉDICO CONDICIONAL */}
                     {requiresMedicalTreatment() && (
                       <div className="flex items-start space-x-2">
                         <Checkbox
-                          id="medical-treatment"
+                          id="consent-medical-treatment-required"
                           checked={medicalTreatmentAccepted}
                           onCheckedChange={(checked) => setMedicalTreatmentAccepted(checked as boolean)}
                         />
-                        <Label htmlFor="medical-treatment" className="text-xs leading-relaxed">
+                        <Label htmlFor="consent-medical-treatment-required" className="text-xs leading-relaxed">
                           <span className="text-red-500">*</span>
                           <Stethoscope className="w-3 h-3 inline mx-1" />
                           Doy mi consentimiento para el tratamiento médico específico descrito en este documento.
@@ -395,13 +438,14 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
                       </div>
                     )}
 
+                    {/* ✅ MARKETING (OPCIONAL) */}
                     <div className="flex items-start space-x-2">
                       <Checkbox
-                        id="marketing"
+                        id="consent-marketing-optional"
                         checked={marketingNotificationsAccepted}
                         onCheckedChange={(checked) => setMarketingNotificationsAccepted(checked as boolean)}
                       />
-                      <Label htmlFor="marketing" className="text-xs leading-relaxed">
+                      <Label htmlFor="consent-marketing-optional" className="text-xs leading-relaxed">
                         Doy mi consentimiento para recibir información comercial y promociones.
                       </Label>
                     </div>
@@ -439,21 +483,19 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
                   </Alert>
                 )}
 
+                {/* ✅ BOTÓN CON VALIDACIÓN USANDO FUNCIÓN HELPER */}
                 <Button
                   onClick={handleSign}
-                  disabled={
-                    signing ||
-                    !fullName.trim() ||
-                    !dni.trim() ||
-                    !signature ||
-                    !termsAccepted ||
-                    !documentReadUnderstood ||
-                    (requiresMedicalTreatment() && !medicalTreatmentAccepted) // ✅ VALIDACIÓN CONDICIONAL
-                  }
+                  disabled={signing || !areRequiredFieldsValid()}
                   className="w-full"
                 >
                   {signing ? "Firmando..." : "Firmar consentimiento"}
                 </Button>
+
+                {/* ✅ DEBUG INFO - REMOVER EN PRODUCCIÓN */}
+                <div className="text-xs text-gray-400 p-2 bg-gray-50 rounded">
+                  <p>Debug: Términos={termsAccepted ? '✓' : '✗'}, Documento={documentReadUnderstood ? '✓' : '✗'}, IA={aiCommunicationsAccepted ? '✓' : '✗'}, Médico={requiresMedicalTreatment() ? (medicalTreatmentAccepted ? '✓' : '✗') : 'N/A'}</p>
+                </div>
 
                 {/* ✅ INFO ORGANIZACIÓN SIMPLIFICADA */}
                 {consentData.organization && (

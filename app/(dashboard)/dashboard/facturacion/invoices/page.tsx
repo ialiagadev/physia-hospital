@@ -30,11 +30,70 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 
+// Tipos e interfaces
+type InvoiceStatus = "draft" | "issued" | "sent" | "paid"
+
 interface DateFilters {
   startDate?: Date
   endDate?: Date
   year?: string
   month?: string
+}
+
+interface InvoiceData {
+  id: number
+  invoice_number: string | null
+  issue_date: string
+  status: InvoiceStatus
+  invoice_type: string
+  organization_id: number
+  base_amount: number
+  vat_amount: number
+  irpf_amount: number
+  retention_amount: number
+  total_amount: number
+  payment_method: string | null
+  payment_method_other: string | null
+  notes?: string
+  created_at: string
+  due_date?: string
+  verifactu_status?: string | null
+  verifactu_qr_code?: string | null
+  verifactu_response?: any
+  clients?: {
+    id: number
+    name: string
+    tax_id: string
+    address?: string
+    postal_code?: string
+    city?: string
+    province?: string
+    country?: string
+    email?: string
+    phone?: string
+    client_type: string
+  }
+  organizations?: {
+    id: number
+    name: string
+    tax_id?: string
+    address?: string
+    postal_code?: string
+    city?: string
+    province?: string
+    country?: string
+    email?: string
+    phone?: string
+    invoice_prefix?: string
+    logo_url?: string
+    logo_path?: string
+  }
+}
+
+interface GenerationResults {
+  generated: number
+  skipped: number
+  errors: string[]
 }
 
 // Función para formatear el método de pago
@@ -55,37 +114,59 @@ const formatPaymentMethod = (paymentMethod: string | null, paymentMethodOther: s
 }
 
 export default function InvoicesPage() {
-  const [invoices, setInvoices] = useState<any[]>([])
+  // Estados principales
+  const [invoices, setInvoices] = useState<InvoiceData[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedInvoices, setSelectedInvoices] = useState<Set<number>>(new Set())
   const [dateFilters, setDateFilters] = useState<DateFilters>({})
   const [showFilters, setShowFilters] = useState(false)
   const [isExportingCSV, setIsExportingCSV] = useState(false)
   const [downloadingInvoices, setDownloadingInvoices] = useState<Set<number>>(new Set())
-  const { toast } = useToast()
+
+  // Estados para generación masiva
   const [generateModalOpen, setGenerateModalOpen] = useState(false)
   const [selectedDateString, setSelectedDateString] = useState<string>(new Date().toISOString().split("T")[0])
   const [isGenerating, setIsGenerating] = useState(false)
-  const [generationResults, setGenerationResults] = useState<{
-    generated: number
-    skipped: number
-    errors: string[]
-  } | null>(null)
+  const [generationResults, setGenerationResults] = useState<GenerationResults | null>(null)
 
-  // Usar el AuthContext para obtener la información del usuario
+  const { toast } = useToast()
   const { userProfile } = useAuth()
 
+  // Función para cargar facturas
   const loadInvoices = async () => {
     setLoading(true)
     try {
-      // ✅ Incluir campos de Verifactu en la consulta
       let query = supabase
         .from("invoices")
         .select(`
           *,
           clients (
+            id,
             name,
-            tax_id
+            tax_id,
+            address,
+            postal_code,
+            city,
+            province,
+            country,
+            email,
+            phone,
+            client_type
+          ),
+          organizations (
+            id,
+            name,
+            tax_id,
+            address,
+            postal_code,
+            city,
+            province,
+            country,
+            email,
+            phone,
+            invoice_prefix,
+            logo_url,
+            logo_path
           )
         `)
         .order("created_at", { ascending: false })
@@ -95,6 +176,7 @@ export default function InvoicesPage() {
         query = query.eq("organization_id", userProfile.organization_id)
       }
 
+      // Aplicar filtros de fecha
       if (dateFilters.startDate) {
         query = query.gte("issue_date", format(dateFilters.startDate, "yyyy-MM-dd"))
       }
@@ -122,6 +204,7 @@ export default function InvoicesPage() {
       setInvoices(data || [])
       setSelectedInvoices(new Set())
     } catch (error) {
+      console.error("Error loading invoices:", error)
       toast({
         title: "Error",
         description: "No se pudieron cargar las facturas",
@@ -132,24 +215,20 @@ export default function InvoicesPage() {
     }
   }
 
+  // Effect para cargar facturas
   useEffect(() => {
     if (userProfile?.organization_id) {
       loadInvoices()
     }
   }, [userProfile?.organization_id, dateFilters]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Función para manejar cambios de estado individuales
   const handleStatusChange = (invoiceId: number, newStatus: string) => {
-    setInvoices((currentInvoices) =>
-      currentInvoices.map((invoice) => {
-        if (invoice.id === invoiceId) {
-          return { ...invoice, status: newStatus }
-        }
-        return invoice
-      }),
-    )
+    // Recargar la lista completa para obtener números de factura actualizados
+    loadInvoices()
   }
 
-  // ✅ FUNCIÓN ACTUALIZADA PARA MANEJAR CAMBIOS DE ESTADO MASIVOS
+  // Función para manejar cambios de estado masivos
   const handleBulkStatusChanged = () => {
     // Recargar la lista de facturas después del cambio masivo
     loadInvoices()
@@ -157,10 +236,12 @@ export default function InvoicesPage() {
     setSelectedInvoices(new Set())
   }
 
+  // Función para manejar descargas completadas
   const handleInvoicesDownloaded = (invoiceIds: number[]) => {
     // Ya no es necesario cambiar el estado porque las facturas se crean directamente como "sent"
   }
 
+  // Función para exportar CSV
   const handleExportCSV = async () => {
     if (selectedInvoices.size === 0) {
       toast({
@@ -236,8 +317,9 @@ export default function InvoicesPage() {
     }
   }
 
+  // Función para generar datos CSV
   const generateCSVData = (invoices: any[], lines: any[]) => {
-    // Encabezados del CSV - AÑADIDO MÉTODO DE PAGO
+    // Encabezados del CSV
     const headers = [
       "Número Factura",
       "Fecha Emisión",
@@ -259,7 +341,7 @@ export default function InvoicesPage() {
       "IRPF",
       "Retenciones",
       "Total",
-      "Método de Pago", // NUEVA COLUMNA
+      "Método de Pago",
       "Líneas de Factura",
       "Profesionales",
       "Notas",
@@ -315,7 +397,7 @@ export default function InvoicesPage() {
         invoice.irpf_amount?.toFixed(2) || "0.00",
         invoice.retention_amount?.toFixed(2) || "0.00",
         invoice.total_amount?.toFixed(2) || "0.00",
-        formatPaymentMethod(invoice.payment_method, invoice.payment_method_other), // NUEVA COLUMNA
+        formatPaymentMethod(invoice.payment_method, invoice.payment_method_other),
         linesText,
         professionalsText,
         invoice.notes || "",
@@ -327,6 +409,7 @@ export default function InvoicesPage() {
     return [headers, ...rows]
   }
 
+  // Función para descargar CSV
   const downloadCSV = (data: string[][], filename: string) => {
     // Convertir datos a formato CSV con punto y coma como separador
     const csvContent = data
@@ -360,6 +443,7 @@ export default function InvoicesPage() {
     URL.revokeObjectURL(url)
   }
 
+  // Funciones para manejo de selección
   const handleSelectInvoice = (invoiceId: number, checked: boolean) => {
     const newSelected = new Set(selectedInvoices)
     if (checked) {
@@ -378,9 +462,11 @@ export default function InvoicesPage() {
     }
   }
 
+  // Estados de selección
   const isAllSelected = invoices.length > 0 && selectedInvoices.size === invoices.length
   const isIndeterminate = selectedInvoices.size > 0 && selectedInvoices.size < invoices.length
 
+  // Funciones para filtros de fecha
   const handleDateFilterChange = (key: keyof DateFilters, value: any) => {
     setDateFilters((prev) => ({
       ...prev,
@@ -394,6 +480,7 @@ export default function InvoicesPage() {
 
   const hasActiveFilters = Object.values(dateFilters).some((value) => value !== undefined && value !== "")
 
+  // Datos para filtros
   const currentYear = new Date().getFullYear()
   const years = Array.from({ length: 10 }, (_, i) => currentYear - i)
 
@@ -412,6 +499,7 @@ export default function InvoicesPage() {
     { value: "12", label: "Diciembre" },
   ]
 
+  // Función para generar facturas diarias
   const generateDailyInvoices = async () => {
     if (!selectedDateString) {
       toast({
@@ -432,14 +520,13 @@ export default function InvoicesPage() {
     }
 
     setIsGenerating(true)
-    const results = { generated: 0, skipped: 0, errors: [] as string[] }
+    const results: GenerationResults = { generated: 0, skipped: 0, errors: [] }
 
     try {
       const dateStr = selectedDateString
-      // Convertir a number igual que en nueva factura
       const orgId = Number.parseInt(userProfile.organization_id.toString())
 
-      // Obtener organización completa - igual que en nueva factura
+      // Obtener organización completa
       const { data: orgData, error: orgError } = await supabase
         .from("organizations")
         .select("*")
@@ -521,7 +608,7 @@ export default function InvoicesPage() {
       // Generar facturas por cliente
       for (const [clientId, { client, appointments: clientAppointments }] of Object.entries(appointmentsByClient)) {
         try {
-          // Generar número de factura - igual que en nueva factura
+          // Generar número de factura
           const { invoiceNumberFormatted, newInvoiceNumber } = await generateUniqueInvoiceNumber(orgId, "normal")
 
           // Calcular totales
@@ -545,14 +632,14 @@ export default function InvoicesPage() {
           const vatAmount = baseAmount * 0.21
           const totalAmount = baseAmount + vatAmount
 
-          // Información del cliente para las notas - igual que en nueva factura
+          // Información del cliente para las notas
           const clientInfoText = `Cliente: ${client.name}${client.tax_id ? `, CIF/NIF: ${client.tax_id}` : ""}${client.address ? `, Dirección: ${client.address}` : ""}${client.postal_code ? `, ${client.postal_code}` : ""} ${client.city || ""}${client.province ? `, ${client.province}` : ""}`
 
           const additionalNotes = `Factura generada automáticamente para citas del ${format(new Date(selectedDateString), "dd/MM/yyyy", { locale: es })}`
 
           const fullNotes = clientInfoText + `\n\nNotas adicionales: ${additionalNotes}`
 
-          // Crear factura - estructura idéntica a nueva factura + MÉTODO DE PAGO POR DEFECTO
+          // Crear factura
           const { data: invoiceData, error: invoiceError } = await supabase
             .from("invoices")
             .insert({
@@ -567,7 +654,7 @@ export default function InvoicesPage() {
               irpf_amount: 0,
               retention_amount: 0,
               total_amount: totalAmount,
-              payment_method: "tarjeta", // MÉTODO DE PAGO POR DEFECTO
+              payment_method: "tarjeta",
               notes: fullNotes,
             })
             .select()
@@ -578,7 +665,7 @@ export default function InvoicesPage() {
             continue
           }
 
-          // Crear líneas de factura - igual que en nueva factura
+          // Crear líneas de factura
           const invoiceLinesData = invoiceLines.map((line: any) => ({
             invoice_id: invoiceData.id,
             description: line.description,
@@ -599,14 +686,14 @@ export default function InvoicesPage() {
             continue
           }
 
-          // Actualizar contador de organización - igual que en nueva factura
+          // Actualizar contador de organización
           const { error: updateOrgError } = await supabase
             .from("organizations")
             .update({ last_invoice_number: newInvoiceNumber })
             .eq("id", orgId)
 
           if (updateOrgError) {
-            // Error handled silently pero continúa
+            console.error("Error updating organization counter:", updateOrgError)
           }
 
           results.generated++
@@ -634,8 +721,9 @@ export default function InvoicesPage() {
     }
   }
 
+  // Función para descargar factura individual
   const handleDownloadInvoice = async (invoiceId: number, invoiceStatus: string) => {
-    // ✅ VERIFICAR SI ES BORRADOR
+    // Verificar si es borrador
     if (invoiceStatus === "draft") {
       toast({
         title: "Acción no permitida",
@@ -649,7 +737,7 @@ export default function InvoicesPage() {
     setDownloadingInvoices((prev) => new Set([...prev, invoiceId]))
 
     try {
-      // ✅ Obtener datos completos de la factura INCLUYENDO CAMPOS DE VERIFACTU
+      // Obtener datos completos de la factura
       const { data: invoiceData, error: invoiceError } = await supabase
         .from("invoices")
         .select(`
@@ -664,7 +752,7 @@ export default function InvoicesPage() {
         throw new Error("No se pudo obtener la información de la factura")
       }
 
-      // Obtener líneas de factura - IGUAL QUE BULKDOWNLOADBUTTON
+      // Obtener líneas de factura
       const { data: invoiceLines, error: linesError } = await supabase
         .from("invoice_lines")
         .select("*")
@@ -675,10 +763,10 @@ export default function InvoicesPage() {
         throw new Error("No se pudieron obtener las líneas de la factura")
       }
 
-      // ✅ Importar la función generatePdf (mantener el nombre original)
+      // Importar la función generatePdf
       const { generatePdf } = await import("@/lib/pdf-generator")
 
-      // ✅ Preparar los datos para el PDF INCLUYENDO VERIFACTU
+      // Preparar los datos para el PDF
       const invoiceForPdf = {
         id: invoiceData.id,
         invoice_number: invoiceData.invoice_number,
@@ -695,7 +783,6 @@ export default function InvoicesPage() {
         signature: invoiceData.signature,
         payment_method: invoiceData.payment_method,
         payment_method_other: invoiceData.payment_method_other,
-        // ✅ CAMPOS DE VERIFACTU
         verifactu_qr_code: invoiceData.verifactu_qr_code || null,
         verifactu_status: invoiceData.verifactu_status || null,
         verifactu_response: invoiceData.verifactu_response || null,
@@ -727,7 +814,7 @@ export default function InvoicesPage() {
         },
       }
 
-      // Preparar las líneas para el PDF - VALIDAR IGUAL QUE BULKDOWNLOADBUTTON
+      // Preparar las líneas para el PDF
       const linesForPdf = (invoiceLines || []).map((line) => ({
         id: crypto.randomUUID(),
         description: line.description,
@@ -740,14 +827,6 @@ export default function InvoicesPage() {
         line_amount: Number(line.line_amount) || 0,
         professional_id: line.professional_id,
       }))
-
-      // ✅ Debug: Verificar datos de Verifactu
-      console.log("Datos de Verifactu para PDF:", {
-        invoice_number: invoiceForPdf.invoice_number,
-        verifactu_status: invoiceForPdf.verifactu_status,
-        has_qr: !!invoiceForPdf.verifactu_qr_code,
-        qr_length: invoiceForPdf.verifactu_qr_code?.length || 0,
-      })
 
       // Generar el PDF
       const filename = `factura-${invoiceData.invoice_number || invoiceId}.pdf`
@@ -791,6 +870,7 @@ export default function InvoicesPage() {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Facturas</h1>
@@ -824,6 +904,7 @@ export default function InvoicesPage() {
         </div>
       </div>
 
+      {/* Filtros */}
       {showFilters && (
         <Card>
           <CardHeader className="pb-4">
@@ -926,6 +1007,7 @@ export default function InvoicesPage() {
         </Card>
       )}
 
+      {/* Barra de acciones para facturas seleccionadas */}
       {selectedInvoices.size > 0 && (
         <Card className="border-primary/20 bg-primary/5">
           <CardContent className="pt-6">
@@ -943,7 +1025,6 @@ export default function InvoicesPage() {
                   selectedInvoiceIds={Array.from(selectedInvoices)}
                   onDownloadComplete={handleInvoicesDownloaded}
                 />
-                {/* ✅ COMPONENTE DE CAMBIO DE ESTADO MASIVO */}
                 <BulkStatusSelector
                   selectedInvoiceIds={Array.from(selectedInvoices)}
                   onStatusChanged={handleBulkStatusChanged}
@@ -957,6 +1038,7 @@ export default function InvoicesPage() {
         </Card>
       )}
 
+      {/* Tabla de facturas */}
       <div className="rounded-md border">
         <Table>
           <TableHeader>
@@ -998,7 +1080,7 @@ export default function InvoicesPage() {
                     />
                   </TableCell>
                   <TableCell className="font-medium">
-                    {invoice.status === "draft" ? "BORRADOR" : invoice.invoice_number}
+                    {invoice.status === "draft" ? "BORRADOR" : invoice.invoice_number || "Sin asignar"}
                   </TableCell>
                   <TableCell>{new Date(invoice.issue_date).toLocaleDateString("es-ES")}</TableCell>
                   <TableCell>{invoice.clients?.name || "-"}</TableCell>
@@ -1006,6 +1088,8 @@ export default function InvoicesPage() {
                     <InvoiceStatusSelector
                       invoiceId={invoice.id}
                       currentStatus={invoice.status}
+                      organizationId={invoice.organization_id}
+                      invoiceType={invoice.invoice_type || "normal"}
                       size="sm"
                       onStatusChange={(newStatus) => handleStatusChange(invoice.id, newStatus)}
                     />
@@ -1018,7 +1102,7 @@ export default function InvoicesPage() {
                   <TableCell className="text-right">{invoice.total_amount.toFixed(2)} €</TableCell>
                   <TableCell className="text-right">
                     <div className="flex gap-1 justify-end">
-                      {/* ✅ BOTÓN DE DESCARGA CONDICIONAL */}
+                      {/* Botón de descarga condicional */}
                       {invoice.status === "draft" ? (
                         <Button
                           variant="ghost"
@@ -1060,6 +1144,7 @@ export default function InvoicesPage() {
         </Table>
       </div>
 
+      {/* Modal para generar facturas diarias */}
       <Dialog open={generateModalOpen} onOpenChange={setGenerateModalOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

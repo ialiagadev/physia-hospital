@@ -12,7 +12,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { generateUniqueInvoiceNumber } from "@/lib/invoice-utils"
 import { InvoiceNumberConfigModal } from "@/components/invoices/invoice-number-config-modal"
 import type { InvoiceType } from "@/lib/invoice-types"
 import { saveBase64ImageToStorage } from "@/lib/storage-utils"
@@ -24,7 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Plus, Trash2, Settings, Percent, Search, X } from "lucide-react"
+import { Plus, Trash2, Settings, Percent, Search, X, Info } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { SignaturePad } from "@/components/signature-pad"
 import { useToast } from "@/hooks/use-toast"
@@ -204,7 +203,6 @@ export default function OptimizedNewInvoicePage() {
   const [rectificativeData, setRectificativeData] = useState(INITIAL_RECTIFICATIVE_DATA)
   const [invoiceLines, setInvoiceLines] = useState<InvoiceLine[]>([{ ...INITIAL_INVOICE_LINE }])
   const [formData, setFormData] = useState(INITIAL_FORM_DATA)
-  const [suggestedInvoiceNumber, setSuggestedInvoiceNumber] = useState("")
 
   // Debounce para búsqueda de clientes
   const debouncedSearchQuery = useDebounce(clientSearchQuery, 300)
@@ -274,6 +272,7 @@ export default function OptimizedNewInvoicePage() {
       if (clientsError) {
         throw new Error("Error al obtener los clientes")
       }
+
       setClients(clientsData || [])
     } catch (err) {
       console.error("Error fetching clients:", err)
@@ -292,6 +291,7 @@ export default function OptimizedNewInvoicePage() {
       if (servicesError) {
         throw new Error("Error al obtener los servicios")
       }
+
       setServices(servicesData || [])
     } catch (err) {
       console.error("Error fetching services:", err)
@@ -311,6 +311,7 @@ export default function OptimizedNewInvoicePage() {
       if (professionalsError) {
         throw new Error("Error al obtener los profesionales")
       }
+
       setProfessionals(professionalsData || [])
     } catch (err) {
       console.error("Error fetching professionals:", err)
@@ -345,8 +346,9 @@ export default function OptimizedNewInvoicePage() {
         `)
           .eq("organization_id", organizationId)
           .eq("invoice_type", "normal")
+          .not("invoice_number", "is", null) // Solo facturas con número asignado
           .order("created_at", { ascending: false })
-          .limit(100) // Limitar para mejorar rendimiento
+          .limit(100)
 
         if (invoicesError) {
           console.error("Error fetching invoices:", invoicesError)
@@ -450,19 +452,6 @@ export default function OptimizedNewInvoicePage() {
     [selectedOrganization],
   )
 
-  const updateSuggestedNumber = useCallback(async () => {
-    if (!selectedOrganization) return
-
-    try {
-      setError(null)
-      const { invoiceNumberFormatted } = await generateUniqueInvoiceNumber(selectedOrganization.id, invoiceType)
-      setSuggestedInvoiceNumber(invoiceNumberFormatted)
-    } catch (error) {
-      setSuggestedInvoiceNumber(`ERROR-${Date.now()}`)
-      setError(`Error al generar número de factura: ${error instanceof Error ? error.message : String(error)}`)
-    }
-  }, [selectedOrganization, invoiceType])
-
   // Handlers memoizados
   const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
@@ -517,7 +506,6 @@ export default function OptimizedNewInvoicePage() {
     setIsNewClient(false)
     setClientSearchOpen(false)
     setClientSearchQuery(client.name)
-
     setFormData((prev) => ({
       ...prev,
       client_name: client.name,
@@ -605,8 +593,8 @@ export default function OptimizedNewInvoicePage() {
   }, [])
 
   const handleConfigSaved = useCallback(async () => {
-    await updateSuggestedNumber()
-  }, [updateSuggestedNumber])
+    // No necesitamos actualizar número sugerido ya que no se muestra
+  }, [])
 
   const loadOriginalInvoiceData = useCallback(
     async (invoiceNumber: string) => {
@@ -656,6 +644,7 @@ export default function OptimizedNewInvoicePage() {
           const clientData = Array.isArray(fullInvoiceData.clients)
             ? fullInvoiceData.clients[0]
             : fullInvoiceData.clients
+
           if (clientData) {
             selectClient(clientData)
           }
@@ -674,6 +663,7 @@ export default function OptimizedNewInvoicePage() {
             line_amount: line.line_amount || 0,
             professional_id: line.professional_id ? line.professional_id.toString() : null,
           }))
+
           setInvoiceLines(originalLines)
         }
 
@@ -730,14 +720,6 @@ export default function OptimizedNewInvoicePage() {
           fetchProfessionals(firstOrg.id),
           fetchExistingInvoices(firstOrg.id),
         ])
-
-        try {
-          const { invoiceNumberFormatted } = await generateUniqueInvoiceNumber(firstOrg.id, invoiceType)
-          setSuggestedInvoiceNumber(invoiceNumberFormatted)
-        } catch (error) {
-          setSuggestedInvoiceNumber(`ERROR-${Date.now()}`)
-          setError(`Error al generar número de factura: ${error instanceof Error ? error.message : String(error)}`)
-        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Error al cargar los datos")
       } finally {
@@ -748,7 +730,7 @@ export default function OptimizedNewInvoicePage() {
     if (userProfile) {
       fetchInitialData()
     }
-  }, [userProfile, invoiceType, fetchClients, fetchServices, fetchProfessionals, fetchExistingInvoices])
+  }, [userProfile, fetchClients, fetchServices, fetchProfessionals, fetchExistingInvoices])
 
   // Effect para nota automática de IVA
   useEffect(() => {
@@ -797,11 +779,6 @@ export default function OptimizedNewInvoicePage() {
     }
   }, [formData.organization_id, organizations, fetchClients, fetchServices, fetchProfessionals, fetchExistingInvoices])
 
-  // Effect para actualizar número sugerido
-  useEffect(() => {
-    updateSuggestedNumber()
-  }, [updateSuggestedNumber])
-
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault()
@@ -819,36 +796,6 @@ export default function OptimizedNewInvoicePage() {
 
         if (!userProfile?.id) {
           throw new Error("No se pudo obtener la información del usuario actual")
-        }
-
-        // Reservar número de factura
-        const { invoiceNumberFormatted, newInvoiceNumber } = await generateUniqueInvoiceNumber(
-          Number.parseInt(formData.organization_id),
-          invoiceType,
-        )
-
-        // Actualizar contador
-        const getFieldNameForUpdate = (type: InvoiceType): string => {
-          switch (type) {
-            case "rectificativa":
-              return "last_rectificative_invoice_number"
-            case "simplificada":
-              return "last_simplified_invoice_number"
-            case "normal":
-            default:
-              return "last_invoice_number"
-          }
-        }
-
-        const fieldName = getFieldNameForUpdate(invoiceType)
-        const { error: updateOrgError } = await supabase
-          .from("organizations")
-          .update({ [fieldName]: newInvoiceNumber })
-          .eq("id", selectedOrganization.id)
-
-        if (updateOrgError) {
-          console.error("Error updating organization:", updateOrgError)
-          throw new Error("Error al reservar el número de factura")
         }
 
         let clientId: number | null = null
@@ -890,7 +837,7 @@ export default function OptimizedNewInvoicePage() {
         if (signature) {
           try {
             const timestamp = Date.now()
-            const path = `signatures/${invoiceNumberFormatted}_${timestamp}.png`
+            const path = `signatures/draft_${timestamp}.png`
             signatureUrl = await saveBase64ImageToStorage(signature, path, Number.parseInt(formData.organization_id))
           } catch (error) {
             console.error("Error saving signature:", error)
@@ -903,6 +850,7 @@ export default function OptimizedNewInvoicePage() {
         const {
           data: { user },
         } = await supabase.auth.getUser()
+
         if (!user) {
           throw new Error("Usuario no autenticado")
         }
@@ -919,11 +867,12 @@ export default function OptimizedNewInvoicePage() {
           }
         }
 
+        // ✅ CREAR BORRADOR SIN NÚMERO DE FACTURA
         const { data: invoiceData, error: invoiceError } = await supabase
           .from("invoices")
           .insert({
             organization_id: Number.parseInt(formData.organization_id),
-            invoice_number: invoiceNumberFormatted,
+            invoice_number: null, // ✅ No asignar número en borrador
             client_id: clientId,
             issue_date: formData.issue_date,
             invoice_type: invoiceType,
@@ -982,7 +931,8 @@ export default function OptimizedNewInvoicePage() {
         } else {
           toast({
             title: "Borrador creado correctamente",
-            description: `Borrador creado con número ${invoiceNumberFormatted}. Podrás generar el PDF cuando valides la factura.`,
+            description:
+              "El borrador se ha guardado. El número de factura se asignará automáticamente al emitir la factura.",
           })
         }
 
@@ -1027,6 +977,7 @@ export default function OptimizedNewInvoicePage() {
   return (
     <div className="max-w-4xl mx-auto">
       <h1 className="text-3xl font-bold tracking-tight mb-6">Nueva Factura</h1>
+
       <form onSubmit={handleSubmit}>
         <div className="space-y-6">
           <Card>
@@ -1089,9 +1040,10 @@ export default function OptimizedNewInvoicePage() {
                 </Select>
               </div>
 
+              {/* ✅ NUEVA SECCIÓN PARA NÚMERO DE FACTURA */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="invoice_number">Número de Factura</Label>
+                  <Label>Número de Factura</Label>
                   <Button
                     type="button"
                     variant="ghost"
@@ -1100,15 +1052,19 @@ export default function OptimizedNewInvoicePage() {
                     className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
                   >
                     <Settings className="h-3 w-3 mr-1" />
-                    Configurar
+                    Configurar formato
                   </Button>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <Input id="invoice_number" value={suggestedInvoiceNumber} readOnly className="bg-muted" />
+                <div className="flex items-center space-x-2 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                  <Info className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                  <div className="text-sm text-blue-800">
+                    <p className="font-medium">Se asignará automáticamente al emitir</p>
+                    <p className="text-blue-700 mt-1">
+                      El número de factura se generará automáticamente cuando cambies el estado de "Borrador" a
+                      "Emitida" y se envíe a VeriFactu.
+                    </p>
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  El número de factura se reserva automáticamente al crear el borrador
-                </p>
               </div>
 
               {invoiceType === "rectificativa" && (
@@ -1145,10 +1101,11 @@ export default function OptimizedNewInvoicePage() {
                     </Select>
                     {existingInvoices.length === 0 && (
                       <p className="text-xs text-muted-foreground">
-                        No hay facturas disponibles para rectificar en esta organización
+                        No hay facturas emitidas disponibles para rectificar en esta organización
                       </p>
                     )}
                   </div>
+
                   <div className="space-y-2">
                     <Label htmlFor="rectification_reason">Motivo de Rectificación *</Label>
                     <Textarea
@@ -1164,6 +1121,7 @@ export default function OptimizedNewInvoicePage() {
                       required
                     />
                   </div>
+
                   <div className="space-y-2">
                     <Label>Tipo de Rectificación</Label>
                     <RadioGroup
@@ -1241,6 +1199,7 @@ export default function OptimizedNewInvoicePage() {
                   </SelectContent>
                 </Select>
               </div>
+
               {formData.payment_method === "otro" && (
                 <div className="space-y-2">
                   <Label htmlFor="payment_method_other">Especificar método de pago</Label>
@@ -1313,6 +1272,7 @@ export default function OptimizedNewInvoicePage() {
                       </Command>
                     </PopoverContent>
                   </Popover>
+
                   {selectedClient && (
                     <div className="flex items-center justify-between p-2 bg-muted rounded-md">
                       <span className="text-sm">Cliente seleccionado: {selectedClient.name}</span>
@@ -1534,6 +1494,7 @@ export default function OptimizedNewInvoicePage() {
                           </Button>
                         </div>
                       </div>
+
                       <div className="space-y-2">
                         <Label htmlFor={`professional-${line.id}`}>Profesional (opcional)</Label>
                         <Select
@@ -1567,6 +1528,7 @@ export default function OptimizedNewInvoicePage() {
                           required
                         />
                       </div>
+
                       <div className="space-y-2">
                         <Label htmlFor={`quantity-${line.id}`} className="block h-5">
                           Cantidad
@@ -1583,6 +1545,7 @@ export default function OptimizedNewInvoicePage() {
                           required
                         />
                       </div>
+
                       <div className="space-y-2">
                         <Label htmlFor={`unit_price-${line.id}`} className="block h-5">
                           Precio Unitario (€)
@@ -1599,6 +1562,7 @@ export default function OptimizedNewInvoicePage() {
                           required
                         />
                       </div>
+
                       <div className="space-y-2">
                         <Label htmlFor={`discount_percentage-${line.id}`} className="flex items-center gap-1 h-5">
                           <Percent className="h-3 w-3" />
@@ -1633,6 +1597,7 @@ export default function OptimizedNewInvoicePage() {
                           required
                         />
                       </div>
+
                       <div className="space-y-2">
                         <Label htmlFor={`irpf_rate-${line.id}`}>IRPF (%)</Label>
                         <Input
@@ -1646,6 +1611,7 @@ export default function OptimizedNewInvoicePage() {
                           }
                         />
                       </div>
+
                       <div className="space-y-2">
                         <Label htmlFor={`retention_rate-${line.id}`}>Retención (%)</Label>
                         <Input
@@ -1675,6 +1641,7 @@ export default function OptimizedNewInvoicePage() {
                     </div>
                   </div>
                 ))}
+
                 <Button type="button" variant="outline" onClick={addLine} className="w-full bg-transparent">
                   <Plus className="mr-2 h-4 w-4" />
                   Añadir Línea

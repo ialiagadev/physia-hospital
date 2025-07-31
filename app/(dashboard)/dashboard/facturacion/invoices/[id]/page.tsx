@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
@@ -10,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { InvoiceStatusSelector } from "@/components/invoices/invoice-status-selector"
 import { useToast } from "@/hooks/use-toast"
-import { Loader2, Download, Lock, AlertTriangle, Edit, Plus, Trash2 } from 'lucide-react'
+import { Loader2, Lock, AlertTriangle, Edit, Plus, Trash2 } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -23,9 +22,11 @@ type InvoiceStatus = "draft" | "issued" | "sent" | "paid"
 
 interface InvoiceData {
   id: number
-  invoice_number: string
+  invoice_number: string | null
   issue_date: string
   status: InvoiceStatus
+  invoice_type: string
+  organization_id: number
   notes?: string
   base_amount: number
   vat_amount: number
@@ -539,6 +540,8 @@ export default function InvoiceDetailPage() {
       setInvoice({
         ...invoiceData,
         status,
+        invoice_type: invoiceData.invoice_type || "normal",
+        organization_id: invoiceData.organization_id,
       })
 
       const { data: linesData, error: linesError } = await supabase
@@ -574,7 +577,10 @@ export default function InvoiceDetailPage() {
     if (invoice) {
       const validStatuses: InvoiceStatus[] = ["draft", "issued", "sent", "paid"]
       const status = validStatuses.includes(newStatus as InvoiceStatus) ? (newStatus as InvoiceStatus) : "draft"
-      setInvoice({ ...invoice, status })
+
+      // Recargar la factura completa después del cambio de estado
+      // para obtener el número de factura actualizado si se asignó
+      loadInvoice()
     }
   }
 
@@ -767,7 +773,7 @@ export default function InvoiceDetailPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Número</p>
-                <p>{isDraft ? "BORRADOR" : invoice.invoice_number}</p>
+                <p>{isDraft ? "BORRADOR" : invoice.invoice_number || "Sin asignar"}</p>
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Fecha</p>
@@ -775,13 +781,20 @@ export default function InvoiceDetailPage() {
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Tipo</p>
-                <p>Normal</p>
+                <p>
+                  {invoice.invoice_type === "normal" && "Normal"}
+                  {invoice.invoice_type === "rectificativa" && "Rectificativa"}
+                  {invoice.invoice_type === "simplificada" && "Simplificada"}
+                  {!invoice.invoice_type && "Normal"}
+                </p>
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Estado</p>
                 <InvoiceStatusSelector
                   invoiceId={invoice.id}
                   currentStatus={invoice.status}
+                  organizationId={invoice.organization_id}
+                  invoiceType={invoice.invoice_type || "normal"}
                   onStatusChange={handleStatusChange}
                 />
               </div>
