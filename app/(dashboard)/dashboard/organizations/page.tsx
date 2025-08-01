@@ -1,12 +1,12 @@
 "use client"
 
-import Link from "next/link"
+import type React from "react"
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { CheckCircle, AlertTriangle, Info } from "lucide-react"
+import { CheckCircle, AlertTriangle, Info, Edit } from "lucide-react"
 
 export default function OrganizationsPage() {
   const [organizations, setOrganizations] = useState<any[]>([])
@@ -22,7 +22,6 @@ export default function OrganizationsPage() {
 
   const VERIFACTU_API_URL = "https://app.verifactuapi.es/api"
   const DEFAULT_TAX_ID = "12345678A"
-  const DEFAULT_ADDRESS = "Dirección temporal"
 
   const showNotification = (type: "success" | "error" | "warning" | "info", message: string) => {
     setNotification({ type, message })
@@ -41,10 +40,16 @@ export default function OrganizationsPage() {
   }
 
   const isDefaultConfiguration = (org: any): boolean => {
-    return org.tax_id === DEFAULT_TAX_ID || org.address === DEFAULT_ADDRESS
+    return org.tax_id === DEFAULT_TAX_ID
   }
 
-  const handleConfigureVerifactu = async (org: any) => {
+  const hasUnconfiguredOrganizations = (): boolean => {
+    return organizations.some((org) => !org.verifactu_configured)
+  }
+
+  const handleConfigureVerifactu = async (org: any, event: React.MouseEvent) => {
+    event.stopPropagation() // Prevent row click navigation
+
     // Check if organization is already configured
     if (org.verifactu_configured) {
       showNotification("info", `${org.name} ya está configurado para Verifactu`)
@@ -55,7 +60,7 @@ export default function OrganizationsPage() {
     if (isDefaultConfiguration(org)) {
       showNotification(
         "warning",
-        "Debes cambiar el CIF/NIF y la dirección antes de configurar Verifactu. No puedes usar los valores por defecto.",
+        "Debes cambiar el CIF/NIF antes de configurar Verifactu. No puedes usar el valor por defecto.",
       )
       return
     }
@@ -125,17 +130,16 @@ export default function OrganizationsPage() {
   }
 
   const getButtonText = (org: any): string => {
-    if (org.verifactu_configured) return "Configurado"
     if (configuringOrg === org.id) return "Configurando..."
     return "Configurar Verifactu"
   }
 
-  const getButtonVariant = (org: any): "default" | "secondary" => {
-    return org.verifactu_configured ? "secondary" : "default"
+  const isButtonDisabled = (org: any): boolean => {
+    return configuringOrg === org.id || isDefaultConfiguration(org)
   }
 
-  const isButtonDisabled = (org: any): boolean => {
-    return org.verifactu_configured || configuringOrg === org.id
+  const shouldShowButton = (org: any): boolean => {
+    return !org.verifactu_configured
   }
 
   useEffect(() => {
@@ -192,6 +196,16 @@ export default function OrganizationsPage() {
         </div>
       </div>
 
+      {hasUnconfiguredOrganizations() && (
+        <Alert className="border-blue-500 bg-blue-50">
+          <Info className="h-4 w-4 text-blue-600" />
+          <AlertDescription className="text-blue-800">
+            <strong>Importante:</strong> Completa los datos de tu negocio y dale al botón "Configurar Verifactu" para
+            utilizar el sistema de facturación.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {notification && (
         <Alert
           className={`${
@@ -238,7 +252,20 @@ export default function OrganizationsPage() {
           </TableHeader>
           <TableBody>
             {organizations.map((org) => (
-              <TableRow key={org.id} className="hover:bg-muted/50">
+              <TableRow
+                key={org.id}
+                className="hover:bg-muted/50 cursor-pointer"
+                onClick={() => (window.location.href = `/dashboard/organizations/${org.id}`)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    window.location.href = `/dashboard/organizations/${org.id}`
+                  }
+                }}
+                aria-label={`Editar organización ${org.name}`}
+              >
                 <TableCell>{org.name}</TableCell>
                 <TableCell>
                   <span className={org.tax_id === DEFAULT_TAX_ID ? "text-orange-600 font-medium" : ""}>
@@ -259,26 +286,34 @@ export default function OrganizationsPage() {
                   ) : isDefaultConfiguration(org) ? (
                     <span className="inline-flex items-center gap-1 text-orange-600 text-sm">
                       <AlertTriangle className="h-4 w-4" />
-                      Pendiente configuración
+                      Configurar datos primero
                     </span>
                   ) : (
                     <span className="text-gray-600 text-sm">Listo para configurar</span>
                   )}
                 </TableCell>
                 <TableCell className="text-right space-x-2">
-                  <Link href={`/dashboard/organizations/${org.id}`}>
-                    <Button variant="ghost" size="sm">
-                      Ver
-                    </Button>
-                  </Link>
                   <Button
-                    variant={getButtonVariant(org)}
+                    variant="ghost"
                     size="sm"
-                    onClick={() => handleConfigureVerifactu(org)}
-                    disabled={isButtonDisabled(org)}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      window.location.href = `/dashboard/organizations/${org.id}`
+                    }}
+                    aria-label={`Editar ${org.name}`}
                   >
-                    {getButtonText(org)}
+                    <Edit className="h-4 w-4" />
                   </Button>
+                  {shouldShowButton(org) && (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={(e) => handleConfigureVerifactu(org, e)}
+                      disabled={isButtonDisabled(org)}
+                    >
+                      {getButtonText(org)}
+                    </Button>
+                  )}
                 </TableCell>
               </TableRow>
             ))}

@@ -198,12 +198,46 @@ function validateInvoiceLines(lines: InvoiceLine[]): InvoiceLine[] {
   }))
 }
 
-/**
- * Añade el QR de Verifactu según especificaciones oficiales de la AEAT
- * Debe ir al principio de la factura, antes del contenido
- */
-function addVerifactuQR(doc: jsPDF, invoice: InvoiceData, yPosition: number): number {
-  if (!invoice.verifactu_qr_code || invoice.verifactu_status !== "sent") {
+/** * ✅ FUNCIÓN CORREGIDA: Añade marca de agua de BORRADOR */
+function addDraftWatermark(doc: jsPDF) {
+  const pageCount = doc.getNumberOfPages()
+
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i)
+
+    // Guardar estado actual
+    const currentFont = doc.getFont()
+    const currentFontSize = doc.getFontSize()
+
+    // Configurar marca de agua
+    doc.setFontSize(60)
+    doc.setTextColor(220, 220, 220) // Gris muy claro
+    doc.setFont("helvetica", "bold")
+
+    // Calcular posición centrada
+    const pageWidth = doc.internal.pageSize.getWidth()
+    const pageHeight = doc.internal.pageSize.getHeight()
+    const centerX = pageWidth / 2
+    const centerY = pageHeight / 2
+
+    // Añadir texto rotado
+    doc.text("BORRADOR", centerX, centerY, {
+      angle: -45,
+      align: "center",
+      baseline: "middle",
+    })
+
+    // Restaurar estado
+    doc.setFontSize(currentFontSize)
+    doc.setTextColor(0, 0, 0) // Negro
+    doc.setFont(currentFont.fontName, currentFont.fontStyle)
+  }
+}
+
+/** * Añade el QR de Verifactu según especificaciones oficiales de la AEAT * Debe ir al principio de la factura, antes del contenido * ✅ SOLO PARA FACTURAS OFICIALES (NO BORRADORES) */
+function addVerifactuQR(doc: jsPDF, invoice: InvoiceData, yPosition: number, isDraft: boolean): number {
+  // ✅ NO MOSTRAR QR EN BORRADORES
+  if (isDraft || !invoice.verifactu_qr_code || invoice.verifactu_status !== "sent") {
     return yPosition
   }
 
@@ -213,7 +247,6 @@ function addVerifactuQR(doc: jsPDF, invoice: InvoiceData, yPosition: number): nu
     // - Margen blanco: mínimo 2mm, recomendado 6mm
     // - Alto contraste
     // - Posición: al principio, antes del contenido
-
     const qrSize = 40 // 40mm según especificaciones
     const margin = 6 // 6mm de margen recomendado
     const qrX = 20 // Posición X (superior izquierdo según documentación)
@@ -222,11 +255,9 @@ function addVerifactuQR(doc: jsPDF, invoice: InvoiceData, yPosition: number): nu
     doc.setFont("helvetica", "bold")
     doc.setFontSize(10)
     doc.setTextColor(0, 0, 0)
-
     const upperText = "QR tributario:"
     const textWidth = doc.getTextWidth(upperText)
     const centeredTextX = qrX + (qrSize - textWidth) / 2
-
     doc.text(upperText, centeredTextX, yPosition)
     yPosition += 8
 
@@ -242,22 +273,18 @@ function addVerifactuQR(doc: jsPDF, invoice: InvoiceData, yPosition: number): nu
 
     // Añadir el QR centrado en el área con margen
     doc.addImage(qrBase64, "PNG", qrX, yPosition, qrSize, qrSize)
-
     yPosition += qrSize + 4
 
     // ✅ TEXTO INFERIOR: "Factura verificable en la sede electrónica de la AEAT"
     // o "VERI*FACTU" (centrado debajo del QR)
     doc.setFont("helvetica", "normal")
     doc.setFontSize(8)
-
     const lowerTexts = ["Factura verificable en la sede", "electrónica de la AEAT"]
-
     lowerTexts.forEach((text, index) => {
       const lowerTextWidth = doc.getTextWidth(text)
       const centeredLowerTextX = qrX + (qrSize - lowerTextWidth) / 2
       doc.text(text, centeredLowerTextX, yPosition + index * 4)
     })
-
     yPosition += 12 // Espacio después del texto inferior
 
     // ✅ INFORMACIÓN ADICIONAL (opcional): URL de verificación
@@ -265,14 +292,11 @@ function addVerifactuQR(doc: jsPDF, invoice: InvoiceData, yPosition: number): nu
       doc.setFont("helvetica", "normal")
       doc.setFontSize(6)
       doc.setTextColor(100, 100, 100) // Gris claro
-
       const urlText = "URL: " + invoice.verifactu_response.data.items[0].url_qr
       const urlLines = doc.splitTextToSize(urlText, qrSize + 40)
-
       urlLines.forEach((line: string, index: number) => {
         doc.text(line, qrX, yPosition + index * 3)
       })
-
       yPosition += urlLines.length * 3 + 5
       doc.setTextColor(0, 0, 0) // Volver al negro
     }
@@ -286,7 +310,6 @@ function addVerifactuQR(doc: jsPDF, invoice: InvoiceData, yPosition: number): nu
     console.log("✅ QR de Verifactu añadido según especificaciones oficiales AEAT")
   } catch (error) {
     console.error("❌ Error al añadir QR de Verifactu:", error)
-
     // Fallback: mostrar texto indicativo
     doc.setFont("helvetica", "normal")
     doc.setFontSize(9)
@@ -298,21 +321,22 @@ function addVerifactuQR(doc: jsPDF, invoice: InvoiceData, yPosition: number): nu
   return yPosition
 }
 
-/** * Genera el PDF de la factura con diseño compacto mejorado y QR Verifactu oficial */
+/** * ✅ GENERA EL PDF DE LA FACTURA CON SOPORTE PARA BORRADORES * @param invoice - Datos de la factura * @param invoiceLines - Líneas de la factura * @param fileName - Nombre del archivo * @param isDraft - Si es borrador (marca de agua + sin QR) */
 export async function generatePdf(
   invoice: InvoiceData,
   invoiceLines: InvoiceLine[],
   fileName: string,
-  autoDownload = true,
+  isDraft = false, // ✅ NUEVO PARÁMETRO
 ): Promise<Blob | null> {
   try {
     const validatedInvoice = validateInvoiceData(invoice)
     const validatedLines = validateInvoiceLines(invoiceLines)
 
-    console.log("📄 Generando PDF con QR Verifactu oficial:", {
+    console.log("📄 Generando PDF:", {
       invoice: validatedInvoice,
       lines: validatedLines,
       fileName,
+      isDraft, // ✅ LOG DEL NUEVO PARÁMETRO
       hasVerifactuQR: !!validatedInvoice.verifactu_qr_code,
       verifactuStatus: validatedInvoice.verifactu_status,
     })
@@ -326,15 +350,17 @@ export async function generatePdf(
     const isRectificative = validatedInvoice.invoice_type === "rectificativa"
     const isSimplified = validatedInvoice.invoice_type === "simplificada"
 
-    // === ✅ QR DE VERIFACTU AL PRINCIPIO (según especificaciones oficiales) ===
-    yPosition = addVerifactuQR(doc, validatedInvoice, yPosition)
+    // === ✅ QR DE VERIFACTU AL PRINCIPIO (SOLO PARA FACTURAS OFICIALES) ===
+    yPosition = addVerifactuQR(doc, validatedInvoice, yPosition, isDraft)
 
     // === HEADER COMPACTO ===
     doc.setFontSize(16)
     doc.setFont("helvetica", "normal")
     let headerTitle = "Factura"
-    if (isRectificative) headerTitle = "Factura Rectificativa"
-    if (isSimplified) headerTitle = "Factura Simplificada"
+    if (isDraft) headerTitle = "BORRADOR - Factura" // ✅ TÍTULO DIFERENTE PARA BORRADORES
+    if (isRectificative) headerTitle = isDraft ? "BORRADOR - Factura Rectificativa" : "Factura Rectificativa"
+    if (isSimplified) headerTitle = isDraft ? "BORRADOR - Factura Simplificada" : "Factura Simplificada"
+
     doc.text(headerTitle, 20, yPosition)
 
     // Nombre de la organización a la derecha
@@ -390,7 +416,9 @@ export async function generatePdf(
     doc.setFontSize(9)
     doc.setFont("helvetica", "bold")
     doc.text("Número de factura", 20, yPosition)
-    doc.text(validatedInvoice.invoice_number, 80, yPosition)
+    // ✅ MOSTRAR "SIN NÚMERO" PARA BORRADORES
+    const invoiceNumberText = isDraft ? "SIN NÚMERO (Borrador)" : validatedInvoice.invoice_number
+    doc.text(invoiceNumberText, 80, yPosition)
     yPosition += 5
 
     doc.text("Fecha de emisión", 20, yPosition)
@@ -583,7 +611,6 @@ export async function generatePdf(
     // Filas de datos
     doc.setFont("helvetica", "normal")
     doc.setFontSize(9)
-
     validatedLines.forEach((line) => {
       // Verificar si necesitamos nueva página
       if (yPosition > 250) {
@@ -657,7 +684,6 @@ export async function generatePdf(
     // IVA
     if (validatedInvoice.vat_amount > 0) {
       const vatRate = validatedLines.length > 0 ? validatedLines[0].vat_rate : 21
-
       // Línea principal del IVA
       doc.text(`IVA - España (${vatRate}%)`, totalsX, yPosition)
       doc.text(`${validatedInvoice.vat_amount.toFixed(2)} €`, amountX, yPosition, { align: "right" })
@@ -743,7 +769,6 @@ export async function generatePdf(
         default:
           paymentMethodText = "No especificado"
       }
-
       doc.text(paymentMethodText, 20, yPosition)
       yPosition += 10
     }
@@ -802,7 +827,11 @@ export async function generatePdf(
     doc.setTextColor(100, 100, 100)
 
     let legalText = ""
-    if (isRectificative) {
+    if (isDraft) {
+      // ✅ TEXTO ESPECÍFICO PARA BORRADORES
+      legalText =
+        "ESTE ES UN BORRADOR DE FACTURA. No tiene validez fiscal hasta su emisión oficial con número de factura asignado."
+    } else if (isRectificative) {
       legalText = "Esta factura rectificativa modifica la factura original indicada. "
       if (validatedInvoice.rectification_type === "cancellation") {
         legalText += "La factura original queda anulada y sustituida por esta rectificativa."
@@ -816,14 +845,19 @@ export async function generatePdf(
       legalText = "Factura emitida conforme a la normativa fiscal vigente."
     }
 
-    // ✅ Información sobre Verifactu según documentación oficial
-    if (validatedInvoice.verifactu_status === "sent") {
+    // ✅ Información sobre Verifactu según documentación oficial (SOLO PARA FACTURAS OFICIALES)
+    if (!isDraft && validatedInvoice.verifactu_status === "sent") {
       legalText +=
         " Esta factura ha sido registrada en el sistema Veri*Factu de la AEAT y cumple con las especificaciones del Real Decreto 1007/2023."
     }
 
     const legalLines = doc.splitTextToSize(legalText, 170)
     doc.text(legalLines, 20, yPosition)
+
+    // ✅ AÑADIR MARCA DE AGUA PARA BORRADORES
+    if (isDraft) {
+      addDraftWatermark(doc)
+    }
 
     // === PIE DE PÁGINA ===
     const pageCount = doc.getNumberOfPages()
@@ -832,16 +866,17 @@ export async function generatePdf(
       doc.setFont("helvetica", "normal")
       doc.setFontSize(8)
       doc.setTextColor(128, 128, 128)
-      doc.text(`Página ${i} de ${pageCount}`, 185, 285, { align: "right" })
+
+      // ✅ PIE DE PÁGINA DIFERENTE PARA BORRADORES
+      const footerText = isDraft ? `BORRADOR - Página ${i} de ${pageCount}` : `Página ${i} de ${pageCount}`
+
+      doc.text(footerText, 185, 285, { align: "right" })
     }
 
     // Generar el blob
     const pdfBlob = doc.output("blob")
-    console.log("✅ PDF con QR Verifactu oficial generado exitosamente")
 
-    if (autoDownload) {
-      doc.save(fileName)
-    }
+    console.log(`✅ PDF ${isDraft ? "BORRADOR" : "OFICIAL"} generado exitosamente`)
 
     return pdfBlob
   } catch (error) {

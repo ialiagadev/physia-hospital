@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { FileText, Loader2, AlertTriangle, CheckCircle, Clock, Download, CreditCard } from "lucide-react"
+import { FileText, Loader2, AlertTriangle, Clock, Download, CreditCard } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -27,18 +27,24 @@ interface IndividualBillingButtonProps {
   onBillingComplete?: () => void
 }
 
+type InvoiceStatus = "draft" | "issued" | "sent" | "paid"
+
+interface ExistingInvoice {
+  invoice_number: string | null
+  created_at: string
+  id: string
+  status: InvoiceStatus
+}
+
 export function IndividualBillingButton({ appointment, onBillingComplete }: IndividualBillingButtonProps) {
   const { userProfile } = useAuth()
   const { toast } = useToast()
   const [generating, setGenerating] = useState(false)
-  const [existingInvoice, setExistingInvoice] = useState<{
-    invoice_number: string
-    created_at: string
-    id: string
-  } | null>(null)
+  const [issuing, setIssuing] = useState(false)
+  const [existingInvoice, setExistingInvoice] = useState<ExistingInvoice | null>(null)
   const [checkingInvoice, setCheckingInvoice] = useState(true)
-  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isConfirmingIssue, setIsConfirmingIssue] = useState(false)
 
   // Estado del formulario
   const [formData, setFormData] = useState({
@@ -72,18 +78,14 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
 
   const clientValidation = validateClientData()
 
-  const generateInvoice = async () => {
+  // ✅ CREAR BORRADOR DE FACTURA
+  const createDraftInvoice = async () => {
     if (!userProfile?.organization_id) {
       return
     }
 
     setGenerating(true)
     try {
-      // Importar las funciones necesarias
-      const { generateUniqueInvoiceNumber } = await import("@/lib/invoice-utils")
-      const { generatePdf } = await import("@/lib/pdf-generator")
-      const { savePdfToStorage } = await import("@/lib/storage-utils")
-
       // Obtener datos de la organización
       const { data: orgData, error: orgError } = await supabase
         .from("organizations")
@@ -94,12 +96,6 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
       if (orgError || !orgData) {
         throw new Error("No se pudieron obtener los datos de la organización")
       }
-
-      // Generar número de factura único
-      const { invoiceNumberFormatted, newInvoiceNumber } = await generateUniqueInvoiceNumber(
-        userProfile.organization_id,
-        "normal",
-      )
 
       // Usar precio del servicio
       const servicePrice = serviceData!.price
@@ -130,6 +126,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
       }, 0)
 
       const baseAmount = subtotalAmount - totalDiscountAmount
+
       const vatAmount = invoiceLines.reduce((sum, line) => {
         const lineSubtotal = line.quantity * line.unit_price
         const lineDiscount = (lineSubtotal * line.discount_percentage) / 100
@@ -161,20 +158,21 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
       const clientInfoText = `Cliente: ${client.name}, CIF/NIF: ${(client as any).tax_id}, Dirección: ${(client as any).address}, ${(client as any).postal_code} ${(client as any).city}, ${(client as any).province}`
       const additionalNotes = `Factura generada para cita del ${format(new Date(appointment.date), "dd/MM/yyyy")} - ${appointment.start_time}
 Servicio: ${serviceData!.name} - ${servicePrice}€`
+
       const fullNotes =
         clientInfoText + "\n\n" + additionalNotes + (formData.notes ? `\n\nNotas adicionales: ${formData.notes}` : "")
 
-      // Crear factura en la base de datos
+      // ✅ CREAR FACTURA EN ESTADO BORRADOR (SIN NÚMERO)
       const { data: invoiceData, error: invoiceError } = await supabase
         .from("invoices")
         .insert({
           organization_id: userProfile.organization_id,
-          invoice_number: invoiceNumberFormatted,
+          invoice_number: null, // ✅ Sin número en borrador
           client_id: appointment.client_id,
           appointment_id: appointment.id,
           issue_date: formData.issue_date,
           invoice_type: "normal",
-          status: "paid",
+          status: "draft", // ✅ Estado borrador
           base_amount: baseAmount,
           vat_amount: vatAmount,
           irpf_amount: irpfAmount,
@@ -193,9 +191,10 @@ Servicio: ${serviceData!.name} - ${servicePrice}€`
 
       // Actualización optimista inmediata
       setExistingInvoice({
-        invoice_number: invoiceNumberFormatted,
+        invoice_number: null, // Sin número en borrador
         created_at: invoiceData.created_at,
         id: invoiceData.id,
+        status: "draft",
       })
 
       // Crear líneas de factura
@@ -213,108 +212,147 @@ Servicio: ${serviceData!.name} - ${servicePrice}€`
       }))
 
       const { error: linesError } = await supabase.from("invoice_lines").insert(invoiceLines_db)
+
       if (linesError) {
         console.error("Error saving invoice lines:", linesError)
       }
 
-      // Actualizar número de factura en la organización
+      toast({
+        title: "✅ Borrador creado",
+        description: `Borrador de factura creado correctamente (${servicePrice}€)`,
+      })
+
+      // Cerrar modal
+      setIsModalOpen(false)
+      if (onBillingComplete) {
+        onBillingComplete()
+      }
+    } catch (error) {
+      console.error("Error creating draft invoice:", error)
+      // Revertir actualización optimista en caso de error
+      setExistingInvoice(null)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "No se pudo crear el borrador",
+        variant: "destructive",
+      })
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  // ✅ EMITIR FACTURA (ASIGNAR NÚMERO Y ENVIAR A VERIFACTU)
+  const issueInvoice = async () => {
+    console.log("🔥 issueInvoice iniciada", { existingInvoice, userProfile })
+    if (!existingInvoice || !userProfile?.organization_id) {
+      console.log("🔥 issueInvoice cancelada - falta existingInvoice o userProfile")
+      return
+    }
+
+    setIssuing(true)
+    setIsConfirmingIssue(false) // Mantener el estado de confirmación para mostrar el progreso
+
+    try {
+      const { generateUniqueInvoiceNumber } = await import("@/lib/invoice-utils")
+
+      // Generar número de factura único
+      const { invoiceNumberFormatted, newInvoiceNumber } = await generateUniqueInvoiceNumber(
+        userProfile.organization_id,
+        "normal",
+      )
+
+      // Actualizar contador en organización
       const { error: updateOrgError } = await supabase
         .from("organizations")
         .update({ last_invoice_number: newInvoiceNumber })
         .eq("id", userProfile.organization_id)
 
       if (updateOrgError) {
-        console.error("Error updating organization:", updateOrgError)
+        throw new Error("Error al reservar el número de factura")
       }
 
-      // Generar PDF
-      try {
-        const newInvoice = {
-          id: invoiceData.id,
+      // Actualizar factura con número y estado
+      const { error: updateInvoiceError } = await supabase
+        .from("invoices")
+        .update({
+          status: "issued",
           invoice_number: invoiceNumberFormatted,
-          issue_date: formData.issue_date,
-          invoice_type: "normal" as const,
-          status: "paid",
-          base_amount: baseAmount,
-          vat_amount: vatAmount,
-          irpf_amount: irpfAmount,
-          retention_amount: retentionAmount,
-          total_amount: totalAmount,
-          discount_amount: totalDiscountAmount,
-          notes: fullNotes,
-          signature: null,
-          payment_method: formData.payment_method,
-          payment_method_other: formData.payment_method === "otro" ? formData.payment_method_other : null,
-          organization: {
-            name: orgData.name,
-            tax_id: orgData.tax_id,
-            address: orgData.address,
-            postal_code: orgData.postal_code,
-            city: orgData.city,
-            province: orgData.province,
-            country: orgData.country,
-            email: orgData.email,
-            phone: orgData.phone,
-            invoice_prefix: orgData.invoice_prefix,
-            logo_url: orgData.logo_url,
-            logo_path: orgData.logo_path,
-          },
-          client_data: {
-            name: client.name,
-            tax_id: (client as any).tax_id || "",
-            address: (client as any).address || "",
-            postal_code: (client as any).postal_code || "",
-            city: (client as any).city || "",
-            province: (client as any).province || "",
-            country: "España",
-            email: (client as any).email || "",
-            phone: (client as any).phone || "",
-            client_type: "private",
-          },
-        }
+          validated_at: new Date().toISOString(),
+        })
+        .eq("id", existingInvoice.id)
 
-        const filename = `factura-${invoiceNumberFormatted}.pdf`
-
-        // Generar PDF SIN descarga automática primero
-        const pdfBlob = await generatePdf(newInvoice, invoiceLines, filename, false)
-
-        // Guardar PDF en storage si se generó correctamente
-        if (pdfBlob && pdfBlob instanceof Blob) {
-          // Guardar el blob para descarga opcional
-          setPdfBlob(pdfBlob)
-
-          try {
-            const pdfUrl = await savePdfToStorage(pdfBlob, filename, userProfile.organization_id)
-            await supabase.from("invoices").update({ pdf_url: pdfUrl }).eq("id", invoiceData.id)
-          } catch (pdfError) {
-            console.error("Error saving PDF:", pdfError)
-          }
-        }
-      } catch (pdfError) {
-        console.error("Error generating PDF:", pdfError)
+      if (updateInvoiceError) {
+        throw new Error("Error al actualizar la factura")
       }
 
-      toast({
-        title: "Factura generada",
-        description: `Factura ${invoiceNumberFormatted} creada correctamente (${servicePrice}€)`,
-      })
+      // Verificar que el número esté asignado
+      const { data: verifyInvoice, error: verifyError } = await supabase
+        .from("invoices")
+        .select("invoice_number")
+        .eq("id", existingInvoice.id)
+        .single()
 
-      // Cerrar modal y llamar al callback si existe
-      setIsModalOpen(false)
-      if (onBillingComplete) {
-        onBillingComplete()
+      if (verifyError || !verifyInvoice?.invoice_number) {
+        throw new Error("La factura no tiene número asignado después de la actualización")
+      }
+
+      // Enviar a VeriFactu
+      try {
+        const res = await fetch(`/api/verifactu/send-invoice?invoice_id=${existingInvoice.id}`)
+        const data = await res.json()
+
+        if (!res.ok) {
+          throw new Error(data?.error || `Error ${res.status}: ${res.statusText}`)
+        }
+
+        // Actualizar estado local
+        setExistingInvoice((prev) =>
+          prev
+            ? {
+                ...prev,
+                invoice_number: invoiceNumberFormatted,
+                status: "issued",
+              }
+            : null,
+        )
+
+        toast({
+          title: "✅ Factura emitida",
+          description: `Factura ${invoiceNumberFormatted} emitida y enviada a VeriFactu correctamente`,
+        })
+
+        if (onBillingComplete) {
+          onBillingComplete()
+        }
+      } catch (verifactuError) {
+        console.error("Error en VeriFactu, haciendo rollback...")
+
+        // Rollback completo
+        await supabase
+          .from("invoices")
+          .update({
+            status: "draft",
+            invoice_number: null,
+            validated_at: null,
+          })
+          .eq("id", existingInvoice.id)
+
+        await supabase
+          .from("organizations")
+          .update({ last_invoice_number: newInvoiceNumber - 1 })
+          .eq("id", userProfile.organization_id)
+
+        throw new Error("Error al enviar a VeriFactu. Se ha revertido la emisión.")
       }
     } catch (error) {
-      console.error("Error generating invoice:", error)
-      // Revertir actualización optimista en caso de error
-      setExistingInvoice(null)
+      console.error("Error issuing invoice:", error)
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "No se pudo generar la factura",
+        description: error instanceof Error ? error.message : "No se pudo emitir la factura",
         variant: "destructive",
       })
     } finally {
-      setGenerating(false)
+      setIssuing(false)
     }
   }
 
@@ -327,7 +365,7 @@ Servicio: ${serviceData!.name} - ${servicePrice}€`
     try {
       const { data, error } = await supabase
         .from("invoices")
-        .select("id, invoice_number, created_at")
+        .select("id, invoice_number, created_at, status")
         .eq("organization_id", userProfile.organization_id)
         .eq("appointment_id", appointment.id)
         .order("created_at", { ascending: false })
@@ -336,7 +374,7 @@ Servicio: ${serviceData!.name} - ${servicePrice}€`
       if (error) throw error
 
       if (data && data.length > 0) {
-        setExistingInvoice(data[0])
+        setExistingInvoice(data[0] as ExistingInvoice)
       }
     } catch (error) {
       console.error("Error checking existing invoice:", error)
@@ -348,6 +386,12 @@ Servicio: ${serviceData!.name} - ${servicePrice}€`
   useEffect(() => {
     checkExistingInvoice()
   }, [appointment.id, appointment.client_id, appointment.date, userProfile])
+
+  useEffect(() => {
+    if (!issuing) {
+      setIsConfirmingIssue(false)
+    }
+  }, [issuing])
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("es-ES", {
@@ -392,45 +436,241 @@ Servicio: ${serviceData!.name} - ${servicePrice}€`
     )
   }
 
-  // Si ya existe factura
+  // ✅ SI EXISTE FACTURA - MOSTRAR SEGÚN ESTADO
   if (existingInvoice) {
+    const getStatusConfig = (status: InvoiceStatus) => {
+      switch (status) {
+        case "draft":
+          return {
+            label: "Borrador creado",
+            color: "text-amber-700 bg-amber-50 border-amber-200",
+            icon: FileText,
+          }
+        case "issued":
+          return {
+            label: "Facturada",
+            color: "text-green-700 bg-green-50 border-green-200",
+            icon: null, // Sin icono
+          }
+        case "sent":
+          return {
+            label: "Enviada",
+            color: "text-blue-700 bg-blue-50 border-blue-200",
+            icon: null, // Sin icono
+          }
+        case "paid":
+          return {
+            label: "Pagada",
+            color: "text-green-700 bg-green-50 border-green-200",
+            icon: null, // Sin icono
+          }
+        default:
+          return {
+            label: "Desconocido",
+            color: "text-gray-600 bg-gray-50 border-gray-200",
+            icon: AlertTriangle,
+          }
+      }
+    }
+
+    const statusConfig = getStatusConfig(existingInvoice.status)
+    const StatusIcon = statusConfig.icon
+
     return (
       <div className="flex items-center gap-2">
-        <div className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded border border-green-200">
+        <button
+          className={`text-xs px-3 py-2 rounded-lg border ${statusConfig.color} hover:opacity-80 transition-opacity cursor-pointer`}
+          onClick={async () => {
+            if (existingInvoice.status === "draft" && existingInvoice?.id) {
+              try {
+                const { generatePdf } = await import("@/lib/pdf-generator")
+
+                // Obtener datos completos de la factura
+                const { data: fullInvoiceData, error: invoiceError } = await supabase
+                  .from("invoices")
+                  .select(`
+                    *,
+                    organization:organizations(*),
+                    client:clients(*),
+                    invoice_lines(*)
+                  `)
+                  .eq("id", existingInvoice.id)
+                  .single()
+
+                if (invoiceError || !fullInvoiceData) {
+                  throw new Error("No se pudieron obtener los datos de la factura")
+                }
+
+                // Preparar datos para el PDF
+                const invoiceForPdf = {
+                  ...fullInvoiceData,
+                  client_data: {
+                    name: fullInvoiceData.client.name,
+                    tax_id: fullInvoiceData.client.tax_id || "",
+                    address: fullInvoiceData.client.address || "",
+                    postal_code: fullInvoiceData.client.postal_code || "",
+                    city: fullInvoiceData.client.city || "",
+                    province: fullInvoiceData.client.province || "",
+                    country: "España",
+                    email: fullInvoiceData.client.email || "",
+                    phone: fullInvoiceData.client.phone || "",
+                    client_type: "private",
+                  },
+                }
+
+                const filename = `borrador-${existingInvoice.id}.pdf`
+                const pdfBlob = await generatePdf(invoiceForPdf, fullInvoiceData.invoice_lines, filename, true)
+
+                if (pdfBlob && pdfBlob instanceof Blob) {
+                  const url = window.URL.createObjectURL(pdfBlob)
+                  const link = document.createElement("a")
+                  link.href = url
+                  link.download = filename
+                  document.body.appendChild(link)
+                  link.click()
+                  document.body.removeChild(link)
+                  window.URL.revokeObjectURL(url)
+                }
+              } catch (error) {
+                console.error("Error downloading draft:", error)
+                toast({
+                  title: "Error",
+                  description: "No se pudo descargar el borrador",
+                  variant: "destructive",
+                })
+              }
+            }
+          }}
+          title={existingInvoice.status === "draft" ? "Descargar borrador" : undefined}
+        >
+          <div className="flex items-center gap-2">
+            {StatusIcon && <StatusIcon className="h-4 w-4" />}
+            <div className="font-medium">{existingInvoice.status === "draft" ? "Borrador" : statusConfig.label}</div>
+          </div>
+        </button>
+
+        {existingInvoice.status === "draft" && (
           <div className="flex items-center gap-1">
-            <CheckCircle className="h-3 w-3" />
-            <span>Ya facturado</span>
+            {!isConfirmingIssue ? (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setIsConfirmingIssue(true)
+                }}
+                disabled={issuing}
+                className="h-7 px-3 bg-green-600 hover:bg-green-700"
+              >
+                Emitir
+              </Button>
+            ) : (
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsConfirmingIssue(false)}
+                  disabled={issuing}
+                  className="h-7 px-2 text-xs border-gray-300 hover:bg-gray-50"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => {
+                    issueInvoice()
+                  }}
+                  disabled={issuing}
+                  className="h-7 px-2 bg-red-600 hover:bg-red-700 text-xs font-medium"
+                >
+                  {issuing ? (
+                    <>
+                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                      Emitiendo...
+                    </>
+                  ) : (
+                    "Confirmar envío"
+                  )}
+                </Button>
+              </div>
+            )}
           </div>
-          <div className="text-xs mt-1">Factura #{existingInvoice.invoice_number}</div>
-          <div className="text-xs text-gray-600">
-            {format(new Date(existingInvoice.created_at), "dd/MM/yyyy HH:mm")}
-          </div>
-        </div>
-        {pdfBlob && (
+        )}
+
+        {existingInvoice.status !== "draft" && (
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
-            onClick={() => {
-              const url = window.URL.createObjectURL(pdfBlob)
-              const link = document.createElement("a")
-              link.href = url
-              link.download = `factura-${existingInvoice.invoice_number}.pdf`
-              document.body.appendChild(link)
-              link.click()
-              document.body.removeChild(link)
-              window.URL.revokeObjectURL(url)
+            onClick={async () => {
+              try {
+                const { data: fullInvoiceData, error: invoiceError } = await supabase
+                  .from("invoices")
+                  .select(`
+                    *,
+                    organization:organizations(*),
+                    client:clients(*),
+                    invoice_lines(*)
+                  `)
+                  .eq("id", existingInvoice.id)
+                  .single()
+
+                if (invoiceError || !fullInvoiceData) {
+                  throw new Error("No se pudieron obtener los datos de la factura")
+                }
+
+                const invoiceForPdf = {
+                  ...fullInvoiceData,
+                  client_data: {
+                    name: fullInvoiceData.client.name,
+                    tax_id: fullInvoiceData.client.tax_id || "",
+                    address: fullInvoiceData.client.address || "",
+                    postal_code: fullInvoiceData.client.postal_code || "",
+                    city: fullInvoiceData.client.city || "",
+                    province: fullInvoiceData.client.province || "",
+                    country: "España",
+                    email: fullInvoiceData.client.email || "",
+                    phone: fullInvoiceData.client.phone || "",
+                    client_type: "private",
+                  },
+                }
+
+                const filename = `factura-${existingInvoice.invoice_number}.pdf`
+                const { generatePdf } = await import("@/lib/pdf-generator")
+
+                // ✅ Para facturas emitidas, incluir datos de VeriFactu
+                const pdfBlob = await generatePdf(invoiceForPdf, fullInvoiceData.invoice_lines, filename, false)
+
+                if (pdfBlob && pdfBlob instanceof Blob) {
+                  const url = window.URL.createObjectURL(pdfBlob)
+                  const link = document.createElement("a")
+                  link.href = url
+                  link.download = filename
+                  document.body.appendChild(link)
+                  link.click()
+                  document.body.removeChild(link)
+                  window.URL.revokeObjectURL(url)
+                }
+              } catch (error) {
+                console.error("Error downloading invoice:", error)
+                toast({
+                  title: "Error",
+                  description: "No se pudo descargar la factura",
+                  variant: "destructive",
+                })
+              }
             }}
-            className="h-6 px-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-            title="Descargar PDF"
+            className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50 border-blue-200"
           >
-            <Download className="h-3 w-3" />
+            <Download className="h-4 w-4" />
           </Button>
         )}
       </div>
     )
   }
 
-  // Si todo está bien, mostrar botón de facturar
+  // ✅ SI NO HAY FACTURA - MOSTRAR BOTÓN CREAR BORRADOR
   return (
     <>
       <Button
@@ -441,18 +681,27 @@ Servicio: ${serviceData!.name} - ${servicePrice}€`
         className="gap-2 text-green-600 hover:text-green-700 hover:bg-green-50 bg-transparent"
       >
         <FileText className="h-4 w-4" />
-        Facturar
+        Crear Borrador
       </Button>
 
-      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+      {/* ✅ MODAL PARA CREAR BORRADOR */}
+      <Dialog
+        open={isModalOpen}
+        onOpenChange={(open) => {
+          // Solo permitir cerrar si no está generando ni emitiendo
+          if (!generating && !issuing) {
+            setIsModalOpen(open)
+          }
+        }}
+      >
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5" />
-              Facturar Cita
+              Crear Borrador de Factura
             </DialogTitle>
             <DialogDescription>
-              Crear factura para la cita de {appointment.client.name} del{" "}
+              Crear borrador para la cita de {appointment.client.name} del{" "}
               {format(new Date(appointment.date), "dd/MM/yyyy")} a las {appointment.start_time}
             </DialogDescription>
           </DialogHeader>
@@ -574,17 +823,27 @@ Servicio: ${serviceData!.name} - ${servicePrice}€`
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsModalOpen(false)}
+              disabled={generating || issuing}
+            >
               Cancelar
             </Button>
-            <Button onClick={generateInvoice} disabled={generating}>
+            <Button onClick={createDraftInvoice} disabled={generating || issuing}>
               {generating ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Generando...
+                  Creando borrador...
+                </>
+              ) : issuing ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Emitiendo...
                 </>
               ) : (
-                "Crear Factura"
+                "Crear Borrador"
               )}
             </Button>
           </DialogFooter>

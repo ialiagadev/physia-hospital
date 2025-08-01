@@ -593,7 +593,7 @@ export default function EditOrganizationPage({ params }: { params: { id: string 
                   onClick={() => router.push("/dashboard/organizations")}
                   disabled={saving}
                 >
-                  Cancelar
+                  Volver
                 </Button>
                 <Button type="submit" disabled={saving}>
                   {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
