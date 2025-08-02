@@ -150,7 +150,7 @@ export function ProfesionalesView({
   const canEditProfessional = (profesional: Profesional) => {
     // Admin y coordinador pueden editar todos
     if (!isUserRole) return true
-    
+
     // Usuario 'user' solo puede editar su propio perfil
     if (isUserRole && currentUserId) {
       const matchingUser = professionalUsers.find((user) => {
@@ -159,7 +159,7 @@ export function ProfesionalesView({
       })
       return matchingUser?.id === currentUserId
     }
-    
+
     return false
   }
 
@@ -168,7 +168,7 @@ export function ProfesionalesView({
     const citasProfesional = citas.filter((c) => c.profesionalId === profesionalId)
     const hoy = new Date()
     const ahora = new Date()
-    
+
     // Citas de hoy
     const citasHoy = citasProfesional.filter((c) => {
       const fechaCita = typeof c.fecha === "string" ? new Date(c.fecha) : c.fecha
@@ -178,7 +178,7 @@ export function ProfesionalesView({
     // 🚀 PRÓXIMAS CITAS (futuras, incluyendo las de hoy que aún no han pasado)
     const proximasCitas = citasProfesional.filter((c) => {
       const fechaCita = typeof c.fecha === "string" ? new Date(c.fecha) : c.fecha
-      
+
       // Si es hoy, verificar que la hora no haya pasado
       if (fechaCita.toDateString() === hoy.toDateString()) {
         const [hora, minutos] = c.hora.split(':').map(Number)
@@ -186,7 +186,7 @@ export function ProfesionalesView({
         horaCita.setHours(hora, minutos, 0, 0)
         return horaCita > ahora
       }
-      
+
       // Si es fecha futura
       return fechaCita > hoy
     })
@@ -226,10 +226,13 @@ export function ProfesionalesView({
 
   const handleEditProfesional = (profesional: Profesional) => {
     // Buscar el usuario real para obtener su especialidad
-    const realUser = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === profesional.id)
+    const realUser = professionalUsers.find((u) => 
+      Number.parseInt(u.id.slice(-8), 16) === profesional.id
+    )
+    
     setEditForm({
       nombre: profesional.nombre || profesional.name || "",
-      especialidad: realUser?.specialty || "",
+      especialidad: realUser?.specialty || "", // Puede ser cadena vacía
       especialidadOtra: realUser?.specialty_other || "",
       color: profesional.color || "#3B82F6",
     })
@@ -242,16 +245,31 @@ export function ProfesionalesView({
 
     try {
       // Buscar el usuario real correspondiente
-      const realUser = professionalUsers.find((u) => Number.parseInt(u.id.slice(-8), 16) === selectedProfesional.id)
+      const realUser = professionalUsers.find((u) => 
+        Number.parseInt(u.id.slice(-8), 16) === selectedProfesional.id
+      )
 
       if (realUser) {
-        // Actualizar en la base de datos
-        await UserService.updateProfessionalData(realUser.id, {
-          color: editForm.color,
-          specialty: editForm.especialidad,
-          specialty_other: editForm.especialidad === "otros" ? editForm.especialidadOtra : null,
-        })
+        // Preparar los datos a actualizar
+        const updateData: any = {
+          color: editForm.color, // Siempre actualizar el color
+        }
 
+        // Solo incluir specialty si tiene un valor válido
+        if (editForm.especialidad && editForm.especialidad.trim() !== '') {
+          updateData.specialty = editForm.especialidad
+          
+          // Solo incluir specialty_other si la especialidad es "otros" y tiene valor
+          if (editForm.especialidad === "otros" && editForm.especialidadOtra?.trim()) {
+            updateData.specialty_other = editForm.especialidadOtra.trim()
+          } else if (editForm.especialidad !== "otros") {
+            // Si no es "otros", limpiar specialty_other
+            updateData.specialty_other = null
+          }
+        }
+
+        // Actualizar en la base de datos
+        await UserService.updateProfessionalData(realUser.id, updateData)
         toast.success("Profesional actualizado correctamente")
 
         // Refrescar usuarios si hay función disponible
@@ -264,8 +282,9 @@ export function ProfesionalesView({
           onUpdateProfesional({
             ...selectedProfesional,
             nombre: editForm.nombre,
-            especialidad:
-              editForm.especialidad === "otros" ? editForm.especialidadOtra : getSpecialtyLabel(editForm.especialidad),
+            especialidad: editForm.especialidad === "otros" 
+              ? editForm.especialidadOtra 
+              : getSpecialtyLabel(editForm.especialidad),
             name: editForm.nombre,
             color: editForm.color,
           })
@@ -384,28 +403,24 @@ export function ProfesionalesView({
               {isUserRole ? "Mi Perfil Profesional" : "Gestión de Profesionales"}
             </h2>
             <p className="text-sm text-muted-foreground">
-              {isUserRole 
-                ? "Tu información como profesional" 
-                : "No hay profesionales disponibles"
-              }
+              {isUserRole ? "Tu información como profesional" : "No hay profesionales disponibles"}
             </p>
           </div>
         </div>
+
         <div className="flex flex-col items-center justify-center h-64 text-center">
           <div className="text-6xl mb-4">👨‍⚕️</div>
           <h3 className="text-lg font-semibold mb-2">
             {isUserRole ? "Perfil no encontrado" : "No hay profesionales"}
           </h3>
           <p className="text-muted-foreground mb-4">
-            {isUserRole 
-              ? "No se encontró tu perfil profesional" 
-              : "Añade el primer profesional para comenzar"
-            }
+            {isUserRole ? "No se encontró tu perfil profesional" : "Añade el primer profesional para comenzar"}
           </p>
           {/* 🚀 BOTÓN AÑADIR - SOLO PARA ADMIN Y COORDINADOR */}
           {!isUserRole && (
             <Button onClick={() => setShowAddModal(true)} className="gap-2">
-              
+              <Plus className="h-4 w-4" />
+              Añadir Profesional
             </Button>
           )}
         </div>
@@ -421,10 +436,7 @@ export function ProfesionalesView({
             {isUserRole ? "Mi Perfil Profesional" : "Gestión de Profesionales"}
           </h2>
           <p className="text-sm text-muted-foreground">
-            {isUserRole 
-              ? "Tu información y estadísticas" 
-              : `${filteredProfesionales.length} profesionales disponibles`
-            }
+            {isUserRole ? "Tu información y estadísticas" : `${filteredProfesionales.length} profesionales disponibles`}
           </p>
         </div>
       </div>
@@ -481,7 +493,6 @@ export function ProfesionalesView({
                         <Edit className="h-4 w-4" />
                       </Button>
                     )}
-                    
                     {/* 🚀 BOTÓN CONFIGURAR HORARIOS - PARA ADMIN/COORDINADOR Y PARA EL PROPIO USUARIO */}
                     {canEdit && (
                       <Button
@@ -513,13 +524,13 @@ export function ProfesionalesView({
                         <div className="text-xl font-bold text-blue-600">{estadisticas.citasHoy}</div>
                         <div className="text-xs text-blue-600">Hoy</div>
                       </div>
-                      
+
                       {/* 🚀 PRÓXIMAS CITAS (futuras) */}
                       <div className="text-center p-3 bg-green-50 rounded-lg">
                         <div className="text-xl font-bold text-green-600">{estadisticas.proximasCitas}</div>
                         <div className="text-xs text-green-600">Próximas</div>
                       </div>
-                      
+
                       {/* 🚀 TOTAL DE CITAS */}
                       <div className="text-center p-3 bg-gray-50 rounded-lg">
                         <div className="text-xl font-bold text-gray-600">{estadisticas.totalCitas}</div>
@@ -620,9 +631,7 @@ export function ProfesionalesView({
       <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>
-              {isUserRole ? "Editar Mi Perfil" : "Editar Profesional"}
-            </DialogTitle>
+            <DialogTitle>{isUserRole ? "Editar Mi Perfil" : "Editar Profesional"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -634,6 +643,7 @@ export function ProfesionalesView({
                 className="bg-muted"
               />
             </div>
+
             <div>
               <Label htmlFor="edit-especialidad">Especialidad</Label>
               <Select
@@ -652,6 +662,7 @@ export function ProfesionalesView({
                 </SelectContent>
               </Select>
             </div>
+
             {editForm.especialidad === "otros" && (
               <div>
                 <Label htmlFor="edit-especialidad-otra">Especifica la especialidad</Label>
@@ -663,6 +674,7 @@ export function ProfesionalesView({
                 />
               </div>
             )}
+
             <div>
               <Label htmlFor="edit-color">Color</Label>
               <div className="flex items-center gap-3">
@@ -676,6 +688,7 @@ export function ProfesionalesView({
                 <div className="text-sm text-muted-foreground">{editForm.color}</div>
               </div>
             </div>
+
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowEditModal(false)}>
                 Cancelar
@@ -702,6 +715,7 @@ export function ProfesionalesView({
                 placeholder="Ej: Dr. Juan Pérez"
               />
             </div>
+
             <div>
               <Label htmlFor="add-especialidad">Especialidad</Label>
               <Select
@@ -720,6 +734,7 @@ export function ProfesionalesView({
                 </SelectContent>
               </Select>
             </div>
+
             {editForm.especialidad === "otros" && (
               <div>
                 <Label htmlFor="add-especialidad-otra">Especifica la especialidad</Label>
@@ -731,6 +746,7 @@ export function ProfesionalesView({
                 />
               </div>
             )}
+
             <div>
               <Label htmlFor="add-color">Color</Label>
               <Select value={editForm.color} onValueChange={(value) => setEditForm({ ...editForm, color: value })}>
@@ -749,6 +765,7 @@ export function ProfesionalesView({
                 </SelectContent>
               </Select>
             </div>
+
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setShowAddModal(false)}>
                 Cancelar

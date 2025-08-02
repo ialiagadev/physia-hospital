@@ -808,53 +808,62 @@ export function HorarioViewDynamic({
                       />
                     ))}
 
-                    {/* 🚀 NUEVO: Overlay de instrucciones SOBRE el grid cuando no hay horarios */}
-                    {!hasSchedules && !isOnVacation && (
-                      <div className="absolute inset-0 bg-white bg-opacity-95 flex items-center justify-center z-20">
-                        <div className="text-center max-w-sm p-6">
-                          <div className="text-4xl mb-4">⚙️</div>
-                          <div className="text-lg font-semibold mb-4 text-gray-800">Configura los horarios</div>
-                          <div className="space-y-3 text-sm text-gray-600 mb-6">
-                            <div className="flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
-                              <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
-                                1
-                              </div>
-                              <span>
-                                Ve a la pestaña <strong>Usuarios</strong>
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
-                              <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
-                                2
-                              </div>
-                              <span>
-                                Haz clic en el icono del <strong>reloj ⏰</strong>
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
-                              <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
-                                3
-                              </div>
-                              <span>
-                                Configura los horarios y <strong>acepta</strong>
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
-                              <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
-                                4
-                              </div>
-                              <span>
-                                <strong>Recarga</strong> esta página
-                              </span>
-                            </div>
-                          </div>
-                          <div className="text-xs text-gray-500 bg-yellow-50 p-3 rounded-lg border border-yellow-200">
-                            💡 <strong>Tip:</strong> Una vez configurados los horarios, podrás crear citas arrastrando y
-                            haciendo clic en los espacios libres.
-                          </div>
-                        </div>
-                      </div>
-                    )}
+                 {/* 🚀 NUEVO: Overlay de instrucciones SOBRE el grid cuando no hay horarios */}
+{!hasSchedules && !isOnVacation && (
+  <div className="absolute inset-0 bg-white bg-opacity-95 flex items-center justify-center z-20">
+    <div className="text-center max-w-sm p-6">
+      <div className="text-4xl mb-4">⚙️</div>
+      <div className="text-lg font-semibold mb-4 text-gray-800">
+        Configura tu agenda
+      </div>
+      
+      {/* Instrucciones paso a paso */}
+      <div className="space-y-3 text-sm text-gray-600 mb-4">
+        <div className="flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
+          <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
+            1
+          </div>
+          <span>Ve a la pestaña <strong>Usuarios</strong></span>
+        </div>
+        
+        <div className="flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
+          <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
+            2
+          </div>
+          <span>Haz clic en el icono del <strong>reloj ⏰</strong></span>
+        </div>
+        
+        <div className="flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
+          <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
+            3
+          </div>
+          <span>Configura los horarios y <strong>acepta</strong></span>
+        </div>
+        
+        <div className="flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
+          <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
+            4
+          </div>
+          <span><strong>Recarga</strong> esta página</span>
+        </div>
+      </div>
+
+      {/* Recordatorio sobre servicios */}
+      <div className="text-xs text-gray-600 bg-orange-50 p-3 rounded-lg border border-orange-200 mb-4">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-orange-500">🔧</span>
+          <strong className="text-orange-700">¡No olvides!</strong>
+        </div>
+        <span>Recuerda crear al menos un <strong>servicio</strong> en la pestaña Servicios para poder agendar citas.</span>
+      </div>
+
+      {/* Tip final */}
+      <div className="text-xs text-gray-500 bg-yellow-50 p-3 rounded-lg border border-yellow-200">
+        💡 <strong>Tip:</strong> Una vez configurados los horarios y servicios, podrás crear citas arrastrando y haciendo clic en los espacios libres.
+      </div>
+    </div>
+  </div>
+)}
 
                     {!isWorkingToday && !isOnVacation && hasSchedules ? (
                       // Día libre (tiene horarios pero no trabaja hoy) - SOBRE el grid
