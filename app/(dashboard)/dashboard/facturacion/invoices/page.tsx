@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
-import { Plus, Calendar, Filter, X, Download, Lock } from "lucide-react"
+import { Plus, Calendar, Filter, X, Download } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Checkbox } from "@/components/ui/checkbox"
 import { useToast } from "@/hooks/use-toast"
@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/dialog"
 
 // Tipos e interfaces
-type InvoiceStatus = "draft" | "issued" | "sent" | "paid"
+type InvoiceStatus = "draft" | "issued"
 
 interface DateFilters {
   startDate?: Date
@@ -180,16 +180,13 @@ export default function InvoicesPage() {
       if (dateFilters.startDate) {
         query = query.gte("issue_date", format(dateFilters.startDate, "yyyy-MM-dd"))
       }
-
       if (dateFilters.endDate) {
         query = query.lte("issue_date", format(dateFilters.endDate, "yyyy-MM-dd"))
       }
-
       if (dateFilters.year) {
         query = query.gte("issue_date", `${dateFilters.year}-01-01`)
         query = query.lte("issue_date", `${dateFilters.year}-12-31`)
       }
-
       if (dateFilters.month && dateFilters.year) {
         const monthNum = dateFilters.month.padStart(2, "0")
         const daysInMonth = new Date(Number.parseInt(dateFilters.year), Number.parseInt(dateFilters.month), 0).getDate()
@@ -198,7 +195,6 @@ export default function InvoicesPage() {
       }
 
       const { data, error } = await query
-
       if (error) throw error
 
       setInvoices(data || [])
@@ -279,7 +275,6 @@ export default function InvoicesPage() {
         .order("invoice_number", { ascending: true })
 
       if (error) throw error
-
       if (!fullInvoicesData || fullInvoicesData.length === 0) {
         throw new Error("No se encontraron datos para exportar")
       }
@@ -380,7 +375,7 @@ export default function InvoicesPage() {
         invoice.invoice_number || "",
         invoice.issue_date ? format(new Date(invoice.issue_date), "dd/MM/yyyy") : "",
         invoice.invoice_type === "rectificative" ? "Rectificativa" : "Normal",
-        invoice.status,
+        invoice.status === "draft" ? "Borrador" : invoice.status === "issued" ? "Emitida" : invoice.status,
         client?.name || "",
         client?.tax_id || "",
         client?.address || "",
@@ -483,7 +478,6 @@ export default function InvoicesPage() {
   // Datos para filtros
   const currentYear = new Date().getFullYear()
   const years = Array.from({ length: 10 }, (_, i) => currentYear - i)
-
   const months = [
     { value: "1", label: "Enero" },
     { value: "2", label: "Febrero" },
@@ -617,7 +611,10 @@ export default function InvoicesPage() {
             const price = apt.appointment_types?.price || 0
             baseAmount += price
             return {
-              description: `${apt.appointment_types?.name || "Consulta"} - ${format(new Date(apt.date + "T" + apt.start_time), "dd/MM/yyyy HH:mm")}`,
+              description: `${apt.appointment_types?.name || "Consulta"} - ${format(
+                new Date(apt.date + "T" + apt.start_time),
+                "dd/MM/yyyy HH:mm",
+              )}`,
               quantity: 1,
               unit_price: price,
               vat_rate: 21,
@@ -633,9 +630,17 @@ export default function InvoicesPage() {
           const totalAmount = baseAmount + vatAmount
 
           // Información del cliente para las notas
-          const clientInfoText = `Cliente: ${client.name}${client.tax_id ? `, CIF/NIF: ${client.tax_id}` : ""}${client.address ? `, Dirección: ${client.address}` : ""}${client.postal_code ? `, ${client.postal_code}` : ""} ${client.city || ""}${client.province ? `, ${client.province}` : ""}`
+          const clientInfoText = `Cliente: ${client.name}${
+            client.tax_id ? `, CIF/NIF: ${client.tax_id}` : ""
+          }${client.address ? `, Dirección: ${client.address}` : ""}${
+            client.postal_code ? `, ${client.postal_code}` : ""
+          } ${client.city || ""}${client.province ? `, ${client.province}` : ""}`
 
-          const additionalNotes = `Factura generada automáticamente para citas del ${format(new Date(selectedDateString), "dd/MM/yyyy", { locale: es })}`
+          const additionalNotes = `Factura generada automáticamente para citas del ${format(
+            new Date(selectedDateString),
+            "dd/MM/yyyy",
+            { locale: es },
+          )}`
 
           const fullNotes = clientInfoText + `\n\nNotas adicionales: ${additionalNotes}`
 
@@ -648,7 +653,7 @@ export default function InvoicesPage() {
               client_id: Number.parseInt(clientId),
               issue_date: dateStr,
               invoice_type: "normal",
-              status: "paid",
+              status: "issued",
               base_amount: baseAmount,
               vat_amount: vatAmount,
               irpf_amount: 0,
@@ -721,18 +726,8 @@ export default function InvoicesPage() {
     }
   }
 
-  // Función para descargar factura individual
+  // ✅ FUNCIÓN ACTUALIZADA: Permite descargar borradores
   const handleDownloadInvoice = async (invoiceId: number, invoiceStatus: string) => {
-    // Verificar si es borrador
-    if (invoiceStatus === "draft") {
-      toast({
-        title: "Acción no permitida",
-        description: "No se puede descargar una factura en borrador",
-        variant: "destructive",
-      })
-      return
-    }
-
     // Añadir el ID a la lista de facturas que se están descargando
     setDownloadingInvoices((prev) => new Set([...prev, invoiceId]))
 
@@ -828,9 +823,12 @@ export default function InvoicesPage() {
         professional_id: line.professional_id,
       }))
 
-      // Generar el PDF
-      const filename = `factura-${invoiceData.invoice_number || invoiceId}.pdf`
-      const pdfBlob = await generatePdf(invoiceForPdf, linesForPdf, filename, false)
+      // ✅ DETERMINAR SI ES BORRADOR
+      const isDraft = invoiceStatus === "draft"
+
+      // Generar el PDF con el parámetro isDraft
+      const filename = `${isDraft ? "borrador-" : ""}factura-${invoiceData.invoice_number || invoiceId}.pdf`
+      const pdfBlob = await generatePdf(invoiceForPdf, linesForPdf, filename, isDraft)
 
       // Verificar que el PDF se generó correctamente
       if (!pdfBlob) {
@@ -847,9 +845,16 @@ export default function InvoicesPage() {
       document.body.removeChild(link)
       URL.revokeObjectURL(url)
 
+      // ✅ MENSAJE DIFERENTE PARA BORRADORES
+      const successMessage = isDraft
+        ? `El borrador de factura se ha descargado correctamente`
+        : `La factura ${invoiceData.invoice_number} se ha descargado correctamente${
+            invoiceForPdf.verifactu_status === "sent" ? " (incluye QR Verifactu)" : ""
+          }`
+
       toast({
         title: "Descarga completada",
-        description: `La factura ${invoiceData.invoice_number} se ha descargado correctamente${invoiceForPdf.verifactu_status === "sent" ? " (incluye QR Verifactu)" : ""}`,
+        description: successMessage,
       })
     } catch (error) {
       console.error("Error al descargar factura:", error)
@@ -1102,28 +1107,17 @@ export default function InvoicesPage() {
                   <TableCell className="text-right">{invoice.total_amount.toFixed(2)} €</TableCell>
                   <TableCell className="text-right">
                     <div className="flex gap-1 justify-end">
-                      {/* Botón de descarga condicional */}
-                      {invoice.status === "draft" ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled
-                          className="opacity-50 cursor-not-allowed"
-                          title="No se puede descargar una factura en borrador"
-                        >
-                          <Lock className="h-4 w-4" />
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDownloadInvoice(invoice.id, invoice.status)}
-                          disabled={downloadingInvoices.has(invoice.id)}
-                          className="transition-colors hover:bg-primary/10"
-                        >
-                          <Download className="h-4 w-4" />
-                        </Button>
-                      )}
+                      {/* ✅ BOTÓN DE DESCARGA ACTUALIZADO: Permite descargar borradores */}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDownloadInvoice(invoice.id, invoice.status)}
+                        disabled={downloadingInvoices.has(invoice.id)}
+                        className="transition-colors hover:bg-primary/10"
+                        title={invoice.status === "draft" ? "Descargar borrador" : "Descargar factura"}
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
                       <Button variant="ghost" size="sm" asChild className="transition-colors hover:bg-primary/10">
                         <Link href={`/dashboard/facturacion/invoices/${invoice.id}`}>Ver</Link>
                       </Button>

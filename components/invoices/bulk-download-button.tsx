@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Download, AlertTriangle, FileX } from "lucide-react"
+import { Download, AlertTriangle, FileText } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import JSZip from "jszip"
 import { supabase } from "@/lib/supabase/client"
@@ -27,7 +27,6 @@ export function BulkDownloadButton({ selectedInvoiceIds, onDownloadComplete }: B
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
   const [downloadableInvoices, setDownloadableInvoices] = useState<any[]>([])
   const [draftInvoices, setDraftInvoices] = useState<any[]>([])
-  const [allAreDrafts, setAllAreDrafts] = useState(false)
   const [isCheckingStatus, setIsCheckingStatus] = useState(false)
   const { toast } = useToast()
 
@@ -36,7 +35,6 @@ export function BulkDownloadButton({ selectedInvoiceIds, onDownloadComplete }: B
     if (selectedInvoiceIds.length > 0) {
       checkInvoicesStatusSilently()
     } else {
-      setAllAreDrafts(false)
       setDownloadableInvoices([])
       setDraftInvoices([])
     }
@@ -57,12 +55,12 @@ export function BulkDownloadButton({ selectedInvoiceIds, onDownloadComplete }: B
         return
       }
 
-      const downloadable = invoicesStatus?.filter((inv) => inv.status !== "draft") || []
+      // ✅ CAMBIO: Ahora todas las facturas son descargables (incluyendo borradores)
+      const downloadable = invoicesStatus || []
       const drafts = invoicesStatus?.filter((inv) => inv.status === "draft") || []
 
       setDownloadableInvoices(downloadable)
       setDraftInvoices(drafts)
-      setAllAreDrafts(downloadable.length === 0 && drafts.length > 0)
     } catch (error) {
       console.error("Error al verificar facturas:", error)
     } finally {
@@ -74,17 +72,7 @@ export function BulkDownloadButton({ selectedInvoiceIds, onDownloadComplete }: B
     if (selectedInvoiceIds.length === 0) return
 
     try {
-      // Si ya sabemos que todas son borradores, mostrar error inmediatamente
-      if (allAreDrafts) {
-        toast({
-          title: "Sin facturas para descargar",
-          description: "Todas las facturas seleccionadas están en borrador y no se pueden descargar",
-          variant: "destructive",
-        })
-        return
-      }
-
-      // Si hay borradores, mostrar diálogo de confirmación
+      // ✅ CAMBIO: Si hay borradores, mostrar diálogo informativo (no bloqueante)
       if (draftInvoices.length > 0) {
         setShowConfirmDialog(true)
       } else {
@@ -119,9 +107,21 @@ export function BulkDownloadButton({ selectedInvoiceIds, onDownloadComplete }: B
         onDownloadComplete(invoiceIds)
       }
 
+      // ✅ MENSAJE ACTUALIZADO para incluir información sobre borradores
+      const draftsCount = draftInvoices.filter((d) => invoiceIds.includes(d.id)).length
+      const officialsCount = invoiceIds.length - draftsCount
+
+      let description = `Se ${invoiceIds.length === 1 ? "descargó la factura" : `descargaron ${invoiceIds.length} facturas`} correctamente`
+
+      if (draftsCount > 0 && officialsCount > 0) {
+        description += ` (${officialsCount} oficial${officialsCount !== 1 ? "es" : ""}, ${draftsCount} borrador${draftsCount !== 1 ? "es" : ""})`
+      } else if (draftsCount > 0) {
+        description += ` (${draftsCount} borrador${draftsCount !== 1 ? "es" : ""})`
+      }
+
       toast({
         title: "Descarga completada",
-        description: `Se ${invoiceIds.length === 1 ? "descargó la factura" : `descargaron ${invoiceIds.length} facturas`} correctamente`,
+        description,
       })
     } catch (error) {
       console.error("Error al descargar facturas:", error)
@@ -155,6 +155,7 @@ export function BulkDownloadButton({ selectedInvoiceIds, onDownloadComplete }: B
       verifactu_status: invoice.verifactu_status || null,
       verifactu_response: invoice.verifactu_response || null,
     }
+
     return mappedInvoice
   }
 
@@ -172,11 +173,6 @@ export function BulkDownloadButton({ selectedInvoiceIds, onDownloadComplete }: B
 
     if (error || !invoice) {
       throw new Error("No se pudo obtener la factura")
-    }
-
-    // ✅ Verificar que no sea borrador (doble verificación)
-    if (invoice.status === "draft") {
-      throw new Error("No se puede descargar una factura en borrador")
     }
 
     // Obtener las líneas de la factura
@@ -205,9 +201,12 @@ export function BulkDownloadButton({ selectedInvoiceIds, onDownloadComplete }: B
     // Mapear los datos al formato correcto
     const mappedInvoice = mapInvoiceData(invoice)
 
-    // Generar el PDF con QR de Verifactu
-    const fileName = `factura-${invoice.invoice_number}.pdf`
-    const pdfBlob = await generatePdf(mappedInvoice, validLines, fileName, false)
+    // ✅ DETERMINAR SI ES BORRADOR
+    const isDraft = invoice.status === "draft"
+
+    // Generar el PDF con el parámetro isDraft
+    const fileName = `${isDraft ? "borrador-" : ""}factura-${invoice.invoice_number || invoiceId}.pdf`
+    const pdfBlob = await generatePdf(mappedInvoice, validLines, fileName, isDraft)
 
     // Si el PDF se generó correctamente, descargarlo
     if (pdfBlob && pdfBlob instanceof Blob) {
@@ -239,25 +238,18 @@ export function BulkDownloadButton({ selectedInvoiceIds, onDownloadComplete }: B
       throw new Error("No se pudieron obtener las facturas")
     }
 
-    // ✅ Filtrar borradores (verificación adicional)
-    const nonDraftInvoices = invoices.filter((inv) => inv.status !== "draft")
-    if (nonDraftInvoices.length === 0) {
-      throw new Error("Todas las facturas seleccionadas están en borrador")
-    }
-
-    // Obtener todas las líneas de las facturas (solo las no-borrador)
-    const nonDraftIds = nonDraftInvoices.map((inv) => inv.id)
+    // Obtener todas las líneas de las facturas
     const { data: allLines, error: linesError } = await supabase
       .from("invoice_lines")
       .select("*")
-      .in("invoice_id", nonDraftIds)
+      .in("invoice_id", invoiceIds)
 
     if (linesError) {
       throw new Error("No se pudieron obtener las líneas de las facturas")
     }
 
     // Generar un PDF para cada factura y añadirlo al ZIP
-    const pdfPromises = nonDraftInvoices.map(async (invoice, index) => {
+    const pdfPromises = invoices.map(async (invoice, index) => {
       const invoiceLines = allLines?.filter((line) => line.invoice_id === invoice.id) || []
 
       // Validar líneas
@@ -272,12 +264,14 @@ export function BulkDownloadButton({ selectedInvoiceIds, onDownloadComplete }: B
         line_amount: Number(line.line_amount) || 0,
       }))
 
-      const fileName = `factura-${invoice.invoice_number}.pdf`
+      // ✅ DETERMINAR SI ES BORRADOR
+      const isDraft = invoice.status === "draft"
+      const fileName = `${isDraft ? "borrador-" : ""}factura-${invoice.invoice_number || invoice.id}.pdf`
 
       try {
         // Mapear los datos al formato correcto
         const mappedInvoice = mapInvoiceData(invoice)
-        const pdfBlob = await generatePdf(mappedInvoice, validLines, fileName, false)
+        const pdfBlob = await generatePdf(mappedInvoice, validLines, fileName, isDraft)
 
         if (pdfBlob && pdfBlob instanceof Blob) {
           zip.file(fileName, pdfBlob)
@@ -328,23 +322,25 @@ export function BulkDownloadButton({ selectedInvoiceIds, onDownloadComplete }: B
       }
     }
 
-    if (allAreDrafts) {
-      return {
-        icon: <FileX className="mr-2 h-4 w-4" />,
-        text:
-          selectedInvoiceIds.length === 1
-            ? "Borrador - No descargable"
-            : `${selectedInvoiceIds.length} Borradores - No descargables`,
-      }
-    }
-
+    // ✅ CAMBIO: Mostrar información sobre borradores sin bloquear
     if (draftInvoices.length > 0) {
-      return {
-        icon: <AlertTriangle className="mr-2 h-4 w-4" />,
-        text:
-          downloadableInvoices.length === 1
-            ? `Descargar 1 PDF (${draftInvoices.length} borrador${draftInvoices.length !== 1 ? "es" : ""})`
-            : `Descargar ${downloadableInvoices.length} PDFs (${draftInvoices.length} borrador${draftInvoices.length !== 1 ? "es" : ""})`,
+      const officialsCount = downloadableInvoices.length - draftInvoices.length
+
+      if (officialsCount === 0) {
+        // Solo borradores
+        return {
+          icon: <FileText className="mr-2 h-4 w-4" />,
+          text:
+            selectedInvoiceIds.length === 1
+              ? "Descargar borrador"
+              : `Descargar ${selectedInvoiceIds.length} borradores`,
+        }
+      } else {
+        // Mezcla de oficiales y borradores
+        return {
+          icon: <AlertTriangle className="mr-2 h-4 w-4" />,
+          text: `Descargar ${downloadableInvoices.length} PDFs (${draftInvoices.length} borrador${draftInvoices.length !== 1 ? "es" : ""})`,
+        }
       }
     }
 
@@ -355,16 +351,10 @@ export function BulkDownloadButton({ selectedInvoiceIds, onDownloadComplete }: B
   }
 
   const buttonContent = getButtonContent()
-  const isDisabled = isLoading || selectedInvoiceIds.length === 0 || allAreDrafts || isCheckingStatus
+  const isDisabled = isLoading || selectedInvoiceIds.length === 0 || isCheckingStatus
 
   const ButtonComponent = (
-    <Button
-      variant={allAreDrafts ? "secondary" : "outline"}
-      size="sm"
-      onClick={checkInvoicesStatus}
-      disabled={isDisabled}
-      className={allAreDrafts ? "opacity-60 cursor-not-allowed" : ""}
-    >
+    <Button variant="outline" size="sm" onClick={checkInvoicesStatus} disabled={isDisabled}>
       {buttonContent.icon}
       {buttonContent.text}
     </Button>
@@ -373,29 +363,29 @@ export function BulkDownloadButton({ selectedInvoiceIds, onDownloadComplete }: B
   return (
     <TooltipProvider>
       <>
-        {allAreDrafts ? (
+        {draftInvoices.length > 0 && draftInvoices.length === selectedInvoiceIds.length ? (
           <Tooltip>
             <TooltipTrigger asChild>{ButtonComponent}</TooltipTrigger>
             <TooltipContent>
-              <p>Las facturas en borrador no se pueden descargar</p>
+              <p>Se descargarán como borradores con marca de agua</p>
             </TooltipContent>
           </Tooltip>
         ) : (
           ButtonComponent
         )}
 
-        {/* Diálogo de confirmación cuando hay borradores */}
+        {/* ✅ DIÁLOGO ACTUALIZADO: Informativo, no bloqueante */}
         <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <AlertTriangle className="h-5 w-5 text-amber-500" />
-                Facturas en borrador detectadas
+                Facturas en borrador incluidas
               </DialogTitle>
               <DialogDescription className="space-y-3">
                 <p>
                   Se encontraron <strong>{draftInvoices.length}</strong> factura{draftInvoices.length !== 1 ? "s" : ""}{" "}
-                  en borrador que no se pueden descargar:
+                  en borrador que se descargarán con marca de agua:
                 </p>
                 <div className="bg-amber-50 border border-amber-200 rounded-md p-3 max-h-32 overflow-y-auto">
                   <ul className="text-sm space-y-1">
@@ -406,10 +396,7 @@ export function BulkDownloadButton({ selectedInvoiceIds, onDownloadComplete }: B
                     ))}
                   </ul>
                 </div>
-                <p>
-                  ¿Deseas continuar descargando solo las <strong>{downloadableInvoices.length}</strong> factura
-                  {downloadableInvoices.length !== 1 ? "s" : ""} válida{downloadableInvoices.length !== 1 ? "s" : ""}?
-                </p>
+                <p>Los borradores se descargarán claramente marcados como tales para evitar confusiones fiscales.</p>
               </DialogDescription>
             </DialogHeader>
             <DialogFooter className="flex gap-2">

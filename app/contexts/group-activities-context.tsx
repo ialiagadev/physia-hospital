@@ -7,6 +7,7 @@ import { useAuth } from "@/app/contexts/auth-context"
 import { RecurrenceService } from "@/lib/services/recurrence-service"
 import { addWeeks, addMonths } from "date-fns"
 import { toast } from "sonner"
+import { autoSyncGroupActivity } from "@/lib/auto-sync"
 
 // ✅ TIPOS
 export interface GroupActivity {
@@ -88,13 +89,10 @@ function groupActivitiesReducer(state: GroupActivitiesState, action: GroupActivi
   switch (action.type) {
     case "SET_LOADING":
       return { ...state, loading: action.payload }
-
     case "SET_ERROR":
       return { ...state, error: action.payload, loading: false }
-
     case "SET_ACTIVITIES":
       return { ...state, activities: action.payload, loading: false, error: null }
-
     case "ADD_ACTIVITY":
       return {
         ...state,
@@ -102,7 +100,6 @@ function groupActivitiesReducer(state: GroupActivitiesState, action: GroupActivi
           (a, b) => new Date(a.date + " " + a.start_time).getTime() - new Date(b.date + " " + b.start_time).getTime(),
         ),
       }
-
     case "ADD_ACTIVITIES":
       return {
         ...state,
@@ -110,7 +107,6 @@ function groupActivitiesReducer(state: GroupActivitiesState, action: GroupActivi
           (a, b) => new Date(a.date + " " + a.start_time).getTime() - new Date(b.date + " " + b.start_time).getTime(),
         ),
       }
-
     case "UPDATE_ACTIVITY":
       return {
         ...state,
@@ -118,13 +114,11 @@ function groupActivitiesReducer(state: GroupActivitiesState, action: GroupActivi
           activity.id === action.payload.id ? { ...activity, ...action.payload.updates } : activity,
         ),
       }
-
     case "DELETE_ACTIVITY":
       return {
         ...state,
         activities: state.activities.filter((activity) => activity.id !== action.payload),
       }
-
     case "ADD_PARTICIPANT":
       return {
         ...state,
@@ -138,7 +132,6 @@ function groupActivitiesReducer(state: GroupActivitiesState, action: GroupActivi
             : activity,
         ),
       }
-
     case "REMOVE_PARTICIPANT":
       return {
         ...state,
@@ -152,7 +145,6 @@ function groupActivitiesReducer(state: GroupActivitiesState, action: GroupActivi
             : activity,
         ),
       }
-
     case "UPDATE_PARTICIPANT_STATUS":
       return {
         ...state,
@@ -170,7 +162,6 @@ function groupActivitiesReducer(state: GroupActivitiesState, action: GroupActivi
             : activity,
         ),
       }
-
     default:
       return state
   }
@@ -288,7 +279,6 @@ export function GroupActivitiesProvider({ children, organizationId, users }: Gro
 
       const processedActivities: GroupActivity[] = (activitiesData || []).map((activity: any) => {
         const professional = users.find((user) => user.id === activity.professional_id)
-
         const processedParticipants =
           activity.group_activity_participants?.map((participant: any) => ({
             ...participant,
@@ -310,10 +300,12 @@ export function GroupActivitiesProvider({ children, organizationId, users }: Gro
     }
   }, [organizationId, userProfile, users])
 
-  // ✅ CREAR ACTIVIDAD CON ACTUALIZACIÓN OPTIMISTA
+  // ✅ CREAR ACTIVIDAD CON ACTUALIZACIÓN OPTIMISTA Y AUTO-SYNC
   const createActivity = useCallback(
     async (activityData: any) => {
       try {
+        console.log("🔄 Contexto: Iniciando creación de actividad:", activityData.name)
+
         if (activityData.recurrence) {
           // Para actividades recurrentes, crear múltiples
           const startDate = typeof activityData.date === "string" ? new Date(activityData.date) : activityData.date
@@ -355,6 +347,8 @@ export function GroupActivitiesProvider({ children, organizationId, users }: Gro
 
           if (insertError) throw insertError
 
+          console.log("✅ Contexto: Actividades recurrentes creadas en BD:", data.length)
+
           // ✅ ACTUALIZAR CON IDs REALES
           dispatch({
             type: "SET_ACTIVITIES",
@@ -366,6 +360,19 @@ export function GroupActivitiesProvider({ children, organizationId, users }: Gro
               })),
             ],
           })
+
+          // 🆕 AUTO-SYNC PARA CADA ACTIVIDAD RECURRENTE
+          if (userProfile?.id) {
+            console.log("🔄 Contexto: Iniciando auto-sync para actividades recurrentes...")
+            for (const activity of data) {
+              try {
+                await autoSyncGroupActivity(activity.id, userProfile.id, organizationId)
+                console.log("✅ Contexto: Actividad recurrente sincronizada:", activity.id)
+              } catch (error) {
+                console.log("❌ Contexto: Error en auto-sync de actividad recurrente:", error)
+              }
+            }
+          }
         } else {
           // Actividad única
           const tempActivity: GroupActivity = {
@@ -415,8 +422,21 @@ export function GroupActivitiesProvider({ children, organizationId, users }: Gro
 
           if (insertError) throw insertError
 
+          console.log("✅ Contexto: Actividad única creada en BD:", data.id)
+
           // ✅ ACTUALIZAR CON ID REAL
           dispatch({ type: "UPDATE_ACTIVITY", payload: { id: tempActivity.id, updates: { id: data.id } } })
+
+          // 🆕 AUTO-SYNC PARA ACTIVIDAD ÚNICA
+          if (userProfile?.id) {
+            console.log("🔄 Contexto: Iniciando auto-sync para actividad única:", data.id)
+            try {
+              await autoSyncGroupActivity(data.id, userProfile.id, organizationId)
+              console.log("✅ Contexto: Actividad sincronizada correctamente")
+            } catch (error) {
+              console.log("❌ Contexto: Error en auto-sync:", error)
+            }
+          }
         }
 
         toast.success("Actividad creada correctamente")
@@ -428,13 +448,15 @@ export function GroupActivitiesProvider({ children, organizationId, users }: Gro
         throw err
       }
     },
-    [users, transformRecurrenceConfig, state.activities, fetchActivities],
+    [users, transformRecurrenceConfig, state.activities, fetchActivities, userProfile, organizationId],
   )
 
-  // ✅ ACTUALIZAR ACTIVIDAD
+  // ✅ ACTUALIZAR ACTIVIDAD CON AUTO-SYNC
   const updateActivity = useCallback(
     async (id: string, updates: any) => {
       try {
+        console.log("🔄 Contexto: Iniciando actualización de actividad:", id)
+
         // ✅ ACTUALIZACIÓN OPTIMISTA
         dispatch({ type: "UPDATE_ACTIVITY", payload: { id, updates } })
 
@@ -448,6 +470,19 @@ export function GroupActivitiesProvider({ children, organizationId, users }: Gro
 
         if (updateError) throw updateError
 
+        console.log("✅ Contexto: Actividad actualizada en BD:", id)
+
+        // 🆕 AUTO-SYNC DESPUÉS DE ACTUALIZAR
+        if (userProfile?.id) {
+          console.log("🔄 Contexto: Iniciando auto-sync después de actualizar:", id)
+          try {
+            await autoSyncGroupActivity(id, userProfile.id, organizationId)
+            console.log("✅ Contexto: Actividad sincronizada después de actualizar")
+          } catch (error) {
+            console.log("❌ Contexto: Error en auto-sync después de actualizar:", error)
+          }
+        }
+
         toast.success("Actividad actualizada correctamente")
       } catch (err) {
         console.error("Error updating activity:", err)
@@ -457,13 +492,15 @@ export function GroupActivitiesProvider({ children, organizationId, users }: Gro
         throw err
       }
     },
-    [fetchActivities],
+    [fetchActivities, userProfile, organizationId],
   )
 
   // ✅ ELIMINAR ACTIVIDAD
   const deleteActivity = useCallback(
     async (id: string) => {
       try {
+        console.log("🔄 Contexto: Iniciando eliminación de actividad:", id)
+
         // ✅ ACTUALIZACIÓN OPTIMISTA
         dispatch({ type: "DELETE_ACTIVITY", payload: id })
 
@@ -471,6 +508,8 @@ export function GroupActivitiesProvider({ children, organizationId, users }: Gro
         const { error: deleteError } = await supabase.from("group_activities").delete().eq("id", id)
 
         if (deleteError) throw deleteError
+
+        console.log("✅ Contexto: Actividad eliminada de BD:", id)
 
         toast.success("Actividad eliminada correctamente")
       } catch (err) {
@@ -484,10 +523,12 @@ export function GroupActivitiesProvider({ children, organizationId, users }: Gro
     [fetchActivities],
   )
 
-  // ✅ AÑADIR PARTICIPANTE
+  // ✅ AÑADIR PARTICIPANTE CON AUTO-SYNC
   const addParticipant = useCallback(
     async (activityId: string, clientId: number, notes?: string) => {
       try {
+        console.log("🔄 Contexto: Añadiendo participante a actividad:", activityId)
+
         const tempParticipant: GroupActivityParticipant = {
           id: `temp-${Date.now()}`,
           group_activity_id: activityId,
@@ -510,8 +551,22 @@ export function GroupActivitiesProvider({ children, organizationId, users }: Gro
 
         if (insertError) throw insertError
 
+        console.log("✅ Contexto: Participante añadido en BD")
+
         // ✅ REFRESCAR SOLO ESA ACTIVIDAD
         await fetchActivities()
+
+        // 🆕 AUTO-SYNC DESPUÉS DE AÑADIR PARTICIPANTE
+        if (userProfile?.id) {
+          console.log("🔄 Contexto: Sincronizando actividad después de añadir participante:", activityId)
+          try {
+            await autoSyncGroupActivity(activityId, userProfile.id, organizationId)
+            console.log("✅ Contexto: Actividad sincronizada después de añadir participante")
+          } catch (error) {
+            console.log("❌ Contexto: Error en auto-sync después de añadir participante:", error)
+          }
+        }
+
         toast.success("Participante añadido correctamente")
       } catch (err) {
         console.error("Error adding participant:", err)
@@ -521,15 +576,17 @@ export function GroupActivitiesProvider({ children, organizationId, users }: Gro
         throw err
       }
     },
-    [fetchActivities],
+    [fetchActivities, userProfile, organizationId],
   )
 
-  // ✅ ELIMINAR PARTICIPANTE
+  // ✅ ELIMINAR PARTICIPANTE CON AUTO-SYNC
   const removeParticipant = useCallback(
     async (participantId: string) => {
       try {
         const activity = state.activities.find((a) => a.participants?.some((p) => p.id === participantId))
         if (!activity) throw new Error("Actividad no encontrada")
+
+        console.log("🔄 Contexto: Eliminando participante de actividad:", activity.id)
 
         // ✅ ACTUALIZACIÓN OPTIMISTA
         dispatch({ type: "REMOVE_PARTICIPANT", payload: { activityId: activity.id, participantId } })
@@ -542,6 +599,19 @@ export function GroupActivitiesProvider({ children, organizationId, users }: Gro
 
         if (deleteError) throw deleteError
 
+        console.log("✅ Contexto: Participante eliminado de BD")
+
+        // 🆕 AUTO-SYNC DESPUÉS DE ELIMINAR PARTICIPANTE
+        if (userProfile?.id) {
+          console.log("🔄 Contexto: Sincronizando actividad después de eliminar participante:", activity.id)
+          try {
+            await autoSyncGroupActivity(activity.id, userProfile.id, organizationId)
+            console.log("✅ Contexto: Actividad sincronizada después de eliminar participante")
+          } catch (error) {
+            console.log("❌ Contexto: Error en auto-sync después de eliminar participante:", error)
+          }
+        }
+
         toast.success("Participante eliminado correctamente")
       } catch (err) {
         console.error("Error removing participant:", err)
@@ -551,15 +621,17 @@ export function GroupActivitiesProvider({ children, organizationId, users }: Gro
         throw err
       }
     },
-    [state.activities, fetchActivities],
+    [state.activities, fetchActivities, userProfile, organizationId],
   )
 
-  // ✅ ACTUALIZAR ESTADO DE PARTICIPANTE
+  // ✅ ACTUALIZAR ESTADO DE PARTICIPANTE CON AUTO-SYNC
   const updateParticipantStatus = useCallback(
     async (participantId: string, status: string) => {
       try {
         const activity = state.activities.find((a) => a.participants?.some((p) => p.id === participantId))
         if (!activity) throw new Error("Actividad no encontrada")
+
+        console.log("🔄 Contexto: Actualizando estado de participante en actividad:", activity.id)
 
         // ✅ ACTUALIZACIÓN OPTIMISTA
         dispatch({ type: "UPDATE_PARTICIPANT_STATUS", payload: { activityId: activity.id, participantId, status } })
@@ -572,6 +644,19 @@ export function GroupActivitiesProvider({ children, organizationId, users }: Gro
 
         if (updateError) throw updateError
 
+        console.log("✅ Contexto: Estado de participante actualizado en BD")
+
+        // 🆕 AUTO-SYNC DESPUÉS DE CAMBIAR ESTADO
+        if (userProfile?.id) {
+          console.log("🔄 Contexto: Sincronizando actividad después de cambiar estado:", activity.id)
+          try {
+            await autoSyncGroupActivity(activity.id, userProfile.id, organizationId)
+            console.log("✅ Contexto: Actividad sincronizada después de cambiar estado")
+          } catch (error) {
+            console.log("❌ Contexto: Error en auto-sync después de cambiar estado:", error)
+          }
+        }
+
         toast.success("Estado actualizado correctamente")
       } catch (err) {
         console.error("Error updating participant status:", err)
@@ -581,7 +666,7 @@ export function GroupActivitiesProvider({ children, organizationId, users }: Gro
         throw err
       }
     },
-    [state.activities, fetchActivities],
+    [state.activities, fetchActivities, userProfile, organizationId],
   )
 
   // ✅ EFECTO INICIAL

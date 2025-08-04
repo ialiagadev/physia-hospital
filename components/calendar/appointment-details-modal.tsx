@@ -24,6 +24,8 @@ import { IndividualBillingButton } from "./individual-billing-button"
 import { supabase } from "@/lib/supabase/client"
 import { useAuth } from "@/app/contexts/auth-context"
 import { useAppointmentConflicts } from "@/hooks/use-appointment-conflicts"
+import { toast } from "sonner"
+import { autoSyncAppointment } from "@/lib/auto-sync"
 
 interface AppointmentDetailsModalProps {
   isOpen: boolean
@@ -239,16 +241,37 @@ export function AppointmentDetailsModal({
     }
   }
 
-  // Función de actualización mejorada
+  // 🆕 FUNCIÓN DE ACTUALIZACIÓN MEJORADA CON MEJOR MANEJO DE ERRORES
   const handleSave = async () => {
     // Verificar conflictos antes de guardar
     if (conflicts.length > 0) {
-      // No permitir guardar si hay conflictos
+      toast.error("No se puede guardar: hay conflictos de horario")
       return
     }
 
     setIsSaving(true)
+
     try {
+      console.log("🔍 DEBUG - Updating appointment:", {
+        id: appointment.id,
+        organization_id: userProfile?.organization_id,
+        user_id: userProfile?.id,
+      })
+
+      // 🆕 PRIMERO VERIFICAR QUE LA CITA EXISTE
+      const { data: existingAppointment, error: checkError } = await supabase
+        .from("appointments")
+        .select("id, organization_id, professional_id")
+        .eq("id", appointment.id)
+        .single()
+
+      if (checkError || !existingAppointment) {
+        console.error("🔍 DEBUG - Appointment not found:", checkError)
+        throw new Error("La cita no existe o no tienes permisos para editarla")
+      }
+
+      console.log("🔍 DEBUG - Existing appointment found:", existingAppointment)
+
       // Preparar los datos para la actualización
       const updateData = {
         date: editedAppointment.date,
@@ -261,38 +284,91 @@ export function AppointmentDetailsModal({
         updated_at: new Date().toISOString(),
       }
 
-      // Actualizar en la base de datos
-      const { data, error } = await supabase
+      console.log("🔍 DEBUG - Update data:", updateData)
+
+      // 🆕 ACTUALIZAR SIN .single() PRIMERO PARA EVITAR EL ERROR
+      const { data: updateResult, error: updateError } = await supabase
         .from("appointments")
         .update(updateData)
         .eq("id", appointment.id)
+        .select("*")
+
+      if (updateError) {
+        console.error("🔍 DEBUG - Update error:", updateError)
+        throw updateError
+      }
+
+      if (!updateResult || updateResult.length === 0) {
+        throw new Error("No se pudo actualizar la cita")
+      }
+
+      console.log("🔍 DEBUG - Update successful:", updateResult[0])
+
+      // 🆕 AHORA OBTENER LOS DATOS COMPLETOS CON RELACIONES
+      const { data: fullAppointment, error: fetchError } = await supabase
+        .from("appointments")
         .select(`
           *,
           client:clients(*),
           service:services(*),
-          consultation:consultations(*)
+          consultation:consultations(*),
+          professional:users!appointments_professional_id_fkey(name),
+          appointment_type:appointment_types(name)
         `)
+        .eq("id", appointment.id)
         .single()
 
-      if (error) {
-        throw error
+      if (fetchError || !fullAppointment) {
+        console.error("🔍 DEBUG - Fetch error:", fetchError)
+        // Si no puede obtener los datos completos, usar los datos básicos
+        const basicAppointment: AppointmentWithDetails = {
+          ...updateResult[0],
+          client: appointment.client, // Mantener datos existentes
+          service: editedAppointment.service,
+          consultation: appointment.consultation,
+          professional: appointment.professional,
+          appointment_type: appointment.appointment_type,
+        }
+        await onUpdate(basicAppointment)
+      } else {
+        // Usar los datos completos
+        await onUpdate(fullAppointment)
       }
 
-      // Crear el objeto actualizado con la estructura correcta
-      const updatedAppointment: AppointmentWithDetails = {
-        ...data,
-        client: data.client,
-        service: data.service,
-        consultation: data.consultation,
-      }
-
-      // Llamar a la función onUpdate del componente padre
-      await onUpdate(updatedAppointment)
       setIsEditing(false)
+      toast.success("Cita actualizada correctamente")
+      // 🆕 SINCRONIZACIÓN AUTOMÁTICA CON GOOGLE CALENDAR
+      if (userProfile?.id && userProfile?.organization_id) {
+        console.log("🔄 Iniciando sincronización automática después de actualizar...")
+        try {
+          const syncResult = await autoSyncAppointment(appointment.id, userProfile.id, userProfile.organization_id)
+
+          if (syncResult.success) {
+            console.log("✅ Cita sincronizada automáticamente con Google Calendar")
+          } else {
+            console.log("ℹ️ Cita no sincronizada:", syncResult.message || syncResult.error)
+          }
+        } catch (syncError) {
+          console.error("❌ Error en sincronización automática:", syncError)
+          // No mostramos error al usuario para no interrumpir el flujo
+        }
+      }
       onClose()
     } catch (error) {
-      console.error("Error al actualizar la cita:", error)
-      // Aquí podrías mostrar un toast o mensaje de error
+      console.error("🔍 DEBUG - Error al actualizar la cita:", error)
+
+      // 🆕 MENSAJES DE ERROR MÁS ESPECÍFICOS
+      if (error instanceof Error) {
+        if (error.message.includes("PGRST116")) {
+          toast.error("Error: La cita no se encontró o no tienes permisos para editarla")
+        } else if (error.message.includes("foreign key")) {
+          toast.error("Error: Hay un problema con los datos relacionados")
+        } else {
+          toast.error(`Error al actualizar: ${error.message}`)
+        }
+      } else {
+        toast.error("Error desconocido al actualizar la cita")
+      }
     } finally {
       setIsSaving(false)
     }
@@ -419,7 +495,9 @@ export function AppointmentDetailsModal({
       >
         {/* Contenedor principal que se ajusta al contenido - CENTRADO VERTICALMENTE */}
         <div
-          className={`flex w-full ${isCoordinator ? "justify-center" : "max-w-7xl gap-2"} max-h-[calc(100vh-4rem)] my-auto`}
+          className={`flex w-full ${
+            isCoordinator ? "justify-center" : "max-w-7xl gap-2"
+          } max-h-[calc(100vh-4rem)] my-auto`}
         >
           {/* Modal de detalles de la cita - Ajustar ancho según si es coordinador */}
           <div
@@ -440,18 +518,20 @@ export function AppointmentDetailsModal({
                     </p>
                   </div>
                 </div>
+
                 <div className="flex items-center gap-2">
                   {!isEditing && (
                     <>
-                    {userProfile?.role !== "user" && (
-                      <IndividualBillingButton
-                        appointment={appointment}
-                        onBillingComplete={() => {
-                          // Recargar estado de factura después de facturar
-                          checkExistingInvoice()
-                        }}
-                      />
-                    )}
+                      {userProfile?.role !== "user" && (
+                        <IndividualBillingButton
+                          appointment={appointment}
+                          onBillingComplete={() => {
+                            // Recargar estado de factura después de facturar
+                            checkExistingInvoice()
+                          }}
+                        />
+                      )}
+
                       <Button
                         variant="outline"
                         size="sm"
@@ -464,6 +544,7 @@ export function AppointmentDetailsModal({
                         <Edit2 className="h-4 w-4" />
                         Editar
                       </Button>
+
                       {/* ✅ MOSTRAR MENSAJE DE AVISO O BOTÓN ELIMINAR */}
                       {checkingInvoice ? (
                         <div className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded border border-gray-200">
@@ -499,6 +580,7 @@ export function AppointmentDetailsModal({
                       )}
                     </>
                   )}
+
                   <Button
                     variant="ghost"
                     size="sm"

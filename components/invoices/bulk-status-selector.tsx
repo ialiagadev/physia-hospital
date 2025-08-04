@@ -5,18 +5,7 @@ import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase/client"
-import {
-  ChevronDown,
-  Check,
-  FileText,
-  AlertTriangle,
-  Send,
-  CreditCard,
-  HelpCircle,
-  Settings,
-  Shield,
-  Clock,
-} from "lucide-react"
+import { ChevronDown, Check, FileText, AlertTriangle, HelpCircle, Settings, Shield, Clock } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -27,7 +16,7 @@ import {
 } from "@/components/ui/dialog"
 import { generateUniqueInvoiceNumber } from "@/lib/invoice-utils"
 
-type InvoiceStatus = "draft" | "issued" | "sent" | "paid"
+type InvoiceStatus = "draft" | "issued"
 
 interface BulkStatusSelectorProps {
   selectedInvoiceIds: number[]
@@ -64,18 +53,6 @@ const statusConfig: Record<
     icon: Check,
     description: "Factura emitida",
   },
-  sent: {
-    label: "Enviada",
-    color: "bg-indigo-100 text-indigo-800 border-indigo-200",
-    icon: Send,
-    description: "Factura enviada al cliente",
-  },
-  paid: {
-    label: "Pagada",
-    color: "bg-green-100 text-green-800 border-green-200",
-    icon: CreditCard,
-    description: "Factura pagada completamente",
-  },
 }
 
 export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabled = false }: BulkStatusSelectorProps) {
@@ -95,6 +72,7 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
     successCount: number
     errorCount: number
   }>({ current: 0, total: 0, currentInvoice: "", successCount: 0, errorCount: 0 })
+
   const { toast } = useToast()
 
   const getStatusConfig = (status: string) => {
@@ -111,9 +89,7 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
   const isValidStatusTransition = (from: InvoiceStatus, to: InvoiceStatus): boolean => {
     const validTransitions: Record<InvoiceStatus, InvoiceStatus[]> = {
       draft: ["issued"],
-      issued: ["sent", "paid"],
-      sent: ["issued", "paid"],
-      paid: ["issued", "sent"],
+      issued: [], // No hay transiciones desde issued
     }
     return validTransitions[from]?.includes(to) || false
   }
@@ -124,14 +100,13 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
     const availableStatusesPerInvoice = invoices.map((invoice) => {
       const validTransitions: Record<InvoiceStatus, InvoiceStatus[]> = {
         draft: ["issued"],
-        issued: ["sent", "paid"],
-        sent: ["issued", "paid"],
-        paid: ["issued", "sent"],
+        issued: [], // No hay transiciones desde issued
       }
       return validTransitions[invoice.status] || []
     })
 
     if (availableStatusesPerInvoice.length === 0) return []
+
     return availableStatusesPerInvoice.reduce((common, current) => common.filter((status) => current.includes(status)))
   }
 
@@ -157,6 +132,7 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
 
       const invoicesData = (invoices || []) as InvoiceStatusInfo[]
       setInvoicesInfo(invoicesData)
+
       const commonStatuses = getCommonAvailableStatuses(invoicesData)
       setAvailableStatuses(commonStatuses)
     } catch (error) {
@@ -178,7 +154,6 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
     }
 
     setIsUpdating(true)
-
     try {
       const invoiceIds = invoices.map((inv) => inv.id).filter((id) => id)
       if (invoiceIds.length === 0) {
@@ -195,8 +170,8 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
         let errorCount = 0
         const processedInvoices: string[] = []
         const failedInvoices: string[] = []
-
         const totalToProcess = draftInvoices.length + nonDraftInvoices.length
+
         setProcessingProgress({
           current: 0,
           total: totalToProcess,
@@ -301,6 +276,7 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
                 successCount: successCount,
                 currentInvoice: `✅ Factura ${invoiceNumberFormatted} completada`,
               }))
+
               console.log(
                 `✅ Factura ${invoiceNumberFormatted} enviada a VeriFactu correctamente [${i + 1}/${draftInvoices.length}]`,
               )
@@ -344,7 +320,6 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
             // ✅ ROLLBACK SI HAY NÚMERO ASIGNADO
             if (invoiceNumberFormatted && newInvoiceNumber > 0 && fieldName) {
               console.log(`🔄 Haciendo rollback para factura ${invoice.id}...`)
-
               await supabase
                 .from("invoices")
                 .update({
@@ -409,7 +384,9 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
         if (errorCount === 0) {
           toast({
             title: "✅ Facturas emitidas correctamente",
-            description: `${successCount} factura${successCount !== 1 ? "s" : ""} emitida${successCount !== 1 ? "s" : ""} y enviada${successCount !== 1 ? "s" : ""} a VeriFactu`,
+            description: `${successCount} factura${successCount !== 1 ? "s" : ""} emitida${
+              successCount !== 1 ? "s" : ""
+            } y enviada${successCount !== 1 ? "s" : ""} a VeriFactu`,
           })
         } else if (successCount > 0) {
           toast({
@@ -442,7 +419,9 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
 
         toast({
           title: "Estados actualizados",
-          description: `${invoices.length} factura${invoices.length !== 1 ? "s" : ""} actualizada${invoices.length !== 1 ? "s" : ""} a ${getStatusConfig(newStatus).label}`,
+          description: `${invoices.length} factura${invoices.length !== 1 ? "s" : ""} actualizada${
+            invoices.length !== 1 ? "s" : ""
+          } a ${getStatusConfig(newStatus).label}`,
         })
       }
 
@@ -597,24 +576,16 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
       return `✅ Todas las facturas están en ${config.label.toLowerCase()}`
     }
 
-    if (uniqueStatuses.size > 3) {
-      return "⚠️ Facturas con estados muy diversos seleccionadas"
-    }
-
     if (uniqueStatuses.has("draft") && uniqueStatuses.has("issued")) {
-      return "💡 Recomendación: Selecciona solo borradores para emitir, o solo emitidas para enviar/pagar"
+      return "💡 Recomendación: Selecciona solo borradores para emitir"
     }
 
     if (uniqueStatuses.has("issued") && !uniqueStatuses.has("draft")) {
-      return "✅ Facturas emitidas: pueden cambiar a enviadas o pagadas"
+      return "✅ Facturas emitidas: no hay más cambios de estado disponibles"
     }
 
     if (uniqueStatuses.has("draft") && !uniqueStatuses.has("issued")) {
       return "✅ Facturas en borrador: pueden emitirse (se asignarán números y enviarán a VeriFactu)"
-    }
-
-    if (uniqueStatuses.has("paid") && !uniqueStatuses.has("draft")) {
-      return "✅ Facturas pagadas: pueden volver a emitidas o marcarse como enviadas"
     }
 
     return null
@@ -703,7 +674,7 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
                   return "Todas las facturas tienen el mismo estado. Perfecta selección para cambios masivos."
                 }
                 if (uniqueStatuses.has("draft") && uniqueStatuses.has("issued")) {
-                  return "Mezcla de borradores y emitidas. Considera seleccionar solo un tipo para más opciones."
+                  return "Mezcla de borradores y emitidas. Considera seleccionar solo borradores para emitir."
                 }
                 return "Solo se muestran los cambios de estado válidos para todas las facturas seleccionadas."
               })()}
@@ -752,7 +723,7 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
                     <span className="text-sm text-blue-800">Validación fiscal</span>
                   </div>
                   <div className="flex items-center gap-2 p-3 bg-indigo-50 rounded-md">
-                    <Send className="w-5 h-5 text-indigo-600" />
+                    <Check className="w-5 h-5 text-indigo-600" />
                     <span className="text-sm text-indigo-800">Envío a VeriFactu</span>
                   </div>
                   <div className="flex items-center gap-2 p-3 bg-purple-50 rounded-md">
@@ -777,7 +748,11 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
                     <div
                       className="bg-blue-600 h-full rounded-full transition-all duration-500 ease-out"
                       style={{
-                        width: `${processingProgress.total > 0 ? (processingProgress.current / processingProgress.total) * 100 : 0}%`,
+                        width: `${
+                          processingProgress.total > 0
+                            ? (processingProgress.current / processingProgress.total) * 100
+                            : 0
+                        }%`,
                       }}
                     />
                   </div>
@@ -848,7 +823,6 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
                 No todas las facturas seleccionadas pueden cambiar a{" "}
                 <strong>{selectedNewStatus && getStatusConfig(selectedNewStatus).label}</strong>:
               </p>
-
               {Array.isArray(applicableInvoices) && applicableInvoices.length > 0 && (
                 <div className="bg-green-50 border border-green-200 rounded-md p-3">
                   <div className="font-medium text-green-800 text-sm mb-2">
@@ -860,7 +834,6 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
                   </div>
                 </div>
               )}
-
               {Array.isArray(nonApplicableInvoices) && nonApplicableInvoices.length > 0 && (
                 <div className="bg-amber-50 border border-amber-200 rounded-md p-3">
                   <div className="font-medium text-amber-800 text-sm mb-2">
@@ -871,7 +844,6 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
                   </div>
                 </div>
               )}
-
               <p>
                 ¿Deseas continuar y actualizar solo las {applicableInvoices.length} factura
                 {applicableInvoices.length !== 1 ? "s" : ""} válida{applicableInvoices.length !== 1 ? "s" : ""}?

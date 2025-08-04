@@ -5,15 +5,14 @@ import { supabase } from "@/lib/supabase"
 import { useAuth } from "@/app/contexts/auth-context"
 import { RecurrenceService } from "@/lib/services/recurrence-service"
 import { addWeeks, addMonths } from "date-fns"
+import { autoSyncGroupActivity } from "@/lib/auto-sync"
 
 // ✅ FUNCIÓN AUXILIAR PARA CALCULAR DURACIÓN
 function calculateDurationInMinutes(startTime: string, endTime: string): number {
   const [startHours, startMinutes] = startTime.split(":").map(Number)
   const [endHours, endMinutes] = endTime.split(":").map(Number)
-
   const startTotalMinutes = startHours * 60 + startMinutes
   const endTotalMinutes = endHours * 60 + endMinutes
-
   return endTotalMinutes - startTotalMinutes
 }
 
@@ -27,7 +26,6 @@ function transformRecurrenceConfig(
   }
 
   let endDate: Date
-
   if (groupConfig.endType === "date") {
     // Si es por fecha, usar directamente la fecha especificada
     endDate = new Date(groupConfig.endDate)
@@ -189,16 +187,16 @@ export function useGroupActivities(organizationId?: number, users: any[] = []) {
             status,
             registration_date,
             notes,
-          clients!client_id(
-            id,
-            name,
-            phone,
-            email,
-            tax_id,        // ← FALTA
-            address,       // ← FALTA  
-            postal_code,   // ← FALTA
-            city,          // ← FALTA
-            province       // ← FALTA
+            clients!client_id(
+              id,
+              name,
+              phone,
+              email,
+              tax_id,
+              address,
+              postal_code,
+              city,
+              province
             )
           )
         `)
@@ -215,6 +213,7 @@ export function useGroupActivities(organizationId?: number, users: any[] = []) {
 
       const processedActivities: GroupActivity[] = (activitiesData || []).map((activity: any) => {
         const professional = users.find((user) => user.id === activity.professional_id)
+
         return {
           ...activity,
           professional: professional ? { id: professional.id, name: professional.name } : undefined,
@@ -281,6 +280,7 @@ export function useGroupActivities(organizationId?: number, users: any[] = []) {
         }
 
         const { recurrence, ...dataWithoutRecurrence } = activityData
+
         const { data, error: insertError } = await supabase
           .from("group_activities")
           .insert({
@@ -316,6 +316,7 @@ export function useGroupActivities(organizationId?: number, users: any[] = []) {
         if (insertError) throw insertError
 
         const professional = users.find((user) => user.id === data.professional_id)
+
         const newActivity: GroupActivity = {
           ...data,
           professional: professional ? { id: professional.id, name: professional.name } : undefined,
@@ -327,13 +328,24 @@ export function useGroupActivities(organizationId?: number, users: any[] = []) {
           setActivities((prev) => [...prev, newActivity])
         }
 
+        // 🆕 SINCRONIZACIÓN AUTOMÁTICA DESPUÉS DE CREAR
+        if (userProfile?.id && organizationId) {
+          console.log("🔄 Iniciando sincronización automática para nueva actividad:", newActivity.id)
+          try {
+            await autoSyncGroupActivity(newActivity.id, userProfile.id, organizationId)
+          } catch (syncError) {
+            console.error("❌ Error en sincronización automática:", syncError)
+            // No lanzar error, la actividad ya se creó correctamente
+          }
+        }
+
         return newActivity
       } catch (err) {
         console.error("Error creating group activity:", err)
         throw err
       }
     },
-    [users],
+    [users, userProfile, organizationId],
   )
 
   const createRecurringActivity = useCallback(
@@ -347,7 +359,6 @@ export function useGroupActivities(organizationId?: number, users: any[] = []) {
 
         // ✅ TRANSFORMAR LA CONFIG ANTES DE PASARLA AL SERVICIO
         const transformedConfig = transformRecurrenceConfig(activityData.recurrence, startDate)
-
         const recurringDates = RecurrenceService.generateRecurringDates(startDate, transformedConfig)
 
         const activitiesToInsert = recurringDates.map((date) => ({
@@ -395,6 +406,7 @@ export function useGroupActivities(organizationId?: number, users: any[] = []) {
         if (insertError) throw insertError
 
         const professional = users.find((user) => user.id === activityData.professional_id)
+
         const newActivities: GroupActivity[] = data.map((activity) => ({
           ...activity,
           professional: professional ? { id: professional.id, name: professional.name } : undefined,
@@ -406,13 +418,26 @@ export function useGroupActivities(organizationId?: number, users: any[] = []) {
           setActivities((prev) => [...prev, ...newActivities])
         }
 
+        // 🆕 SINCRONIZACIÓN AUTOMÁTICA PARA TODAS LAS ACTIVIDADES RECURRENTES
+        if (userProfile?.id && organizationId) {
+          console.log("🔄 Iniciando sincronización automática para actividades recurrentes:", newActivities.length)
+          for (const activity of newActivities) {
+            try {
+              await autoSyncGroupActivity(activity.id, userProfile.id, organizationId)
+            } catch (syncError) {
+              console.error("❌ Error en sincronización automática para actividad:", activity.id, syncError)
+              // Continuar con las demás actividades
+            }
+          }
+        }
+
         return newActivities[0]
       } catch (err) {
         console.error("Error creating recurring group activities:", err)
         throw err
       }
     },
-    [users],
+    [users, userProfile, organizationId],
   )
 
   const updateActivity = useCallback(
@@ -430,12 +455,23 @@ export function useGroupActivities(organizationId?: number, users: any[] = []) {
 
         // ✅ SOLO REFETCH SI ES NECESARIO
         await fetchActivities()
+
+        // 🆕 SINCRONIZACIÓN AUTOMÁTICA DESPUÉS DE ACTUALIZAR
+        if (userProfile?.id && organizationId) {
+          console.log("🔄 Iniciando sincronización automática para actividad actualizada:", id)
+          try {
+            await autoSyncGroupActivity(id, userProfile.id, organizationId)
+          } catch (syncError) {
+            console.error("❌ Error en sincronización automática:", syncError)
+            // No lanzar error, la actualización ya se realizó correctamente
+          }
+        }
       } catch (err) {
         console.error("Error updating group activity:", err)
         throw err
       }
     },
-    [fetchActivities],
+    [fetchActivities, userProfile, organizationId],
   )
 
   const addParticipant = useCallback(
@@ -450,17 +486,34 @@ export function useGroupActivities(organizationId?: number, users: any[] = []) {
         if (insertError) throw insertError
 
         await fetchActivities()
+
+        // 🆕 SINCRONIZACIÓN AUTOMÁTICA DESPUÉS DE AÑADIR PARTICIPANTE
+        if (userProfile?.id && organizationId) {
+          console.log("🔄 Sincronizando actividad después de añadir participante:", activityId)
+          try {
+            await autoSyncGroupActivity(activityId, userProfile.id, organizationId)
+          } catch (syncError) {
+            console.error("❌ Error en sincronización automática:", syncError)
+          }
+        }
       } catch (err) {
         console.error("Error adding participant:", err)
         throw err
       }
     },
-    [fetchActivities],
+    [fetchActivities, userProfile, organizationId],
   )
 
   const removeParticipant = useCallback(
     async (participantId: string): Promise<void> => {
       try {
+        // Obtener la actividad antes de eliminar el participante
+        const { data: participant } = await supabase
+          .from("group_activity_participants")
+          .select("group_activity_id")
+          .eq("id", participantId)
+          .single()
+
         const { error: deleteError } = await supabase
           .from("group_activity_participants")
           .delete()
@@ -469,17 +522,34 @@ export function useGroupActivities(organizationId?: number, users: any[] = []) {
         if (deleteError) throw deleteError
 
         await fetchActivities()
+
+        // 🆕 SINCRONIZACIÓN AUTOMÁTICA DESPUÉS DE ELIMINAR PARTICIPANTE
+        if (userProfile?.id && organizationId && participant?.group_activity_id) {
+          console.log("🔄 Sincronizando actividad después de eliminar participante:", participant.group_activity_id)
+          try {
+            await autoSyncGroupActivity(participant.group_activity_id, userProfile.id, organizationId)
+          } catch (syncError) {
+            console.error("❌ Error en sincronización automática:", syncError)
+          }
+        }
       } catch (err) {
         console.error("Error removing participant:", err)
         throw err
       }
     },
-    [fetchActivities],
+    [fetchActivities, userProfile, organizationId],
   )
 
   const updateParticipantStatus = useCallback(
     async (participantId: string, status: "registered" | "attended" | "no_show" | "cancelled"): Promise<void> => {
       try {
+        // Obtener la actividad antes de actualizar el participante
+        const { data: participant } = await supabase
+          .from("group_activity_participants")
+          .select("group_activity_id")
+          .eq("id", participantId)
+          .single()
+
         const { error: updateError } = await supabase
           .from("group_activity_participants")
           .update({ status })
@@ -497,12 +567,22 @@ export function useGroupActivities(organizationId?: number, users: any[] = []) {
             })),
           )
         }
+
+        // 🆕 SINCRONIZACIÓN AUTOMÁTICA DESPUÉS DE ACTUALIZAR ESTADO DEL PARTICIPANTE
+        if (userProfile?.id && organizationId && participant?.group_activity_id) {
+          console.log("🔄 Sincronizando actividad después de actualizar participante:", participant.group_activity_id)
+          try {
+            await autoSyncGroupActivity(participant.group_activity_id, userProfile.id, organizationId)
+          } catch (syncError) {
+            console.error("❌ Error en sincronización automática:", syncError)
+          }
+        }
       } catch (err) {
         console.error("Error updating participant status:", err)
         throw err
       }
     },
-    [],
+    [userProfile, organizationId],
   )
 
   // ✅ EFECTO OPTIMIZADO - Solo se ejecuta cuando es necesario

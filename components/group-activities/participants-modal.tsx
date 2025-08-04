@@ -12,6 +12,7 @@ import { es } from "date-fns/locale"
 import { AddParticipantModal } from "./add-participant-modal"
 import { supabase } from "@/lib/supabase/client"
 import { useAuth } from "@/app/contexts/auth-context"
+import { autoSyncGroupActivity } from "@/lib/auto-sync"
 import type { GroupActivity } from "@/app/contexts/group-activities-context"
 
 interface Participant {
@@ -64,7 +65,6 @@ export function ParticipantsModal({
     setLoading(true)
     try {
       console.log("Loading participants for activity:", activity.id)
-
       const { data, error } = await supabase
         .from("group_activity_participants")
         .select(`
@@ -125,6 +125,16 @@ export function ParticipantsModal({
       await onAddParticipant(activity.id, clientId, notes)
       await loadParticipants() // Recargar participantes
       setShowAddModal(false)
+
+      // 🆕 SINCRONIZACIÓN AUTOMÁTICA DESPUÉS DE AÑADIR PARTICIPANTE
+      if (userProfile?.id && organizationId) {
+        console.log("🔄 Sincronizando actividad después de añadir participante desde modal:", activity.id)
+        try {
+          await autoSyncGroupActivity(activity.id, userProfile.id, organizationId)
+        } catch (syncError) {
+          console.error("❌ Error en sincronización automática:", syncError)
+        }
+      }
     } catch (error) {
       console.error("Error adding participant:", error)
       throw error
@@ -136,6 +146,16 @@ export function ParticipantsModal({
     try {
       await onRemoveParticipant(participantId)
       await loadParticipants() // Recargar participantes
+
+      // 🆕 SINCRONIZACIÓN AUTOMÁTICA DESPUÉS DE ELIMINAR PARTICIPANTE
+      if (userProfile?.id && organizationId) {
+        console.log("🔄 Sincronizando actividad después de eliminar participante desde modal:", activity.id)
+        try {
+          await autoSyncGroupActivity(activity.id, userProfile.id, organizationId)
+        } catch (syncError) {
+          console.error("❌ Error en sincronización automática:", syncError)
+        }
+      }
     } catch (error) {
       console.error("Error removing participant:", error)
     } finally {
@@ -151,6 +171,16 @@ export function ParticipantsModal({
     try {
       await onUpdateParticipantStatus(participantId, status)
       await loadParticipants() // Recargar participantes
+
+      // 🆕 SINCRONIZACIÓN AUTOMÁTICA DESPUÉS DE CAMBIAR ESTADO
+      if (userProfile?.id && organizationId) {
+        console.log("🔄 Sincronizando actividad después de cambiar estado desde modal:", activity.id)
+        try {
+          await autoSyncGroupActivity(activity.id, userProfile.id, organizationId)
+        } catch (syncError) {
+          console.error("❌ Error en sincronización automática:", syncError)
+        }
+      }
     } catch (error) {
       console.error("Error updating participant status:", error)
     } finally {
@@ -167,6 +197,7 @@ export function ParticipantsModal({
     }
 
     const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.registered
+
     return (
       <Badge variant={config.variant} className={config.color}>
         {config.label}

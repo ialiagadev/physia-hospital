@@ -6,7 +6,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase/client"
-import { ChevronDown, Check, FileText, AlertTriangle, Send, CreditCard, HelpCircle } from "lucide-react"
+import { ChevronDown, Check, FileText, AlertTriangle, HelpCircle } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dialog"
 import { generateUniqueInvoiceNumber } from "@/lib/invoice-utils"
 
-type InvoiceStatus = "draft" | "issued" | "sent" | "paid"
+type InvoiceStatus = "draft" | "issued"
 
 interface InvoiceStatusSelectorProps {
   invoiceId: number
@@ -50,18 +50,6 @@ const statusConfig: Record<
     icon: Check,
     description: "Factura emitida",
   },
-  sent: {
-    label: "Enviada",
-    color: "bg-purple-100 text-purple-800 border-purple-200",
-    icon: Send,
-    description: "Factura enviada al cliente",
-  },
-  paid: {
-    label: "Pagada",
-    color: "bg-green-100 text-green-800 border-green-200",
-    icon: CreditCard,
-    description: "Factura pagada completamente",
-  },
 }
 
 const defaultStatusConfig = {
@@ -93,9 +81,7 @@ export function InvoiceStatusSelector({
   const isValidStatusTransition = (from: InvoiceStatus, to: InvoiceStatus): boolean => {
     const validTransitions: Record<InvoiceStatus, InvoiceStatus[]> = {
       draft: ["issued"],
-      issued: ["sent", "paid"],
-      sent: ["issued", "paid"],
-      paid: ["issued", "sent"],
+      issued: [], // No hay transiciones desde issued
     }
     return validTransitions[from]?.includes(to) || false
   }
@@ -103,9 +89,7 @@ export function InvoiceStatusSelector({
   const getAvailableStatuses = (): InvoiceStatus[] => {
     const validTransitions: Record<InvoiceStatus, InvoiceStatus[]> = {
       draft: ["issued"],
-      issued: ["sent", "paid"],
-      sent: ["issued", "paid"],
-      paid: ["issued", "sent"],
+      issued: [], // No hay transiciones desde issued
     }
     return validTransitions[currentStatus] || []
   }
@@ -113,13 +97,7 @@ export function InvoiceStatusSelector({
   const getStatusExplanation = (status: InvoiceStatus): string => {
     switch (status) {
       case "issued":
-        return currentStatus === "draft"
-          ? "Validar y emitir la factura (se asignará número y enviará a VeriFactu)"
-          : "Marcar como emitida"
-      case "sent":
-        return "Marcar como enviada al cliente"
-      case "paid":
-        return "Marcar como pagada"
+        return "Validar y emitir la factura (se asignará número y enviará a VeriFactu)"
       default:
         return "Cambiar estado"
     }
@@ -355,19 +333,7 @@ export function InvoiceStatusSelector({
           {currentStatus === "issued" && (
             <div className="px-3 py-2 text-xs text-blue-600 bg-blue-50 border-t">
               <div className="font-medium">✅ Factura validada (VeriFactu)</div>
-              <div className="text-blue-700 mt-0.5">Puede enviarse al cliente o marcarse como pagada.</div>
-            </div>
-          )}
-          {currentStatus === "sent" && (
-            <div className="px-3 py-2 text-xs text-purple-600 bg-purple-50 border-t">
-              <div className="font-medium">📤 Factura enviada</div>
-              <div className="text-purple-700 mt-0.5">Puede marcarse como pagada o volver al estado emitida.</div>
-            </div>
-          )}
-          {currentStatus === "paid" && (
-            <div className="px-3 py-2 text-xs text-green-600 bg-green-50 border-t">
-              <div className="font-medium">💰 Factura pagada</div>
-              <div className="text-green-700 mt-0.5">Puede volver al estado emitida o marcarse como enviada.</div>
+              <div className="text-blue-700 mt-0.5">Factura emitida y validada fiscalmente.</div>
             </div>
           )}
         </DropdownMenuContent>

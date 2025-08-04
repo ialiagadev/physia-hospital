@@ -16,9 +16,9 @@ import { ProfesionalesView } from "@/components/calendar/profesionales-view"
 import { ConsultationsView } from "@/components/calendar/consultations-view"
 import { ServicesView } from "@/components/services/services-view"
 import { GroupActivityDetailsModal } from "@/components/group-activities/group-activity-details-modal"
+import { GoogleCalendarIntegration } from "@/components/google-calendar-integration"
 import { useUsers } from "@/hooks/use-users"
 import { useAppointments } from "@/hooks/use-appointments"
-// ❌ REMOVIDO: import { useClients } from "@/hooks/use-clients"
 import { useConsultations } from "@/hooks/use-consultations"
 import { useServices } from "@/hooks/use-services"
 import { useVacations } from "@/hooks/use-vacations"
@@ -46,8 +46,15 @@ import { Calendar } from "@/components/ui/calendar"
 import { CalendarGroupActivitiesWrapper } from "../calendar/calendar-group-activities-wrapper"
 import { useGroupActivitiesContext } from "@/app/contexts/group-activities-context"
 
-// Define TabPrincipal locally to include new tabs
-type TabPrincipal = "calendario" | "lista-espera" | "actividades-grupales" | "usuarios" | "consultas" | "servicios"
+// 🆕 NUEVO TAB AGREGADO: google-calendar
+type TabPrincipal =
+  | "calendario"
+  | "lista-espera"
+  | "actividades-grupales"
+  | "usuarios"
+  | "consultas"
+  | "servicios"
+  | "google-calendar"
 
 // Mapeo de estados del español al inglés para la base de datos
 const mapEstadoToStatus = (estado: string): "confirmed" | "pending" | "cancelled" | "completed" | "no_show" => {
@@ -207,6 +214,9 @@ const MedicalCalendarSystem: React.FC = () => {
   // NUEVO: Estado para controlar la inicialización completa
   const [isSystemReady, setIsSystemReady] = useState(false)
 
+  // 🆕 NUEVO: Estado para sincronización de Google Calendar
+  const [isSyncing, setIsSyncing] = useState(false)
+
   // 🔧 FUNCIÓN CORREGIDA: Eliminar entrada de lista de espera con conexión correcta a Supabase
   const removeFromWaitingListAfterAppointment = useCallback(
     async (entryId: number) => {
@@ -244,7 +254,6 @@ const MedicalCalendarSystem: React.FC = () => {
 
   // 🚀 HOOKS OPTIMIZADOS - SIN CLIENTES
   const { users, currentUser, loading: usersLoading, refetch: refetchUsers } = useUsers(organizationId)
-  // ❌ REMOVIDO: const { clients, loading: clientsLoading, error: clientsError, createClient } = useClients(organizationId)
 
   const {
     consultations,
@@ -279,7 +288,6 @@ const MedicalCalendarSystem: React.FC = () => {
       organizationId &&
       !usersLoading &&
       !schedulesLoading &&
-      // ❌ REMOVIDO: !clientsLoading &&
       !consultationsLoading &&
       !servicesLoading &&
       !vacationLoading &&
@@ -290,7 +298,6 @@ const MedicalCalendarSystem: React.FC = () => {
     organizationId,
     usersLoading,
     schedulesLoading,
-    // ❌ REMOVIDO: clientsLoading,
     consultationsLoading,
     servicesLoading,
     vacationLoading,
@@ -306,11 +313,9 @@ const MedicalCalendarSystem: React.FC = () => {
       setShowDetailsModal(false)
       setShowNewAppointmentModal(false)
       setUsuariosSeleccionados([])
-
       const timer = setTimeout(() => {
         // El estado se actualizará automáticamente cuando los datos estén listos
       }, 100)
-
       return () => clearTimeout(timer)
     }
   }, [userProfile?.id, userProfile?.organization_id])
@@ -321,10 +326,8 @@ const MedicalCalendarSystem: React.FC = () => {
       const timer = setTimeout(() => {
         setIsSystemReady(true)
       }, 150)
-
       return () => clearTimeout(timer)
     }
-
     if (!criticalDataReady && isSystemReady) {
       setIsSystemReady(false)
     }
@@ -333,7 +336,6 @@ const MedicalCalendarSystem: React.FC = () => {
   // 🚀 OPTIMIZADO: Calcular rango de fechas para las citas
   const dateRange = useMemo(() => {
     let startDate: string, endDate: string
-
     switch (vistaCalendario) {
       case "dia":
         startDate = format(currentDate, "yyyy-MM-dd")
@@ -355,7 +357,6 @@ const MedicalCalendarSystem: React.FC = () => {
         startDate = format(currentDate, "yyyy-MM-dd")
         endDate = startDate
     }
-
     return { startDate, endDate }
   }, [currentDate, vistaCalendario])
 
@@ -403,7 +404,6 @@ const MedicalCalendarSystem: React.FC = () => {
     (direction: "prev" | "next") => {
       setCurrentDate((prevDate) => {
         const newDate = new Date(prevDate)
-
         switch (vistaCalendario) {
           case "dia":
             newDate.setDate(newDate.getDate() + (direction === "next" ? 1 : -1))
@@ -415,7 +415,6 @@ const MedicalCalendarSystem: React.FC = () => {
             newDate.setMonth(newDate.getMonth() + (direction === "next" ? 1 : -1))
             break
         }
-
         // Solo actualizar si la fecha realmente cambió
         return newDate.getTime() !== prevDate.getTime() ? newDate : prevDate
       })
@@ -460,7 +459,6 @@ const MedicalCalendarSystem: React.FC = () => {
         .single()
 
       if (error) throw error
-
       return newType.id
     } catch (error) {
       throw error
@@ -563,6 +561,7 @@ const MedicalCalendarSystem: React.FC = () => {
         }
 
         toast.success("Cita creada correctamente")
+
         // Limpiar el estado de lista de espera
         setWaitingListEntry(null)
       } catch (error) {
@@ -652,7 +651,6 @@ const MedicalCalendarSystem: React.FC = () => {
   const handleUpdateLegacyAppointment = useCallback(
     async (cita: any) => {
       const originalAppointment = appointments.find((apt) => Number.parseInt(apt.id.slice(-8), 16) === cita.id)
-
       if (originalAppointment) {
         const updatedAppointment = {
           ...originalAppointment,
@@ -664,7 +662,6 @@ const MedicalCalendarSystem: React.FC = () => {
             users.find((u) => Number.parseInt(u.id.slice(-8), 16) === cita.profesionalId)?.id ||
             originalAppointment.professional_id,
         }
-
         await handleUpdateAppointment(updatedAppointment)
       }
     },
@@ -675,7 +672,6 @@ const MedicalCalendarSystem: React.FC = () => {
     (userId: string) => {
       // 🆕 AÑADIR ESTA VERIFICACIÓN - No permitir cambios si es usuario 'user'
       if (isUserRole) return
-
       setUsuariosSeleccionados((prev) =>
         prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
       )
@@ -686,7 +682,6 @@ const MedicalCalendarSystem: React.FC = () => {
   const handleToggleAllUsuarios = useCallback(() => {
     // 🆕 AÑADIR ESTA VERIFICACIÓN - No permitir cambios si es usuario 'user'
     if (isUserRole) return
-
     setUsuariosSeleccionados((prev) => {
       const todosSeleccionados = prev.length === users.length
       return todosSeleccionados ? [] : users.map((u) => u.id)
@@ -710,7 +705,6 @@ const MedicalCalendarSystem: React.FC = () => {
       month: "long",
       day: "numeric",
     }
-
     switch (vistaCalendario) {
       case "dia":
         return currentDate.toLocaleDateString("es-ES", options)
@@ -899,7 +893,6 @@ const MedicalCalendarSystem: React.FC = () => {
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <h2 className="text-xl font-semibold mb-2 text-red-600">Error al cargar datos</h2>
-          {/* ❌ REMOVIDO: clientsError */}
           {consultationsError && <p className="text-red-500">Consultas: {consultationsError}</p>}
           {servicesError && <p className="text-red-500">Servicios: {servicesError}</p>}
         </div>
@@ -932,6 +925,10 @@ const MedicalCalendarSystem: React.FC = () => {
               </TabsTrigger>
               <TabsTrigger value="servicios" className="text-green-600">
                 ⚕️ Servicios
+              </TabsTrigger>
+              {/* 🆕 NUEVO TAB PARA GOOGLE CALENDAR */}
+              <TabsTrigger value="google-calendar" className="text-blue-600">
+                📅 Google Calendar
               </TabsTrigger>
             </TabsList>
           </div>
@@ -1275,6 +1272,18 @@ const MedicalCalendarSystem: React.FC = () => {
             </div>
             <div className="flex-1 overflow-auto">
               <ServicesView organizationId={organizationId} onRefreshServices={refetchServices} />
+            </div>
+          </div>
+        )}
+
+        {/* 🆕 NUEVO TAB PARA GOOGLE CALENDAR */}
+        {tabPrincipal === "google-calendar" && (
+          <div className="h-full flex flex-col">
+            <div className="px-4 py-3 border-b">
+              <h2 className="text-xl font-medium text-blue-600">Integración Google Calendar</h2>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              <GoogleCalendarIntegration organizationId={organizationId!} onSyncStatusChange={setIsSyncing} />
             </div>
           </div>
         )}

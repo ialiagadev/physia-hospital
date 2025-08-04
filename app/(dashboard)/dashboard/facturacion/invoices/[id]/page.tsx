@@ -18,7 +18,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
-type InvoiceStatus = "draft" | "issued" | "sent" | "paid"
+type InvoiceStatus = "draft" | "issued"
 
 interface InvoiceData {
   id: number
@@ -78,7 +78,6 @@ function EditInvoiceForm({ invoice, invoiceLines, onSuccess, onCancel }: EditInv
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
   const [formData, setFormData] = useState({
     notes: invoice.notes || "",
     payment_method: invoice.payment_method || "tarjeta",
@@ -103,12 +102,10 @@ function EditInvoiceForm({ invoice, invoiceLines, onSuccess, onCancel }: EditInv
       prev.map((line) => {
         if (line.id === id) {
           const updatedLine = { ...line, [field]: value }
-
           // Recalcular el importe de línea cuando cambie cantidad, precio unitario o descuento
           if (field === "quantity" || field === "unit_price" || field === "discount_percentage") {
             updatedLine.line_amount = calculateLineAmount(updatedLine)
           }
-
           return updatedLine
         }
         return line
@@ -532,7 +529,7 @@ export default function InvoiceDetailPage() {
       }
 
       // Asegurar que el status sea un tipo válido
-      const validStatuses: InvoiceStatus[] = ["draft", "issued", "sent", "paid"]
+      const validStatuses: InvoiceStatus[] = ["draft", "issued"]
       const status = validStatuses.includes(invoiceData.status as InvoiceStatus)
         ? (invoiceData.status as InvoiceStatus)
         : "draft"
@@ -575,9 +572,8 @@ export default function InvoiceDetailPage() {
 
   const handleStatusChange = (newStatus: string) => {
     if (invoice) {
-      const validStatuses: InvoiceStatus[] = ["draft", "issued", "sent", "paid"]
+      const validStatuses: InvoiceStatus[] = ["draft", "issued"]
       const status = validStatuses.includes(newStatus as InvoiceStatus) ? (newStatus as InvoiceStatus) : "draft"
-
       // Recargar la factura completa después del cambio de estado
       // para obtener el número de factura actualizado si se asignó
       loadInvoice()
@@ -599,10 +595,6 @@ export default function InvoiceDetailPage() {
         return "Borrador"
       case "issued":
         return "Emitida"
-      case "sent":
-        return "Enviada"
-      case "paid":
-        return "Pagada"
       default:
         return status
     }
@@ -613,10 +605,6 @@ export default function InvoiceDetailPage() {
       case "draft":
         return "secondary" as const
       case "issued":
-        return "default" as const
-      case "sent":
-        return "default" as const
-      case "paid":
         return "default" as const
       default:
         return "default" as const
@@ -635,7 +623,6 @@ export default function InvoiceDetailPage() {
       })
       return
     }
-
     // Aquí iría la lógica de descarga normal
     window.open(`/api/invoices/${invoiceId}/pdf`, "_blank")
   }
@@ -713,7 +700,6 @@ export default function InvoiceDetailPage() {
           </div>
           <p className="text-muted-foreground">{new Date(invoice.issue_date).toLocaleDateString("es-ES")}</p>
         </div>
-
         <div className="flex space-x-2">
           {/* Botón de Editar - Solo visible para borradores */}
           {isDraft && (
@@ -722,7 +708,6 @@ export default function InvoiceDetailPage() {
               Editar Borrador
             </Button>
           )}
-
           <Button asChild variant="outline">
             <Link href="/dashboard/facturacion/invoices">Volver</Link>
           </Button>
@@ -811,7 +796,6 @@ export default function InvoiceDetailPage() {
                 </p>
               </div>
             </div>
-
             {invoice.notes && (
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Notas</p>
