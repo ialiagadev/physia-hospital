@@ -308,7 +308,7 @@ export default function OrganizationsPage() {
                       e.stopPropagation()
                       copyPublicLink(org.id)
                     }}
-                    aria-label="Copiar enlace público"
+                    aria-label="Copiar Enlace calendario público"
                   >
                     <LinkIcon className="h-4 w-4 mr-1" />
                     Enlace público
