@@ -135,7 +135,7 @@ export default function OrganizationsPage() {
   }
 
   const copyPublicLink = (orgId: string) => {
-    const publicUrl = `${window.location.origin}/public/${orgId}/booking`
+    const publicUrl = `${window.location.origin}/booking/${orgId}`
     navigator.clipboard.writeText(publicUrl)
     showNotification("success", "Enlace copiado al portapapeles")
   }
