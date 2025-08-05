@@ -867,15 +867,24 @@ export function AppointmentDetailsModal({
                 >
                   Cancelar
                 </Button>
-                <Button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleSave()
-                  }}
-                  disabled={isSaving || conflicts.length > 0}
-                  className={`gap-2 ${conflicts.length > 0 ? "opacity-50 cursor-not-allowed" : ""}`}
-                  title={conflicts.length > 0 ? "No se puede guardar: hay conflictos de horario" : ""}
-                >
+                          <Button
+            onClick={(e) => {
+              e.stopPropagation()
+              handleSave()
+            }}
+            disabled={isSaving || conflictsLoading || conflicts.length > 0}
+            className={`gap-2 ${
+              conflictsLoading || conflicts.length > 0 ? "opacity-50 cursor-not-allowed" : ""
+            }`}
+            title={
+              conflictsLoading
+                ? "Verificando conflictos..."
+                : conflicts.length > 0
+                ? "No se puede guardar: hay conflictos de horario"
+                : ""
+            }
+          >
+
                   <Save className="h-4 w-4" />
                   {conflicts.length > 0 && <AlertTriangle className="h-3 w-3" />}
                   {isSaving ? "Guardando..." : conflicts.length > 0 ? "No se puede guardar" : "Guardar"}
