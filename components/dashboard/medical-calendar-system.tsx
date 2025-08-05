@@ -1,5 +1,4 @@
 "use client"
-
 import type React from "react"
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns"
@@ -45,16 +44,15 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar"
 import { CalendarGroupActivitiesWrapper } from "../calendar/calendar-group-activities-wrapper"
 import { useGroupActivitiesContext } from "@/app/contexts/group-activities-context"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
-// 🆕 NUEVO TAB AGREGADO: google-calendar
-type TabPrincipal =
-  | "calendario"
-  | "lista-espera"
-  | "actividades-grupales"
-  | "usuarios"
-  | "consultas"
-  | "servicios"
-  | "google-calendar"
+// 🆕 NUEVO: Componente del icono de Google Calendar usando el archivo SVG
+const GoogleCalendarIcon = ({ className }: { className?: string }) => (
+  <img src="/googlecalendar.png" alt="Google Calendar" className={className} />
+)
+
+// 🆕 ACTUALIZADO: Removido "google-calendar" del tipo
+type TabPrincipal = "calendario" | "lista-espera" | "actividades-grupales" | "usuarios" | "consultas" | "servicios"
 
 // Mapeo de estados del español al inglés para la base de datos
 const mapEstadoToStatus = (estado: string): "confirmed" | "pending" | "cancelled" | "completed" | "no_show" => {
@@ -88,6 +86,7 @@ const ClientService = {
       const {
         data: { session },
       } = await supabase.auth.getSession()
+
       if (!session) {
         throw new Error("No hay sesión activa")
       }
@@ -214,8 +213,41 @@ const MedicalCalendarSystem: React.FC = () => {
   // NUEVO: Estado para controlar la inicialización completa
   const [isSystemReady, setIsSystemReady] = useState(false)
 
-  // 🆕 NUEVO: Estado para sincronización de Google Calendar
+  // 🆕 NUEVO: Estados para Google Calendar
   const [isSyncing, setIsSyncing] = useState(false)
+  const [showGoogleCalendarModal, setShowGoogleCalendarModal] = useState(false)
+  const [googleCalendarConnected, setGoogleCalendarConnected] = useState(false)
+
+  // 🆕 NUEVO: Verificar estado de conexión de Google Calendar
+  useEffect(() => {
+    const checkGoogleCalendarConnection = async () => {
+      if (!userProfile?.id) return
+
+      try {
+        const { data, error } = await supabase
+          .from("user_google_tokens")
+          .select("*")
+          .eq("user_id", userProfile.id)
+          .maybeSingle()
+
+        if (!error && data) {
+          // Verificar si el token ha expirado
+          if (data.expires_at && new Date(data.expires_at) < new Date()) {
+            setGoogleCalendarConnected(false)
+          } else {
+            setGoogleCalendarConnected(true)
+          }
+        } else {
+          setGoogleCalendarConnected(false)
+        }
+      } catch (err) {
+        console.error("Error verificando conexión Google Calendar:", err)
+        setGoogleCalendarConnected(false)
+      }
+    }
+
+    checkGoogleCalendarConnection()
+  }, [userProfile?.id])
 
   // 🔧 FUNCIÓN CORREGIDA: Eliminar entrada de lista de espera con conexión correcta a Supabase
   const removeFromWaitingListAfterAppointment = useCallback(
@@ -244,7 +276,9 @@ const MedicalCalendarSystem: React.FC = () => {
   const removeFromWaitingList = useCallback(async (entryId: string) => {
     try {
       const { error } = await supabase.from("waiting_list").delete().eq("id", entryId)
+
       if (error) throw error
+
       toast.success("Entrada eliminada de la lista de espera")
     } catch (error) {
       console.error("Error removing from waiting list:", error)
@@ -313,9 +347,11 @@ const MedicalCalendarSystem: React.FC = () => {
       setShowDetailsModal(false)
       setShowNewAppointmentModal(false)
       setUsuariosSeleccionados([])
+
       const timer = setTimeout(() => {
         // El estado se actualizará automáticamente cuando los datos estén listos
       }, 100)
+
       return () => clearTimeout(timer)
     }
   }, [userProfile?.id, userProfile?.organization_id])
@@ -326,8 +362,10 @@ const MedicalCalendarSystem: React.FC = () => {
       const timer = setTimeout(() => {
         setIsSystemReady(true)
       }, 150)
+
       return () => clearTimeout(timer)
     }
+
     if (!criticalDataReady && isSystemReady) {
       setIsSystemReady(false)
     }
@@ -336,6 +374,7 @@ const MedicalCalendarSystem: React.FC = () => {
   // 🚀 OPTIMIZADO: Calcular rango de fechas para las citas
   const dateRange = useMemo(() => {
     let startDate: string, endDate: string
+
     switch (vistaCalendario) {
       case "dia":
         startDate = format(currentDate, "yyyy-MM-dd")
@@ -357,6 +396,7 @@ const MedicalCalendarSystem: React.FC = () => {
         startDate = format(currentDate, "yyyy-MM-dd")
         endDate = startDate
     }
+
     return { startDate, endDate }
   }, [currentDate, vistaCalendario])
 
@@ -459,6 +499,7 @@ const MedicalCalendarSystem: React.FC = () => {
         .single()
 
       if (error) throw error
+
       return newType.id
     } catch (error) {
       throw error
@@ -651,6 +692,7 @@ const MedicalCalendarSystem: React.FC = () => {
   const handleUpdateLegacyAppointment = useCallback(
     async (cita: any) => {
       const originalAppointment = appointments.find((apt) => Number.parseInt(apt.id.slice(-8), 16) === cita.id)
+
       if (originalAppointment) {
         const updatedAppointment = {
           ...originalAppointment,
@@ -662,6 +704,7 @@ const MedicalCalendarSystem: React.FC = () => {
             users.find((u) => Number.parseInt(u.id.slice(-8), 16) === cita.profesionalId)?.id ||
             originalAppointment.professional_id,
         }
+
         await handleUpdateAppointment(updatedAppointment)
       }
     },
@@ -672,6 +715,7 @@ const MedicalCalendarSystem: React.FC = () => {
     (userId: string) => {
       // 🆕 AÑADIR ESTA VERIFICACIÓN - No permitir cambios si es usuario 'user'
       if (isUserRole) return
+
       setUsuariosSeleccionados((prev) =>
         prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
       )
@@ -682,6 +726,7 @@ const MedicalCalendarSystem: React.FC = () => {
   const handleToggleAllUsuarios = useCallback(() => {
     // 🆕 AÑADIR ESTA VERIFICACIÓN - No permitir cambios si es usuario 'user'
     if (isUserRole) return
+
     setUsuariosSeleccionados((prev) => {
       const todosSeleccionados = prev.length === users.length
       return todosSeleccionados ? [] : users.map((u) => u.id)
@@ -705,6 +750,7 @@ const MedicalCalendarSystem: React.FC = () => {
       month: "long",
       day: "numeric",
     }
+
     switch (vistaCalendario) {
       case "dia":
         return currentDate.toLocaleDateString("es-ES", options)
@@ -746,6 +792,7 @@ const MedicalCalendarSystem: React.FC = () => {
   // 🚀 ARREGLADO: Conversión de usuarios con tipos correctos
   const convertUsersToLegacyFormat = useCallback((users: any[]) => {
     const medicalProfessionals = users.filter((user) => user.type === 1)
+
     return medicalProfessionals.map((user) => ({
       id: Number.parseInt(user.id.slice(-8), 16),
       nombre: user.name || "",
@@ -909,10 +956,10 @@ const MedicalCalendarSystem: React.FC = () => {
         <h1 className="text-lg font-semibold">Calendario Médico</h1>
       </div>
 
-      {/* Tabs principales reorganizados */}
+      {/* 🆕 ACTUALIZADO: Tabs principales con Google Calendar a la derecha */}
       <div className="border-b">
         <Tabs value={tabPrincipal} onValueChange={(value) => setTabPrincipal(value as TabPrincipal)}>
-          <div className="px-4 py-2">
+          <div className="px-4 py-2 flex items-center justify-between">
             <TabsList>
               <TabsTrigger value="calendario">📅 Calendario</TabsTrigger>
               <TabsTrigger value="lista-espera">📋 Lista de espera</TabsTrigger>
@@ -926,11 +973,19 @@ const MedicalCalendarSystem: React.FC = () => {
               <TabsTrigger value="servicios" className="text-green-600">
                 ⚕️ Servicios
               </TabsTrigger>
-              {/* 🆕 NUEVO TAB PARA GOOGLE CALENDAR */}
-              <TabsTrigger value="google-calendar" className="text-blue-600">
-                📅 Google Calendar
-              </TabsTrigger>
             </TabsList>
+
+            {/* Botón Google Calendar a la derecha con color amarillo oscuro siempre */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowGoogleCalendarModal(true)}
+              className="flex items-center gap-2 bg-yellow-500 hover:bg-yellow-600 text-white border-yellow-600"
+            >
+              <GoogleCalendarIcon className="h-4 w-4" />
+              Google Calendar
+              {googleCalendarConnected && <span className="text-xs">✓</span>}
+            </Button>
           </div>
         </Tabs>
       </div>
@@ -1275,18 +1330,6 @@ const MedicalCalendarSystem: React.FC = () => {
             </div>
           </div>
         )}
-
-        {/* 🆕 NUEVO TAB PARA GOOGLE CALENDAR */}
-        {tabPrincipal === "google-calendar" && (
-          <div className="h-full flex flex-col">
-            <div className="px-4 py-3 border-b">
-              <h2 className="text-xl font-medium text-blue-600">Integración Google Calendar</h2>
-            </div>
-            <div className="flex-1 overflow-auto p-4">
-              <GoogleCalendarIntegration organizationId={organizationId!} onSyncStatusChange={setIsSyncing} />
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Modales */}
@@ -1324,6 +1367,21 @@ const MedicalCalendarSystem: React.FC = () => {
           selectedDate={currentDate}
         />
       )}
+
+      {/* 🆕 NUEVO: Modal de Google Calendar */}
+      <Dialog open={showGoogleCalendarModal} onOpenChange={setShowGoogleCalendarModal}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarIcon className="h-5 w-5 text-blue-600" />
+              Integración Google Calendar
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <GoogleCalendarIntegration organizationId={organizationId!} onSyncStatusChange={setIsSyncing} />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

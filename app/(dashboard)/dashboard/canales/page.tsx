@@ -219,7 +219,7 @@ export default function CanalesPage() {
             nombre: "WhatsApp ",
             descripcion: "Conecta con tus clientes directamente a través de mensajes instantáneos.",
             imagen: null,
-            href_button_action: null, // Cambiar a null para indicar que no hay página de configuración
+            href_button_action: "dashboard/canales/1/page", // ruta con el ID específico
             estado: 1, // Cambiar a 1 para que aparezca como activo
           },
           {
