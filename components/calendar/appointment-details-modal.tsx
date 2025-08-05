@@ -55,6 +55,9 @@ export function AppointmentDetailsModal({
   } | null>(null)
   const [checkingInvoice, setCheckingInvoice] = useState(true)
 
+  // 🆕 Estado para controlar cuando se están verificando conflictos después de un cambio
+  const [isVerifyingConflicts, setIsVerifyingConflicts] = useState(false)
+
   // Determinar si el usuario es coordinador
   const isCoordinator = userProfile?.role === "coordinador"
 
@@ -83,7 +86,7 @@ export function AppointmentDetailsModal({
     }
   }, [isOpen, appointment.id, userProfile])
 
-  // Verificar conflictos cuando se editan horarios
+  // 🆕 VERIFICAR CONFLICTOS CON ESTADO DE VERIFICACIÓN
   useEffect(() => {
     if (
       isEditing &&
@@ -92,17 +95,30 @@ export function AppointmentDetailsModal({
       editedAppointment.duration &&
       editedAppointment.professional_id
     ) {
-      const timeoutId = setTimeout(() => {
-        checkConflicts(
-          editedAppointment.date,
-          editedAppointment.start_time,
-          editedAppointment.duration,
-          editedAppointment.professional_id,
-          appointment.id, // Excluir la cita actual
-        )
+      // Activar estado de verificación
+      setIsVerifyingConflicts(true)
+
+      const timeoutId = setTimeout(async () => {
+        try {
+          await checkConflicts(
+            editedAppointment.date,
+            editedAppointment.start_time,
+            editedAppointment.duration,
+            editedAppointment.professional_id,
+            appointment.id, // Excluir la cita actual
+          )
+        } finally {
+          // Desactivar estado de verificación cuando termine
+          setIsVerifyingConflicts(false)
+        }
       }, 500) // Debounce para evitar muchas consultas
 
-      return () => clearTimeout(timeoutId)
+      return () => {
+        clearTimeout(timeoutId)
+        setIsVerifyingConflicts(false)
+      }
+    } else {
+      setIsVerifyingConflicts(false)
     }
   }, [
     isEditing,
@@ -187,7 +203,7 @@ export function AppointmentDetailsModal({
     return Math.max(0, endMinutes - startMinutes)
   }
 
-  // Handlers para sincronizar tiempos
+  // 🆕 HANDLERS MODIFICADOS PARA ACTIVAR VERIFICACIÓN
   const handleStartTimeChange = (newStartTime: string) => {
     const newEndTime = calculateEndTime(newStartTime, editedAppointment.duration)
     setEditedAppointment({
@@ -195,6 +211,7 @@ export function AppointmentDetailsModal({
       start_time: newStartTime,
       end_time: newEndTime,
     })
+    // El useEffect se encargará de activar isVerifyingConflicts
   }
 
   const handleEndTimeChange = (newEndTime: string) => {
@@ -204,6 +221,7 @@ export function AppointmentDetailsModal({
       end_time: newEndTime,
       duration: newDuration,
     })
+    // El useEffect se encargará de activar isVerifyingConflicts
   }
 
   const handleDurationChange = (newDuration: number) => {
@@ -213,6 +231,16 @@ export function AppointmentDetailsModal({
       duration: newDuration,
       end_time: newEndTime,
     })
+    // El useEffect se encargará de activar isVerifyingConflicts
+  }
+
+  // 🆕 HANDLER PARA CAMBIO DE FECHA
+  const handleDateChange = (newDate: string) => {
+    setEditedAppointment({
+      ...editedAppointment,
+      date: newDate,
+    })
+    // El useEffect se encargará de activar isVerifyingConflicts
   }
 
   // Handler para cambio de servicio
@@ -250,7 +278,6 @@ export function AppointmentDetailsModal({
     }
 
     setIsSaving(true)
-
     try {
       console.log("🔍 DEBUG - Updating appointment:", {
         id: appointment.id,
@@ -307,13 +334,13 @@ export function AppointmentDetailsModal({
       // 🆕 AHORA OBTENER LOS DATOS COMPLETOS CON RELACIONES
       const { data: fullAppointment, error: fetchError } = await supabase
         .from("appointments")
-        .select(`
-          *,
-          client:clients(*),
-          service:services(*),
-          consultation:consultations(*),
-          professional:users!appointments_professional_id_fkey(name),
-          appointment_type:appointment_types(name)
+        .select(`          
+          *,          
+          client:clients(*),          
+          service:services(*),          
+          consultation:consultations(*),          
+          professional:users!appointments_professional_id_fkey(name),          
+          appointment_type:appointment_types(name)        
         `)
         .eq("id", appointment.id)
         .single()
@@ -337,12 +364,12 @@ export function AppointmentDetailsModal({
 
       setIsEditing(false)
       toast.success("Cita actualizada correctamente")
+
       // 🆕 SINCRONIZACIÓN AUTOMÁTICA CON GOOGLE CALENDAR
       if (userProfile?.id && userProfile?.organization_id) {
         console.log("🔄 Iniciando sincronización automática después de actualizar...")
         try {
           const syncResult = await autoSyncAppointment(appointment.id, userProfile.id, userProfile.organization_id)
-
           if (syncResult.success) {
             console.log("✅ Cita sincronizada automáticamente con Google Calendar")
           } else {
@@ -353,10 +380,10 @@ export function AppointmentDetailsModal({
           // No mostramos error al usuario para no interrumpir el flujo
         }
       }
+
       onClose()
     } catch (error) {
       console.error("🔍 DEBUG - Error al actualizar la cita:", error)
-
       // 🆕 MENSAJES DE ERROR MÁS ESPECÍFICOS
       if (error instanceof Error) {
         if (error.message.includes("PGRST116")) {
@@ -392,6 +419,7 @@ export function AppointmentDetailsModal({
   const handleCancel = () => {
     setEditedAppointment(appointment)
     setIsEditing(false)
+    setIsVerifyingConflicts(false) // 🆕 Resetear estado de verificación
   }
 
   const getStatusColor = (status: string) => {
@@ -481,6 +509,32 @@ export function AppointmentDetailsModal({
     }).format(amount)
   }
 
+  // 🆕 FUNCIÓN PARA DETERMINAR SI EL BOTÓN DEBE ESTAR DESHABILITADO
+  const isSaveDisabled = () => {
+    return (
+      isSaving ||
+      conflictsLoading ||
+      isVerifyingConflicts || // 🆕 Deshabilitar mientras se verifican conflictos
+      conflicts.length > 0
+    )
+  }
+
+  // 🆕 FUNCIÓN PARA OBTENER EL TÍTULO DEL BOTÓN
+  const getSaveButtonTitle = () => {
+    if (isVerifyingConflicts) return "Verificando conflictos..."
+    if (conflictsLoading) return "Verificando conflictos..."
+    if (conflicts.length > 0) return "No se puede guardar: hay conflictos de horario"
+    return ""
+  }
+
+  // 🆕 FUNCIÓN PARA OBTENER EL TEXTO DEL BOTÓN
+  const getSaveButtonText = () => {
+    if (isSaving) return "Guardando..."
+    if (isVerifyingConflicts) return "Verificando..."
+    if (conflicts.length > 0) return "No se puede guardar"
+    return "Guardar"
+  }
+
   if (!isOpen) return null
 
   return (
@@ -518,7 +572,6 @@ export function AppointmentDetailsModal({
                     </p>
                   </div>
                 </div>
-
                 <div className="flex items-center gap-2">
                   {!isEditing && (
                     <>
@@ -531,7 +584,6 @@ export function AppointmentDetailsModal({
                           }}
                         />
                       )}
-
                       <Button
                         variant="outline"
                         size="sm"
@@ -544,7 +596,6 @@ export function AppointmentDetailsModal({
                         <Edit2 className="h-4 w-4" />
                         Editar
                       </Button>
-
                       {/* ✅ MOSTRAR MENSAJE DE AVISO O BOTÓN ELIMINAR */}
                       {checkingInvoice ? (
                         <div className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded border border-gray-200">
@@ -580,7 +631,6 @@ export function AppointmentDetailsModal({
                       )}
                     </>
                   )}
-
                   <Button
                     variant="ghost"
                     size="sm"
@@ -679,12 +729,7 @@ export function AppointmentDetailsModal({
                         <Input
                           type="date"
                           value={format(new Date(editedAppointment.date), "yyyy-MM-dd")}
-                          onChange={(e) =>
-                            setEditedAppointment({
-                              ...editedAppointment,
-                              date: e.target.value,
-                            })
-                          }
+                          onChange={(e) => handleDateChange(e.target.value)} // 🆕 Usar handler modificado
                           className="h-8 text-sm w-36"
                           onClick={(e) => e.stopPropagation()}
                         />
@@ -719,6 +764,13 @@ export function AppointmentDetailsModal({
                         />
                         <span className="text-sm text-gray-600">min</span>
                       </div>
+                      {/* 🆕 INDICADOR DE VERIFICACIÓN */}
+                      {isVerifyingConflicts && (
+                        <div className="flex items-center gap-1 text-xs text-blue-600">
+                          <Clock className="h-3 w-3 animate-spin" />
+                          <span>Verificando...</span>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="flex items-center gap-4 flex-1">
@@ -801,7 +853,9 @@ export function AppointmentDetailsModal({
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
                           <span className="text-sm font-medium text-red-700">Conflictos detectados:</span>
-                          {conflictsLoading && <Clock className="h-3 w-3 animate-spin text-red-600" />}
+                          {(conflictsLoading || isVerifyingConflicts) && (
+                            <Clock className="h-3 w-3 animate-spin text-red-600" />
+                          )}
                         </div>
                         <div className="space-y-2">
                           {conflicts.map((conflict, index) => (
@@ -867,27 +921,19 @@ export function AppointmentDetailsModal({
                 >
                   Cancelar
                 </Button>
-                          <Button
-            onClick={(e) => {
-              e.stopPropagation()
-              handleSave()
-            }}
-            disabled={isSaving || conflictsLoading || conflicts.length > 0}
-            className={`gap-2 ${
-              conflictsLoading || conflicts.length > 0 ? "opacity-50 cursor-not-allowed" : ""
-            }`}
-            title={
-              conflictsLoading
-                ? "Verificando conflictos..."
-                : conflicts.length > 0
-                ? "No se puede guardar: hay conflictos de horario"
-                : ""
-            }
-          >
-
+                <Button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleSave()
+                  }}
+                  disabled={isSaveDisabled()} // 🆕 Usar función mejorada
+                  className={`gap-2 ${isSaveDisabled() ? "opacity-50 cursor-not-allowed" : ""}`}
+                  title={getSaveButtonTitle()} // 🆕 Usar función para título
+                >
                   <Save className="h-4 w-4" />
                   {conflicts.length > 0 && <AlertTriangle className="h-3 w-3" />}
-                  {isSaving ? "Guardando..." : conflicts.length > 0 ? "No se puede guardar" : "Guardar"}
+                  {isVerifyingConflicts && <Clock className="h-3 w-3 animate-spin" />} {/* 🆕 Icono de verificación */}
+                  {getSaveButtonText()} {/* 🆕 Usar función para texto */}
                 </Button>
               </div>
             )}

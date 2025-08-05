@@ -4,22 +4,119 @@ export interface UploadResult {
   success: boolean
   path?: string
   url?: string
+  publicUrl?: string
   error?: string
 }
 
 export class StorageService {
   private static readonly BUCKET_NAME = "expense-receipts"
-  private static readonly MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
-  private static readonly ALLOWED_TYPES = ["image/jpeg", "image/png", "application/pdf"]
+  private static readonly CHAT_BUCKET_NAME = "chat-media"
+  private static readonly MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB para chat
+  private static readonly EXPENSE_MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB para gastos
+  private static readonly ALLOWED_TYPES = [
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "text/plain",
+    "application/zip",
+    "application/x-rar-compressed",
+  ]
   private static readonly DEFAULT_EXPIRY = 3600 // 1 hora
+
+  /**
+   * Sube un archivo para chat (función principal para el chat)
+   */
+  static async uploadFile(file: File, folder = "chat-media"): Promise<UploadResult> {
+    try {
+      console.log("📤 Iniciando subida de archivo:", file.name, "Tamaño:", file.size)
+
+      // Validar tipo de archivo
+      if (!this.ALLOWED_TYPES.includes(file.type)) {
+        return {
+          success: false,
+          error:
+            "Tipo de archivo no permitido. Solo se permiten imágenes, PDFs, documentos de texto y archivos comprimidos.",
+        }
+      }
+
+      // Validar tamaño
+      if (file.size > this.MAX_FILE_SIZE) {
+        return {
+          success: false,
+          error: "El archivo es demasiado grande. Máximo 10MB.",
+        }
+      }
+
+      // Verificar autenticación
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) {
+        return {
+          success: false,
+          error: "Usuario no autenticado",
+        }
+      }
+
+      // Generar nombre único para el archivo
+      const timestamp = Date.now()
+      const randomString = Math.random().toString(36).substring(7)
+      const extension = file.name.split(".").pop()
+      const fileName = `${timestamp}-${randomString}.${extension}`
+
+      // Crear ruta: folder/userId/fileName
+      const filePath = `${folder}/${user.id}/${fileName}`
+
+      console.log("📁 Ruta del archivo:", filePath)
+
+      // Subir archivo al bucket de chat
+      const { data, error } = await supabase.storage.from(this.CHAT_BUCKET_NAME).upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: false,
+      })
+
+      if (error) {
+        console.error("❌ Error uploading file:", error)
+        return {
+          success: false,
+          error: "Error al subir el archivo: " + error.message,
+        }
+      }
+
+      console.log("✅ Archivo subido exitosamente:", data.path)
+
+      // Obtener URL pública del archivo
+      const { data: publicUrlData } = supabase.storage.from(this.CHAT_BUCKET_NAME).getPublicUrl(filePath)
+
+      console.log("🔗 URL pública generada:", publicUrlData.publicUrl)
+
+      return {
+        success: true,
+        path: filePath,
+        publicUrl: publicUrlData.publicUrl,
+        url: publicUrlData.publicUrl, // Para compatibilidad
+      }
+    } catch (error) {
+      console.error("💥 Error in uploadFile:", error)
+      return {
+        success: false,
+        error: "Error inesperado al subir el archivo",
+      }
+    }
+  }
 
   /**
    * Sube un archivo de recibo/factura para un gasto
    */
   static async uploadExpenseReceipt(file: File, organizationId: number, expenseId?: number): Promise<UploadResult> {
     try {
-      // Validar tipo de archivo
-      if (!this.ALLOWED_TYPES.includes(file.type)) {
+      // Validar tipo de archivo (más restrictivo para gastos)
+      const allowedExpenseTypes = ["image/jpeg", "image/png", "application/pdf"]
+      if (!allowedExpenseTypes.includes(file.type)) {
         return {
           success: false,
           error: "Tipo de archivo no permitido. Solo se permiten JPG, PNG y PDF.",
@@ -27,7 +124,7 @@ export class StorageService {
       }
 
       // Validar tamaño
-      if (file.size > this.MAX_FILE_SIZE) {
+      if (file.size > this.EXPENSE_MAX_FILE_SIZE) {
         return {
           success: false,
           error: "El archivo es demasiado grande. Máximo 5MB.",
@@ -86,9 +183,9 @@ export class StorageService {
   }
 
   /**
-   * Elimina un archivo de recibo/factura
+   * Elimina un archivo de chat
    */
-  static async deleteExpenseReceipt(filePath: string): Promise<boolean> {
+  static async deleteFile(filePath: string, bucketName: string = this.CHAT_BUCKET_NAME): Promise<boolean> {
     try {
       // Verificar autenticación
       const {
@@ -99,7 +196,7 @@ export class StorageService {
         return false
       }
 
-      const { error } = await supabase.storage.from(this.BUCKET_NAME).remove([filePath])
+      const { error } = await supabase.storage.from(bucketName).remove([filePath])
 
       if (error) {
         console.error("Error deleting file:", error)
@@ -108,9 +205,16 @@ export class StorageService {
 
       return true
     } catch (error) {
-      console.error("Error in deleteExpenseReceipt:", error)
+      console.error("Error in deleteFile:", error)
       return false
     }
+  }
+
+  /**
+   * Elimina un archivo de recibo/factura
+   */
+  static async deleteExpenseReceipt(filePath: string): Promise<boolean> {
+    return this.deleteFile(filePath, this.BUCKET_NAME)
   }
 
   /**
@@ -198,6 +302,14 @@ export class StorageService {
   }
 
   /**
+   * Obtiene una URL pública para archivos de chat
+   */
+  static getPublicUrl(filePath: string, bucketName: string = this.CHAT_BUCKET_NAME): string {
+    const { data } = supabase.storage.from(bucketName).getPublicUrl(filePath)
+    return data.publicUrl
+  }
+
+  /**
    * Obtiene una URL firmada para descarga
    */
   static async getDownloadUrl(filePath: string): Promise<string | null> {
@@ -207,10 +319,10 @@ export class StorageService {
   /**
    * Verifica si un archivo existe
    */
-  static async fileExists(filePath: string): Promise<boolean> {
+  static async fileExists(filePath: string, bucketName: string = this.CHAT_BUCKET_NAME): Promise<boolean> {
     try {
       const { data, error } = await supabase.storage
-        .from(this.BUCKET_NAME)
+        .from(bucketName)
         .list(filePath.substring(0, filePath.lastIndexOf("/")), {
           search: filePath.split("/").pop(),
         })
@@ -247,6 +359,35 @@ export class StorageService {
       return data?.map((file) => `${folder}/${file.name}`) || []
     } catch (error) {
       console.error("Error in listFiles:", error)
+      return []
+    }
+  }
+
+  /**
+   * Lista archivos de chat de un usuario
+   */
+  static async listChatFiles(userId: string, folder = "chat-media"): Promise<string[]> {
+    try {
+      // Verificar autenticación
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) {
+        return []
+      }
+
+      const userFolder = `${folder}/${userId}`
+
+      const { data, error } = await supabase.storage.from(this.CHAT_BUCKET_NAME).list(userFolder)
+
+      if (error) {
+        console.error("Error listing chat files:", error)
+        return []
+      }
+
+      return data?.map((file) => `${userFolder}/${file.name}`) || []
+    } catch (error) {
+      console.error("Error in listChatFiles:", error)
       return []
     }
   }
@@ -291,6 +432,46 @@ export class StorageService {
   }
 
   /**
+   * Limpia archivos de chat antiguos (más de 30 días)
+   */
+  static async cleanupOldChatFiles(userId: string, folder = "chat-media"): Promise<void> {
+    try {
+      // Verificar autenticación
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user || user.id !== userId) {
+        return
+      }
+
+      const userFolder = `${folder}/${userId}`
+
+      const { data, error } = await supabase.storage.from(this.CHAT_BUCKET_NAME).list(userFolder)
+
+      if (error || !data) {
+        return
+      }
+
+      const now = Date.now()
+      const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000
+
+      const filesToDelete = data
+        .filter((file) => {
+          const createdAt = new Date(file.created_at).getTime()
+          return createdAt < thirtyDaysAgo
+        })
+        .map((file) => `${userFolder}/${file.name}`)
+
+      if (filesToDelete.length > 0) {
+        await supabase.storage.from(this.CHAT_BUCKET_NAME).remove(filesToDelete)
+        console.log(`🧹 Limpiados ${filesToDelete.length} archivos antiguos de chat`)
+      }
+    } catch (error) {
+      console.error("Error in cleanupOldChatFiles:", error)
+    }
+  }
+
+  /**
    * Valida que el usuario tenga acceso a un archivo específico
    */
   static async validateUserAccess(filePath: string, organizationId: number): Promise<boolean> {
@@ -307,9 +488,54 @@ export class StorageService {
   }
 
   /**
+   * Valida que el usuario tenga acceso a un archivo de chat
+   */
+  static async validateChatFileAccess(filePath: string, userId: string): Promise<boolean> {
+    try {
+      // Verificar que la ruta del archivo corresponde al usuario
+      const pathParts = filePath.split("/")
+      if (pathParts.length < 2) return false
+
+      const fileUserId = pathParts[1] // chat-media/userId/filename
+      return fileUserId === userId
+    } catch (error) {
+      console.error("Error validating chat file access:", error)
+      return false
+    }
+  }
+
+  /**
    * Regenera una URL firmada si ha expirado
    */
   static async refreshSignedUrl(filePath: string): Promise<string | null> {
     return this.getSignedUrl(filePath)
   }
+
+  /**
+   * Obtiene información de un archivo
+   */
+  static async getFileInfo(filePath: string, bucketName: string = this.CHAT_BUCKET_NAME) {
+    try {
+      const { data, error } = await supabase.storage
+        .from(bucketName)
+        .list(filePath.substring(0, filePath.lastIndexOf("/")), {
+          search: filePath.split("/").pop(),
+        })
+
+      if (error || !data || data.length === 0) {
+        return null
+      }
+
+      return data[0]
+    } catch (error) {
+      console.error("Error getting file info:", error)
+      return null
+    }
+  }
 }
+
+// Exportar función directa para compatibilidad
+export const uploadFile = StorageService.uploadFile.bind(StorageService)
+export const deleteFile = StorageService.deleteFile.bind(StorageService)
+export const getPublicUrl = StorageService.getPublicUrl.bind(StorageService)
+export const fileExists = StorageService.fileExists.bind(StorageService)

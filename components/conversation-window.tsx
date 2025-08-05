@@ -2,13 +2,14 @@
 
 import type React from "react"
 import { useState, useRef, useEffect } from "react"
-import { Send, Paperclip, Smile, ArrowDown, Phone, Video, MoreVertical, ArrowLeft } from "lucide-react"
+import { Send, Paperclip, Smile, ArrowDown, Phone, Video, MoreVertical, ArrowLeft, FileText, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useMessages } from "@/hooks/useMessages"
 import { useConversation } from "@/hooks/useChatWindow"
 import { useUnreadMessages } from "@/hooks/use-unread-messages"
 import { sendMessage } from "@/lib/chatActions"
+import { uploadFile } from "@/lib/storage-service"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -16,6 +17,7 @@ import { AssignUsersDialog } from "@/components/assign-users-dialog"
 import { TemplateSelectorDialog } from "@/components/template-selector-dialog"
 import { ConversationProfilePanel } from "@/components/conversation-profile-panel"
 import { useMediaQuery } from "@/hooks/use-media-query"
+import { useToast } from "@/hooks/use-toast"
 import type { Message, User, Client } from "@/types/chat"
 
 interface Template {
@@ -32,6 +34,12 @@ interface ConversationWindowSimpleProps {
   onBack?: () => void
 }
 
+interface FilePreview {
+  file: File
+  url: string
+  type: "image" | "document"
+}
+
 export default function ConversationWindowSimple({ chatId, currentUser, onBack }: ConversationWindowSimpleProps) {
   // Estado local
   const [message, setMessage] = useState("")
@@ -40,10 +48,13 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
   const [isNearBottom, setIsNearBottom] = useState(true)
   const [showProfilePanel, setShowProfilePanel] = useState(false)
   const [isWindowVisible, setIsWindowVisible] = useState(true)
+  const [filePreview, setFilePreview] = useState<FilePreview | null>(null)
+  const [uploading, setUploading] = useState(false)
 
   // Referencias
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Hooks personalizados
   const { messages, loading: messagesLoading, error: messagesError } = useMessages(chatId)
@@ -55,6 +66,7 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
   } = useConversation(chatId)
   const { unreadCount, markAsRead } = useUnreadMessages(chatId)
   const isMobile = useMediaQuery("(max-width: 768px)")
+  const { toast } = useToast()
 
   // Estado combinado de carga y error
   const loading = messagesLoading || conversationLoading
@@ -203,27 +215,108 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }
 
+  // Handle file selection
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    // Validar tamaño del archivo (máximo 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      toast({
+        title: "Archivo demasiado grande",
+        description: "El archivo no puede ser mayor a 10MB",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Determinar tipo de archivo
+    const isImage = file.type.startsWith("image/")
+    const fileType = isImage ? "image" : "document"
+
+    // Crear preview
+    const url = URL.createObjectURL(file)
+    setFilePreview({
+      file,
+      url,
+      type: fileType,
+    })
+
+    // Limpiar el input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""
+    }
+  }
+
+  // Remove file preview
+  const removeFilePreview = () => {
+    if (filePreview) {
+      URL.revokeObjectURL(filePreview.url)
+      setFilePreview(null)
+    }
+  }
+
   // Send message function
   const handleSendMessage = async () => {
-    if (message.trim() && currentUser && !sending) {
-      const messageContent = message.trim()
+    if ((!message.trim() && !filePreview) || sending || uploading) return
 
-      // Clear input and set sending state
-      setMessage("")
-      setSending(true)
+    const messageContent = message.trim()
+    let mediaUrl: string | undefined
 
-      try {
-        await sendMessage({
-          conversationId: chatId,
-          content: messageContent,
-          userId: currentUser.id,
-          messageType: "text",
-        })
-      } catch (error) {
-        console.error("Error sending message:", error)
-      } finally {
-        setSending(false)
+    // Clear input and set sending state
+    setMessage("")
+    setSending(true)
+
+    try {
+      // Si hay archivo, subirlo primero
+      if (filePreview) {
+        setUploading(true)
+        try {
+          console.log("📤 Subiendo archivo:", filePreview.file.name)
+
+          const uploadResult = await uploadFile(filePreview.file, "chat-media")
+          mediaUrl = uploadResult.publicUrl
+
+          console.log("✅ Archivo subido:", mediaUrl)
+        } catch (uploadError) {
+          console.error("❌ Error subiendo archivo:", uploadError)
+          toast({
+            title: "Error al subir archivo",
+            description: "No se pudo subir el archivo. Inténtalo de nuevo.",
+            variant: "destructive",
+          })
+          return
+        } finally {
+          setUploading(false)
+        }
       }
+
+      // Determinar tipo de mensaje
+      let messageType: "text" | "image" | "document" = "text"
+      if (filePreview) {
+        messageType = filePreview.type === "image" ? "image" : "document"
+      }
+
+      await sendMessage({
+        conversationId: chatId,
+        content:
+          messageContent || `${filePreview?.type === "image" ? "Imagen" : "Documento"}: ${filePreview?.file.name}`,
+        userId: currentUser.id,
+        messageType,
+        mediaUrl,
+      })
+
+      // Limpiar preview
+      removeFilePreview()
+    } catch (error) {
+      console.error("Error sending message:", error)
+      toast({
+        title: "Error al enviar mensaje",
+        description: "No se pudo enviar el mensaje. Inténtalo de nuevo.",
+        variant: "destructive",
+      })
+    } finally {
+      setSending(false)
     }
   }
 
@@ -302,6 +395,57 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
   const handleAssignmentChange = () => {
     // Refrescar la conversación para obtener los usuarios asignados actualizados
     refetchConversation?.()
+  }
+
+  // Render message content based on type
+  const renderMessageContent = (msg: Message) => {
+    switch (msg.message_type) {
+      case "image":
+        return (
+          <div className="space-y-2">
+            {msg.media_url && (
+              <img
+                src={msg.media_url || "/placeholder.svg"}
+                alt="Imagen enviada"
+                className="max-w-xs rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                onClick={() => window.open(msg.media_url, "_blank")}
+              />
+            )}
+            {msg.content && msg.content !== `Imagen: ${msg.media_url?.split("/").pop()}` && (
+              <div className="text-sm">{msg.content}</div>
+            )}
+          </div>
+        )
+
+      case "document":
+        return (
+          <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg max-w-xs">
+            <FileText className="h-8 w-8 text-blue-500 flex-shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium truncate">
+                {msg.content.replace("Documento: ", "") || "Documento"}
+              </div>
+              {msg.media_url && (
+                <a
+                  href={msg.media_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-blue-600 hover:underline"
+                >
+                  Descargar
+                </a>
+              )}
+            </div>
+          </div>
+        )
+
+      default:
+        return (
+          <div className="whitespace-pre-wrap break-words text-[14px] leading-[1.3] text-gray-900 min-w-0 flex-1">
+            {msg.content}
+          </div>
+        )
+    }
   }
 
   const messageGroups = groupMessagesByDate(messages)
@@ -510,9 +654,7 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
                     >
                       {/* Contenedor flexible para texto y metadata */}
                       <div className="flex items-end gap-1">
-                        <div className="whitespace-pre-wrap break-words text-[14px] leading-[1.3] text-gray-900 min-w-0 flex-1">
-                          {msg.content}
-                        </div>
+                        {renderMessageContent(msg)}
 
                         {/* Hora y checkmarks */}
                         <div className="flex items-center gap-1 flex-shrink-0 ml-2 pb-[1px]">
@@ -575,6 +717,34 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
         </TooltipProvider>
       )}
 
+      {/* Preview de archivo */}
+      {filePreview && (
+        <div className="p-3 bg-gray-50 border-t">
+          <div className="flex items-center gap-3 p-3 bg-white rounded-lg border">
+            <div className="flex-shrink-0">
+              {filePreview.type === "image" ? (
+                <img
+                  src={filePreview.url || "/placeholder.svg"}
+                  alt="Preview"
+                  className="w-12 h-12 object-cover rounded"
+                />
+              ) : (
+                <div className="w-12 h-12 bg-blue-100 rounded flex items-center justify-center">
+                  <FileText className="h-6 w-6 text-blue-600" />
+                </div>
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">{filePreview.file.name}</p>
+              <p className="text-xs text-gray-500">{(filePreview.file.size / 1024 / 1024).toFixed(2)} MB</p>
+            </div>
+            <Button variant="ghost" size="icon" onClick={removeFilePreview} className="flex-shrink-0">
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Input de mensaje mejorado */}
       <div className="p-3 bg-white border-t">
         <div className="flex items-center gap-2">
@@ -601,9 +771,31 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
             </PopoverContent>
           </Popover>
 
-          <Button variant="ghost" size="icon" className="rounded-full text-gray-500">
-            <Paperclip className="h-5 w-5" />
-          </Button>
+          {/* Input de archivo oculto */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,.pdf,.doc,.docx,.txt,.zip,.rar"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="rounded-full text-gray-500"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                >
+                  <Paperclip className="h-5 w-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Adjuntar archivo</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
 
           {/* Botón de plantillas */}
           <TooltipProvider>
@@ -622,19 +814,19 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyPress={handleKeyPress}
-            disabled={sending}
+            disabled={sending || uploading}
             className="flex-1 rounded-full border-gray-300 focus-visible:ring-green-500"
           />
 
           <Button
             onClick={handleSendMessage}
-            disabled={sending || !message.trim()}
+            disabled={sending || uploading || (!message.trim() && !filePreview)}
             size="icon"
             className={`rounded-full ${
-              message.trim() ? "bg-green-500 hover:bg-green-600" : "bg-gray-200 text-gray-500"
+              message.trim() || filePreview ? "bg-green-500 hover:bg-green-600" : "bg-gray-200 text-gray-500"
             }`}
           >
-            {sending ? (
+            {sending || uploading ? (
               <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
             ) : (
               <Send className="h-4 w-4" />
