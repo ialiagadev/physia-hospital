@@ -30,6 +30,7 @@ import {
   FileCheck,
   Megaphone,
   Warehouse,
+  Calendar,
 } from "lucide-react"
 
 interface MenuItem {
@@ -213,6 +214,14 @@ export function MainSidebar() {
       href: "/dashboard/canales",
       icon: Radio,
       isActive: isInSection("canales"),
+    },
+    {
+      id: "public-booking",
+      label: "Reservas Públicas",
+      href: userProfile?.organization_id ? `/booking/${userProfile.organization_id}` : "#",
+      icon: Calendar,
+      isActive: false,
+      disabled: !userProfile?.organization_id,
     },
   ]
 
