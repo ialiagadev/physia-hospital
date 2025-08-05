@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { CheckCircle, AlertTriangle, Info, Edit } from "lucide-react"
+import { CheckCircle, AlertTriangle, Info, Edit, LinkIcon } from "lucide-react"
 
 export default function OrganizationsPage() {
   const [organizations, setOrganizations] = useState<any[]>([])
@@ -48,20 +48,13 @@ export default function OrganizationsPage() {
   }
 
   const handleConfigureVerifactu = async (org: any, event: React.MouseEvent) => {
-    event.stopPropagation() // Prevent row click navigation
-
-    // Check if organization is already configured
+    event.stopPropagation()
     if (org.verifactu_configured) {
       showNotification("info", `${org.name} ya está configurado para Verifactu`)
       return
     }
-
-    // Check if still has default values
     if (isDefaultConfiguration(org)) {
-      showNotification(
-        "warning",
-        "Debes cambiar el CIF/NIF antes de configurar Verifactu. No puedes usar el valor por defecto.",
-      )
+      showNotification("warning", "Debes cambiar el CIF/NIF antes de configurar Verifactu.")
       return
     }
 
@@ -115,7 +108,6 @@ export default function OrganizationsPage() {
         })
         .eq("id", org.id)
 
-      // Update local state
       setOrganizations((prev) =>
         prev.map((o) => (o.id === org.id ? { ...o, verifactu_configured: true, verifactu_emisor_id: emisorId } : o)),
       )
@@ -142,6 +134,12 @@ export default function OrganizationsPage() {
     return !org.verifactu_configured
   }
 
+  const copyPublicLink = (orgId: string) => {
+    const publicUrl = `${window.location.origin}/public/${orgId}/booking`
+    navigator.clipboard.writeText(publicUrl)
+    showNotification("success", "Enlace copiado al portapapeles")
+  }
+
   useEffect(() => {
     const getUser = async () => {
       try {
@@ -159,7 +157,6 @@ export default function OrganizationsPage() {
         setUser(user)
 
         const { data: profile } = await supabase.from("users").select("*").eq("id", user.id).single()
-
         setProfile(profile)
 
         const { data: orgs, error: orgsError } = await supabase
@@ -212,10 +209,10 @@ export default function OrganizationsPage() {
             notification.type === "success"
               ? "border-green-500 bg-green-50"
               : notification.type === "error"
-                ? "border-red-500 bg-red-50"
-                : notification.type === "warning"
-                  ? "border-yellow-500 bg-yellow-50"
-                  : "border-blue-500 bg-blue-50"
+              ? "border-red-500 bg-red-50"
+              : notification.type === "warning"
+              ? "border-yellow-500 bg-yellow-50"
+              : "border-blue-500 bg-blue-50"
           }`}
         >
           {notification.type === "success" && <CheckCircle className="h-4 w-4 text-green-600" />}
@@ -227,10 +224,10 @@ export default function OrganizationsPage() {
               notification.type === "success"
                 ? "text-green-800"
                 : notification.type === "error"
-                  ? "text-red-800"
-                  : notification.type === "warning"
-                    ? "text-yellow-800"
-                    : "text-blue-800"
+                ? "text-red-800"
+                : notification.type === "warning"
+                ? "text-yellow-800"
+                : "text-blue-800"
             }`}
           >
             {notification.message}
@@ -303,6 +300,18 @@ export default function OrganizationsPage() {
                     aria-label={`Editar ${org.name}`}
                   >
                     <Edit className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      copyPublicLink(org.id)
+                    }}
+                    aria-label="Copiar enlace público"
+                  >
+                    <LinkIcon className="h-4 w-4 mr-1" />
+                    Enlace público
                   </Button>
                   {shouldShowButton(org) && (
                     <Button
