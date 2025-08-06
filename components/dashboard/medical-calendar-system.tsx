@@ -621,69 +621,34 @@ const MedicalCalendarSystem: React.FC = () => {
     ],
   )
 
-  // 🆕 NUEVO: Handler mejorado para actualizar citas con sincronización automática
+  // 🆕 SIMPLIFICADO: Handler para actualizar citas - SOLO sincronización automática
   const handleUpdateAppointment = useCallback(
     async (appointment: AppointmentWithDetails) => {
       try {
         console.log("🔄 Actualizando cita:", appointment.id)
-        
-        // Actualizar en la base de datos
-        await updateAppointment(appointment.id, {
-          date: format(new Date(appointment.date), "yyyy-MM-dd"),
-          start_time: appointment.start_time,
-          end_time: appointment.end_time,
-          duration: appointment.duration,
-          status: appointment.status,
-          notes: appointment.notes || undefined,
-          professional_id: appointment.professional_id,
-          consultation_id: appointment.consultation_id,
-        })
+      
+      // ✅ SOLO ACTUALIZAR EN BD
+      await updateAppointment(appointment.id, {
+        date: format(new Date(appointment.date), "yyyy-MM-dd"),
+        start_time: appointment.start_time,
+        end_time: appointment.end_time,
+        duration: appointment.duration,
+        status: appointment.status,
+        notes: appointment.notes || undefined,
+        professional_id: appointment.professional_id,
+        consultation_id: appointment.consultation_id,
+      })
 
-        // 🆕 SINCRONIZACIÓN AUTOMÁTICA CON GOOGLE CALENDAR
-        if (userProfile?.id && organizationId) {
-          console.log("🔄 Iniciando sincronización automática para actualización de cita:", appointment.id)
-
-          // Sincronizar en segundo plano (no bloquear la UI)
-          try {
-            const response = await fetch("/api/sync", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                appointmentId: appointment.id,
-                userId: appointment.professional_id, // Usar el profesional de la cita
-                organizationId: organizationId,
-              }),
-            })
-
-            if (response.ok) {
-              const result = await response.json()
-              console.log("✅ Cita actualizada y sincronizada automáticamente con Google Calendar")
-              
-              // Mostrar notificación discreta solo si la sincronización fue exitosa
-              toast.success("Cita actualizada y sincronizada con Google Calendar", { duration: 2000 })
-            } else {
-              console.log("ℹ️ Sincronización automática no disponible o falló")
-              // Solo mostrar que se actualizó la cita, sin mencionar Google Calendar
-              toast.success("Cita actualizada correctamente")
-            }
-          } catch (syncError) {
-            console.log("ℹ️ Sincronización automática no disponible:", syncError)
-            // Solo mostrar que se actualizó la cita
-            toast.success("Cita actualizada correctamente")
-          }
-        } else {
-          toast.success("Cita actualizada correctamente")
-        }
-      } catch (error) {
-        console.error("Error updating appointment:", error)
-        toast.error("Error al actualizar la cita")
-        throw error
-      }
-    },
-    [updateAppointment, userProfile?.id, organizationId],
-  )
+      // ✅ useAppointments ya maneja la sincronización automática
+      toast.success("Cita actualizada correctamente")
+    } catch (error) {
+      console.error("Error updating appointment:", error)
+      toast.error("Error al actualizar la cita")
+      throw error
+    }
+  },
+  [updateAppointment],
+)
 
   const handleDeleteAppointment = useCallback(
     async (appointmentId: string) => {
@@ -732,25 +697,21 @@ const MedicalCalendarSystem: React.FC = () => {
     [appointments, handleSelectGroupActivity, handleSelectAppointment],
   )
 
-  // 🆕 NUEVO: Handler mejorado para actualizar citas en formato legacy con sincronización
+  // 🆕 SIMPLIFICADO: Handler para drag & drop - SOLO actualizar y dejar que la sincronización automática maneje todo
   const handleUpdateLegacyAppointment = useCallback(
     async (cita: any) => {
       console.log("🔄 Drag & Drop - Actualizando cita legacy:", cita.id)
-      
+    
       const originalAppointment = appointments.find((apt) => Number.parseInt(apt.id.slice(-8), 16) === cita.id)
       if (originalAppointment) {
-        // Detectar cambios importantes
+        // Detectar cambios para logging
         const oldProfessionalId = originalAppointment.professional_id
         const newProfessionalId = users.find((u) => Number.parseInt(u.id.slice(-8), 16) === cita.profesionalId)?.id || originalAppointment.professional_id
         
         const professionalChanged = oldProfessionalId !== newProfessionalId
-        const timeChanged = originalAppointment.start_time !== cita.hora || originalAppointment.end_time !== (cita.horaFin || calculateEndTime(cita.hora, cita.duracion))
-        const dateChanged = format(new Date(originalAppointment.date), "yyyy-MM-dd") !== format(cita.fecha, "yyyy-MM-dd")
 
         console.log("🔍 Cambios detectados:", {
           professionalChanged,
-          timeChanged,
-          dateChanged,
           oldProfessional: oldProfessionalId,
           newProfessional: newProfessionalId
         })
@@ -764,62 +725,16 @@ const MedicalCalendarSystem: React.FC = () => {
           professional_id: newProfessionalId,
         }
 
+        // ✅ SOLO LLAMAR A handleUpdateAppointment
+        // useAppointments se encargará de la sincronización automática
         await handleUpdateAppointment(updatedAppointment)
 
-        // 🆕 LÓGICA ESPECIAL PARA CAMBIO DE PROFESIONAL
         if (professionalChanged) {
-          console.log("👤 Cambio de profesional detectado")
-          
-          // Si el profesional anterior tenía Google Calendar, eliminar el evento
-          try {
-            const response = await fetch("/api/sync", {
-              method: "DELETE",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                appointmentId: originalAppointment.id,
-                userId: oldProfessionalId,
-                organizationId: organizationId,
-              }),
-            })
-            
-            if (response.ok) {
-              console.log("🗑️ Evento eliminado del calendario del profesional anterior")
-            }
-          } catch (error) {
-            console.log("ℹ️ No se pudo eliminar del calendario anterior:", error)
-          }
-
-          // Crear evento en el calendario del nuevo profesional
-          try {
-            const response = await fetch("/api/sync", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                appointmentId: originalAppointment.id,
-                userId: newProfessionalId,
-                organizationId: organizationId,
-                forceCreate: true, // Forzar creación de nuevo evento
-              }),
-            })
-            
-            if (response.ok) {
-              console.log("✅ Evento creado en el calendario del nuevo profesional")
-              toast.success("Cita movida y sincronizada con Google Calendar del nuevo profesional")
-            }
-          } catch (error) {
-            console.log("ℹ️ No se pudo crear en el nuevo calendario:", error)
-          }
-        } else if (timeChanged || dateChanged) {
-          console.log("⏰ Cambio de horario/fecha detectado")
-          toast.success("Cita actualizada y sincronizada con Google Calendar")
+          console.log("👤 Cambio de profesional - useAppointments manejará la sincronización")
         }
       }
     },
-    [appointments, users, handleUpdateAppointment, organizationId, calculateEndTime],
+    [appointments, users, handleUpdateAppointment, calculateEndTime],
   )
 
   const handleToggleUsuario = useCallback(
@@ -841,8 +756,6 @@ const MedicalCalendarSystem: React.FC = () => {
       return todosSeleccionados ? [] : users.map((u) => u.id)
     })
   }, [isUserRole, users])
-
-  
 
   // 🚀 OPTIMIZADO: Formatear título de fecha
   const getDateTitle = useCallback(() => {
