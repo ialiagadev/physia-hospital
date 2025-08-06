@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { MapPin } from "lucide-react"
+import { MapPin } from 'lucide-react'
 import { BookingTypeSelector } from "./booking-type-selector"
 import { IndividualBookingFlow } from "./individual/individual-booking-flow"
 import { GroupBookingFlow } from "./group/group-booking-flow"
@@ -35,15 +35,21 @@ export function PublicBookingPage({ organizationId }: PublicBookingPageProps) {
     loadOrganizationData()
   }, [organizationId])
 
+  useEffect(() => {
+    // Auto-configuración para organización 68
+    if (organizationId === "68") {
+      setBookingType("individual")
+      setCurrentStep("booking")
+    }
+  }, [organizationId])
+
   const loadOrganizationData = async () => {
     try {
       setLoading(true)
       const response = await fetch(`/api/public/${organizationId}/services`)
-
       if (!response.ok) {
         throw new Error("Organización no encontrada")
       }
-
       const data = await response.json()
       setOrganizationData(data)
     } catch (err) {
@@ -67,11 +73,25 @@ export function PublicBookingPage({ organizationId }: PublicBookingPageProps) {
     setBookingType(null)
     setCurrentStep("type")
     setBookingResult(null)
+    
+    // Para org 68, volver a configurar automáticamente
+    if (organizationId === "68") {
+      setTimeout(() => {
+        setBookingType("individual")
+        setCurrentStep("booking")
+      }, 100)
+    }
   }
 
   const handleReset = () => {
-    setBookingType(null)
-    setCurrentStep("type")
+    // Para org 68, no permitir volver al selector de tipo
+    if (organizationId === "68") {
+      // Simplemente recargar la página o mantener en booking
+      window.location.reload()
+    } else {
+      setBookingType(null)
+      setCurrentStep("type")
+    }
   }
 
   if (loading) {
@@ -109,11 +129,19 @@ export function PublicBookingPage({ organizationId }: PublicBookingPageProps) {
       <div className="max-w-4xl mx-auto">
         <Card className="shadow-xl">
           <CardHeader className="text-center">
-            <CardTitle className="text-3xl font-bold text-gray-800">Reservar Cita</CardTitle>
-            <p className="text-gray-600 mt-2">Selecciona el tipo de cita que deseas reservar</p>
+            <CardTitle className="text-3xl font-bold text-gray-800">
+              {organizationId === "68" ? "Reservar Cita" : "Reservar Cita"}
+            </CardTitle>
+            <p className="text-gray-600 mt-2">
+              {organizationId === "68" 
+                ? "Selecciona tu horario ideal" 
+                : "Selecciona el tipo de cita que deseas reservar"
+              }
+            </p>
           </CardHeader>
           <CardContent>
-            {currentStep === "type" && !bookingType ? (
+            {/* Solo mostrar selector de tipo si NO es org 68 */}
+            {currentStep === "type" && !bookingType && organizationId !== "68" ? (
               <BookingTypeSelector onSelect={handleBookingTypeSelect} />
             ) : currentStep === "booking" && bookingType === "individual" ? (
               <IndividualBookingFlow organizationId={organizationId} onBack={handleReset} />
@@ -124,7 +152,11 @@ export function PublicBookingPage({ organizationId }: PublicBookingPageProps) {
                 onBack={handleReset}
               />
             ) : currentStep === "confirmation" && bookingResult ? (
-              <BookingConfirmation result={bookingResult} bookingType={bookingType} onStartOver={handleStartOver} />
+              <BookingConfirmation 
+                result={bookingResult} 
+                bookingType={bookingType} 
+                onStartOver={handleStartOver} 
+              />
             ) : null}
           </CardContent>
         </Card>
