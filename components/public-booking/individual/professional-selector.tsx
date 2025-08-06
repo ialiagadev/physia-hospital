@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { User, Users } from "lucide-react"
+import { User, Users } from 'lucide-react'
 
 interface Professional {
   id: string
@@ -14,29 +14,28 @@ interface Professional {
 
 interface ProfessionalSelectorProps {
   organizationId: string
+  serviceId: string
   onSelect: (professionalId: string) => void
 }
 
-export function ProfessionalSelector({ organizationId, onSelect }: ProfessionalSelectorProps) {
+export function ProfessionalSelector({ organizationId, serviceId, onSelect }: ProfessionalSelectorProps) {
   const [professionals, setProfessionals] = useState<Professional[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     loadProfessionals()
-  }, [organizationId])
+  }, [organizationId, serviceId])
 
   const loadProfessionals = async () => {
     try {
       setLoading(true)
-      const response = await fetch(`/api/public/${organizationId}/professionals`)
-
+      const response = await fetch(`/api/public/${organizationId}/professionals?serviceId=${serviceId}`)
       if (!response.ok) {
         throw new Error("Error al cargar profesionales")
       }
-
       const data = await response.json()
-      setProfessionals(data)
+      setProfessionals(data.professionals)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error desconocido")
     } finally {
@@ -72,7 +71,7 @@ export function ProfessionalSelector({ organizationId, onSelect }: ProfessionalS
       {/* Opción "Cualquier profesional disponible" */}
       <Card
         className="hover:shadow-md transition-shadow cursor-pointer border-2 hover:border-green-200"
-        onClick={() => onSelect("")}
+        onClick={() => onSelect("any")}
       >
         <CardContent className="p-4">
           <div className="flex items-center justify-between">

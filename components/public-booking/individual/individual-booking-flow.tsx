@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft } from 'lucide-react'
 import { ServiceSelector } from "./service-selector"
 import { ProfessionalSelector } from "./professional-selector"
 import { AvailableSlots } from "./available-slots"
@@ -19,6 +19,7 @@ type Step = "service" | "professional" | "slots" | "client-data" | "confirmation
 interface BookingData {
   serviceId: number
   professionalId: string
+  assignedProfessionalId?: string // Para cuando se selecciona "any"
   date: string
   startTime: string
   endTime: string
@@ -43,16 +44,30 @@ export function IndividualBookingFlow({ organizationId, onBack }: IndividualBook
   }
 
   const handleProfessionalSelect = (professionalId: string) => {
+    console.log("👨‍⚕️ Profesional seleccionado:", professionalId)
     setBookingData((prev) => ({ ...prev, professionalId }))
     setCurrentStep("slots")
   }
 
-  const handleSlotSelect = (date: string, startTime: string, endTime: string) => {
+  const handleSlotSelect = (
+    date: string, 
+    startTime: string, 
+    endTime: string, 
+    assignedProfessionalId?: string
+  ) => {
+    console.log("🕐 Slot seleccionado:", { 
+      date, 
+      startTime, 
+      endTime, 
+      assignedProfessionalId 
+    })
+    
     setBookingData((prev) => ({
       ...prev,
       date,
       startTime,
       endTime,
+      assignedProfessionalId, // Guardar el profesional asignado si existe
     }))
     setCurrentStep("client-data")
   }
@@ -60,6 +75,20 @@ export function IndividualBookingFlow({ organizationId, onBack }: IndividualBook
   const handleClientDataSubmit = async (clientData: { name: string; phone: string; email?: string }) => {
     setLoading(true)
     try {
+      // Usar el profesional asignado si existe, sino el seleccionado originalmente
+      const finalProfessionalId = bookingData.assignedProfessionalId || bookingData.professionalId
+      
+      console.log("📝 Enviando datos de booking:", {
+        serviceId: bookingData.serviceId,
+        professionalId: finalProfessionalId, // Nunca debe ser "any"
+        originalProfessionalId: bookingData.professionalId,
+        assignedProfessionalId: bookingData.assignedProfessionalId,
+        date: bookingData.date,
+        startTime: bookingData.startTime,
+        endTime: bookingData.endTime,
+        clientData,
+      })
+
       const response = await fetch(`/api/public/${organizationId}/booking/individual`, {
         method: "POST",
         headers: {
@@ -67,7 +96,7 @@ export function IndividualBookingFlow({ organizationId, onBack }: IndividualBook
         },
         body: JSON.stringify({
           serviceId: bookingData.serviceId,
-          professionalId: bookingData.professionalId,
+          professionalId: finalProfessionalId,
           date: bookingData.date,
           startTime: bookingData.startTime,
           endTime: bookingData.endTime,
@@ -129,12 +158,12 @@ export function IndividualBookingFlow({ organizationId, onBack }: IndividualBook
             {currentStep === "service"
               ? 1
               : currentStep === "professional"
-                ? 2
-                : currentStep === "slots"
-                  ? 3
-                  : currentStep === "client-data"
-                    ? 4
-                    : 5}{" "}
+              ? 2
+              : currentStep === "slots"
+              ? 3
+              : currentStep === "client-data"
+              ? 4
+              : 5}{" "}
             de 5
           </div>
         </div>
@@ -144,8 +173,12 @@ export function IndividualBookingFlow({ organizationId, onBack }: IndividualBook
         <ServiceSelector organizationId={organizationId} onSelect={handleServiceSelect} />
       )}
 
-      {currentStep === "professional" && (
-        <ProfessionalSelector organizationId={organizationId} onSelect={handleProfessionalSelect} />
+      {currentStep === "professional" && bookingData.serviceId && (
+        <ProfessionalSelector 
+          organizationId={organizationId} 
+          serviceId={bookingData.serviceId.toString()}
+          onSelect={handleProfessionalSelect} 
+        />
       )}
 
       {currentStep === "slots" &&
@@ -156,7 +189,7 @@ export function IndividualBookingFlow({ organizationId, onBack }: IndividualBook
             organizationId={organizationId}
             serviceId={bookingData.serviceId}
             professionalId={bookingData.professionalId}
-            duration={bookingData.duration} // ✅ pasamos duration al componente
+            duration={bookingData.duration}
             onSelect={handleSlotSelect}
           />
         )}

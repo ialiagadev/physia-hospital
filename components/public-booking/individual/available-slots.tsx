@@ -1,25 +1,27 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
 import { format, startOfDay } from "date-fns"
 import { es } from "date-fns/locale"
-import { Clock } from "lucide-react"
+import { Clock, User } from 'lucide-react'
 
 interface TimeSlot {
   start_time: string
   end_time: string
   available: boolean
+  professional_id?: string
+  professional_name?: string
 }
 
 interface AvailableSlotsProps {
   organizationId: string
   serviceId: number
   professionalId: string
-  duration: number // Quitar el ? para hacerla requerida
-  onSelect: (date: string, startTime: string, endTime: string) => void
+  duration: number
+  onSelect: (date: string, startTime: string, endTime: string, assignedProfessionalId?: string) => void
 }
 
 export function AvailableSlots({ organizationId, serviceId, professionalId, duration, onSelect }: AvailableSlotsProps) {
@@ -33,9 +35,8 @@ export function AvailableSlots({ organizationId, serviceId, professionalId, dura
     setError(null)
     try {
       const dateStr = format(date, "yyyy-MM-dd")
-      const url = `/api/public/${organizationId}/available-slots?date=${dateStr}&serviceId=${serviceId}&professionalId=${professionalId}&duration=${duration}`
+      const url = `/api/public/${organizationId}/available-slots?date=${dateStr}&serviceId=${serviceId}&professionalId=${professionalId}`
       console.log("Fetching slots from:", url)
-      console.log("Duration being sent:", duration)
 
       const response = await fetch(url)
       const data = await response.json()
@@ -56,10 +57,10 @@ export function AvailableSlots({ organizationId, serviceId, professionalId, dura
   }
 
   useEffect(() => {
-    if (organizationId && serviceId && professionalId && duration) {
+    if (organizationId && serviceId && professionalId) {
       fetchAvailableSlots(selectedDate)
     }
-  }, [selectedDate, organizationId, serviceId, professionalId, duration])
+  }, [selectedDate, organizationId, serviceId, professionalId])
 
   const handleDateSelect = (date: Date | undefined) => {
     if (date) {
@@ -69,7 +70,8 @@ export function AvailableSlots({ organizationId, serviceId, professionalId, dura
 
   const handleSlotSelect = (slot: TimeSlot) => {
     const dateStr = format(selectedDate, "yyyy-MM-dd")
-    onSelect(dateStr, slot.start_time, slot.end_time)
+    // Pasar el professional_id asignado si existe
+    onSelect(dateStr, slot.start_time, slot.end_time, slot.professional_id)
   }
 
   // Deshabilitar fechas pasadas
@@ -81,7 +83,12 @@ export function AvailableSlots({ organizationId, serviceId, professionalId, dura
     <div className="space-y-6">
       <div className="text-center">
         <h2 className="text-2xl font-bold text-gray-800">Selecciona Fecha y Hora</h2>
-        <p className="text-gray-600 mt-2">Elige el día y horario que mejor te convenga</p>
+        <p className="text-gray-600 mt-2">
+          {professionalId === "any" 
+            ? "Elige el día y horario que mejor te convenga. Te asignaremos el primer profesional disponible."
+            : "Elige el día y horario que mejor te convenga"
+          }
+        </p>
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
@@ -137,17 +144,42 @@ export function AvailableSlots({ organizationId, serviceId, professionalId, dura
                   <Button
                     key={index}
                     variant="outline"
-                    className="w-full justify-start hover:bg-blue-50 hover:border-blue-300 bg-transparent"
+                    className="w-full justify-start hover:bg-blue-50 hover:border-blue-300 bg-transparent text-left"
                     onClick={() => handleSlotSelect(slot)}
                   >
-                    <Clock className="w-4 h-4 mr-2" />
-                    {slot.start_time} - {slot.end_time}
+                    <div className="flex flex-col items-start w-full">
+                      <div className="flex items-center">
+                        <Clock className="w-4 h-4 mr-2" />
+                        <span className="font-medium">{slot.start_time} - {slot.end_time}</span>
+                      </div>
+                      {slot.professional_name && professionalId === "any" && (
+                        <div className="flex items-center text-xs text-gray-600 ml-6 mt-1">
+                          <User className="w-3 h-3 mr-1" />
+                          <span>Con: {slot.professional_name}</span>
+                        </div>
+                      )}
+                    </div>
                   </Button>
                 ))}
               </div>
             )}
           </CardContent>
         </Card>
+      </div>
+
+      {/* Información adicional */}
+      <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+        <div className="flex items-start gap-2">
+          <Clock className="w-5 h-5 text-blue-600 mt-0.5" />
+          <div className="text-sm text-blue-800">
+            <p className="font-medium">Duración del servicio: {duration} minutos</p>
+            {professionalId === "any" && (
+              <p className="mt-1">
+                Se te asignará automáticamente el primer profesional disponible para el horario seleccionado.
+              </p>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )
