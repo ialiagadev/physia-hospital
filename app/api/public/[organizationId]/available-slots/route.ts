@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-import { format, parseISO } from "date-fns"
+import { createClient } from "@supabase/supabase-js" 
+import { format, parseISO, isToday } from "date-fns"
 
 // Cliente admin que bypassa RLS
 const supabaseAdmin = createClient(
@@ -36,14 +36,36 @@ function minutesToTime(minutes: number): string {
   return `${hours.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}`
 }
 
+// Función para obtener la hora actual en minutos
+function getCurrentTimeInMinutes(): number {
+  const now = new Date()
+  return now.getHours() * 60 + now.getMinutes()
+}
+
+// Función para verificar si un slot ya ha pasado
+function hasSlotPassed(slotStartTime: string, targetDate: Date): boolean {
+  // Solo filtrar si es el día de hoy
+  if (!isToday(targetDate)) {
+    return false
+  }
+  
+  const currentTimeMinutes = getCurrentTimeInMinutes()
+  const slotStartMinutes = timeToMinutes(slotStartTime)
+  
+  // Buffer de 5 minutos para evitar mostrar slots muy próximos
+  const bufferMinutes = 5
+  const cutoffTime = currentTimeMinutes + bufferMinutes
+  
+  return slotStartMinutes <= cutoffTime
+}
+
 // Función para verificar si dos rangos de tiempo se solapan
 function timesOverlap(start1: string, end1: string, start2: string, end2: string): boolean {
   const start1Minutes = timeToMinutes(start1)
   const end1Minutes = timeToMinutes(end1)
   const start2Minutes = timeToMinutes(start2)
   const end2Minutes = timeToMinutes(end2)
-
-  // Dos rangos se solapan si: start1 < end2 && start2 < end1
+  
   return start1Minutes < end2Minutes && start2Minutes < end1Minutes
 }
 
@@ -71,7 +93,6 @@ async function getSlotsForProfessional(
   }
 
   if (vacations && vacations.length > 0) {
-    console.log("Professional is on vacation")
     return []
   }
 
@@ -99,7 +120,6 @@ async function getSlotsForProfessional(
   if (exceptionSchedules && exceptionSchedules.length > 0) {
     workSchedules = exceptionSchedules
     currentScheduleId = exceptionSchedules[0].id
-    console.log("Using exception schedule for date:", formattedDate)
   } else {
     // Si no hay excepciones, buscar horario regular
     const { data: regularSchedules, error: regularError } = await supabaseAdmin
@@ -121,7 +141,6 @@ async function getSlotsForProfessional(
     if (regularSchedules && regularSchedules.length > 0) {
       workSchedules = regularSchedules
       currentScheduleId = regularSchedules[0].id
-      console.log("Using regular schedule for day:", dayOfWeek)
     }
 
     if (regularError) {
@@ -134,7 +153,6 @@ async function getSlotsForProfessional(
   }
 
   if (!workSchedules || workSchedules.length === 0) {
-    console.log("No work schedules found")
     return []
   }
 
@@ -156,7 +174,6 @@ async function getSlotsForProfessional(
 
     if (breaks && !breaksError) {
       scheduleBreaks = breaks as ScheduleBreak[]
-      console.log("Schedule breaks found:", breaks.length)
     }
 
     if (breaksError) {
@@ -177,8 +194,6 @@ async function getSlotsForProfessional(
     return []
   }
 
-  console.log("Existing appointments:", existingAppointments?.length || 0)
-
   // Obtener actividades grupales
   const { data: groupActivities, error: groupError } = await supabaseAdmin
     .from("group_activities")
@@ -191,41 +206,28 @@ async function getSlotsForProfessional(
     console.error("Error fetching group activities:", groupError)
   }
 
-  console.log("Group activities:", groupActivities?.length || 0)
-
   // Generar slots disponibles
   const slots = []
-
   for (const schedule of workSchedules) {
     const workStart = schedule.start_time
     const workEnd = schedule.end_time
-
-    console.log("🕐 Processing schedule:", {
-      workStart,
-      workEnd,
-      serviceDuration: `${serviceDuration} minutes`,
-      breaks: scheduleBreaks.length,
-    })
-
     const startMinutes = timeToMinutes(workStart)
     const endMinutes = timeToMinutes(workEnd)
-
-    console.log(
-      `🎯 Generating slots every ${serviceDuration} minutes from ${startMinutes} to ${endMinutes - serviceDuration}`,
-    )
 
     // Generar slots usando la duración del servicio como intervalo
     for (let minutes = startMinutes; minutes + serviceDuration <= endMinutes; minutes += serviceDuration) {
       const slotStart = minutesToTime(minutes)
       const slotEnd = minutesToTime(minutes + serviceDuration)
 
-      console.log(`🔍 Checking slot: ${slotStart} - ${slotEnd}`)
+      // Verificar si el slot ya ha pasado
+      if (hasSlotPassed(slotStart, targetDate)) {
+        continue
+      }
 
       // Verificar conflicto con descanso principal
       let hasBreakConflict = false
       if (schedule.break_start && schedule.break_end) {
         if (timesOverlap(slotStart, slotEnd, schedule.break_start, schedule.break_end)) {
-          console.log(`❌ Slot conflicts with main break: ${schedule.break_start} - ${schedule.break_end}`)
           hasBreakConflict = true
         }
       }
@@ -234,9 +236,6 @@ async function getSlotsForProfessional(
       if (!hasBreakConflict) {
         for (const breakItem of scheduleBreaks) {
           if (timesOverlap(slotStart, slotEnd, breakItem.start_time, breakItem.end_time)) {
-            console.log(
-              `❌ Slot conflicts with break: ${breakItem.break_name} (${breakItem.start_time} - ${breakItem.end_time})`,
-            )
             hasBreakConflict = true
             break
           }
@@ -252,7 +251,6 @@ async function getSlotsForProfessional(
       if (existingAppointments) {
         for (const appointment of existingAppointments) {
           if (timesOverlap(slotStart, slotEnd, appointment.start_time, appointment.end_time)) {
-            console.log(`❌ Slot conflicts with appointment: ${appointment.start_time} - ${appointment.end_time}`)
             hasAppointmentConflict = true
             break
           }
@@ -268,7 +266,6 @@ async function getSlotsForProfessional(
       if (groupActivities) {
         for (const activity of groupActivities) {
           if (timesOverlap(slotStart, slotEnd, activity.start_time, activity.end_time)) {
-            console.log(`❌ Slot conflicts with group activity: ${activity.start_time} - ${activity.end_time}`)
             hasGroupConflict = true
             break
           }
@@ -285,7 +282,6 @@ async function getSlotsForProfessional(
         end_time: slotEnd,
         available: true,
       })
-      console.log(`✅ Added slot: ${slotStart} - ${slotEnd}`)
     }
   }
 
@@ -299,8 +295,6 @@ export async function GET(request: NextRequest, { params }: { params: { organiza
     const professionalId = searchParams.get("professionalId")
     const serviceId = searchParams.get("serviceId")
     const date = searchParams.get("date")
-
-    console.log("Available slots request:", { organizationId, professionalId, serviceId, date })
 
     if (isNaN(organizationId)) {
       return NextResponse.json({ error: "ID de organización inválido" }, { status: 400 })
@@ -344,19 +338,11 @@ export async function GET(request: NextRequest, { params }: { params: { organiza
       return NextResponse.json({ error: "Duración del servicio inválida" }, { status: 500 })
     }
 
-    console.log("🔍 Service details:", {
-      name: service.name,
-      duration: serviceDuration,
-      "duration type": typeof serviceDuration,
-    })
-
     const targetDate = parseISO(date)
     const formattedDate = format(targetDate, "yyyy-MM-dd")
 
     // Si es "cualquier profesional", buscar en todos los profesionales que pueden realizar este servicio
     if (professionalId === "any") {
-      console.log("🔍 Searching slots for ANY professional who can perform this service...")
-
       // Primero intentar con user_services
       const { data: professionalServices, error: profServicesError } = await supabaseAdmin
         .from("user_services")
@@ -373,11 +359,6 @@ export async function GET(request: NextRequest, { params }: { params: { organiza
         .eq("users.organization_id", organizationId)
         .eq("users.is_active", true)
 
-      console.log("🔍 Professional services query result:", { 
-        count: professionalServices?.length || 0, 
-        error: profServicesError 
-      })
-
       let validProfessionals: any[] = []
 
       if (profServicesError) {
@@ -386,8 +367,6 @@ export async function GET(request: NextRequest, { params }: { params: { organiza
       }
 
       if (!professionalServices || professionalServices.length === 0) {
-        console.log("⚠️ No professionals found in user_services table. Trying fallback approach...")
-        
         // Fallback: obtener todos los usuarios activos de la organización
         const { data: allProfessionals, error: allProfError } = await supabaseAdmin
           .from("users")
@@ -395,48 +374,34 @@ export async function GET(request: NextRequest, { params }: { params: { organiza
           .eq("organization_id", organizationId)
           .eq("is_active", true)
 
-        console.log("🔍 All professionals query result:", { 
-          count: allProfessionals?.length || 0, 
-          error: allProfError 
-        })
-
         if (allProfError) {
           console.error("❌ Error fetching all professionals:", allProfError)
           return NextResponse.json({ error: "Error al obtener profesionales" }, { status: 500 })
         }
 
         if (!allProfessionals || allProfessionals.length === 0) {
-          console.log("❌ No professionals found in organization")
           return NextResponse.json({ slots: [] })
         }
 
         // Convertir formato para compatibilidad
-        validProfessionals = allProfessionals.map(prof => ({
-          users: prof
-        }))
-
-        console.log("✅ Using fallback: all active users from organization")
+        validProfessionals = allProfessionals.map(prof => ({ users: prof }))
       } else {
         validProfessionals = professionalServices
-        console.log("✅ Using user_services: specific professionals for this service")
       }
 
-      console.log(`📊 Found ${validProfessionals.length} professionals to check`)
-
       // Crear un mapa de todos los slots posibles con profesional asignado
-      const allSlotsMap = new Map<string, { 
-        start_time: string; 
-        end_time: string; 
-        professional_id: string; 
-        professional_name: string 
+      const allSlotsMap = new Map<string, {
+        start_time: string
+        end_time: string
+        professional_id: string
+        professional_name: string
       }>()
 
       // Para cada profesional, obtener sus slots disponibles
       for (const profService of validProfessionals) {
         const professional = profService.users
         const professionalName = professional.name || 'Profesional'
-        console.log(`🔍 Checking slots for professional: ${professionalName} (ID: ${professional.id})`)
-        
+
         try {
           const professionalSlots = await getSlotsForProfessional(
             professional.id,
@@ -446,12 +411,9 @@ export async function GET(request: NextRequest, { params }: { params: { organiza
             formattedDate
           )
 
-          console.log(`📅 Professional ${professionalName} has ${professionalSlots.length} available slots`)
-
           // Agregar slots al mapa (usando tiempo como key para evitar duplicados)
           for (const slot of professionalSlots) {
             const slotKey = `${slot.start_time}-${slot.end_time}`
-            
             // Solo agregar si no existe ya (primer profesional disponible gana)
             if (!allSlotsMap.has(slotKey)) {
               allSlotsMap.set(slotKey, {
@@ -460,9 +422,6 @@ export async function GET(request: NextRequest, { params }: { params: { organiza
                 professional_id: professional.id,
                 professional_name: professionalName,
               })
-              console.log(`✅ Added slot ${slotKey} for ${professionalName}`)
-            } else {
-              console.log(`⚠️ Slot ${slotKey} already exists, skipping for ${professionalName}`)
             }
           }
         } catch (slotError) {
@@ -482,18 +441,9 @@ export async function GET(request: NextRequest, { params }: { params: { organiza
           professional_name: slot.professional_name,
         }))
 
-      console.log(`🎉 Final slots for ANY professional: ${finalSlots.length}`)
-      console.log(
-        "📋 Slots list:",
-        finalSlots.map((s) => `${s.start_time}-${s.end_time} (${s.professional_name})`),
-      )
-
       return NextResponse.json({ slots: finalSlots })
-
     } else {
       // Para profesional específico, verificar que puede realizar este servicio
-      console.log("🔍 Searching slots for specific professional:", professionalId)
-
       // Primero verificar si existe en user_services
       const { data: canPerformService, error: serviceCheckError } = await supabaseAdmin
         .from("user_services")
@@ -505,17 +455,9 @@ export async function GET(request: NextRequest, { params }: { params: { organiza
       // Si no existe en user_services, permitir de todas formas (fallback)
       if (serviceCheckError && serviceCheckError.code !== 'PGRST116') {
         console.error("❌ Error checking service permission:", serviceCheckError)
-        return NextResponse.json({ 
-          error: "Error al verificar permisos del profesional" 
-        }, { status: 500 })
+        return NextResponse.json({ error: "Error al verificar permisos del profesional" }, { status: 500 })
       }
 
-      if (!canPerformService) {
-        console.log("⚠️ Professional not found in user_services, allowing anyway (fallback)")
-      } else {
-        console.log("✅ Professional can perform this service")
-      }
-      
       const slots = await getSlotsForProfessional(
         professionalId,
         organizationId,
@@ -524,15 +466,8 @@ export async function GET(request: NextRequest, { params }: { params: { organiza
         formattedDate
       )
 
-      console.log(`🎉 Final generated slots: ${slots.length}`)
-      console.log(
-        "📋 Slots list:",
-        slots.map((s) => `${s.start_time}-${s.end_time}`),
-      )
-
       return NextResponse.json({ slots })
     }
-
   } catch (error) {
     console.error("API Error:", error)
     return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
