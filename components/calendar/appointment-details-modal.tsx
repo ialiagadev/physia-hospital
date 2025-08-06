@@ -400,22 +400,73 @@ export function AppointmentDetailsModal({
       setIsSaving(false)
     }
   }
-
   const handleDelete = async () => {
+    console.log("🚨 handleDelete llamado para cita:", appointment?.id)
+  
     setIsDeleting(true)
     try {
+      // 🆕 Obtener google_calendar_event_id actualizado desde Supabase
+      const { data: citaActualizada, error: fetchError } = await supabase
+        .from("appointments")
+        .select("google_calendar_event_id")
+        .eq("id", appointment.id)
+        .single()
+  
+      const calendarEventId = citaActualizada?.google_calendar_event_id
+      const professionalId = appointment?.professional_id
+      const orgId = userProfile?.organization_id
+  
+      console.log("🔍 Intentando eliminar de Google Calendar:", {
+        eventId: calendarEventId,
+        professionalId,
+        organizationId: orgId,
+      })
+  
+      // Solo eliminar si tenemos todos los datos
+      if (calendarEventId && professionalId && orgId) {
+        try {
+          const response = await fetch("/api/sync", {
+            method: "DELETE",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              appointmentId: appointment.id,
+              userId: professionalId,
+              organizationId: orgId,
+            }),
+          })
+  
+          const result = await response.json()
+          if (!response.ok && response.status !== 404) {
+            console.warn("❌ Fallo al eliminar de Google Calendar:", result)
+          } else {
+            console.log("✅ Evento eliminado de Google Calendar")
+          }
+        } catch (syncError) {
+          console.error("❌ Error al eliminar del calendario:", syncError)
+        }
+      } else {
+        console.log("⚠️ No se elimina de Google Calendar: falta algún dato obligatorio")
+      }
+  
+      // Eliminar en Supabase después de la sincronización
       await onDelete(appointment.id)
+      console.log("✅ Cita eliminada de Supabase")
+  
       setShowDeleteDialog(false)
-      onClose() // Cerrar el modal principal también
+      onClose()
     } catch (error) {
-      console.error("Error al eliminar la cita:", error)
-      // Resetear estados incluso si hay error
+      console.error("❌ Error general al eliminar la cita:", error)
+      toast.error("Error al eliminar la cita")
     } finally {
       setIsDeleting(false)
       setShowDeleteDialog(false)
     }
   }
-
+  
+  
+  
   const handleCancel = () => {
     setEditedAppointment(appointment)
     setIsEditing(false)

@@ -4,24 +4,27 @@ import { googleTokenManager } from "@/lib/google-token-manager"
 
 console.log("🔍 DEBUG - Sync route loaded")
 
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 export async function POST(request: NextRequest) {
   console.log("🔍 DEBUG - Sync POST called")
-
   try {
     const body = await request.json()
     console.log("🔍 DEBUG - Request body:", body)
-
     const { appointmentId, activityId, userId, organizationId } = body
 
     if (!userId || !organizationId) {
-      return NextResponse.json({ error: "userId y organizationId son requeridos" }, { status: 400 })
+      return NextResponse.json(
+        { error: "userId y organizationId son requeridos" },
+        { status: 400 }
+      )
     }
 
-    // Obtener tokens válidos (sin organization_id porque la tabla no lo tiene)
+    // Obtener tokens válidos
     const tokenData = await googleTokenManager.getValidTokens(userId)
-
     if (!tokenData) {
       console.log("🔍 DEBUG - User doesn't have valid Google Calendar tokens")
       return NextResponse.json({
@@ -37,17 +40,260 @@ export async function POST(request: NextRequest) {
     } else if (activityId) {
       return await handleGroupActivitySync(activityId, organizationId, tokenData)
     } else {
-      return NextResponse.json({ error: "appointmentId o activityId es requerido" }, { status: 400 })
+      return NextResponse.json(
+        { error: "appointmentId o activityId es requerido" },
+        { status: 400 }
+      )
     }
   } catch (error) {
     console.error("Error in sync route:", error)
-    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
+    return NextResponse.json(
+      { error: "Error interno del servidor" },
+      { status: 500 }
+    )
+  }
+}
+
+// 🆕 NUEVO: Método DELETE para eliminar eventos del Google Calendar
+export async function DELETE(request: NextRequest) {
+  console.log("🗑️ DEBUG - Sync DELETE called")
+  try {
+    const body = await request.json()
+    console.log("🗑️ DEBUG - Delete request body:", body)
+    const { appointmentId, activityId, userId, organizationId } = body
+
+    if (!userId || !organizationId) {
+      return NextResponse.json(
+        { error: "userId y organizationId son requeridos" },
+        { status: 400 }
+      )
+    }
+
+    // Obtener tokens válidos
+    const tokenData = await googleTokenManager.getValidTokens(userId)
+    if (!tokenData) {
+      console.log("🗑️ DEBUG - User doesn't have valid Google Calendar tokens")
+      return NextResponse.json({
+        success: false,
+        message: "Usuario no conectado con Google Calendar o tokens expirados",
+      })
+    }
+
+    console.log("✅ Tokens válidos obtenidos para eliminación")
+
+    if (appointmentId) {
+      return await handleAppointmentDelete(appointmentId, organizationId, tokenData)
+    } else if (activityId) {
+      return await handleGroupActivityDelete(activityId, organizationId, tokenData)
+    } else {
+      return NextResponse.json(
+        { error: "appointmentId o activityId es requerido" },
+        { status: 400 }
+      )
+    }
+  } catch (error) {
+    console.error("Error in delete sync route:", error)
+    return NextResponse.json(
+      { error: "Error interno del servidor" },
+      { status: 500 }
+    )
+  }
+}
+
+// 🆕 NUEVA: Función para eliminar citas del Google Calendar
+async function handleAppointmentDelete(
+  appointmentId: string,
+  organizationId: number,
+  tokenData: any
+) {
+  console.log("🗑️ Eliminando cita del Google Calendar:", appointmentId)
+  try {
+    // Obtener la cita para verificar que existe y obtener el event_id
+    const { data: appointment, error: appointmentError } = await supabase
+      .from("appointments")
+      .select(`
+    id, 
+    google_calendar_event_id,
+    client_id,
+    clients(name, email, phone)
+  `)
+      .eq("id", appointmentId)
+      .eq("organization_id", organizationId)
+      .single()
+
+    if (appointmentError || !appointment) {
+      console.log("⚠️ Cita no encontrada para eliminar:", appointmentId)
+      return NextResponse.json(
+        { success: true, message: "Cita no encontrada, no hay nada que eliminar" },
+        { status: 200 }
+      )
+    }
+
+    // Si no tiene event_id, no hay nada que eliminar en Google Calendar
+    if (!appointment.google_calendar_event_id) {
+      console.log("ℹ️ La cita no tiene event_id de Google Calendar")
+      return NextResponse.json({
+        success: true,
+        message: "La cita no estaba sincronizada con Google Calendar",
+      })
+    }
+
+    console.log("🗑️ Eliminando evento de Google Calendar:", appointment.google_calendar_event_id)
+
+    // Eliminar el evento de Google Calendar
+    const response = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events/${appointment.google_calendar_event_id}`,
+      {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${tokenData.access_token}`,
+          "Content-Type": "application/json",
+        },
+      }
+    )
+
+    if (response.ok || response.status === 404) {
+      console.log("✅ Evento eliminado exitosamente del Google Calendar")
+      
+      // Limpiar el google_calendar_event_id de la base de datos
+      await supabase
+        .from("appointments")
+        .update({
+          google_calendar_event_id: null,
+          synced_with_google: false,
+          last_google_sync: new Date().toISOString(),
+        })
+        .eq("id", appointmentId)
+
+      return NextResponse.json({
+        success: true,
+      })
+    } else {
+      const errorData = await response.text()
+      console.error("❌ Error eliminando evento de Google Calendar:", {
+        status: response.status,
+        error: errorData,
+      })
+      
+      // Aunque falle la eliminación, limpiar el event_id para evitar problemas futuros
+      await supabase
+        .from("appointments")
+        .update({
+          google_calendar_event_id: null,
+          synced_with_google: false,
+        })
+        .eq("id", appointmentId)
+
+      return NextResponse.json({
+        success: false,
+        error: `Error eliminando evento: ${response.status}`,
+      })
+    }
+  } catch (error) {
+    console.error("Error deleting appointment from Google Calendar:", error)
+    return NextResponse.json(
+      { error: "Error al eliminar cita del Google Calendar" },
+      { status: 500 }
+    )
+  }
+}
+
+// 🆕 NUEVA: Función para eliminar actividades grupales del Google Calendar
+async function handleGroupActivityDelete(
+  activityId: string,
+  organizationId: number,
+  tokenData: any
+) {
+  console.log("🗑️ Eliminando actividad grupal del Google Calendar:", activityId)
+  try {
+    // Obtener la actividad para verificar que existe y obtener el event_id
+    const { data: activity, error: activityError } = await supabase
+      .from("group_activities")
+      .select("id, name, google_calendar_event_id")
+      .eq("id", activityId)
+      .eq("organization_id", organizationId)
+      .single()
+
+    if (activityError || !activity) {
+      console.log("⚠️ Actividad no encontrada para eliminar:", activityId)
+      return NextResponse.json(
+        { success: true, message: "Actividad no encontrada, no hay nada que eliminar" },
+        { status: 200 }
+      )
+    }
+
+    // Si no tiene event_id, no hay nada que eliminar en Google Calendar
+    if (!activity.google_calendar_event_id) {
+      console.log("ℹ️ La actividad no tiene event_id de Google Calendar")
+      return NextResponse.json({
+        success: true,
+        message: "La actividad no estaba sincronizada con Google Calendar",
+      })
+    }
+
+    console.log("🗑️ Eliminando evento de actividad de Google Calendar:", activity.google_calendar_event_id)
+
+    // Eliminar el evento de Google Calendar
+    const response = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events/${activity.google_calendar_event_id}`,
+      {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${tokenData.access_token}`,
+          "Content-Type": "application/json",
+        },
+      }
+    )
+
+    if (response.ok || response.status === 404) {
+      console.log("✅ Evento de actividad eliminado exitosamente del Google Calendar")
+      
+      // Limpiar el google_calendar_event_id de la base de datos
+      await supabase
+        .from("group_activities")
+        .update({
+          google_calendar_event_id: null,
+          synced_with_google: false,
+          last_google_sync: new Date().toISOString(),
+        })
+        .eq("id", activityId)
+
+      return NextResponse.json({
+        success: true,
+        message: `Actividad "${activity.name}" eliminada del Google Calendar`,
+      })
+    } else {
+      const errorData = await response.text()
+      console.error("❌ Error eliminando evento de actividad de Google Calendar:", {
+        status: response.status,
+        error: errorData,
+      })
+      
+      // Aunque falle la eliminación, limpiar el event_id para evitar problemas futuros
+      await supabase
+        .from("group_activities")
+        .update({
+          google_calendar_event_id: null,
+          synced_with_google: false,
+        })
+        .eq("id", activityId)
+
+      return NextResponse.json({
+        success: false,
+        error: `Error eliminando evento de actividad: ${response.status}`,
+      })
+    }
+  } catch (error) {
+    console.error("Error deleting group activity from Google Calendar:", error)
+    return NextResponse.json(
+      { error: "Error al eliminar actividad del Google Calendar" },
+      { status: 500 }
+    )
   }
 }
 
 async function handleAppointmentSync(appointmentId: string, organizationId: number, tokenData: any) {
   console.log("📅 Procesando cita:", appointmentId)
-
   try {
     // Obtener la cita con todos los datos necesarios
     const { data: appointment, error: appointmentError } = await supabase
@@ -82,12 +328,17 @@ async function handleAppointmentSync(appointmentId: string, organizationId: numb
         start_time: appointment.start_time,
         end_time: appointment.end_time,
       })
-      return NextResponse.json({ error: "Datos de fecha/hora incompletos" }, { status: 400 })
+      return NextResponse.json(
+        { error: "Datos de fecha/hora incompletos" },
+        { status: 400 }
+      )
     }
 
     // Preparar datos del evento con validación
     const eventData = {
-      summary: `${appointment.client?.name || "Paciente"} - ${appointment.service?.name || "Consulta"}`,
+      summary: `${appointment.client?.name || "Paciente"} - ${
+        appointment.service?.name || "Consulta"
+      }`,
       description: [
         `Paciente: ${appointment.client?.name || "Sin nombre"}`,
         appointment.client?.phone ? `Teléfono: ${appointment.client.phone}` : null,
@@ -104,7 +355,9 @@ async function handleAppointmentSync(appointmentId: string, organizationId: numb
         dateTime: `${appointment.date}T${appointment.end_time}`,
         timeZone: "Europe/Madrid",
       },
-      attendees: appointment.client?.email ? [{ email: appointment.client.email }] : undefined,
+      attendees: appointment.client?.email
+        ? [{ email: appointment.client.email }]
+        : undefined,
     }
 
     console.log("📅 Datos del evento a enviar:", {
@@ -129,7 +382,7 @@ async function handleAppointmentSync(appointmentId: string, organizationId: numb
               Authorization: `Bearer ${tokenData.access_token}`,
               "Content-Type": "application/json",
             },
-          },
+          }
         )
 
         if (checkResponse.ok) {
@@ -149,8 +402,9 @@ async function handleAppointmentSync(appointmentId: string, organizationId: numb
     }
 
     // Crear o actualizar el evento
-    console.log(`🔄 ${method === "POST" ? "Creando" : "Actualizando"} evento en Google Calendar...`)
-
+    console.log(
+      `🔄 ${method === "POST" ? "Creando" : "Actualizando"} evento en Google Calendar...`
+    )
     const response = await fetch(url, {
       method,
       headers: {
@@ -194,13 +448,15 @@ async function handleAppointmentSync(appointmentId: string, organizationId: numb
     })
   } catch (error) {
     console.error("Error syncing appointment:", error)
-    return NextResponse.json({ error: "Error al sincronizar cita" }, { status: 500 })
+    return NextResponse.json(
+      { error: "Error al sincronizar cita" },
+      { status: 500 }
+    )
   }
 }
 
 async function handleGroupActivitySync(activityId: string, organizationId: number, tokenData: any) {
   console.log("👥 Procesando actividad grupal:", activityId)
-
   try {
     // Obtener actividad
     const { data: activity, error: activityError } = await supabase
@@ -216,7 +472,10 @@ async function handleGroupActivitySync(activityId: string, organizationId: numbe
 
     if (activityError || !activity) {
       console.error("❌ Error obteniendo actividad:", activityError)
-      return NextResponse.json({ error: `Actividad no encontrada: ${activityError?.message}` }, { status: 404 })
+      return NextResponse.json(
+        { error: `Actividad no encontrada: ${activityError?.message}` },
+        { status: 404 }
+      )
     }
 
     // Obtener profesional por separado
@@ -269,7 +528,10 @@ async function handleGroupActivitySync(activityId: string, organizationId: numbe
         start_time: activity.start_time,
         end_time: activity.end_time,
       })
-      return NextResponse.json({ error: "Datos de fecha/hora incompletos" }, { status: 400 })
+      return NextResponse.json(
+        { error: "Datos de fecha/hora incompletos" },
+        { status: 400 }
+      )
     }
 
     // Preparar lista de participantes para el evento
@@ -277,18 +539,26 @@ async function handleGroupActivitySync(activityId: string, organizationId: numbe
       .filter((p: any) => p.clients?.email)
       .map((p: any) => ({ email: p.clients.email }))
 
-    const participantNames = (participants || []).map((p: any) => p.clients?.name || "Sin nombre").join(", ")
+    const participantNames = (participants || [])
+      .map((p: any) => p.clients?.name || "Sin nombre")
+      .join(", ")
 
     // Preparar datos del evento
     const eventData = {
-      summary: `${activity.name} (${participants?.length || 0}/${activity.max_participants})`,
+      summary: `${activity.name} (${participants?.length || 0}/${
+        activity.max_participants
+      })`,
       description: [
         `Actividad Grupal: ${activity.name}`,
         activity.description ? `Descripción: ${activity.description}` : null,
         `Profesional: ${professional?.name || "Sin asignar"}`,
-        activity.consultations?.name ? `Consulta: ${activity.consultations.name}` : null,
+        activity.consultations?.name
+          ? `Consulta: ${activity.consultations.name}`
+          : null,
         activity.services?.name ? `Servicio: ${activity.services.name}` : null,
-        `Participantes (${participants?.length || 0}): ${participantNames || "Sin participantes"}`,
+        `Participantes (${participants?.length || 0}): ${
+          participantNames || "Sin participantes"
+        }`,
         `Capacidad máxima: ${activity.max_participants}`,
       ]
         .filter(Boolean)
@@ -326,7 +596,7 @@ async function handleGroupActivitySync(activityId: string, organizationId: numbe
               Authorization: `Bearer ${tokenData.access_token}`,
               "Content-Type": "application/json",
             },
-          },
+          }
         )
 
         if (checkResponse.ok) {
@@ -346,8 +616,11 @@ async function handleGroupActivitySync(activityId: string, organizationId: numbe
     }
 
     // Crear o actualizar el evento
-    console.log(`🔄 ${method === "POST" ? "Creando" : "Actualizando"} actividad en Google Calendar...`)
-
+    console.log(
+      `🔄 ${
+        method === "POST" ? "Creando" : "Actualizando"
+      } actividad en Google Calendar...`
+    )
     const response = await fetch(url, {
       method,
       headers: {
@@ -391,7 +664,10 @@ async function handleGroupActivitySync(activityId: string, organizationId: numbe
     })
   } catch (error) {
     console.error("Error syncing group activity:", error)
-    return NextResponse.json({ error: "Error al sincronizar actividad grupal" }, { status: 500 })
+    return NextResponse.json(
+      { error: "Error al sincronizar actividad grupal" },
+      { status: 500 }
+    )
   }
 }
 

@@ -12,6 +12,10 @@ export interface AppointmentUpdate {
   appointment_type_id?: number
   consultation_id?: string
   service_id?: number
+  // 🆕 CAMPOS DE GOOGLE CALENDAR
+  google_calendar_event_id?: string | null
+  synced_with_google?: boolean | null
+  last_synced_at?: string | null
   // 🆕 CAMPOS DE RECURRENCIA - ACTUALIZADO CON "daily"
   is_recurring?: boolean
   recurrence_type?: "daily" | "weekly" | "monthly" | null
@@ -92,7 +96,11 @@ export interface Database {
           created_at: string
           updated_at: string
           created_by: string
-          service_id: number | null // 🆕 Cambiado de string | null a number | null
+          service_id: number | null
+          // 🆕 CAMPOS DE GOOGLE CALENDAR
+          google_calendar_event_id: string | null
+          synced_with_google: boolean | null
+          last_synced_at: string | null
           // 🆕 CAMPOS DE RECURRENCIA - ACTUALIZADO CON "daily"
           is_recurring: boolean
           recurrence_type: "daily" | "weekly" | "monthly" | null
@@ -117,7 +125,11 @@ export interface Database {
           created_at?: string
           updated_at?: string
           created_by: string
-          service_id?: number | null // 🆕 Cambiado de string | null a number | null
+          service_id?: number | null
+          // 🆕 CAMPOS DE GOOGLE CALENDAR
+          google_calendar_event_id?: string | null
+          synced_with_google?: boolean | null
+          last_synced_at?: string | null
           // 🆕 CAMPOS DE RECURRENCIA - ACTUALIZADO CON "daily"
           is_recurring?: boolean
           recurrence_type?: "daily" | "weekly" | "monthly" | null
@@ -142,7 +154,11 @@ export interface Database {
           created_at?: string
           updated_at?: string
           created_by?: string
-          service_id?: number | null // 🆕 Cambiado de string | null a number | null
+          service_id?: number | null
+          // 🆕 CAMPOS DE GOOGLE CALENDAR
+          google_calendar_event_id?: string | null
+          synced_with_google?: boolean | null
+          last_synced_at?: string | null
           // 🆕 CAMPOS DE RECURRENCIA - ACTUALIZADO CON "daily"
           is_recurring?: boolean
           recurrence_type?: "daily" | "weekly" | "monthly" | null
@@ -164,7 +180,6 @@ export interface Database {
           organization_id: number
           created_at: string
           updated_at: string
-          // ✅ CAMPOS DE IMPUESTOS AÑADIDOS
           vat_rate: number
           irpf_rate: number
           retention_rate: number
@@ -181,7 +196,6 @@ export interface Database {
           organization_id: number
           created_at?: string
           updated_at?: string
-          // ✅ CAMPOS DE IMPUESTOS AÑADIDOS
           vat_rate: number
           irpf_rate: number
           retention_rate: number
@@ -198,7 +212,6 @@ export interface Database {
           organization_id?: number
           created_at?: string
           updated_at?: string
-          // ✅ CAMPOS DE IMPUESTOS AÑADIDOS
           vat_rate?: number
           irpf_rate?: number
           retention_rate?: number
@@ -206,6 +219,73 @@ export interface Database {
       }
     }
   }
+}
+
+export interface AppointmentWithDetails {
+  id: string
+  user_id: string
+  organization_id: number
+  professional_id: string
+  client_id: number
+  appointment_type_id: string
+  consultation_id: string
+  date: string
+  start_time: string
+  end_time: string
+  duration: number
+  status: "confirmed" | "pending" | "cancelled" | "completed" | "no_show"
+  notes: string | null
+  created_at: string
+  updated_at: string
+  created_by: string
+  service_id: number | null
+  // 🆕 CAMPOS DE GOOGLE CALENDAR
+  google_calendar_event_id: string | null
+  synced_with_google: boolean | null
+  last_synced_at: string | null
+  // 🆕 NUEVOS CAMPOS DEL HISTORIAL MÉDICO
+  motivo_consulta?: string | null
+  diagnostico?: string | null
+  // 🆕 CAMPOS DE RECURRENCIA - ACTUALIZADO CON "daily"
+  is_recurring: boolean
+  recurrence_type: "daily" | "weekly" | "monthly" | null
+  recurrence_interval: number | null
+  recurrence_end_date: string | null
+  parent_appointment_id: string | null
+  // Relaciones
+  client: Client
+  professional: User
+  appointment_type: AppointmentType
+  consultation: Consultation
+  created_by_user: User
+  service?: Service
+}
+
+export interface AppointmentInsert {
+  user_id: string
+  organization_id: number
+  professional_id: string
+  client_id: number
+  appointment_type_id: string
+  consultation_id: string
+  date: string
+  start_time: string
+  end_time: string
+  duration?: number
+  status?: "confirmed" | "pending" | "cancelled" | "completed" | "no_show"
+  notes?: string | null
+  created_by: string
+  service_id?: number | null
+  // 🆕 CAMPOS DE GOOGLE CALENDAR
+  google_calendar_event_id?: string | null
+  synced_with_google?: boolean | null
+  last_synced_at?: string | null
+  // 🆕 CAMPOS DE RECURRENCIA - ACTUALIZADO CON "daily"
+  is_recurring?: boolean
+  recurrence_type?: "daily" | "weekly" | "monthly" | null
+  recurrence_interval?: number | null
+  recurrence_end_date?: string | null
+  parent_appointment_id?: string | null
 }
 
 // Tipos legacy para compatibilidad con mock data
@@ -249,7 +329,7 @@ export interface GroupActivity {
   end_time: string
   professional_id: string
   consultation_id: string | null
-  service_id: number | null // 🆕 AÑADIDO
+  service_id: number | null
   max_participants: number
   current_participants: number
   status: "active" | "completed" | "cancelled"
@@ -265,7 +345,6 @@ export interface GroupActivity {
     name: string
   }
   service?: {
-    // 🆕 AÑADIDO
     id: number
     name: string
     color: string
@@ -291,7 +370,6 @@ export interface GroupActivityParticipant {
   }
 }
 
-// 🆕 INTERFACES AÑADIDAS PARA ACTIVIDADES GRUPALES
 export interface GroupActivityInsert {
   organization_id: number
   name: string
@@ -361,7 +439,7 @@ export interface Cita {
   tipoId?: string
   emoticonos?: string[] // Cambiado de number[] a string[] para almacenar emojis
   citaRecurrenteId?: string
-  service_id?: number | null // 🆕 Cambiado de string | null a number | null
+  service_id?: number | null
   consultation?: Consultation // Incluir datos completos de consulta
   // NUEVOS CAMPOS PARA ACTIVIDADES GRUPALES
   isGroupActivity?: boolean
@@ -395,7 +473,6 @@ export interface WorkSchedule {
   day_of_week: number | null
   start_time: string
   end_time: string
-  // ELIMINADOS: break_start y break_end ya no son parte del tipo
   buffer_time_minutes: number // Tiempo entre citas
   is_active: boolean
   date_exception: string | null
@@ -409,7 +486,7 @@ export interface ProfessionalSettings {
   id: string
   user_id: string
   specialty: string | null
-  specialty_other?: string | null  // ✅ AÑADIR ESTA LÍNEA
+  specialty_other?: string | null
   calendar_color: string | null
   created_at: string
   updated_at: string
@@ -513,65 +590,6 @@ export interface AppointmentType {
   sort_order: number
   created_at: string
   updated_at: string
-}
-
-export interface AppointmentWithDetails {
-  id: string
-  user_id: string
-  organization_id: number
-  professional_id: string
-  client_id: number
-  appointment_type_id: string
-  consultation_id: string
-  date: string
-  start_time: string
-  end_time: string
-  duration: number
-  status: "confirmed" | "pending" | "cancelled" | "completed" | "no_show"
-  notes: string | null
-  created_at: string
-  updated_at: string
-  created_by: string
-  service_id: number | null // 🆕 Cambiado de string | null a number | null
-  // 🆕 NUEVOS CAMPOS DEL HISTORIAL MÉDICO
-  motivo_consulta?: string | null
-  diagnostico?: string | null
-  // 🆕 CAMPOS DE RECURRENCIA - ACTUALIZADO CON "daily"
-  is_recurring: boolean
-  recurrence_type: "daily" | "weekly" | "monthly" | null
-  recurrence_interval: number | null
-  recurrence_end_date: string | null
-  parent_appointment_id: string | null
-  // Relaciones
-  client: Client
-  professional: User
-  appointment_type: AppointmentType
-  consultation: Consultation
-  created_by_user: User
-  service?: Service
-}
-
-export interface AppointmentInsert {
-  user_id: string
-  organization_id: number
-  professional_id: string
-  client_id: number
-  appointment_type_id: string
-  consultation_id: string
-  date: string
-  start_time: string
-  end_time: string
-  duration?: number
-  status?: "confirmed" | "pending" | "cancelled" | "completed" | "no_show"
-  notes?: string | null
-  created_by: string
-  service_id?: number | null // 🆕 Cambiado de string | null a number | null
-  // 🆕 CAMPOS DE RECURRENCIA - ACTUALIZADO CON "daily"
-  is_recurring?: boolean
-  recurrence_type?: "daily" | "weekly" | "monthly" | null
-  recurrence_interval?: number | null
-  recurrence_end_date?: string | null
-  parent_appointment_id?: string | null
 }
 
 // Tipo para servicios - ✅ ACTUALIZADO CON CAMPOS DE IMPUESTOS
@@ -800,6 +818,5 @@ export interface HorarioTrabajo {
   horaInicio: string
   horaFin: string
   activo: boolean
-  // ELIMINADOS: descansoInicio y descansoFin
   breaks: WorkScheduleBreak[] // SOLO sistema nuevo
 }

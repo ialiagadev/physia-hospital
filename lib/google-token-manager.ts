@@ -1,107 +1,157 @@
 import { createClient } from "@supabase/supabase-js"
+import { google } from "googleapis"
 
-const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
-
-interface GoogleTokens {
+interface GoogleCalendarTokens {
   access_token: string
   refresh_token: string
   expires_at: string
 }
 
-class GoogleTokenManager {
-  async getValidTokens(userId: string): Promise<GoogleTokens | null> {
+export class GoogleTokenManager {
+  private supabase
+
+  constructor() {
+    this.supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+
+  async getValidTokens(userId: string): Promise<GoogleCalendarTokens | null> {
     try {
       console.log("🔍 Obteniendo tokens para usuario:", userId)
-
-      // Obtener tokens actuales
-      const { data: tokenData, error: tokenError } = await supabase
+      
+      const { data: tokenData, error } = await this.supabase
         .from("user_google_tokens")
-        .select("access_token, refresh_token, expires_at")
+        .select("*")
         .eq("user_id", userId)
-        .single()
+        .maybeSingle()
 
-      if (tokenError || !tokenData) {
+      if (error || !tokenData) {
         console.log("❌ No se encontraron tokens para el usuario:", userId)
         return null
       }
 
-      console.log("✅ Tokens encontrados, verificando expiración...")
-
-      // Verificar si el token está próximo a expirar (5 minutos de margen)
-      const expiresAt = new Date(tokenData.expires_at)
+      // Verificar si el token ha expirado
       const now = new Date()
-      const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60 * 1000)
+      const expiresAt = new Date(tokenData.expires_at)
 
-      console.log("🕐 Token válido hasta:", expiresAt.toISOString())
-      console.log("🕐 Hora actual:", now.toISOString())
-
-      if (expiresAt > fiveMinutesFromNow) {
-        console.log("✅ Token válido, no necesita renovación")
-        return tokenData
+      if (expiresAt <= now) {
+        console.log("🔄 Token expirado, intentando renovar...")
+        
+        // Intentar renovar el token
+        const refreshedTokens = await this.refreshAccessToken(tokenData.refresh_token, userId)
+        if (refreshedTokens) {
+          return refreshedTokens
+        } else {
+          console.log("❌ No se pudo renovar el token")
+          return null
+        }
       }
 
-      console.log("🔄 Token próximo a expirar, renovando...")
-
-      // Renovar token
-      const newTokens = await this.refreshTokens(tokenData.refresh_token, userId)
-      return newTokens
+      console.log("✅ Tokens válidos obtenidos")
+      return {
+        access_token: tokenData.access_token,
+        refresh_token: tokenData.refresh_token,
+        expires_at: tokenData.expires_at,
+      }
     } catch (error) {
       console.error("❌ Error obteniendo tokens:", error)
       return null
     }
   }
 
-  private async refreshTokens(refreshToken: string, userId: string): Promise<GoogleTokens | null> {
+  private async refreshAccessToken(refreshToken: string, userId: string): Promise<GoogleCalendarTokens | null> {
     try {
-      console.log("🔄 Renovando tokens para usuario:", userId)
+      console.log("🔄 Renovando access token...")
 
-      const response = await fetch("https://oauth2.googleapis.com/token", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({
-          client_id: process.env.GOOGLE_CLIENT_ID!,
-          client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-          refresh_token: refreshToken,
-          grant_type: "refresh_token",
-        }),
+      const oauth2Client = new google.auth.OAuth2(
+        process.env.GOOGLE_CLIENT_ID,
+        process.env.GOOGLE_CLIENT_SECRET,
+        process.env.GOOGLE_REDIRECT_URI
+      )
+
+      oauth2Client.setCredentials({
+        refresh_token: refreshToken,
       })
 
-      if (!response.ok) {
-        console.error("❌ Error renovando token:", response.status, await response.text())
-        // Si el refresh token es inválido, eliminar los tokens
-        await supabase.from("user_google_tokens").delete().eq("user_id", userId)
-        return null
+      const { credentials } = await oauth2Client.refreshAccessToken()
+
+      if (!credentials.access_token) {
+        throw new Error("No se pudo obtener nuevo access token")
       }
 
-      const tokenResponse = await response.json()
-      console.log("✅ Tokens renovados exitosamente")
-
       // Calcular nueva fecha de expiración
-      const expiresAt = new Date(Date.now() + tokenResponse.expires_in * 1000)
+      const expiresAt = new Date()
+      expiresAt.setSeconds(expiresAt.getSeconds() + (credentials.expiry_date ? (credentials.expiry_date - Date.now()) / 1000 : 3600))
 
       // Actualizar tokens en la base de datos
-      const { data: updatedTokens, error: updateError } = await supabase
+      const { error: updateError } = await this.supabase
         .from("user_google_tokens")
         .update({
-          access_token: tokenResponse.access_token,
+          access_token: credentials.access_token,
           expires_at: expiresAt.toISOString(),
           updated_at: new Date().toISOString(),
         })
         .eq("user_id", userId)
-        .select("access_token, refresh_token, expires_at")
-        .single()
 
       if (updateError) {
-        console.error("❌ Error actualizando tokens:", updateError)
+        throw updateError
+      }
+
+      console.log("✅ Token renovado exitosamente")
+      return {
+        access_token: credentials.access_token,
+        refresh_token: refreshToken,
+        expires_at: expiresAt.toISOString(),
+      }
+    } catch (error) {
+      console.error("❌ Error renovando token:", error)
+      return null
+    }
+  }
+
+  // 🆕 NUEVO: Función para obtener tokens de cualquier usuario (para eliminar eventos)
+  async getValidTokensForUser(userId: string): Promise<GoogleCalendarTokens | null> {
+    try {
+      console.log("🔍 Obteniendo tokens para usuario específico:", userId)
+      
+      const { data: tokenData, error } = await this.supabase
+        .from("user_google_tokens")
+        .select("*")
+        .eq("user_id", userId)
+        .maybeSingle()
+
+      if (error || !tokenData) {
+        console.log("❌ No se encontraron tokens para el usuario:", userId)
         return null
       }
 
-      console.log("✅ Tokens actualizados en base de datos")
-      return updatedTokens
+      // Verificar si el token ha expirado
+      const now = new Date()
+      const expiresAt = new Date(tokenData.expires_at)
+
+      if (expiresAt <= now) {
+        console.log("🔄 Token expirado, intentando renovar...")
+        
+        // Intentar renovar el token
+        const refreshedTokens = await this.refreshAccessToken(tokenData.refresh_token, userId)
+        if (refreshedTokens) {
+          return refreshedTokens
+        } else {
+          console.log("❌ No se pudo renovar el token para el usuario:", userId)
+          return null
+        }
+      }
+
+      console.log("✅ Tokens válidos obtenidos para usuario:", userId)
+      return {
+        access_token: tokenData.access_token,
+        refresh_token: tokenData.refresh_token,
+        expires_at: tokenData.expires_at,
+      }
     } catch (error) {
-      console.error("❌ Error renovando tokens:", error)
+      console.error("❌ Error obteniendo tokens para usuario:", error)
       return null
     }
   }

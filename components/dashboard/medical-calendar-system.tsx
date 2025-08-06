@@ -1,9 +1,10 @@
 "use client"
+
 import type React from "react"
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns"
 import { Button } from "@/components/ui/button"
-import { ChevronLeft, ChevronRight, Plus, Search, Clock, FileText, CalendarIcon } from "lucide-react"
+import { ChevronLeft, ChevronRight, Plus, Search, Clock, FileText, CalendarIcon } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CalendarSearch } from "@/components/calendar/calendar-search"
 import { ProfesionalesLegend } from "@/components/calendar/profesionales-legend"
@@ -86,7 +87,6 @@ const ClientService = {
       const {
         data: { session },
       } = await supabase.auth.getSession()
-
       if (!session) {
         throw new Error("No hay sesión activa")
       }
@@ -276,9 +276,7 @@ const MedicalCalendarSystem: React.FC = () => {
   const removeFromWaitingList = useCallback(async (entryId: string) => {
     try {
       const { error } = await supabase.from("waiting_list").delete().eq("id", entryId)
-
       if (error) throw error
-
       toast.success("Entrada eliminada de la lista de espera")
     } catch (error) {
       console.error("Error removing from waiting list:", error)
@@ -347,11 +345,9 @@ const MedicalCalendarSystem: React.FC = () => {
       setShowDetailsModal(false)
       setShowNewAppointmentModal(false)
       setUsuariosSeleccionados([])
-
       const timer = setTimeout(() => {
         // El estado se actualizará automáticamente cuando los datos estén listos
       }, 100)
-
       return () => clearTimeout(timer)
     }
   }, [userProfile?.id, userProfile?.organization_id])
@@ -362,10 +358,8 @@ const MedicalCalendarSystem: React.FC = () => {
       const timer = setTimeout(() => {
         setIsSystemReady(true)
       }, 150)
-
       return () => clearTimeout(timer)
     }
-
     if (!criticalDataReady && isSystemReady) {
       setIsSystemReady(false)
     }
@@ -374,7 +368,6 @@ const MedicalCalendarSystem: React.FC = () => {
   // 🚀 OPTIMIZADO: Calcular rango de fechas para las citas
   const dateRange = useMemo(() => {
     let startDate: string, endDate: string
-
     switch (vistaCalendario) {
       case "dia":
         startDate = format(currentDate, "yyyy-MM-dd")
@@ -396,7 +389,6 @@ const MedicalCalendarSystem: React.FC = () => {
         startDate = format(currentDate, "yyyy-MM-dd")
         endDate = startDate
     }
-
     return { startDate, endDate }
   }, [currentDate, vistaCalendario])
 
@@ -499,11 +491,19 @@ const MedicalCalendarSystem: React.FC = () => {
         .single()
 
       if (error) throw error
-
       return newType.id
     } catch (error) {
       throw error
     }
+  }, [])
+
+  // Utility functions
+  const calculateEndTime = useCallback((startTime: string, duration: number): string => {
+    const [hours, minutes] = startTime.split(":").map(Number)
+    const totalMinutes = hours * 60 + minutes + duration
+    const endHours = Math.floor(totalMinutes / 60)
+    const endMinutes = totalMinutes % 60
+    return `${endHours.toString().padStart(2, "0")}:${endMinutes.toString().padStart(2, "0")}`
   }, [])
 
   // 🚀 HANDLER OPTIMIZADO PARA CREAR CITAS - CON MEJOR MANEJO DE ERRORES
@@ -621,9 +621,13 @@ const MedicalCalendarSystem: React.FC = () => {
     ],
   )
 
+  // 🆕 NUEVO: Handler mejorado para actualizar citas con sincronización automática
   const handleUpdateAppointment = useCallback(
     async (appointment: AppointmentWithDetails) => {
       try {
+        console.log("🔄 Actualizando cita:", appointment.id)
+        
+        // Actualizar en la base de datos
         await updateAppointment(appointment.id, {
           date: format(new Date(appointment.date), "yyyy-MM-dd"),
           start_time: appointment.start_time,
@@ -634,11 +638,51 @@ const MedicalCalendarSystem: React.FC = () => {
           professional_id: appointment.professional_id,
           consultation_id: appointment.consultation_id,
         })
+
+        // 🆕 SINCRONIZACIÓN AUTOMÁTICA CON GOOGLE CALENDAR
+        if (userProfile?.id && organizationId) {
+          console.log("🔄 Iniciando sincronización automática para actualización de cita:", appointment.id)
+
+          // Sincronizar en segundo plano (no bloquear la UI)
+          try {
+            const response = await fetch("/api/sync", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                appointmentId: appointment.id,
+                userId: appointment.professional_id, // Usar el profesional de la cita
+                organizationId: organizationId,
+              }),
+            })
+
+            if (response.ok) {
+              const result = await response.json()
+              console.log("✅ Cita actualizada y sincronizada automáticamente con Google Calendar")
+              
+              // Mostrar notificación discreta solo si la sincronización fue exitosa
+              toast.success("Cita actualizada y sincronizada con Google Calendar", { duration: 2000 })
+            } else {
+              console.log("ℹ️ Sincronización automática no disponible o falló")
+              // Solo mostrar que se actualizó la cita, sin mencionar Google Calendar
+              toast.success("Cita actualizada correctamente")
+            }
+          } catch (syncError) {
+            console.log("ℹ️ Sincronización automática no disponible:", syncError)
+            // Solo mostrar que se actualizó la cita
+            toast.success("Cita actualizada correctamente")
+          }
+        } else {
+          toast.success("Cita actualizada correctamente")
+        }
       } catch (error) {
+        console.error("Error updating appointment:", error)
+        toast.error("Error al actualizar la cita")
         throw error
       }
     },
-    [updateAppointment],
+    [updateAppointment, userProfile?.id, organizationId],
   )
 
   const handleDeleteAppointment = useCallback(
@@ -688,34 +732,100 @@ const MedicalCalendarSystem: React.FC = () => {
     [appointments, handleSelectGroupActivity, handleSelectAppointment],
   )
 
-  // Handler para actualizar citas en formato legacy
+  // 🆕 NUEVO: Handler mejorado para actualizar citas en formato legacy con sincronización
   const handleUpdateLegacyAppointment = useCallback(
     async (cita: any) => {
+      console.log("🔄 Drag & Drop - Actualizando cita legacy:", cita.id)
+      
       const originalAppointment = appointments.find((apt) => Number.parseInt(apt.id.slice(-8), 16) === cita.id)
-
       if (originalAppointment) {
+        // Detectar cambios importantes
+        const oldProfessionalId = originalAppointment.professional_id
+        const newProfessionalId = users.find((u) => Number.parseInt(u.id.slice(-8), 16) === cita.profesionalId)?.id || originalAppointment.professional_id
+        
+        const professionalChanged = oldProfessionalId !== newProfessionalId
+        const timeChanged = originalAppointment.start_time !== cita.hora || originalAppointment.end_time !== (cita.horaFin || calculateEndTime(cita.hora, cita.duracion))
+        const dateChanged = format(new Date(originalAppointment.date), "yyyy-MM-dd") !== format(cita.fecha, "yyyy-MM-dd")
+
+        console.log("🔍 Cambios detectados:", {
+          professionalChanged,
+          timeChanged,
+          dateChanged,
+          oldProfessional: oldProfessionalId,
+          newProfessional: newProfessionalId
+        })
+
         const updatedAppointment = {
           ...originalAppointment,
           date: format(cita.fecha, "yyyy-MM-dd"),
           start_time: cita.hora,
           end_time: cita.horaFin || calculateEndTime(cita.hora, cita.duracion),
           duration: cita.duracion,
-          professional_id:
-            users.find((u) => Number.parseInt(u.id.slice(-8), 16) === cita.profesionalId)?.id ||
-            originalAppointment.professional_id,
+          professional_id: newProfessionalId,
         }
 
         await handleUpdateAppointment(updatedAppointment)
+
+        // 🆕 LÓGICA ESPECIAL PARA CAMBIO DE PROFESIONAL
+        if (professionalChanged) {
+          console.log("👤 Cambio de profesional detectado")
+          
+          // Si el profesional anterior tenía Google Calendar, eliminar el evento
+          try {
+            const response = await fetch("/api/sync", {
+              method: "DELETE",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                appointmentId: originalAppointment.id,
+                userId: oldProfessionalId,
+                organizationId: organizationId,
+              }),
+            })
+            
+            if (response.ok) {
+              console.log("🗑️ Evento eliminado del calendario del profesional anterior")
+            }
+          } catch (error) {
+            console.log("ℹ️ No se pudo eliminar del calendario anterior:", error)
+          }
+
+          // Crear evento en el calendario del nuevo profesional
+          try {
+            const response = await fetch("/api/sync", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                appointmentId: originalAppointment.id,
+                userId: newProfessionalId,
+                organizationId: organizationId,
+                forceCreate: true, // Forzar creación de nuevo evento
+              }),
+            })
+            
+            if (response.ok) {
+              console.log("✅ Evento creado en el calendario del nuevo profesional")
+              toast.success("Cita movida y sincronizada con Google Calendar del nuevo profesional")
+            }
+          } catch (error) {
+            console.log("ℹ️ No se pudo crear en el nuevo calendario:", error)
+          }
+        } else if (timeChanged || dateChanged) {
+          console.log("⏰ Cambio de horario/fecha detectado")
+          toast.success("Cita actualizada y sincronizada con Google Calendar")
+        }
       }
     },
-    [appointments, users, handleUpdateAppointment],
+    [appointments, users, handleUpdateAppointment, organizationId, calculateEndTime],
   )
 
   const handleToggleUsuario = useCallback(
     (userId: string) => {
       // 🆕 AÑADIR ESTA VERIFICACIÓN - No permitir cambios si es usuario 'user'
       if (isUserRole) return
-
       setUsuariosSeleccionados((prev) =>
         prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
       )
@@ -726,21 +836,13 @@ const MedicalCalendarSystem: React.FC = () => {
   const handleToggleAllUsuarios = useCallback(() => {
     // 🆕 AÑADIR ESTA VERIFICACIÓN - No permitir cambios si es usuario 'user'
     if (isUserRole) return
-
     setUsuariosSeleccionados((prev) => {
       const todosSeleccionados = prev.length === users.length
       return todosSeleccionados ? [] : users.map((u) => u.id)
     })
   }, [isUserRole, users])
 
-  // Utility functions
-  const calculateEndTime = useCallback((startTime: string, duration: number): string => {
-    const [hours, minutes] = startTime.split(":").map(Number)
-    const totalMinutes = hours * 60 + minutes + duration
-    const endHours = Math.floor(totalMinutes / 60)
-    const endMinutes = totalMinutes % 60
-    return `${endHours.toString().padStart(2, "0")}:${endMinutes.toString().padStart(2, "0")}`
-  }, [])
+  
 
   // 🚀 OPTIMIZADO: Formatear título de fecha
   const getDateTitle = useCallback(() => {
@@ -750,7 +852,6 @@ const MedicalCalendarSystem: React.FC = () => {
       month: "long",
       day: "numeric",
     }
-
     switch (vistaCalendario) {
       case "dia":
         return currentDate.toLocaleDateString("es-ES", options)
@@ -792,7 +893,6 @@ const MedicalCalendarSystem: React.FC = () => {
   // 🚀 ARREGLADO: Conversión de usuarios con tipos correctos
   const convertUsersToLegacyFormat = useCallback((users: any[]) => {
     const medicalProfessionals = users.filter((user) => user.type === 1)
-
     return medicalProfessionals.map((user) => ({
       id: Number.parseInt(user.id.slice(-8), 16),
       nombre: user.name || "",
