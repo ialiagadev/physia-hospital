@@ -261,16 +261,7 @@ export function AvailableSlots({ organizationId, serviceId, professionalId, dura
         </div>
 
         {/* Service Info */}
-        <Card className="border-0 shadow-lg bg-gradient-to-r from-slate-800 to-slate-700 text-white">
-          <CardContent className="p-6">
-            <div className="flex items-center space-x-4">
-              <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center">
-                <Clock className="w-6 h-6 text-white" />
-              </div>
-    
-            </div>
-          </CardContent>
-        </Card>
+        
       </div>
     </div>
   )
