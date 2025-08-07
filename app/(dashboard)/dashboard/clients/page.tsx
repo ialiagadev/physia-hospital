@@ -29,6 +29,8 @@ interface Client {
   name: string
   tax_id: string
   phone?: string
+  phone_prefix?: string
+  full_phone?: string
   client_type: "public" | "private"
   city: string
   email?: string
@@ -70,6 +72,20 @@ export default function ClientsPage() {
     clientName: "",
   })
 
+  // Función para obtener el teléfono a mostrar (prioriza full_phone)
+  const getDisplayPhone = (client: Client): string => {
+    if (client.full_phone) {
+      return client.full_phone
+    }
+    if (client.phone && client.phone_prefix) {
+      return `${client.phone_prefix}${client.phone}`
+    }
+    if (client.phone) {
+      return client.phone
+    }
+    return "-"
+  }
+
   // Función para resaltar texto en búsquedas
   const highlightText = (text: string | null | undefined, search: string): string => {
     if (!text || !search.trim()) {
@@ -101,12 +117,14 @@ export default function ClientsPage() {
 
     setLoading(true)
     try {
-      // Construir la consulta base
+      // Construir la consulta base - incluir phone_prefix y full_phone
       let query = supabase
         .from("clients")
         .select(
           `
           *,
+          phone_prefix,
+          full_phone,
           organizations (name)
         `,
           { count: "exact" },
@@ -124,11 +142,11 @@ export default function ClientsPage() {
         }
       }
 
-      // Aplicar búsqueda del servidor
+      // Aplicar búsqueda del servidor - incluir full_phone en la búsqueda
       if (search.trim()) {
         const searchLower = search.toLowerCase().trim()
         query = query.or(
-          `name.ilike.%${searchLower}%,tax_id.ilike.%${searchLower}%,phone.ilike.%${searchLower}%,email.ilike.%${searchLower}%,city.ilike.%${searchLower}%`,
+          `name.ilike.%${searchLower}%,tax_id.ilike.%${searchLower}%,phone.ilike.%${searchLower}%,full_phone.ilike.%${searchLower}%,email.ilike.%${searchLower}%,city.ilike.%${searchLower}%`,
         )
       }
 
@@ -350,7 +368,7 @@ export default function ClientsPage() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
           <Input
-            placeholder="Buscar por nombre, teléfono, NIF, email o ciudad..."
+            placeholder="Buscar por nombre, teléfono completo, NIF, email o ciudad..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10 pr-10"
@@ -397,88 +415,91 @@ export default function ClientsPage() {
                 </TableCell>
               </TableRow>
             ) : clients.length > 0 ? (
-              clients.map((client) => (
-                <TableRow
-                  key={client.id}
-                  className="cursor-pointer hover:bg-muted/50"
-                  onClick={() => handleRowClick(client.id)}
-                >
-                  <TableCell className="font-medium">
-                    {searchTerm ? (
-                      <span
-                        dangerouslySetInnerHTML={{
-                          __html: highlightText(client.name, searchTerm),
-                        }}
-                      />
-                    ) : (
-                      client.name || "-"
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {searchTerm ? (
-                      <span
-                        dangerouslySetInnerHTML={{
-                          __html: highlightText(client.phone, searchTerm),
-                        }}
-                      />
-                    ) : (
-                      client.phone || "-"
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {searchTerm ? (
-                      <span
-                        dangerouslySetInnerHTML={{
-                          __html: highlightText(client.tax_id, searchTerm),
-                        }}
-                      />
-                    ) : (
-                      client.tax_id || "-"
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {searchTerm ? (
-                      <span
-                        dangerouslySetInnerHTML={{
-                          __html: highlightText(client.city, searchTerm),
-                        }}
-                      />
-                    ) : (
-                      client.city || "-"
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {searchTerm && client.email ? (
-                      <span
-                        dangerouslySetInnerHTML={{
-                          __html: highlightText(client.email, searchTerm),
-                        }}
-                      />
-                    ) : (
-                      client.email || "-"
-                    )}
-                  </TableCell>
-                  {userProfile?.is_physia_admin && <TableCell>{client.organizations?.name || "-"}</TableCell>}
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button variant="ghost" size="sm" asChild onClick={(e) => e.stopPropagation()}>
-                        <Link href={`/dashboard/clients/${client.id}`}>Ver</Link>
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          openDeleteDialog(client.id, client.name)
-                        }}
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
+              clients.map((client) => {
+                const displayPhone = getDisplayPhone(client)
+                return (
+                  <TableRow
+                    key={client.id}
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => handleRowClick(client.id)}
+                  >
+                    <TableCell className="font-medium">
+                      {searchTerm ? (
+                        <span
+                          dangerouslySetInnerHTML={{
+                            __html: highlightText(client.name, searchTerm),
+                          }}
+                        />
+                      ) : (
+                        client.name || "-"
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {searchTerm ? (
+                        <span
+                          dangerouslySetInnerHTML={{
+                            __html: highlightText(displayPhone, searchTerm),
+                          }}
+                        />
+                      ) : (
+                        displayPhone
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {searchTerm ? (
+                        <span
+                          dangerouslySetInnerHTML={{
+                            __html: highlightText(client.tax_id, searchTerm),
+                          }}
+                        />
+                      ) : (
+                        client.tax_id || "-"
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {searchTerm ? (
+                        <span
+                          dangerouslySetInnerHTML={{
+                            __html: highlightText(client.city, searchTerm),
+                          }}
+                        />
+                      ) : (
+                        client.city || "-"
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {searchTerm && client.email ? (
+                        <span
+                          dangerouslySetInnerHTML={{
+                            __html: highlightText(client.email, searchTerm),
+                          }}
+                        />
+                      ) : (
+                        client.email || "-"
+                      )}
+                    </TableCell>
+                    {userProfile?.is_physia_admin && <TableCell>{client.organizations?.name || "-"}</TableCell>}
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="sm" asChild onClick={(e) => e.stopPropagation()}>
+                          <Link href={`/dashboard/clients/${client.id}`}>Ver</Link>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            openDeleteDialog(client.id, client.name)
+                          }}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })
             ) : searchTerm ? (
               <TableRow>
                 <TableCell colSpan={userProfile?.is_physia_admin ? 7 : 6} className="h-24 text-center">
@@ -593,7 +614,7 @@ export default function ClientsPage() {
             <AlertDialogAction onClick={confirmDeleteClient} className="bg-red-600 hover:bg-red-700 focus:ring-red-600">
               Eliminar
             </AlertDialogAction>
-          </AlertDialogFooter>
+            </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>

@@ -15,7 +15,7 @@ interface WhatsAppMessageParams {
   }: WhatsAppMessageParams) {
     try {
       // Limpiar el número de teléfono (remover espacios, guiones, etc.)
-      const cleanPhone = to.replace(/[\s\-()]/g, "")
+      const cleanPhone = to.replace(/[^\d]/g, "")
   
       // Preparar el payload base
       const payload: any = {
@@ -119,15 +119,15 @@ interface WhatsAppMessageParams {
     }
   }
   
-  // Función auxiliar para validar números de teléfono
+  // ✅ Función permisiva que no valida el número - solo verifica que exista
   export function validatePhoneNumber(phone: string): boolean {
     if (!phone) return false
-  
-    // Limpiar el número
-    const cleanPhone = phone.replace(/[\s\-()]/g, "")
-  
-    // Verificar que tenga al menos 10 dígitos y máximo 15
-    return /^\d{10,15}$/.test(cleanPhone)
+    
+    // Solo verificar que el teléfono no esté vacío y tenga al menos algunos dígitos
+    const cleanPhone = phone.replace(/[\s\-()]/g, "").trim()
+    
+    // Verificar que tenga al menos 5 caracteres y contenga al menos un dígito
+    return cleanPhone.length >= 5 && /\d/.test(cleanPhone)
   }
   
   // Función auxiliar para formatear números de teléfono
@@ -147,4 +147,3 @@ interface WhatsAppMessageParams {
   
     return cleanPhone
   }
-  

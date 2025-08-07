@@ -21,6 +21,8 @@ export interface Client {
   id: number // Es serial, no string
   name: string
   phone?: string
+  phone_prefix?: string // ✅ Nuevo campo añadido
+  full_phone?: string // ✅ Nuevo campo añadido (campo calculado)
   email?: string
   avatar_url?: string
   channel?: "whatsapp" | "instagram" | "facebook" | "webchat"
@@ -39,6 +41,17 @@ export interface Client {
   client_type?: "private" | "public"
   chat_metadata?: any
   canal?: Canal // Añadir la relación con canal
+  // Campos médicos adicionales
+  birth_date?: string
+  gender?: string
+  blood_type?: string
+  emergency_contact_name?: string
+  emergency_contact_phone?: string
+  emergency_contact_relationship?: string
+  medical_notes?: string
+  has_medical_history?: boolean
+  // Campos DIR3
+  dir3_codes?: any
 }
 
 export interface Conversation {
@@ -86,6 +99,9 @@ export interface Message {
     timestamp?: string
     whatsapp_send_failed?: boolean
     whatsapp_error?: string
+    whatsapp_sent?: boolean
+    whatsapp_sent_at?: string
+    whatsapp_phone?: string
     [key: string]: any
   }
 }
@@ -185,3 +201,65 @@ export interface SystemMessageMetadata {
   target_users: string[]
   timestamp: string
 }
+
+// Tipos auxiliares para formularios de cliente
+export interface CreateClientData {
+  name: string
+  phone?: string
+  phone_prefix?: string
+  email?: string
+  external_id?: string
+  avatar_url?: string
+  organization_id: number
+  // Campos opcionales adicionales
+  tax_id?: string
+  address?: string
+  postal_code?: string
+  city?: string
+  province?: string
+  country?: string
+  client_type?: "private" | "public"
+  birth_date?: string
+  gender?: string
+  blood_type?: string
+  emergency_contact_name?: string
+  emergency_contact_phone?: string
+  emergency_contact_relationship?: string
+  medical_notes?: string
+  has_medical_history?: boolean
+}
+
+export interface UpdateClientData extends Partial<CreateClientData> {
+  id: number
+}
+
+// Tipos para validación de teléfonos
+export interface PhoneValidationResult {
+  isValid: boolean
+  formattedPhone?: string
+  country?: string
+  error?: string
+}
+
+// Tipos para configuración de prefijos telefónicos
+export interface CountryPhonePrefix {
+  country: string
+  countryCode: string
+  prefix: string
+  flag: string
+  format?: string
+}
+
+// Constantes para prefijos comunes
+export const COMMON_PHONE_PREFIXES: CountryPhonePrefix[] = [
+  { country: "España", countryCode: "ES", prefix: "+34", flag: "🇪🇸" },
+  { country: "Francia", countryCode: "FR", prefix: "+33", flag: "🇫🇷" },
+  { country: "Reino Unido", countryCode: "GB", prefix: "+44", flag: "🇬🇧" },
+  { country: "Alemania", countryCode: "DE", prefix: "+49", flag: "🇩🇪" },
+  { country: "Italia", countryCode: "IT", prefix: "+39", flag: "🇮🇹" },
+  { country: "Portugal", countryCode: "PT", prefix: "+351", flag: "🇵🇹" },
+  { country: "Estados Unidos", countryCode: "US", prefix: "+1", flag: "🇺🇸" },
+  { country: "México", countryCode: "MX", prefix: "+52", flag: "🇲🇽" },
+  { country: "Argentina", countryCode: "AR", prefix: "+54", flag: "🇦🇷" },
+  { country: "Colombia", countryCode: "CO", prefix: "+57", flag: "🇨🇴" },
+]

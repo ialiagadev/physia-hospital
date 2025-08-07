@@ -28,7 +28,11 @@ export async function sendMessage({
       .from("conversations")
       .select(`
         *,
-        client:clients(*),
+        client:clients(
+          *,
+          phone_prefix,
+          full_phone
+        ),
         canales_organization:canales_organizations(
           *,
           canal:canales(*),
@@ -48,6 +52,8 @@ export async function sendMessage({
       clientId: conversation.client?.id,
       clientName: conversation.client?.name,
       clientPhone: conversation.client?.phone,
+      clientPhonePrefix: conversation.client?.phone_prefix,
+      clientFullPhone: conversation.client?.full_phone,
       clientExternalId: conversation.client?.external_id,
       canalNombre: conversation.canales_organization?.canal?.nombre,
       wabaCount: conversation.canales_organization?.waba?.length || 0,
@@ -88,6 +94,7 @@ export async function sendMessage({
       wabaId: wabaConfig?.id,
       wabaNumero: wabaConfig?.numero,
       clientPhone: conversation.client?.phone,
+      clientFullPhone: conversation.client?.full_phone,
       clientExternalId: conversation.client?.external_id,
     })
 
@@ -95,15 +102,30 @@ export async function sendMessage({
     if (isWhatsApp && wabaConfig?.token_proyecto && conversation.client) {
       try {
         console.log("📱 Intentando envío por WhatsApp...")
+        
+        // Determinar el número de teléfono a usar - PRIORIZAR full_phone
+        let phoneNumber = conversation.client.full_phone
 
-        // Determinar el número de teléfono a usar
-        const phoneNumber = conversation.client.phone || conversation.client.external_id
+        // Si no hay full_phone, intentar construirlo
+        if (!phoneNumber && conversation.client.phone) {
+          if (conversation.client.phone_prefix) {
+            phoneNumber = `${conversation.client.phone_prefix}${conversation.client.phone}`
+          } else {
+            // Si no hay prefijo, usar el teléfono tal como está (puede que ya tenga prefijo)
+            phoneNumber = conversation.client.phone
+          }
+        }
+
+        // Fallback al external_id si no hay teléfono
+        if (!phoneNumber) {
+          phoneNumber = conversation.client.external_id
+        }
 
         if (!phoneNumber) {
           throw new Error("No se encontró número de teléfono para el cliente")
         }
 
-        console.log("📞 Número de teléfono encontrado:", phoneNumber)
+        console.log("📞 Número de teléfono determinado:", phoneNumber)
 
         // Validar y formatear el número
         if (!validatePhoneNumber(phoneNumber)) {
@@ -139,7 +161,7 @@ export async function sendMessage({
         console.log("✅ Metadata de mensaje actualizada (éxito)")
       } catch (whatsappError: any) {
         console.error("💥 Error enviando mensaje de WhatsApp:", whatsappError)
-
+        
         // Marcar el mensaje como fallido pero no lanzar error
         await supabase
           .from("messages")
@@ -160,12 +182,12 @@ export async function sendMessage({
         reason: !isWhatsApp
           ? "No es canal WhatsApp"
           : !wabaConfig
-            ? "No hay configuración WABA"
-            : !wabaConfig.token_proyecto
-              ? "No hay token"
-              : !conversation.client
-                ? "No hay cliente"
-                : "Razón desconocida",
+          ? "No hay configuración WABA"
+          : !wabaConfig.token_proyecto
+          ? "No hay token"
+          : !conversation.client
+          ? "No hay cliente"
+          : "Razón desconocida",
       })
     }
 
@@ -231,6 +253,7 @@ export async function createConversation({
   clientData: {
     name: string
     phone?: string
+    phone_prefix?: string
     email?: string
     external_id?: string
     avatar_url?: string
@@ -268,6 +291,7 @@ export async function createConversation({
             organization_id: organizationId,
             name: clientData.name,
             phone: clientData.phone,
+            phone_prefix: clientData.phone_prefix || '+34', // Valor por defecto
             email: clientData.email,
             external_id: clientData.external_id,
             avatar_url: clientData.avatar_url,
