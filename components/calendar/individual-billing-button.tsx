@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { FileText, Loader2, AlertTriangle, Clock, Download, CreditCard } from "lucide-react"
+import { FileText, Loader2, AlertTriangle, Clock, Download, CreditCard } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -57,6 +57,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
   const hasService = appointment.service?.id && appointment.service?.price
   const serviceData = appointment.service
 
+  // ✅ VALIDACIÓN MODIFICADA - SOLO NOMBRE (CON APELLIDOS) Y TAX_ID
   const validateClientData = () => {
     const client = appointment.client
     if (!client) {
@@ -64,11 +65,21 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
     }
 
     const missingFields: string[] = []
-    if (!client.name?.trim()) missingFields.push("Nombre")
-    if (!(client as any).tax_id?.trim()) missingFields.push("CIF/NIF")
-    if (!(client as any).address?.trim()) missingFields.push("Dirección")
-    if (!(client as any).postal_code?.trim()) missingFields.push("Código Postal")
-    if (!(client as any).city?.trim()) missingFields.push("Ciudad")
+
+    // Verificar nombre (debe tener al menos 2 palabras para incluir apellidos)
+    if (!client.name?.trim()) {
+      missingFields.push("Nombre")
+    } else {
+      const nameParts = client.name.trim().split(/\s+/)
+      if (nameParts.length < 2) {
+        missingFields.push("Apellidos (el nombre debe incluir nombre y apellidos)")
+      }
+    }
+
+    // Verificar tax_id (CIF/NIF)
+    if (!(client as any).tax_id?.trim()) {
+      missingFields.push("CIF/NIF")
+    }
 
     return {
       isValid: missingFields.length === 0,
@@ -155,7 +166,7 @@ export function IndividualBillingButton({ appointment, onBillingComplete }: Indi
 
       // Preparar datos de la factura
       const client = appointment.client!
-      const clientInfoText = `Cliente: ${client.name}, CIF/NIF: ${(client as any).tax_id}, Dirección: ${(client as any).address}, ${(client as any).postal_code} ${(client as any).city}, ${(client as any).province}`
+      const clientInfoText = `Cliente: ${client.name}, CIF/NIF: ${(client as any).tax_id}`
       const additionalNotes = `Factura generada para cita del ${format(new Date(appointment.date), "dd/MM/yyyy")} - ${appointment.start_time}
 Servicio: ${serviceData!.name} - ${servicePrice}€`
 
@@ -545,7 +556,9 @@ Servicio: ${serviceData!.name} - ${servicePrice}€`
         >
           <div className="flex items-center gap-2">
             {StatusIcon && <StatusIcon className="h-4 w-4" />}
-            <div className="font-medium">{existingInvoice.status === "draft" ? "Borrador" : statusConfig.label}</div>
+            <div className="font-medium">
+              {existingInvoice.status === "draft" ? "Borrador" : statusConfig.label}
+            </div>
           </div>
         </button>
 

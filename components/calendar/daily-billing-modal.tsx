@@ -4,23 +4,7 @@ import { useState, useEffect } from "react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import Link from "next/link"
-import {
-  FileText,
-  X,
-  CheckCircle,
-  Users,
-  Euro,
-  Clock,
-  AlertTriangle,
-  Search,
-  Filter,
-  Download,
-  Zap,
-  Package,
-  User,
-  CreditCard,
-  Loader2,
-} from "lucide-react"
+import { FileText, X, CheckCircle, Users, Euro, Clock, AlertTriangle, Search, Filter, Download, Zap, Package, User, CreditCard, Loader2 } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Progress } from "@/components/ui/progress"
@@ -472,12 +456,23 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
         const clientId = client.id
 
         if (!clientsMap.has(clientId)) {
+          // ✅ VALIDACIÓN MODIFICADA - SOLO NOMBRE (CON APELLIDOS) Y TAX_ID
           const missingFields: string[] = []
-          if (!client.name?.trim()) missingFields.push("Nombre")
-          if (!client.tax_id?.trim()) missingFields.push("CIF/NIF")
-          if (!client.address?.trim()) missingFields.push("Dirección")
-          if (!client.postal_code?.trim()) missingFields.push("Código Postal")
-          if (!client.city?.trim()) missingFields.push("Ciudad")
+
+          // Verificar nombre (debe tener al menos 2 palabras para incluir apellidos)
+          if (!client.name?.trim()) {
+            missingFields.push("Nombre")
+          } else {
+            const nameParts = client.name.trim().split(/\s+/)
+            if (nameParts.length < 2) {
+              missingFields.push("Apellidos (el nombre debe incluir nombre y apellidos)")
+            }
+          }
+
+          // Verificar tax_id (CIF/NIF)
+          if (!client.tax_id?.trim()) {
+            missingFields.push("CIF/NIF")
+          }
 
           clientsMap.set(clientId, {
             client_id: clientId,
@@ -524,7 +519,6 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
       groupActivities?.forEach((activity: any) => {
         const professional = users.find((user) => user.id === activity.professional_id)
         const service = services.find((svc) => svc.id === activity.service_id)
-
         const validParticipants =
           activity.group_activity_participants?.filter(
             (p: any) => p.status === "attended" || p.status === "registered",
@@ -535,12 +529,23 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           const clientId = client.id
 
           if (!clientsMap.has(clientId)) {
+            // ✅ VALIDACIÓN MODIFICADA - SOLO NOMBRE (CON APELLIDOS) Y TAX_ID
             const missingFields: string[] = []
-            if (!client.name?.trim()) missingFields.push("Nombre")
-            if (!client.tax_id?.trim()) missingFields.push("CIF/NIF")
-            if (!client.address?.trim()) missingFields.push("Dirección")
-            if (!client.postal_code?.trim()) missingFields.push("Código Postal")
-            if (!client.city?.trim()) missingFields.push("Ciudad")
+
+            // Verificar nombre (debe tener al menos 2 palabras para incluir apellidos)
+            if (!client.name?.trim()) {
+              missingFields.push("Nombre")
+            } else {
+              const nameParts = client.name.trim().split(/\s+/)
+              if (nameParts.length < 2) {
+                missingFields.push("Apellidos (el nombre debe incluir nombre y apellidos)")
+              }
+            }
+
+            // Verificar tax_id (CIF/NIF)
+            if (!client.tax_id?.trim()) {
+              missingFields.push("CIF/NIF")
+            }
 
             clientsMap.set(clientId, {
               client_id: clientId,
@@ -852,7 +857,8 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
 
           const totalAmount = baseAmount + vatAmount - irpfAmount - retentionAmount
 
-          const clientInfoText = `Cliente: ${clientData.client_name}, CIF/NIF: ${clientData.client_tax_id}, Dirección: ${clientData.client_address}, ${clientData.client_postal_code} ${clientData.client_city}, ${clientData.client_province}`
+          // ✅ PREPARAR NOTAS DE LA FACTURA - INFORMACIÓN SIMPLIFICADA
+          const clientInfoText = `Cliente: ${clientData.client_name}, CIF/NIF: ${clientData.client_tax_id}`
           const additionalNotes = `Factura generada automáticamente para citas del ${format(selectedDate, "dd/MM/yyyy", { locale: es })}`
 
           // Añadir nota de IVA exento automáticamente si vatAmount === 0

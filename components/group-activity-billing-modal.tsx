@@ -3,20 +3,7 @@
 import { useState, useEffect } from "react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import {
-  FileText,
-  X,
-  CheckCircle,
-  Users,
-  Euro,
-  Clock,
-  AlertTriangle,
-  Download,
-  Zap,
-  Package,
-  Calendar,
-  Loader2,
-} from "lucide-react"
+import { FileText, X, CheckCircle, Users, Euro, Clock, AlertTriangle, Download, Zap, Package, Calendar, Loader2 } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Progress } from "@/components/ui/progress"
@@ -304,13 +291,23 @@ export function GroupActivityBillingModal({
       const participantsWithData: ParticipantBillingData[] = validParticipants.map((participant) => {
         const client = participant.client
 
-        // Validar datos requeridos
+        // ✅ VALIDACIÓN MODIFICADA - SOLO NOMBRE (CON APELLIDOS) Y TAX_ID
         const missingFields: string[] = []
-        if (!client?.name?.trim()) missingFields.push("Nombre")
-        if (!(client as any)?.tax_id?.trim()) missingFields.push("CIF/NIF")
-        if (!(client as any)?.address?.trim()) missingFields.push("Dirección")
-        if (!(client as any)?.postal_code?.trim()) missingFields.push("Código Postal")
-        if (!(client as any)?.city?.trim()) missingFields.push("Ciudad")
+
+        // Verificar nombre (debe tener al menos 2 palabras para incluir apellidos)
+        if (!client?.name?.trim()) {
+          missingFields.push("Nombre")
+        } else {
+          const nameParts = client.name.trim().split(/\s+/)
+          if (nameParts.length < 2) {
+            missingFields.push("Apellidos (el nombre debe incluir nombre y apellidos)")
+          }
+        }
+
+        // Verificar tax_id (CIF/NIF)
+        if (!(client as any)?.tax_id?.trim()) {
+          missingFields.push("CIF/NIF")
+        }
 
         const hasCompleteData = missingFields.length === 0
 
@@ -565,8 +562,8 @@ export function GroupActivityBillingModal({
           const retentionAmount = (baseAmount * serviceRetentionRate) / 100
           const totalAmount = baseAmount + vatAmount - irpfAmount - retentionAmount
 
-          // Preparar notas de la factura
-          const clientInfoText = `Cliente: ${participantData.client_name}, CIF/NIF: ${participantData.client_tax_id}, Dirección: ${participantData.client_address}, ${participantData.client_postal_code} ${participantData.client_city}, ${participantData.client_province}`
+          // ✅ PREPARAR NOTAS DE LA FACTURA - INFORMACIÓN SIMPLIFICADA
+          const clientInfoText = `Cliente: ${participantData.client_name}, CIF/NIF: ${participantData.client_tax_id}`
           const additionalNotes = `Factura generada para actividad grupal "${activity.name}" del ${format(
             new Date(activity.date),
             "dd/MM/yyyy",

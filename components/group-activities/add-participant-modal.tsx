@@ -1,6 +1,6 @@
 "use client"
 
-import type React from "react"
+import React from "react"
 import { useState, useEffect, useCallback, useRef } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -10,7 +10,8 @@ import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
-import { Search, Phone, User, UserPlus, Users, Mail, Loader2, CheckCircle, AlertTriangle } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Search, Phone, User, UserPlus, Users, Mail, Loader2, CheckCircle, AlertTriangle, CreditCard } from 'lucide-react'
 import { supabase } from "@/lib/supabase/client"
 import { toast } from "sonner"
 import { useAuth } from "@/app/contexts/auth-context"
@@ -34,6 +35,24 @@ interface AddParticipantModalProps {
   user?: any
   userProfile?: any
 }
+
+// Prefijos telefónicos comunes
+const PHONE_PREFIXES = [
+  { code: '+34', country: 'España', flag: '🇪🇸' },
+  { code: '+33', country: 'Francia', flag: '🇫🇷' },
+  { code: '+49', country: 'Alemania', flag: '🇩🇪' },
+  { code: '+39', country: 'Italia', flag: '🇮🇹' },
+  { code: '+351', country: 'Portugal', flag: '🇵🇹' },
+  { code: '+44', country: 'Reino Unido', flag: '🇬🇧' },
+  { code: '+1', country: 'Estados Unidos', flag: '🇺🇸' },
+  { code: '+52', country: 'México', flag: '🇲🇽' },
+  { code: '+54', country: 'Argentina', flag: '🇦🇷' },
+  { code: '+55', country: 'Brasil', flag: '🇧🇷' },
+  { code: '+56', country: 'Chile', flag: '🇨🇱' },
+  { code: '+57', country: 'Colombia', flag: '🇨🇴' },
+  { code: '+58', country: 'Venezuela', flag: '🇻🇪' },
+  { code: '+212', country: 'Marruecos', flag: '🇲🇦' },
+]
 
 export function AddParticipantModal({
   isOpen,
@@ -59,8 +78,12 @@ export function AddParticipantModal({
   const [newClientData, setNewClientData] = useState({
     name: "",
     phone: "",
-    email: "",
   })
+
+  // 🆕 Estados para cliente nuevo con prefijo y NIF
+  const [phonePrefix, setPhonePrefix] = useState('+34')
+  const [phoneNumber, setPhoneNumber] = useState('')
+  const [taxId, setTaxId] = useState('')
 
   // Refs para timeouts
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
@@ -197,22 +220,20 @@ export function AddParticipantModal({
         // Si es solo números, asumir que es teléfono
         setNewClientData({
           name: "",
-          phone: searchTerm,
-          email: "",
+          phone: "", // 🔧 Dejar vacío para evitar duplicación
         })
+        setPhoneNumber(searchTerm) // 🔧 Solo actualizar phoneNumber
       } else if (searchTerm.includes("@")) {
-        // Si contiene @, asumir que es email
+        // Si contiene @, asumir que es email - pero no lo guardamos
         setNewClientData({
           name: "",
           phone: "",
-          email: searchTerm,
         })
       } else {
         // Si no, asumir que es nombre
         setNewClientData({
           name: searchTerm,
           phone: "",
-          email: "",
         })
       }
     }
@@ -250,6 +271,29 @@ export function AddParticipantModal({
     setSelectedClient(client)
     setSearchTerm(`${client.name} - ${client.phone}`)
     setShowMatches(false)
+
+    // Separar prefijo y número para cliente existente
+    const fullPhone = client.phone || ""
+    const prefix = PHONE_PREFIXES.find(p => fullPhone.startsWith(p.code))
+    if (prefix) {
+      setPhonePrefix(prefix.code)
+      setPhoneNumber(fullPhone.substring(prefix.code.length))
+    } else {
+      setPhoneNumber(fullPhone)
+    }
+  }, [])
+
+  // 🆕 Handler para cambio de prefijo telefónico
+  const handlePhonePrefixChange = useCallback((value: string) => {
+    setPhonePrefix(value)
+  }, [])
+
+  // 🆕 Handler para cambio de número telefónico
+  const handlePhoneNumberChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/\D/g, ''); // Solo números
+    setPhoneNumber(value)
+    // 🔧 REMOVER ESTA LÍNEA para evitar duplicación:
+    // setNewClientData(prev => ({ ...prev, phone: value }))
   }, [])
 
   const handleAddExistingClient = async () => {
@@ -273,14 +317,19 @@ export function AddParticipantModal({
       return
     }
 
-    if (!newClientData.phone.trim()) {
+    if (!phoneNumber.trim()) {
       toast.error("El teléfono es obligatorio")
       return
     }
 
-    // Validar formato del teléfono
-    if (!isValidPhoneNumber(newClientData.phone)) {
-      toast.error("El formato del teléfono no es válido")
+    if (!taxId.trim()) {
+      toast.error("El NIF/CIF es obligatorio")
+      return
+    }
+
+    // Validar que el número tenga al menos 9 dígitos
+    if (!phoneNumber || phoneNumber.length < 9) {
+      toast.error("El teléfono debe tener al menos 9 dígitos")
       return
     }
 
@@ -292,19 +341,23 @@ export function AddParticipantModal({
     setLoading(true)
     try {
       const orgId = userProfile.organization_id || organizationId
-
       const clientData = {
         name: newClientData.name.trim(),
-        phone: normalizePhoneNumber(newClientData.phone),
-        email: newClientData.email.trim() || null,
+        phone: phoneNumber, // 🔧 Solo el número sin prefijo
+        phone_prefix: phonePrefix, // 🔧 Solo el prefijo
+        tax_id: taxId.trim(),
         organization_id: orgId,
       }
+
+      console.log("🔧 Creando cliente con datos:", clientData)
 
       const { data: newClient, error } = await supabase.from("clients").insert([clientData]).select().single()
 
       if (error) {
         throw error
       }
+
+      console.log("✅ Cliente creado:", newClient)
 
       await onAddParticipant(newClient.id, participantNotes.trim() || undefined)
       handleClose()
@@ -323,11 +376,15 @@ export function AddParticipantModal({
     setShowMatches(false)
     setSelectedClient(null)
     setParticipantNotes("")
-    setNewClientData({ name: "", phone: "", email: "" })
+    setNewClientData({ name: "", phone: "" })
+    setPhonePrefix('+34')
+    setPhoneNumber('')
+    setTaxId('')
     onClose()
   }
 
   const remainingSlots = maxParticipants - currentParticipants.length
+
   const getMatchIcon = (matchType: string) => {
     switch (matchType) {
       case "phone":
@@ -459,9 +516,13 @@ export function AddParticipantModal({
 
           {/* Formulario para nuevo cliente */}
           {searchTerm && searchTerm.length >= 2 && remainingSlots > 0 && !selectedClient && (
-            <div className="space-y-3">
-              <Label className="text-blue-600 font-medium">Crear nuevo cliente</Label>
-              <div className="space-y-2">
+            <div className="space-y-4 bg-blue-50 p-4 rounded-lg border border-blue-200">
+              <div className="flex items-center gap-2 mb-2">
+                <User className="h-4 w-4 text-blue-600" />
+                <Label className="text-sm font-medium text-blue-800">Crear nuevo cliente</Label>
+              </div>
+
+              <div className="space-y-3">
                 <div>
                   <Label htmlFor="new-name">Nombre completo *</Label>
                   <Input
@@ -471,35 +532,68 @@ export function AddParticipantModal({
                     placeholder="Nombre y apellidos"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <Label htmlFor="new-phone">Teléfono *</Label>
+
+                {/* Campo de teléfono con selector de prefijo */}
+                <div className="space-y-2">
+                  <Label htmlFor="phoneNumber" className="flex items-center gap-2 text-sm font-medium">
+                    <Phone className="h-4 w-4" />
+                    Teléfono *
+                  </Label>
+                  <div className="flex gap-2">
+                    <Select value={phonePrefix} onValueChange={handlePhonePrefixChange}>
+                      <SelectTrigger className="w-32">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PHONE_PREFIXES.map((prefix) => (
+                          <SelectItem key={prefix.code} value={prefix.code}>
+                            <div className="flex items-center gap-2">
+                              <span>{prefix.flag}</span>
+                              <span>{prefix.code}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <Input
-                      id="new-phone"
-                      value={newClientData.phone}
-                      onChange={(e) => setNewClientData((prev) => ({ ...prev, phone: e.target.value }))}
-                      placeholder="Teléfono"
+                      id="phoneNumber"
+                      value={phoneNumber}
+                      onChange={handlePhoneNumberChange}
+                      placeholder="612345678"
                       required
-                    />
-                    {newClientData.phone && (
-                      <p className="text-xs text-gray-600 mt-1">Formato: {formatPhoneNumber(newClientData.phone)}</p>
-                    )}
-                  </div>
-                  <div>
-                    <Label htmlFor="new-email">Email</Label>
-                    <Input
-                      id="new-email"
-                      type="email"
-                      value={newClientData.email}
-                      onChange={(e) => setNewClientData((prev) => ({ ...prev, email: e.target.value }))}
-                      placeholder="Email"
+                      className="flex-1"
                     />
                   </div>
+                  {phonePrefix && phoneNumber && (
+                    <p className="text-sm text-gray-600">
+                      Teléfono completo: <strong>{phonePrefix}{phoneNumber}</strong>
+                    </p>
+                  )}
+                </div>
+
+                {/* Campo NIF - AHORA OBLIGATORIO */}
+                <div className="space-y-2">
+                  <Label htmlFor="taxId" className="flex items-center gap-2 text-sm font-medium">
+                    <CreditCard className="h-4 w-4" />
+                    NIF/CIF *
+                  </Label>
+                  <Input
+                    id="taxId"
+                    value={taxId}
+                    onChange={(e) => setTaxId(e.target.value)}
+                    placeholder="12345678A o B12345678"
+                    className="w-full"
+                    required
+                  />
+                  <p className="text-xs text-gray-500">
+                    Introduce el NIF para personas físicas o CIF para empresas
+                  </p>
                 </div>
               </div>
+
               <Button
                 onClick={handleCreateAndAddClient}
-                disabled={loading || !newClientData.name.trim() || !newClientData.phone.trim()}
+                disabled={loading || !newClientData.name.trim() || !phoneNumber.trim() || !taxId.trim()}
                 className="w-full"
               >
                 {loading ? (

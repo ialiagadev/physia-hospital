@@ -41,7 +41,7 @@ export interface InvoiceData {
     province: string
     country: string
     email: string
-    phone: string
+    // ❌ ELIMINADO: phone: string
     logo_url?: string | null
     logo_path?: string | null
   }
@@ -54,7 +54,8 @@ export interface InvoiceData {
     province: string
     country: string
     email?: string
-    phone?: string
+    // ❌ ELIMINADO: phone?: string
+    // ❌ ELIMINADO: phone_prefix?: string
     client_type: string
   }
   payment_method?: "tarjeta" | "efectivo" | "transferencia" | "paypal" | "bizum" | "otro"
@@ -88,7 +89,9 @@ interface OriginalInvoiceData {
   }
 }
 
-/** * Obtiene los datos de la factura original para comparación */
+/** 
+ * Obtiene los datos de la factura original para comparación 
+ */
 async function getOriginalInvoiceData(
   originalInvoiceNumber: string,
   organizationId: number,
@@ -150,7 +153,9 @@ async function getOriginalInvoiceData(
   }
 }
 
-/** * Carga una imagen desde una URL y la convierte a base64 */
+/**
+ * Carga una imagen desde una URL y la convierte a base64
+ */
 async function loadImageAsBase64(url: string): Promise<string | null> {
   try {
     const response = await fetch(url, { mode: "cors" })
@@ -168,7 +173,9 @@ async function loadImageAsBase64(url: string): Promise<string | null> {
   }
 }
 
-/** * Valida y sanitiza los datos de la factura */
+/**
+ * Valida y sanitiza los datos de la factura
+ */
 function validateInvoiceData(invoice: InvoiceData): InvoiceData {
   return {
     ...invoice,
@@ -183,7 +190,9 @@ function validateInvoiceData(invoice: InvoiceData): InvoiceData {
   }
 }
 
-/** * Valida y sanitiza las líneas de factura */
+/**
+ * Valida y sanitiza las líneas de factura
+ */
 function validateInvoiceLines(lines: InvoiceLine[]): InvoiceLine[] {
   return lines.map((line) => ({
     ...line,
@@ -198,13 +207,13 @@ function validateInvoiceLines(lines: InvoiceLine[]): InvoiceLine[] {
   }))
 }
 
-/** * ✅ FUNCIÓN CORREGIDA: Añade marca de agua de BORRADOR */
+/**
+ * ✅ FUNCIÓN CORREGIDA: Añade marca de agua de BORRADOR
+ */
 function addDraftWatermark(doc: jsPDF) {
   const pageCount = doc.getNumberOfPages()
-
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i)
-
     // Guardar estado actual
     const currentFont = doc.getFont()
     const currentFontSize = doc.getFontSize()
@@ -234,7 +243,11 @@ function addDraftWatermark(doc: jsPDF) {
   }
 }
 
-/** * Añade el QR de Verifactu según especificaciones oficiales de la AEAT * Debe ir al principio de la factura, antes del contenido * ✅ SOLO PARA FACTURAS OFICIALES (NO BORRADORES) */
+/**
+ * Añade el QR de Verifactu según especificaciones oficiales de la AEAT
+ * Debe ir al principio de la factura, antes del contenido
+ * ✅ SOLO PARA FACTURAS OFICIALES (NO BORRADORES)
+ */
 function addVerifactuQR(doc: jsPDF, invoice: InvoiceData, yPosition: number, isDraft: boolean): number {
   // ✅ NO MOSTRAR QR EN BORRADORES
   if (isDraft || !invoice.verifactu_qr_code || invoice.verifactu_status !== "sent") {
@@ -321,7 +334,13 @@ function addVerifactuQR(doc: jsPDF, invoice: InvoiceData, yPosition: number, isD
   return yPosition
 }
 
-/** * ✅ GENERA EL PDF DE LA FACTURA CON SOPORTE PARA BORRADORES * @param invoice - Datos de la factura * @param invoiceLines - Líneas de la factura * @param fileName - Nombre del archivo * @param isDraft - Si es borrador (marca de agua + sin QR) */
+/**
+ * ✅ GENERA EL PDF DE LA FACTURA CON SOPORTE PARA BORRADORES
+ * @param invoice - Datos de la factura
+ * @param invoiceLines - Líneas de la factura
+ * @param fileName - Nombre del archivo
+ * @param isDraft - Si es borrador (marca de agua + sin QR)
+ */
 export async function generatePdf(
   invoice: InvoiceData,
   invoiceLines: InvoiceLine[],
@@ -464,12 +483,11 @@ export async function generatePdf(
       yPosition += 4
       doc.text(validatedInvoice.organization.country, leftColumnX, yPosition)
       yPosition += 4
-      doc.text(validatedInvoice.organization.phone, leftColumnX, yPosition)
-      yPosition += 4
+      // ❌ ELIMINADO: Teléfono de la organización
       doc.text(validatedInvoice.organization.email, leftColumnX, yPosition)
     }
 
-    // Cliente (derecha) - INCLUYENDO CIF/NIF
+    // Cliente (derecha) - INCLUYENDO CIF/NIF (SIN TELÉFONO)
     let clientY = startY
     if (validatedInvoice.client_data) {
       doc.setFont("helvetica", "bold")
@@ -489,23 +507,30 @@ export async function generatePdf(
         clientY += 4
       }
 
-      doc.text(validatedInvoice.client_data.address, rightColumnX, clientY)
-      clientY += 4
-      doc.text(
-        `${validatedInvoice.client_data.postal_code} ${validatedInvoice.client_data.city}`,
-        rightColumnX,
-        clientY,
-      )
-      clientY += 4
-      doc.text(validatedInvoice.client_data.country, rightColumnX, clientY)
-
-      if (validatedInvoice.client_data.phone) {
+      if (validatedInvoice.client_data.address) {
+        doc.text(validatedInvoice.client_data.address, rightColumnX, clientY)
         clientY += 4
-        doc.text(validatedInvoice.client_data.phone, rightColumnX, clientY)
       }
-      if (validatedInvoice.client_data.email) {
+
+      if (validatedInvoice.client_data.postal_code && validatedInvoice.client_data.city) {
+        doc.text(
+          `${validatedInvoice.client_data.postal_code} ${validatedInvoice.client_data.city}`,
+          rightColumnX,
+          clientY,
+        )
         clientY += 4
+      }
+
+      if (validatedInvoice.client_data.country) {
+        doc.text(validatedInvoice.client_data.country, rightColumnX, clientY)
+        clientY += 4
+      }
+
+      // ❌ ELIMINADO: Teléfono del cliente
+
+      if (validatedInvoice.client_data.email) {
         doc.text(validatedInvoice.client_data.email, rightColumnX, clientY)
+        clientY += 4
       }
     }
 
@@ -616,7 +641,6 @@ export async function generatePdf(
       if (yPosition > 250) {
         doc.addPage()
         yPosition = 30
-
         // Repetir headers en nueva página
         doc.setFont("helvetica", "bold")
         doc.setFontSize(9)
@@ -688,7 +712,6 @@ export async function generatePdf(
       doc.text(`IVA - España (${vatRate}%)`, totalsX, yPosition)
       doc.text(`${validatedInvoice.vat_amount.toFixed(2)} €`, amountX, yPosition, { align: "right" })
       yPosition += 4
-
       // Línea secundaria con base imponible
       doc.setFontSize(8)
       doc.setTextColor(100, 100, 100)
@@ -769,6 +792,7 @@ export async function generatePdf(
         default:
           paymentMethodText = "No especificado"
       }
+
       doc.text(paymentMethodText, 20, yPosition)
       yPosition += 10
     }
@@ -866,18 +890,14 @@ export async function generatePdf(
       doc.setFont("helvetica", "normal")
       doc.setFontSize(8)
       doc.setTextColor(128, 128, 128)
-
       // ✅ PIE DE PÁGINA DIFERENTE PARA BORRADORES
       const footerText = isDraft ? `BORRADOR - Página ${i} de ${pageCount}` : `Página ${i} de ${pageCount}`
-
       doc.text(footerText, 185, 285, { align: "right" })
     }
 
     // Generar el blob
     const pdfBlob = doc.output("blob")
-
     console.log(`✅ PDF ${isDraft ? "BORRADOR" : "OFICIAL"} generado exitosamente`)
-
     return pdfBlob
   } catch (error) {
     console.error("❌ Error al generar PDF:", error)
@@ -885,7 +905,9 @@ export async function generatePdf(
   }
 }
 
-/** * Función para dibujar tablas compactas */
+/**
+ * Función para dibujar tablas compactas
+ */
 function drawCompactTable(doc: jsPDF, data: string[][], x: number, y: number, width: number): number {
   const rowHeight = 6
   const colWidths = calculateColumnWidths(data, width)
@@ -918,7 +940,9 @@ function drawCompactTable(doc: jsPDF, data: string[][], x: number, y: number, wi
   return currentY + 5
 }
 
-/** * Calcula el ancho de las columnas */
+/**
+ * Calcula el ancho de las columnas
+ */
 function calculateColumnWidths(data: string[][], totalWidth: number): number[] {
   const numCols = data[0].length
   if (numCols === 5) {
@@ -931,7 +955,9 @@ function calculateColumnWidths(data: string[][], totalWidth: number): number[] {
   return Array(numCols).fill(baseWidth)
 }
 
-/** * Traduce el estado de la factura */
+/**
+ * Traduce el estado de la factura
+ */
 function getStatusText(status: string): string {
   switch (status) {
     case "issued":

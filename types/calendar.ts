@@ -37,6 +37,13 @@ export interface RecurrencePreview {
   conflicts: Date[]
 }
 
+// 🆕 TIPO PARA DATOS DE CLIENTE NUEVO
+export interface NewClientData {
+  phonePrefix: string
+  taxId?: string
+  fullPhone: string
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -451,6 +458,8 @@ export interface Cita {
   recurrenceEndDate?: Date
   parentAppointmentId?: string
   clienteEncontrado?: ClientMatch // Añadir esta línea
+  // 🆕 DATOS DE CLIENTE NUEVO
+  newClientData?: NewClientData
 }
 
 // NUEVO: Tipo para múltiples descansos
@@ -517,7 +526,7 @@ export interface User {
 
 // Tipo Professional que extiende User con propiedades adicionales
 export interface Professional extends User {
-  name: string // Hacer name requerido para Professional
+  name: string // Hacer name requerido para Professionals
   settings: ProfessionalSettings // Hacer settings requerido
   appointment_types?: AppointmentType[]
 }
@@ -678,6 +687,7 @@ export interface HoraPreviewTooltipProps {
   citaOriginal: any
   children: React.ReactNode
 }
+
 // Interfaz principal actualizada para citas - ACTUALIZADA CON type y specialty
 export interface Profesional {
   id: number

@@ -1,4 +1,5 @@
 "use client"
+
 import type React from "react"
 import { useState, useEffect, useCallback, useRef } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -9,22 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Checkbox } from "@/components/ui/checkbox"
-import {
-  Loader2,
-  Phone,
-  User,
-  CheckCircle,
-  AlertTriangle,
-  MapPin,
-  Info,
-  Briefcase,
-  Search,
-  CalendarIcon,
-  Clock,
-  ClipboardList,
-  Repeat,
-  Ban,
-} from "lucide-react"
+import { Loader2, Phone, User, CheckCircle, AlertTriangle, MapPin, Info, Briefcase, Search, CalendarIcon, Clock, ClipboardList, Repeat, Ban, CreditCard, Globe } from 'lucide-react'
 import { useClients } from "@/hooks/use-clients"
 import { useUsers } from "@/hooks/use-users"
 import { useUserServices } from "../services/use-user-services"
@@ -56,6 +42,24 @@ interface ClientMatch {
   phone: string
   matchType: "phone" | "name"
 }
+
+// Prefijos telefónicos comunes
+const PHONE_PREFIXES = [
+  { code: '+34', country: 'España', flag: '🇪🇸' },
+  { code: '+33', country: 'Francia', flag: '🇫🇷' },
+  { code: '+49', country: 'Alemania', flag: '🇩🇪' },
+  { code: '+39', country: 'Italia', flag: '🇮🇹' },
+  { code: '+351', country: 'Portugal', flag: '🇵🇹' },
+  { code: '+44', country: 'Reino Unido', flag: '🇬🇧' },
+  { code: '+1', country: 'Estados Unidos', flag: '🇺🇸' },
+  { code: '+52', country: 'México', flag: '🇲🇽' },
+  { code: '+54', country: 'Argentina', flag: '🇦🇷' },
+  { code: '+55', country: 'Brasil', flag: '🇧🇷' },
+  { code: '+56', country: 'Chile', flag: '🇨🇱' },
+  { code: '+57', country: 'Colombia', flag: '🇨🇴' },
+  { code: '+58', country: 'Venezuela', flag: '🇻🇪' },
+  { code: '+212', country: 'Marruecos', flag: '🇲🇦' },
+]
 
 const estadosCita = [
   { value: "confirmada", label: "Aprobada" },
@@ -124,6 +128,11 @@ export function AppointmentFormModal({
   const [errors, setErrors] = useState<{ [key: string]: string }>({})
   const [telefonoFormateado, setTelefonoFormateado] = useState("")
 
+  // 🆕 Estados para cliente nuevo
+  const [phonePrefix, setPhonePrefix] = useState('+34')
+  const [phoneNumber, setPhoneNumber] = useState('')
+  const [taxId, setTaxId] = useState('')
+
   // 🆕 Estados para recurrencia
   const [recurrencePreview, setRecurrencePreview] = useState<RecurrencePreview | null>(null)
   const [showRecurrencePreview, setShowRecurrencePreview] = useState(false)
@@ -162,7 +171,6 @@ export function AppointmentFormModal({
 
     // 🆕 PARA USUARIOS 'USER', FORZAR SU PROPIO ID
     let defaultProfessionalId = citaExistente?.profesionalId || waitingListProfessionalId || profesionalId || 0
-
     if (isUserRole && userProfile?.id) {
       // Convertir UUID a número para usuarios 'user'
       const userIdAsNumber = Number.parseInt(userProfile.id.slice(-8), 16)
@@ -187,8 +195,8 @@ export function AppointmentFormModal({
       service_id: citaExistente?.service_id
         ? Number(citaExistente.service_id)
         : waitingListEntry?.service_id
-          ? Number(waitingListEntry.service_id)
-          : null, // ✅ Mantener servicio de lista de espera si existe
+        ? Number(waitingListEntry.service_id)
+        : null, // ✅ Mantener servicio de lista de espera si existe
       // 🆕 CAMPOS PARA RECURRENCIA - Añadida opción "daily"
       isRecurring: citaExistente?.isRecurring || false,
       recurrenceType: citaExistente?.recurrenceType || "weekly",
@@ -199,6 +207,30 @@ export function AppointmentFormModal({
         : addMonths(ensureLocalDate(fecha), 3),
     }
   })
+
+  // 🆕 Inicializar campos de cliente nuevo si hay datos existentes
+  useEffect(() => {
+    if (citaExistente?.telefonoPaciente) {
+      // Separar prefijo y número si existe
+      const fullPhone = citaExistente.telefonoPaciente
+      const prefix = PHONE_PREFIXES.find(p => fullPhone.startsWith(p.code))
+      if (prefix) {
+        setPhonePrefix(prefix.code)
+        setPhoneNumber(fullPhone.substring(prefix.code.length))
+      } else {
+        setPhoneNumber(fullPhone)
+      }
+    } else if (waitingListEntry?.client_phone) {
+      const fullPhone = waitingListEntry.client_phone
+      const prefix = PHONE_PREFIXES.find(p => fullPhone.startsWith(p.code))
+      if (prefix) {
+        setPhonePrefix(prefix.code)
+        setPhoneNumber(fullPhone.substring(prefix.code.length))
+      } else {
+        setPhoneNumber(fullPhone)
+      }
+    }
+  }, [citaExistente, waitingListEntry])
 
   // 🆕 Efecto para generar preview de recurrencia
   useEffect(() => {
@@ -292,6 +324,7 @@ export function AppointmentFormModal({
     if (!formData.hora || !formData.duracion || consultationsLoading) {
       return
     }
+
     try {
       const endTime = calcularHoraFin(formData.hora, formData.duracion)
       // 🔧 USAR FECHA LOCAL CORRECTAMENTE
@@ -303,6 +336,7 @@ export function AppointmentFormModal({
         citaExistente?.id ? citaExistente.id.toString() : undefined,
       )
       setAvailableConsultations(available)
+
       if (
         formData.consultationId &&
         formData.consultationId !== "none" &&
@@ -331,11 +365,13 @@ export function AppointmentFormModal({
     if (!formData.fecha || !formData.hora || !formData.duracion) {
       return
     }
+
     // If no professional is selected yet, clear conflicts and return
     if (!formData.profesionalId) {
       // We can't directly call setConflicts, so we'll let the hook handle empty results
       return
     }
+
     const professionalUuid = users.find((u) => Number.parseInt(u.id.slice(-8), 16) === formData.profesionalId)?.id
     if (!professionalUuid) return
 
@@ -386,6 +422,7 @@ export function AppointmentFormModal({
 
     // 🔧 LÓGICA DE RESETEO CORREGIDA - considerar también lista de espera
     const waitingListProfessionalId = getWaitingListProfessionalId()
+
     // Si el profesional seleccionado ya no está disponible, resetear
     // PERO NO resetear si viene preseleccionado desde el calendario O desde lista de espera
     if (
@@ -419,6 +456,7 @@ export function AppointmentFormModal({
         setShowMatches(false)
         return
       }
+
       setSearchingClients(true)
       try {
         const matches: ClientMatch[] = []
@@ -498,6 +536,7 @@ export function AppointmentFormModal({
     consultationCheckTimeoutRef.current = setTimeout(() => {
       checkConsultationAvailability()
     }, 300)
+
     return () => {
       if (consultationCheckTimeoutRef.current) {
         clearTimeout(consultationCheckTimeoutRef.current)
@@ -537,17 +576,30 @@ export function AppointmentFormModal({
     setClienteEncontrado(client)
     setTelefonoValidado(true)
     setShowMatches(false)
+
     const nombreCompleto = client.name.split(" ")
     const nombre = nombreCompleto[0] || ""
     const apellidos = nombreCompleto.slice(1).join(" ") || ""
+
     setFormData((prev) => ({
       ...prev,
       telefonoPaciente: client.phone || "",
       nombrePaciente: nombre,
       apellidosPaciente: apellidos,
     }))
+
     setSearchTerm(`${client.name} - ${client.phone}`)
     setTelefonoFormateado(formatPhoneNumber(client.phone || ""))
+
+    // Separar prefijo y número para cliente existente
+    const fullPhone = client.phone || ""
+    const prefix = PHONE_PREFIXES.find(p => fullPhone.startsWith(p.code))
+    if (prefix) {
+      setPhonePrefix(prefix.code)
+      setPhoneNumber(fullPhone.substring(prefix.code.length))
+    } else {
+      setPhoneNumber(fullPhone)
+    }
   }, [])
 
   const handleSearchChange = useCallback(
@@ -557,9 +609,11 @@ export function AppointmentFormModal({
       setClienteEncontrado(null)
       setTelefonoValidado(false)
       setTelefonoFormateado("")
+
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current)
       }
+
       searchTimeoutRef.current = setTimeout(() => {
         searchClients(value)
       }, 300)
@@ -574,6 +628,7 @@ export function AppointmentFormModal({
         setFormData((prev) => ({ ...prev, telefonoPaciente: phoneDigits }))
         setTelefonoValidado(true)
         setTelefonoFormateado(formatPhoneNumber(phoneDigits))
+        setPhoneNumber(phoneDigits)
       } else {
         const parts = searchTerm.trim().split(" ")
         const nombre = parts[0] || ""
@@ -644,6 +699,19 @@ export function AppointmentFormModal({
     [handleRecurrenceChange],
   )
 
+  // 🆕 Handler para cambio de prefijo telefónico
+  const handlePhonePrefixChange = useCallback((value: string) => {
+    setPhonePrefix(value)
+    // 🔧 NO actualizar formData.telefonoPaciente aquí para evitar duplicación
+  }, [])
+
+  // 🆕 Handler para cambio de número telefónico
+  const handlePhoneNumberChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/\D/g, '') // Solo números
+    setPhoneNumber(value)
+    // 🔧 NO actualizar formData.telefonoPaciente aquí para evitar duplicación
+  }, [])
+
   // 🆕 Verificar si el botón debe estar deshabilitado
   const isSubmitDisabled = useCallback(() => {
     return searchingClients || consultationsLoading || conflictsLoading || conflicts.length > 0
@@ -654,18 +722,24 @@ export function AppointmentFormModal({
       e.preventDefault()
       const newErrors: { [key: string]: string } = {}
 
-      if (!formData.telefonoPaciente.trim()) {
+      // 🆕 LOGS PARA DEBUGGEAR
+      console.log("=== DEBUG SUBMIT ===")
+      console.log("clienteEncontrado:", clienteEncontrado)
+      console.log("phoneNumber:", phoneNumber)
+      console.log("phonePrefix:", phonePrefix)
+      console.log("taxId:", taxId)
+      console.log("taxId.trim():", taxId.trim())
+      console.log("!clienteEncontrado:", !clienteEncontrado)
+
+      // Validaciones básicas
+      if (!clienteEncontrado && !phoneNumber.trim()) {
         newErrors.telefono = "El teléfono es obligatorio"
-      } else if (!isValidPhoneNumber(formData.telefonoPaciente)) {
+      } else if (!clienteEncontrado && phoneNumber && !isValidPhoneNumber(phonePrefix + phoneNumber)) {
         newErrors.telefono = "Formato de teléfono inválido"
       }
 
       if (!formData.nombrePaciente.trim()) {
         newErrors.nombre = "El nombre es obligatorio"
-      }
-
-      if (!clienteEncontrado && !formData.telefonoPaciente.trim()) {
-        newErrors.telefono = "Debes proporcionar un teléfono válido"
       }
 
       if (!formData.service_id) {
@@ -692,6 +766,7 @@ export function AppointmentFormModal({
         if (formData.recurrenceInterval < 1 || formData.recurrenceInterval > 12) {
           newErrors.recurrenceInterval = "El intervalo debe estar entre 1 y 12"
         }
+
         // Validar usando el servicio de recurrencia
         const config: RecurrenceConfig = {
           type: formData.recurrenceType as "daily" | "weekly" | "monthly", // ✅ Añadida "daily"
@@ -707,6 +782,7 @@ export function AppointmentFormModal({
       // 🔥 NUEVA VALIDACIÓN: Bloquear si hay conflictos
       if (conflicts.length > 0) {
         newErrors.conflicts = "No se puede crear la cita debido a conflictos de horario"
+        setErrors(newErrors)
         return
       }
 
@@ -715,9 +791,20 @@ export function AppointmentFormModal({
         return
       }
 
+      // 🆕 CREAR OBJETO newClientData CON LOGS
+      const newClientData = !clienteEncontrado ? {
+        phonePrefix: phonePrefix,
+        taxId: taxId.trim() || undefined,
+        fullPhone: phonePrefix + phoneNumber
+      } : undefined
+
+      console.log("=== CREANDO newClientData ===")
+      console.log("newClientData:", newClientData)
+
       const nuevaCita: Partial<Cita> = {
         ...formData,
-        telefonoPaciente: normalizePhoneNumber(formData.telefonoPaciente),
+        // 🔧 CORREGIR: Solo usar el número sin prefijo si es cliente nuevo, o el teléfono completo si es existente
+        telefonoPaciente: clienteEncontrado ? clienteEncontrado.phone : phoneNumber, // Solo el número sin prefijo
         fecha: formData.fecha,
         horaFin: calcularHoraFin(formData.hora, formData.duracion),
         horaInicio: formData.hora,
@@ -732,23 +819,32 @@ export function AppointmentFormModal({
         recurrenceInterval: formData.isRecurring ? formData.recurrenceInterval : undefined,
         recurrenceEndDate: formData.isRecurring ? formData.recurrenceEndDate : undefined,
         clienteEncontrado: clienteEncontrado,
+        // 🆕 AÑADIR: Datos del cliente nuevo si no existe
+        newClientData: newClientData,
       }
 
-      onSubmit(nuevaCita)
-      onClose()
-    },
-    [
-      formData,
-      clienteEncontrado,
-      calcularHoraFin,
-      citaExistente?.id,
-      onSubmit,
-      onClose,
-      profesionalId,
-      conflicts.length,
-      filteredServices, // ✅ Añadida dependencia
-    ],
-  )
+    console.log("=== CITA FINAL ===")
+    console.log("nuevaCita:", nuevaCita)
+    console.log("nuevaCita.newClientData:", nuevaCita.newClientData)
+
+    onSubmit(nuevaCita)
+    onClose()
+  },
+  [
+    formData,
+    clienteEncontrado,
+    calcularHoraFin,
+    citaExistente?.id,
+    onSubmit,
+    onClose,
+    profesionalId,
+    conflicts.length,
+    filteredServices,
+    phoneNumber, // 🆕 AÑADIDA DEPENDENCIA
+    phonePrefix, // 🆕 AÑADIDA DEPENDENCIA
+    taxId, // 🆕 AÑADIDA DEPENDENCIA
+  ],
+)
 
   if (!organizationId) {
     return (
@@ -784,9 +880,14 @@ export function AppointmentFormModal({
         <form onSubmit={handleSubmit} className="space-y-4 px-1">
           {/* 🆕 ALERTA PARA USUARIOS 'USER' */}
           {isUserRole && (
+            <Alert className="border-blue-200 bg-blue-50">
               <User className="h-4 w-4" />
-              
-            
+              <AlertDescription className="text-blue-800">
+                <strong>👤 Modo Usuario</strong>
+                <br />
+                <span className="text-sm">Solo puedes crear citas asignadas a ti mismo.</span>
+              </AlertDescription>
+            </Alert>
           )}
 
           {/* Indicador de lista de espera */}
@@ -797,33 +898,21 @@ export function AppointmentFormModal({
                 <strong>📋 Programando desde Lista de Espera</strong>
                 <br />
                 <div className="text-sm mt-2 space-y-1">
-                  <div>
-                    <strong>Cliente:</strong> {waitingListEntry.client_name}
-                  </div>
+                  <div><strong>Cliente:</strong> {waitingListEntry.client_name}</div>
                   {waitingListEntry.client_phone && (
-                    <div>
-                      <strong>Teléfono:</strong> {waitingListEntry.client_phone}
-                    </div>
+                    <div><strong>Teléfono:</strong> {waitingListEntry.client_phone}</div>
                   )}
                   {waitingListEntry.service_name && (
-                    <div>
-                      <strong>Servicio:</strong> {waitingListEntry.service_name}
-                    </div>
+                    <div><strong>Servicio:</strong> {waitingListEntry.service_name}</div>
                   )}
                   {waitingListEntry.professional_name && (
-                    <div>
-                      <strong>Profesional preferido:</strong> {waitingListEntry.professional_name}
-                    </div>
+                    <div><strong>Profesional preferido:</strong> {waitingListEntry.professional_name}</div>
                   )}
                   {waitingListEntry.service_duration && (
-                    <div>
-                      <strong>Duración estimada:</strong> {waitingListEntry.service_duration} min
-                    </div>
+                    <div><strong>Duración estimada:</strong> {waitingListEntry.service_duration} min</div>
                   )}
                   {waitingListEntry.notes && (
-                    <div>
-                      <strong>Notas:</strong> {waitingListEntry.notes}
-                    </div>
+                    <div><strong>Notas:</strong> {waitingListEntry.notes}</div>
                   )}
                 </div>
                 <div className="text-sm mt-2 text-blue-700">
@@ -945,6 +1034,7 @@ export function AppointmentFormModal({
               />
               {errors.nombre && <p className="text-sm text-red-600">{errors.nombre}</p>}
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="apellidosPaciente" className="text-sm font-medium">
                 Apellidos
@@ -959,27 +1049,85 @@ export function AppointmentFormModal({
             </div>
           </div>
 
-          {/* Campo de teléfono separado */}
-          <div className="space-y-2">
-            <Label htmlFor="telefonoPaciente" className="flex items-center gap-2 text-sm font-medium">
-              <Phone className="h-4 w-4" />
-              Teléfono del paciente *
-            </Label>
-            <Input
-              id="telefonoPaciente"
-              value={formData.telefonoPaciente}
-              onChange={(e) => setFormData({ ...formData, telefonoPaciente: e.target.value })}
-              placeholder="Ej: +34 612 345 678 o 612345678"
-              required
-              className={`w-full ${errors.telefono ? "border-red-500" : ""}`}
-            />
-          </div>
+          {/* 🆕 Campos adicionales para cliente nuevo */}
+          {!clienteEncontrado && (
+            <div className="space-y-4 bg-blue-50 p-4 rounded-lg border border-blue-200">
+              <div className="flex items-center gap-2 mb-2">
+                <User className="h-4 w-4 text-blue-600" />
+                <Label className="text-sm font-medium text-blue-800">Datos del nuevo cliente</Label>
+              </div>
+
+              {/* Campo de teléfono con selector de prefijo */}
+              <div className="space-y-2">
+                <Label htmlFor="phoneNumber" className="flex items-center gap-2 text-sm font-medium">
+                  <Phone className="h-4 w-4" />
+                  Teléfono *
+                </Label>
+                <div className="flex gap-2">
+                  <Select value={phonePrefix} onValueChange={handlePhonePrefixChange}>
+                    <SelectTrigger className="w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PHONE_PREFIXES.map((prefix) => (
+                        <SelectItem key={prefix.code} value={prefix.code}>
+                          <div className="flex items-center gap-2">
+                            <span>{prefix.flag}</span>
+                            <span>{prefix.code}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    id="phoneNumber"
+                    value={phoneNumber}
+                    onChange={handlePhoneNumberChange}
+                    placeholder="612345678"
+                    required={!clienteEncontrado}
+                    className={`flex-1 ${errors.telefono ? "border-red-500" : ""}`}
+                  />
+                </div>
+                {phonePrefix && phoneNumber && (
+                  <p className="text-sm text-gray-600">
+                    Teléfono completo: <strong>{phonePrefix}{phoneNumber}</strong>
+                  </p>
+                )}
+              </div>
+
+              {/* Campo NIF */}
+              <div className="space-y-2">
+                <Label htmlFor="taxId" className="flex items-center gap-2 text-sm font-medium">
+                  <CreditCard className="h-4 w-4" />
+                  NIF/CIF (opcional)
+                </Label>
+                <Input
+                  id="taxId"
+                  value={taxId}
+                  onChange={(e) => {
+                    console.log("NIF onChange:", e.target.value) // 🆕 LOG
+                    setTaxId(e.target.value)
+                  }}
+                  placeholder="12345678A o B12345678"
+                  className="w-full"
+                />
+                <p className="text-xs text-gray-500">
+                  Introduce el NIF para personas físicas o CIF para empresas
+                </p>
+                {/* 🆕 MOSTRAR VALOR ACTUAL */}
+                <p className="text-xs text-blue-600">
+                  Valor actual: "{taxId}"
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* ✅ PROFESIONAL PRIMERO - MOVIDO ANTES DEL SERVICIO */}
           <div className="space-y-2">
             <Label htmlFor="profesional" className="flex items-center gap-2 text-sm font-medium">
-              Profesional *{/* 🆕 INDICADOR PARA USUARIOS 'USER' */}
-              {isUserRole && <span className="text-xs text-blue-600"></span>}
+              Profesional *
+              {/* 🆕 INDICADOR PARA USUARIOS 'USER' */}
+              {isUserRole && <span className="text-xs text-blue-600">(Solo tú)</span>}
             </Label>
             <Select
               value={formData.profesionalId.toString()}
@@ -1028,10 +1176,10 @@ export function AppointmentFormModal({
                     !formData.profesionalId
                       ? "Primero selecciona un profesional"
                       : loadingProfessionalServices || userServicesLoading
-                        ? "Cargando servicios..."
-                        : filteredServices.length === 0
-                          ? "No hay servicios disponibles"
-                          : "Selecciona un servicio"
+                      ? "Cargando servicios..."
+                      : filteredServices.length === 0
+                      ? "No hay servicios disponibles"
+                      : "Selecciona un servicio"
                   }
                 />
               </SelectTrigger>
@@ -1039,7 +1187,10 @@ export function AppointmentFormModal({
                 {filteredServices.map((service) => (
                   <SelectItem key={service.id} value={service.id.toString()}>
                     <div className="flex items-center gap-2 w-full">
-                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: service.color }} />
+                      <div
+                        className="w-3 h-3 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: service.color }}
+                      />
                       <div className="min-w-0 flex-1">
                         <div className="font-medium truncate">{service.name}</div>
                         <div className="text-xs text-gray-500 truncate">
@@ -1101,6 +1252,7 @@ export function AppointmentFormModal({
                 className="w-full"
               />
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="hora" className="flex items-center gap-2 text-sm font-medium">
                 <Clock className="h-4 w-4" />
@@ -1115,6 +1267,7 @@ export function AppointmentFormModal({
                 className="w-full"
               />
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="duracion" className="text-sm font-medium">
                 Duración (min)
@@ -1177,14 +1330,15 @@ export function AppointmentFormModal({
                       </SelectContent>
                     </Select>
                   </div>
+
                   <div>
                     <Label htmlFor="recurrenceInterval">
                       Cada{" "}
                       {formData.recurrenceType === "daily"
                         ? "días"
                         : formData.recurrenceType === "weekly"
-                          ? "semanas"
-                          : "meses"}
+                        ? "semanas"
+                        : "meses"}
                     </Label>
                     <Select
                       value={formData.recurrenceInterval.toString()}
@@ -1202,16 +1356,16 @@ export function AppointmentFormModal({
                               </SelectItem>
                             ))
                           : formData.recurrenceType === "weekly"
-                            ? [1, 2, 3, 4].map((interval) => (
-                                <SelectItem key={interval} value={interval.toString()}>
-                                  {interval} {interval === 1 ? "semana" : "semanas"}
-                                </SelectItem>
-                              ))
-                            : [1, 2, 3, 4, 6, 8, 12].map((interval) => (
-                                <SelectItem key={interval} value={interval.toString()}>
-                                  {interval} {interval === 1 ? "mes" : "meses"}
-                                </SelectItem>
-                              ))}
+                          ? [1, 2, 3, 4].map((interval) => (
+                              <SelectItem key={interval} value={interval.toString()}>
+                                {interval} {interval === 1 ? "semana" : "semanas"}
+                              </SelectItem>
+                            ))
+                          : [1, 2, 3, 4, 6, 8, 12].map((interval) => (
+                              <SelectItem key={interval} value={interval.toString()}>
+                                {interval} {interval === 1 ? "mes" : "meses"}
+                              </SelectItem>
+                            ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -1435,6 +1589,7 @@ export function AppointmentFormModal({
               <strong>Consejos:</strong>
             </p>
             <p>• Busca por teléfono (3+ dígitos), nombre o apellido para encontrar clientes existentes</p>
+            <p>• Para clientes nuevos, selecciona el prefijo telefónico y añade el NIF si es necesario</p>
             <p>• Selecciona un profesional para ver sus servicios disponibles</p>
             <p>• Las consultas son opcionales - puedes crear citas sin asignar consulta</p>
             <p>• El sistema verificará automáticamente conflictos de horario</p>

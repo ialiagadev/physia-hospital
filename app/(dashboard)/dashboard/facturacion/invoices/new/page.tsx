@@ -23,7 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Plus, Trash2, Settings, Percent, Search, X, Info } from "lucide-react"
+import { Plus, Trash2, Settings, Percent, Search, X, Info, Phone } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { SignaturePad } from "@/components/signature-pad"
 import { useToast } from "@/hooks/use-toast"
@@ -69,6 +69,7 @@ interface Client {
   country: string
   email: string | null
   phone: string | null
+  phone_prefix: string
   client_type: string
   dir3_codes: any | null
 }
@@ -101,6 +102,26 @@ interface OriginalInvoice {
   invoice_lines: any[]
 }
 
+// Lista de prefijos telefónicos más comunes
+const PHONE_PREFIXES = [
+  { code: "+34", country: "España", flag: "🇪🇸" },
+  { code: "+33", country: "Francia", flag: "🇫🇷" },
+  { code: "+49", country: "Alemania", flag: "🇩🇪" },
+  { code: "+39", country: "Italia", flag: "🇮🇹" },
+  { code: "+351", country: "Portugal", flag: "🇵🇹" },
+  { code: "+44", country: "Reino Unido", flag: "🇬🇧" },
+  { code: "+1", country: "Estados Unidos", flag: "🇺🇸" },
+  { code: "+52", country: "México", flag: "🇲🇽" },
+  { code: "+54", country: "Argentina", flag: "🇦🇷" },
+  { code: "+55", country: "Brasil", flag: "🇧🇷" },
+  { code: "+56", country: "Chile", flag: "🇨🇱" },
+  { code: "+57", country: "Colombia", flag: "🇨🇴" },
+  { code: "+58", country: "Venezuela", flag: "🇻🇪" },
+  { code: "+51", country: "Perú", flag: "🇵🇪" },
+  { code: "+593", country: "Ecuador", flag: "🇪🇨" },
+  { code: "+598", country: "Uruguay", flag: "🇺🇾" },
+]
+
 // Constantes fuera del componente
 const VAT_EXEMPT_NOTE =
   "Operación exenta de IVA conforme al artículo 20. Uno. 3º de la Ley 37/1992 del Impuesto sobre el Valor Añadido, por tratarse de un servicio de asistencia sanitaria prestado por profesional titulado"
@@ -118,6 +139,7 @@ const INITIAL_FORM_DATA = {
   client_country: "España",
   client_email: "",
   client_phone: "",
+  client_phone_prefix: "+34",
   client_type: "private",
   dir3_codes: {
     CentroGestor: "",
@@ -340,6 +362,7 @@ export default function OptimizedNewInvoicePage() {
             country,
             email,
             phone,
+            phone_prefix,
             client_type,
             dir3_codes
           )
@@ -517,6 +540,7 @@ export default function OptimizedNewInvoicePage() {
       client_country: client.country || "España",
       client_email: client.email || "",
       client_phone: client.phone || "",
+      client_phone_prefix: client.phone_prefix || "+34",
       client_type: client.client_type,
       dir3_codes: client.dir3_codes || {
         CentroGestor: "",
@@ -541,6 +565,7 @@ export default function OptimizedNewInvoicePage() {
       client_country: "España",
       client_email: "",
       client_phone: "",
+      client_phone_prefix: "+34",
       client_type: "private",
       dir3_codes: {
         CentroGestor: "",
@@ -624,6 +649,7 @@ export default function OptimizedNewInvoicePage() {
             country,
             email,
             phone,
+            phone_prefix,
             client_type,
             dir3_codes
           )
@@ -644,7 +670,6 @@ export default function OptimizedNewInvoicePage() {
           const clientData = Array.isArray(fullInvoiceData.clients)
             ? fullInvoiceData.clients[0]
             : fullInvoiceData.clients
-
           if (clientData) {
             selectClient(clientData)
           }
@@ -663,7 +688,6 @@ export default function OptimizedNewInvoicePage() {
             line_amount: line.line_amount || 0,
             professional_id: line.professional_id ? line.professional_id.toString() : null,
           }))
-
           setInvoiceLines(originalLines)
         }
 
@@ -735,7 +759,6 @@ export default function OptimizedNewInvoicePage() {
   // Effect para nota automática de IVA
   useEffect(() => {
     const { vatAmount, baseAmount } = calculatedAmounts
-
     if (vatAmount === 0 && baseAmount > 0) {
       if (!formData.notes.includes(VAT_EXEMPT_NOTE)) {
         setFormData((prev) => ({
@@ -790,8 +813,20 @@ export default function OptimizedNewInvoicePage() {
           throw new Error("No se pudo obtener la información de la organización")
         }
 
+        // ✅ VALIDACIÓN SIMPLIFICADA: Solo nombre completo y tax_id
         if (!formData.client_name || !formData.client_tax_id) {
           throw new Error("Debes introducir al menos el nombre y CIF/NIF del cliente")
+        }
+
+        // ✅ VALIDAR QUE EL NOMBRE TENGA AL MENOS 2 PALABRAS (NOMBRE Y APELLIDOS)
+        const nameParts = formData.client_name.trim().split(/\s+/)
+        if (nameParts.length < 2) {
+          throw new Error("El nombre debe incluir nombre y apellidos (al menos 2 palabras)")
+        }
+
+        // ✅ VALIDAR TELÉFONO OBLIGATORIO PARA CLIENTES NUEVOS
+        if (isNewClient && !formData.client_phone.trim()) {
+          throw new Error("El teléfono es obligatorio para clientes nuevos")
         }
 
         if (!userProfile?.id) {
@@ -807,14 +842,15 @@ export default function OptimizedNewInvoicePage() {
               organization_id: Number.parseInt(formData.organization_id),
               name: formData.client_name,
               tax_id: formData.client_tax_id,
-              address: formData.client_address,
-              postal_code: formData.client_postal_code,
-              city: formData.client_city,
-              province: formData.client_province,
+              address: formData.client_address || null,
+              postal_code: formData.client_postal_code || null,
+              city: formData.client_city || null,
+              province: formData.client_province || null,
               country: formData.client_country,
-              client_type: formData.client_type,
               email: formData.client_email || null,
               phone: formData.client_phone || null,
+              phone_prefix: formData.client_phone_prefix,
+              client_type: formData.client_type,
               dir3_codes: formData.client_type === "public" ? formData.dir3_codes : null,
             })
             .select()
@@ -829,7 +865,43 @@ export default function OptimizedNewInvoicePage() {
           clientId = selectedClient.id
         }
 
-        const clientInfoText = `Cliente: ${formData.client_name}, CIF/NIF: ${formData.client_tax_id}, Dirección: ${formData.client_address}, ${formData.client_postal_code} ${formData.client_city}, ${formData.client_province}`
+        // ✅ INFORMACIÓN COMPLETA DEL CLIENTE (incluye campos adicionales si están disponibles)
+        let clientInfoText = `Cliente: ${formData.client_name}, CIF/NIF: ${formData.client_tax_id}`
+
+        // Añadir dirección si está disponible
+        if (formData.client_address && formData.client_address.trim()) {
+          clientInfoText += `, Dirección: ${formData.client_address}`
+          
+          // Añadir código postal y ciudad si están disponibles
+          const locationParts = []
+          if (formData.client_postal_code && formData.client_postal_code.trim()) {
+            locationParts.push(formData.client_postal_code)
+          }
+          if (formData.client_city && formData.client_city.trim()) {
+            locationParts.push(formData.client_city)
+          }
+          if (formData.client_province && formData.client_province.trim()) {
+            locationParts.push(formData.client_province)
+          }
+          
+          if (locationParts.length > 0) {
+            clientInfoText += `, ${locationParts.join(' ')}`
+          }
+        }
+
+        // Añadir información de contacto si está disponible
+        const contactParts = []
+        if (formData.client_email && formData.client_email.trim()) {
+          contactParts.push(`Email: ${formData.client_email}`)
+        }
+        if (formData.client_phone && formData.client_phone.trim()) {
+          contactParts.push(`Teléfono: ${formData.client_phone_prefix}${formData.client_phone}`)
+        }
+
+        if (contactParts.length > 0) {
+          clientInfoText += `, ${contactParts.join(', ')}`
+        }
+
         const additionalNotes = formData.notes ? `\n\nNotas adicionales: ${formData.notes}` : ""
         const fullNotes = clientInfoText + additionalNotes
 
@@ -1105,7 +1177,6 @@ export default function OptimizedNewInvoicePage() {
                       </p>
                     )}
                   </div>
-
                   <div className="space-y-2">
                     <Label htmlFor="rectification_reason">Motivo de Rectificación *</Label>
                     <Textarea
@@ -1121,7 +1192,6 @@ export default function OptimizedNewInvoicePage() {
                       required
                     />
                   </div>
-
                   <div className="space-y-2">
                     <Label>Tipo de Rectificación</Label>
                     <RadioGroup
@@ -1199,7 +1269,6 @@ export default function OptimizedNewInvoicePage() {
                   </SelectContent>
                 </Select>
               </div>
-
               {formData.payment_method === "otro" && (
                 <div className="space-y-2">
                   <Label htmlFor="payment_method_other">Especificar método de pago</Label>
@@ -1272,7 +1341,6 @@ export default function OptimizedNewInvoicePage() {
                       </Command>
                     </PopoverContent>
                   </Popover>
-
                   {selectedClient && (
                     <div className="flex items-center justify-between p-2 bg-muted rounded-md">
                       <span className="text-sm">Cliente seleccionado: {selectedClient.name}</span>
@@ -1285,7 +1353,7 @@ export default function OptimizedNewInvoicePage() {
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="client_name">Nombre o Razón Social</Label>
+                <Label htmlFor="client_name">Nombre o Razón Social *</Label>
                 <Input
                   id="client_name"
                   name="client_name"
@@ -1297,7 +1365,7 @@ export default function OptimizedNewInvoicePage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="client_tax_id">CIF/NIF</Label>
+                <Label htmlFor="client_tax_id">CIF/NIF *</Label>
                 <Input
                   id="client_tax_id"
                   name="client_tax_id"
@@ -1308,6 +1376,83 @@ export default function OptimizedNewInvoicePage() {
                 />
               </div>
 
+              {isNewClient && (
+                <div className="space-y-2">
+                  <Label className="flex items-center space-x-1">
+                    <Phone className="h-4 w-4" />
+                    <span>Teléfono *</span>
+                  </Label>
+                  <div className="flex space-x-2">
+                    <Select
+                      value={formData.client_phone_prefix}
+                      onValueChange={(value) => handleSelectChange("client_phone_prefix", value)}
+                    >
+                      <SelectTrigger className="w-32">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PHONE_PREFIXES.map((prefix) => (
+                          <SelectItem key={prefix.code} value={prefix.code}>
+                            <span className="flex items-center space-x-2">
+                              <span>{prefix.flag}</span>
+                              <span>{prefix.code}</span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      id="client_phone"
+                      name="client_phone"
+                      value={formData.client_phone}
+                      onChange={handleChange}
+                      placeholder="600123456"
+                      className="flex-1"
+                      required
+                    />
+                  </div>
+                </div>
+              )}
+
+              {!isNewClient && selectedClient && (
+                <div className="space-y-2">
+                  <Label className="flex items-center space-x-1">
+                    <Phone className="h-4 w-4" />
+                    <span>Teléfono</span>
+                  </Label>
+                  <div className="flex space-x-2">
+                    <Select
+                      value={formData.client_phone_prefix}
+                      onValueChange={(value) => handleSelectChange("client_phone_prefix", value)}
+                      disabled
+                    >
+                      <SelectTrigger className="w-32">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PHONE_PREFIXES.map((prefix) => (
+                          <SelectItem key={prefix.code} value={prefix.code}>
+                            <span className="flex items-center space-x-2">
+                              <span>{prefix.flag}</span>
+                              <span>{prefix.code}</span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      id="client_phone"
+                      name="client_phone"
+                      value={formData.client_phone}
+                      onChange={handleChange}
+                      placeholder="600123456"
+                      className="flex-1"
+                      readOnly
+                    />
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label htmlFor="client_address">Dirección</Label>
                 <Textarea
@@ -1315,7 +1460,6 @@ export default function OptimizedNewInvoicePage() {
                   name="client_address"
                   value={formData.client_address}
                   onChange={handleChange}
-                  required
                   readOnly={!isNewClient && selectedClient !== null}
                 />
               </div>
@@ -1328,7 +1472,6 @@ export default function OptimizedNewInvoicePage() {
                     name="client_postal_code"
                     value={formData.client_postal_code}
                     onChange={handleChange}
-                    required
                     readOnly={!isNewClient && selectedClient !== null}
                   />
                 </div>
@@ -1339,7 +1482,6 @@ export default function OptimizedNewInvoicePage() {
                     name="client_city"
                     value={formData.client_city}
                     onChange={handleChange}
-                    required
                     readOnly={!isNewClient && selectedClient !== null}
                   />
                 </div>
@@ -1353,7 +1495,6 @@ export default function OptimizedNewInvoicePage() {
                     name="client_province"
                     value={formData.client_province}
                     onChange={handleChange}
-                    required
                     readOnly={!isNewClient && selectedClient !== null}
                   />
                 </div>
@@ -1364,7 +1505,6 @@ export default function OptimizedNewInvoicePage() {
                     name="client_country"
                     value={formData.client_country}
                     onChange={handleChange}
-                    required
                     readOnly={!isNewClient && selectedClient !== null}
                   />
                 </div>
@@ -1378,16 +1518,6 @@ export default function OptimizedNewInvoicePage() {
                     name="client_email"
                     type="email"
                     value={formData.client_email}
-                    onChange={handleChange}
-                    readOnly={!isNewClient && selectedClient !== null}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="client_phone">Teléfono</Label>
-                  <Input
-                    id="client_phone"
-                    name="client_phone"
-                    value={formData.client_phone}
                     onChange={handleChange}
                     readOnly={!isNewClient && selectedClient !== null}
                   />
@@ -1476,7 +1606,6 @@ export default function OptimizedNewInvoicePage() {
                         </Button>
                       )}
                     </div>
-
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                       <div className="space-y-2">
                         <Label htmlFor={`service-${line.id}`}>Servicio</Label>
@@ -1494,7 +1623,6 @@ export default function OptimizedNewInvoicePage() {
                           </Button>
                         </div>
                       </div>
-
                       <div className="space-y-2">
                         <Label htmlFor={`professional-${line.id}`}>Profesional (opcional)</Label>
                         <Select
@@ -1515,7 +1643,6 @@ export default function OptimizedNewInvoicePage() {
                         </Select>
                       </div>
                     </div>
-
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor={`description-${line.id}`} className="block h-5">
@@ -1528,7 +1655,6 @@ export default function OptimizedNewInvoicePage() {
                           required
                         />
                       </div>
-
                       <div className="space-y-2">
                         <Label htmlFor={`quantity-${line.id}`} className="block h-5">
                           Cantidad
@@ -1545,7 +1671,6 @@ export default function OptimizedNewInvoicePage() {
                           required
                         />
                       </div>
-
                       <div className="space-y-2">
                         <Label htmlFor={`unit_price-${line.id}`} className="block h-5">
                           Precio Unitario (€)
@@ -1562,7 +1687,6 @@ export default function OptimizedNewInvoicePage() {
                           required
                         />
                       </div>
-
                       <div className="space-y-2">
                         <Label htmlFor={`discount_percentage-${line.id}`} className="flex items-center gap-1 h-5">
                           <Percent className="h-3 w-3" />
@@ -1581,7 +1705,6 @@ export default function OptimizedNewInvoicePage() {
                         />
                       </div>
                     </div>
-
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                       <div className="space-y-2">
                         <Label htmlFor={`vat_rate-${line.id}`}>IVA (%)</Label>
@@ -1597,7 +1720,6 @@ export default function OptimizedNewInvoicePage() {
                           required
                         />
                       </div>
-
                       <div className="space-y-2">
                         <Label htmlFor={`irpf_rate-${line.id}`}>IRPF (%)</Label>
                         <Input
@@ -1611,7 +1733,6 @@ export default function OptimizedNewInvoicePage() {
                           }
                         />
                       </div>
-
                       <div className="space-y-2">
                         <Label htmlFor={`retention_rate-${line.id}`}>Retención (%)</Label>
                         <Input
@@ -1626,7 +1747,6 @@ export default function OptimizedNewInvoicePage() {
                         />
                       </div>
                     </div>
-
                     <div className="mt-4 text-right space-y-1">
                       <div className="text-sm text-muted-foreground">
                         Subtotal: {(line.quantity * line.unit_price).toFixed(2)} €
@@ -1641,7 +1761,6 @@ export default function OptimizedNewInvoicePage() {
                     </div>
                   </div>
                 ))}
-
                 <Button type="button" variant="outline" onClick={addLine} className="w-full bg-transparent">
                   <Plus className="mr-2 h-4 w-4" />
                   Añadir Línea
