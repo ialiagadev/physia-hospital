@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -12,6 +11,8 @@ import { toast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase/client"
 import { Plus, Search, X, ChevronLeft, ChevronRight, User, Tag, Sparkles, Phone, Mail, UserPlus, Palette } from 'lucide-react'
 import { useAuth } from "@/app/contexts/auth-context"
+import { generateTagStyle } from "@/lib/dynamic-tag-colors"
+import { DynamicTagBadge } from "@/components/dynamic-tag-badge"
 
 interface Client {
   id: number
@@ -36,12 +37,19 @@ interface AddTagToClientDialogProps {
   trigger?: React.ReactNode
 }
 
-export function AddTagToClientDialog({ 
-  isOpen, 
-  onOpenChange, 
-  onTagAdded,
-  trigger 
-}: AddTagToClientDialogProps) {
+// Etiquetas predefinidas con colores hex directamente
+const predefinedTagStyles = [
+  { name: "Consulta General", color: "#3B82F6" }, // Azul
+  { name: "Urgente", color: "#EF4444" }, // Rojo
+  { name: "Seguimiento", color: "#10B981" }, // Verde
+  { name: "Cita Pendiente", color: "#F59E0B" }, // Amarillo
+  { name: "Tratamiento", color: "#8B5CF6" }, // Morado
+  { name: "Rehabilitación", color: "#6366F1" }, // Índigo
+  { name: "Dolor Crónico", color: "#F97316" }, // Naranja
+  { name: "Primera Consulta", color: "#06B6D4" }, // Cian
+]
+
+export function AddTagToClientDialog({ isOpen, onOpenChange, onTagAdded, trigger }: AddTagToClientDialogProps) {
   const [step, setStep] = useState<'selectClient' | 'selectTags'>('selectClient')
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [clients, setClients] = useState<Client[]>([])
@@ -50,27 +58,21 @@ export function AddTagToClientDialog({
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
-  
+
   // Estados para etiquetas
   const [existingTags, setExistingTags] = useState<ExistingTag[]>([])
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [newTagName, setNewTagName] = useState("")
-  const [newTagColor, setNewTagColor] = useState("#8B5CF6")
+  const [newTagColor, setNewTagColor] = useState("#3B82F6")
   const [tagsLoading, setTagsLoading] = useState(false)
   const [assigningTags, setAssigningTags] = useState(false)
 
   const { userProfile } = useAuth()
   const pageSize = 10
 
-  const predefinedColors = [
-    "#8B5CF6", "#3B82F6", "#10B981", "#F59E0B", 
-    "#EF4444", "#EC4899", "#6366F1", "#14B8A6"
-  ]
-
   // Cargar clientes con búsqueda del servidor (solo de la organización)
   const loadClients = useCallback(async (page = 1, search = "") => {
     if (!userProfile?.organization_id) return
-
     setClientsLoading(true)
     try {
       let query = supabase
@@ -90,7 +92,6 @@ export function AddTagToClientDialog({
       query = query.order("name", { ascending: true }).range(from, to)
 
       const { data, error, count } = await query
-
       if (error) throw error
 
       setClients(data || [])
@@ -112,7 +113,6 @@ export function AddTagToClientDialog({
   // Cargar etiquetas existentes (solo de la organización)
   const loadExistingTags = useCallback(async () => {
     if (!userProfile?.organization_id) return
-
     setTagsLoading(true)
     try {
       const { data, error } = await supabase
@@ -125,13 +125,13 @@ export function AddTagToClientDialog({
 
       // Agrupar por tag_name y contar
       const tagMap = new Map<string, { color: string; count: number }>()
-      
       data?.forEach(item => {
         const existing = tagMap.get(item.tag_name)
         if (existing) {
           existing.count++
         } else {
-          tagMap.set(item.tag_name, { color: item.color || '#000000', count: 1 })
+          const hexColor = item.color || '#8B5CF6'
+          tagMap.set(item.tag_name, { color: hexColor, count: 1 })
         }
       })
 
@@ -156,7 +156,6 @@ export function AddTagToClientDialog({
     }
   }, [userProfile?.organization_id])
 
-  // Resto de funciones igual que antes...
   useEffect(() => {
     if (isOpen && step === 'selectClient') {
       loadClients(1, clientSearch)
@@ -199,7 +198,6 @@ export function AddTagToClientDialog({
 
   const handleAddNewTag = () => {
     if (!newTagName.trim()) return
-    
     const tagName = newTagName.trim()
     if (selectedTags.includes(tagName)) {
       toast({
@@ -217,22 +215,23 @@ export function AddTagToClientDialog({
       count: 0
     }, ...prev])
     setNewTagName("")
-    setNewTagColor("#8B5CF6")
+    setNewTagColor("#3B82F6")
   }
 
   const handleAssignTags = async () => {
     if (!selectedClient || selectedTags.length === 0 || !userProfile?.organization_id) return
-
     setAssigningTags(true)
     try {
       // Crear las etiquetas para el cliente con organization_id
       const tagsToInsert = selectedTags.map(tagName => {
         const existingTag = existingTags.find(t => t.tag_name === tagName)
+        const colorToSave = existingTag?.color || newTagColor
+        
         return {
           tag_name: tagName,
           client_id: selectedClient.id,
-          organization_id: userProfile.organization_id, // ✨ Añadir organization_id
-          color: existingTag?.color || newTagColor,
+          organization_id: userProfile.organization_id,
+          color: colorToSave,
           conversation_id: null,
           created_by: null
         }
@@ -271,20 +270,11 @@ export function AddTagToClientDialog({
     setClientSearch("")
     setSelectedTags([])
     setNewTagName("")
-    setNewTagColor("#8B5CF6")
+    setNewTagColor("#3B82F6")
     setCurrentPage(1)
     onOpenChange(false)
   }
 
-  const getContrastColor = (hexColor: string): string => {
-    const r = parseInt(hexColor.slice(1, 3), 16)
-    const g = parseInt(hexColor.slice(3, 5), 16)
-    const b = parseInt(hexColor.slice(5, 7), 16)
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-    return luminance > 0.5 ? '#000000' : '#ffffff'
-  }
-
-  // El resto del JSX es igual que antes...
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       {trigger && (
@@ -402,9 +392,7 @@ export function AddTagToClientDialog({
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </Button>
-                  <span className="text-sm font-medium">
-                    {currentPage} de {totalPages}
-                  </span>
+                  <span className="text-sm font-medium">{currentPage} de {totalPages}</span>
                   <Button
                     variant="outline"
                     size="sm"
@@ -457,26 +445,50 @@ export function AddTagToClientDialog({
                 <div className="flex flex-wrap gap-2">
                   {selectedTags.map((tagName) => {
                     const existingTag = existingTags.find(t => t.tag_name === tagName)
-                    const color = existingTag?.color || newTagColor
                     return (
-                      <Badge
+                      <DynamicTagBadge
                         key={tagName}
-                        style={{ 
-                          backgroundColor: color, 
-                          color: getContrastColor(color),
-                          boxShadow: `0 4px 20px ${color}40`
-                        }}
-                        className="text-sm px-3 py-1 rounded-xl font-medium cursor-pointer hover:scale-105 transition-all duration-200"
+                        tagName={tagName}
+                        color={existingTag?.color || newTagColor}
+                        className="text-sm rounded-xl"
                         onClick={() => handleTagToggle(tagName)}
                       >
-                        {tagName}
                         <X className="w-3 h-3 ml-2" />
-                      </Badge>
+                      </DynamicTagBadge>
                     )
                   })}
                 </div>
               </div>
             )}
+
+            <Separator />
+
+            {/* Etiquetas predefinidas */}
+            <div className="space-y-4">
+              <Label className="text-lg font-medium text-gray-700 flex items-center gap-2">
+                <Sparkles className="w-5 h-5" />
+                Etiquetas predefinidas
+              </Label>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {predefinedTagStyles.map((tag) => (
+                  <div
+                    key={tag.name}
+                    onClick={() => handleTagToggle(tag.name)}
+                    className={`p-3 rounded-xl cursor-pointer transition-all duration-200 border-2 ${
+                      selectedTags.includes(tag.name)
+                        ? 'border-purple-300 bg-purple-50'
+                        : 'border-gray-200 hover:border-gray-300 bg-white'
+                    }`}
+                  >
+                    <DynamicTagBadge 
+                      tagName={tag.name} 
+                      color={tag.color} 
+                      className="text-sm rounded-lg w-full justify-center"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
 
             <Separator />
 
@@ -486,7 +498,6 @@ export function AddTagToClientDialog({
                 <Palette className="w-5 h-5" />
                 Crear nueva etiqueta
               </Label>
-              
               <div className="space-y-4">
                 <div className="flex gap-3">
                   <Input
@@ -496,12 +507,6 @@ export function AddTagToClientDialog({
                     className="flex-1 rounded-xl"
                     onKeyPress={(e) => e.key === 'Enter' && handleAddNewTag()}
                   />
-                  <input
-                    type="color"
-                    value={newTagColor}
-                    onChange={(e) => setNewTagColor(e.target.value)}
-                    className="w-16 h-10 rounded-xl border-2 border-gray-200 cursor-pointer shadow-lg"
-                  />
                   <Button
                     onClick={handleAddNewTag}
                     disabled={!newTagName.trim()}
@@ -510,35 +515,32 @@ export function AddTagToClientDialog({
                     <Plus className="w-4 h-4" />
                   </Button>
                 </div>
-                
+
                 {/* Vista previa */}
                 {newTagName && (
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-gray-600">Vista previa:</span>
-                    <Badge 
-                      style={{ backgroundColor: newTagColor, color: getContrastColor(newTagColor) }}
-                      className="text-sm px-3 py-1 rounded-xl shadow-lg"
-                    >
-                      {newTagName}
-                    </Badge>
+                    <DynamicTagBadge 
+                      tagName={newTagName} 
+                      color={newTagColor} 
+                      className="text-sm rounded-xl shadow-lg"
+                    />
                   </div>
                 )}
-                
-                {/* Colores sugeridos */}
+
+                {/* Selector de color simple */}
                 <div>
-                  <p className="text-sm text-gray-600 mb-2">Colores sugeridos:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {predefinedColors.map((color) => (
-                      <button
-                        key={color}
-                        type="button"
-                        onClick={() => setNewTagColor(color)}
-                        className={`w-8 h-8 rounded-lg shadow-lg transition-all duration-200 hover:scale-110 ${
-                          newTagColor === color ? 'ring-2 ring-gray-400' : ''
-                        }`}
-                        style={{ backgroundColor: color }}
-                      />
-                    ))}
+                  <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                    Color de la etiqueta
+                  </Label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={newTagColor}
+                      onChange={(e) => setNewTagColor(e.target.value)}
+                      className="w-12 h-10 rounded-lg border border-gray-200 cursor-pointer"
+                    />
+                    <div className="text-sm text-gray-600 font-mono">{newTagColor}</div>
                   </div>
                 </div>
               </div>
@@ -569,15 +571,11 @@ export function AddTagToClientDialog({
                         }`}
                       >
                         <div className="flex items-center gap-3">
-                          <Badge
-                            style={{ 
-                              backgroundColor: tag.color, 
-                              color: getContrastColor(tag.color)
-                            }}
-                            className="text-sm px-3 py-1 rounded-lg"
-                          >
-                            {tag.tag_name}
-                          </Badge>
+                          <DynamicTagBadge 
+                            tagName={tag.tag_name} 
+                            color={tag.color} 
+                            className="text-sm rounded-lg"
+                          />
                           <span className="text-sm text-gray-500">
                             Usada {tag.count} vez{tag.count !== 1 ? 'es' : ''}
                           </span>

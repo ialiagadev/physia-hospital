@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { Users, User, Bot } from "lucide-react"
+import { Users, User, Bot } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -12,7 +12,6 @@ import { Badge } from "@/components/ui/badge"
 import { useOrganizationUsers } from "@/hooks/use-organization-users"
 import { supabase } from "@/lib/supabase/client"
 import { useAuth } from "@/app/contexts/auth-context"
-import { createSystemMessage, getUserNamesByIds } from "@/lib/system-messages"
 
 interface AssignUsersDialogProps {
   conversationId: string
@@ -32,7 +31,7 @@ export function AssignUsersDialog({
   const [saving, setSaving] = useState(false)
   const { userProfile } = useAuth()
 
-  const { users, loading, error } = useOrganizationUsers(userProfile?.organization_id)
+  const { users, loading, error } = useOrganizationUsers(userProfile?.organization_id?.toString())
 
   useEffect(() => {
     setSelectedUserIds(assignedUserIds || [])
@@ -55,39 +54,34 @@ export function AssignUsersDialog({
       const addedUsers = selectedUserIds.filter((id) => !previousIds.has(id))
       const removedUsers = assignedUserIds.filter((id) => !newIds.has(id))
 
-      // Actualizar la conversación
-      const { error } = await supabase
-        .from("conversations")
-        .update({ assigned_user_ids: selectedUserIds })
-        .eq("id", conversationId)
+      // Eliminar asignaciones existentes que ya no están seleccionadas
+      if (removedUsers.length > 0) {
+        const { error: deleteError } = await supabase
+          .from("users_conversations")
+          .delete()
+          .eq("conversation_id", conversationId)
+          .in("user_id", removedUsers)
 
-      if (error) {
-        console.error("Error al asignar usuarios:", error)
-        return
+        if (deleteError) {
+          console.error("Error eliminando asignaciones:", deleteError)
+          throw deleteError
+        }
       }
 
-      // Crear mensajes de sistema para los cambios
-      if (addedUsers.length > 0 || removedUsers.length > 0) {
-        const userNames = await getUserNamesByIds([...addedUsers, ...removedUsers])
+      // Añadir nuevas asignaciones
+      if (addedUsers.length > 0) {
+        const newAssignments = addedUsers.map(userId => ({
+          conversation_id: conversationId,
+          user_id: userId
+        }))
 
-        // Mensajes para usuarios añadidos
-        for (const userId of addedUsers) {
-          await createSystemMessage({
-            conversationId,
-            userId: userProfile.id,
-            action: "user_assigned",
-            targetUserName: userNames[userId] || "Usuario desconocido",
-          })
-        }
+        const { error: insertError } = await supabase
+          .from("users_conversations")
+          .insert(newAssignments)
 
-        // Mensajes para usuarios removidos
-        for (const userId of removedUsers) {
-          await createSystemMessage({
-            conversationId,
-            userId: userProfile.id,
-            action: "user_unassigned",
-            targetUserName: userNames[userId] || "Usuario desconocido",
-          })
+        if (insertError) {
+          console.error("Error añadiendo asignaciones:", insertError)
+          throw insertError
         }
       }
 
@@ -100,14 +94,14 @@ export function AssignUsersDialog({
     }
   }
 
-  const getUserTypeIcon = (userType?: number) => {
+  const getUserTypeIcon = (userType?: number | null) => {
     if (userType === 2) {
       return <Bot className="h-3 w-3" />
     }
     return <User className="h-3 w-3" />
   }
 
-  const getUserTypeBadge = (userType?: number) => {
+  const getUserTypeBadge = (userType?: number | null) => {
     if (userType === 2) {
       return (
         <Badge variant="secondary" className="text-xs">
@@ -212,3 +206,6 @@ export function AssignUsersDialog({
     </Dialog>
   )
 }
+
+// Export por defecto para compatibilidad
+export default AssignUsersDialog

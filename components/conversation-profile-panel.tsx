@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Textarea } from "@/components/ui/textarea"
@@ -74,6 +74,14 @@ const getAvatarFallback = (name: string) => {
     .slice(0, 2)
 }
 
+// ✨ Función adaptadora para convertir AssignedUser a User
+const adaptAssignedUserToUser = (assignedUser: any): User => {
+  return {
+    ...assignedUser,
+    avatar_url: assignedUser.avatar_url || undefined, // Convierte null a undefined
+  }
+}
+
 const getUserTypeInfo = (user: User) => {
   if (user.type === 2) {
     return {
@@ -134,12 +142,15 @@ export function ConversationProfilePanel({
 
   const { userProfile } = useAuth()
 
-  // Hook para obtener usuarios asignados REALES
+  // ✨ Hook para obtener usuarios asignados REALES - Arreglado el tipo
   const {
-    users: assignedUsers,
+    users: assignedUsersRaw,
     loading: usersLoading,
     error: usersError,
-  } = useAssignedUsers(conversation?.assigned_user_ids)
+  } = useAssignedUsers(conversation?.id || "")
+
+  // ✨ Convertir AssignedUser[] a User[] para evitar conflictos de tipos
+  const assignedUsers: User[] = assignedUsersRaw.map(adaptAssignedUserToUser)
 
   // Cargar datos cuando cambia la conversación
   useEffect(() => {
@@ -585,7 +596,6 @@ export function ConversationProfilePanel({
           <SheetTitle className="flex items-center gap-3">
             <div className="relative">
               <Avatar className="w-12 h-12">
-                <AvatarImage src={client?.avatar_url || "/placeholder.svg"} />
                 <AvatarFallback className="bg-green-500 text-white">{getAvatarFallback(clientName)}</AvatarFallback>
               </Avatar>
               {client?.channel && getChannelIcon(client.channel)}
@@ -617,7 +627,6 @@ export function ConversationProfilePanel({
               <div className="flex items-center justify-between p-2 bg-gray-50 rounded-md">
                 <div className="flex items-center gap-2">
                   <Avatar className="w-8 h-8">
-                    <AvatarImage src={client?.avatar_url || "/placeholder.svg"} />
                     <AvatarFallback className="bg-green-500 text-white text-xs">
                       {getAvatarFallback(clientName)}
                     </AvatarFallback>
@@ -655,7 +664,6 @@ export function ConversationProfilePanel({
                     <div key={user.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-md">
                       <div className="flex items-center gap-2">
                         <Avatar className="w-8 h-8">
-                          <AvatarImage src={user.avatar_url || "/placeholder.svg"} />
                           <AvatarFallback className={`${userInfo.color} text-white text-xs`}>
                             <IconComponent className="w-4 h-4" />
                           </AvatarFallback>
@@ -791,8 +799,7 @@ export function ConversationProfilePanel({
                     key={tag.id}
                     style={{ 
                       backgroundColor: tag.color, 
-                      color: getContrastColor(tag.color),
-                      boxShadow: `0 2px 8px ${tag.color}40`
+                      color: getContrastColor(tag.color)
                     }}
                     className="text-xs px-3 py-1 rounded-xl font-medium cursor-pointer hover:scale-105 transition-all duration-200 border-0"
                     onClick={() => handleRemoveTag(tag.id)}

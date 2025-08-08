@@ -109,7 +109,7 @@ export interface Message {
 export interface User {
   id: string // UUID
   email: string
-  name?: string
+  name?:  string | null
   avatar_url?: string
   role?: string
   organization_id?: string // Cambiado a string para ser consistente

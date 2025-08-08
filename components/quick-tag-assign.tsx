@@ -2,12 +2,12 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { toast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase/client"
 import { Plus, Tag, Sparkles } from 'lucide-react'
+import { DynamicTagBadge } from "@/components/dynamic-tag-badge"
 
 interface OrganizationTag {
   id: string
@@ -58,6 +58,11 @@ export function QuickTagAssign({
       setAvailableTags(filtered)
     } catch (error) {
       console.error("Error loading available tags:", error)
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar las etiquetas disponibles",
+        variant: "destructive",
+      })
     } finally {
       setLoading(false)
     }
@@ -92,7 +97,7 @@ export function QuickTagAssign({
 
       toast({
         title: "🎉 Etiqueta asignada",
-        description: `Se asignó "${tag.tag_name}" al cliente y sus conversaciones`,
+        description: `Se asignó "${tag.tag_name}" al cliente correctamente`,
       })
 
       // Actualizar la lista local
@@ -113,14 +118,6 @@ export function QuickTagAssign({
     }
   }
 
-  const getContrastColor = (hexColor: string): string => {
-    const r = parseInt(hexColor.slice(1, 3), 16)
-    const g = parseInt(hexColor.slice(3, 5), 16)
-    const b = parseInt(hexColor.slice(5, 7), 16)
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-    return luminance > 0.5 ? '#000000' : '#ffffff'
-  }
-
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
@@ -135,51 +132,59 @@ export function QuickTagAssign({
       <PopoverContent className="w-80 p-0 bg-white/95 backdrop-blur-sm border-white/20 rounded-2xl shadow-2xl" align="end">
         <div className="p-4 space-y-4">
           <div className="flex items-center gap-2">
-            <Tag className="w-5 h-5 text-green-600" />
+            <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-blue-600 rounded-lg flex items-center justify-center shadow-lg">
+              <Tag className="w-4 h-4 text-white" />
+            </div>
             <h4 className="font-semibold text-gray-800">Asignar Etiqueta</h4>
           </div>
 
           <ScrollArea className="h-64">
             <div className="space-y-2">
               {loading ? (
-                <div className="flex items-center justify-center py-4">
-                  <div className="w-6 h-6 border-2 border-green-200 border-t-green-600 rounded-full animate-spin"></div>
+                <div className="flex items-center justify-center py-8">
+                  <div className="w-8 h-8 border-2 border-green-200 border-t-green-600 rounded-full animate-spin"></div>
                 </div>
               ) : availableTags.length > 0 ? (
                 availableTags.map((tag) => (
                   <div
                     key={tag.id}
-                    className="flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all duration-200 bg-gray-50 hover:bg-gray-100 hover:scale-[1.02]"
+                    className="relative group"
                   >
-                    <Badge
-                      style={{ 
-                        backgroundColor: tag.color, 
-                        color: getContrastColor(tag.color),
-                        boxShadow: `0 2px 8px ${tag.color}40`
-                      }}
-                      className="text-sm px-3 py-1 rounded-lg"
-                    >
-                      {tag.tag_name}
-                    </Badge>
-                    <Button
-                      size="sm"
-                      onClick={() => handleAssignTag(tag)}
-                      disabled={assigning === tag.id}
-                      className="bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white rounded-lg min-w-[60px]"
-                    >
-                      {assigning === tag.id ? (
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      ) : (
-                        <Plus className="w-4 h-4" />
-                      )}
-                    </Button>
+                    <div className="absolute inset-0 bg-gradient-to-r from-green-400 to-blue-400 rounded-xl opacity-0 group-hover:opacity-20 blur-lg transition-all duration-300"></div>
+                    <div className="relative flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all duration-200 bg-white/80 backdrop-blur-sm border border-white/20 shadow-sm hover:shadow-lg group-hover:scale-[1.02]">
+                      <DynamicTagBadge
+                        tagName={tag.tag_name}
+                        color={tag.color}
+                        className="text-sm rounded-lg shadow-sm"
+                      />
+                      <Button
+                        size="sm"
+                        onClick={() => handleAssignTag(tag)}
+                        disabled={assigning === tag.id}
+                        className="bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white rounded-lg min-w-[70px] shadow-lg"
+                      >
+                        {assigning === tag.id ? (
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        ) : (
+                          <>
+                            <Plus className="w-4 h-4 mr-1" />
+                            Asignar
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 ))
               ) : (
-                <div className="text-center py-4">
-                  <Tag className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                <div className="text-center py-8">
+                  <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Tag className="w-8 h-8 text-gray-400" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">
+                    No hay etiquetas disponibles
+                  </h3>
                   <p className="text-gray-500 text-sm">
-                    No hay etiquetas disponibles para asignar
+                    Todas las etiquetas ya están asignadas a este cliente
                   </p>
                 </div>
               )}
@@ -187,10 +192,13 @@ export function QuickTagAssign({
           </ScrollArea>
 
           {availableTags.length > 0 && (
-            <div className="text-xs text-gray-500 text-center pt-2 border-t">
-              <div className="flex items-center justify-center gap-1">
-                <Sparkles className="w-3 h-3" />
-                <span>Se sincronizará automáticamente con las conversaciones</span>
+            <div className="relative">
+              <div className="absolute inset-0 bg-gradient-to-r from-green-400 to-blue-400 rounded-xl opacity-10 blur-lg"></div>
+              <div className="relative bg-white/80 backdrop-blur-sm rounded-xl p-3 border border-white/20 shadow-sm">
+                <div className="flex items-center justify-center gap-2 text-xs text-gray-600">
+                  <Sparkles className="w-4 h-4 text-green-600" />
+                  <span className="font-medium">Se sincronizará automáticamente con las conversaciones</span>
+                </div>
               </div>
             </div>
           )}

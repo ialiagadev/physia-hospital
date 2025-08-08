@@ -4,7 +4,6 @@ import type React from "react"
 import { useState, useEffect, useCallback, useRef } from "react"
 import { Search, MoreVertical, Users, MessageCircle, Plus, Phone } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -14,10 +13,11 @@ import { createConversation } from "@/lib/chatActions"
 import { useConversations } from "@/hooks/use-conversations"
 import { useClients } from "@/hooks/use-clients"
 import { useAuth } from "@/app/contexts/auth-context"
-import { supabase } from "@/lib/supabase/client"
 import type { ConversationWithLastMessage } from "@/types/chat"
 import type { Client } from "@/types/calendar"
 import { useTotalUnreadMessages } from "@/hooks/use-unread-messages"
+import { supabase } from "@/lib/supabase/client"
+import { generateTagStyle } from "@/lib/dynamic-tag-colors"
 
 // Componente para mostrar el icono del canal con letra
 function ChannelIcon({ channelName }: { channelName?: string }) {
@@ -123,9 +123,10 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
   const [contactSearch, setContactSearch] = useState("")
   const [searchResults, setSearchResults] = useState<Client[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
-  const [loading, setLoading] = useState(false)
 
+  const [loading, setLoading] = useState(false)
   const { userProfile } = useAuth()
+
   const organizationId = userProfile?.organization_id
   const organizationIdNumber = organizationId ? Number(organizationId) : undefined
   const { searchClientsServer } = useClients(organizationIdNumber)
@@ -241,6 +242,8 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
           name: selectedClient.name,
           phone: selectedClient.phone || undefined,
           email: selectedClient.email || undefined,
+          external_id: selectedClient.external_id || `client-${selectedClient.id}`,
+          avatar_url: selectedClient.avatar_url || undefined,
         },
         initialMessage: initialMessage || "¡Hola! ¿En qué puedo ayudarte?",
         existingClientId: selectedClient.id,
@@ -364,7 +367,8 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
                 />
               </div>
               <p className="text-sm text-gray-500">
-                Número completo: {selectedPrefix}{phoneNumber}
+                Número completo: {selectedPrefix}
+                {phoneNumber}
               </p>
             </div>
 
@@ -459,6 +463,9 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
                         }`}
                       >
                         <Avatar className="h-8 w-8">
+                          {client.avatar_url && (
+                            <AvatarImage src={client.avatar_url || "/placeholder.svg"} alt={client.name} />
+                          )}
                           <AvatarFallback className="text-xs">{client.name.charAt(0)}</AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">
@@ -532,65 +539,63 @@ interface ChatListProps {
   onChatSelect: (chatId: string) => void
 }
 
-// ✨ Interface actualizada para las etiquetas de conversación
-interface ConversationTag {
-  tag_id: string
-  tag_name: string
-  color: string
-}
-
-interface ConversationTagsProps {
-  conversationId: string
-  organizationId?: number
-}
-
-// ✨ Componente actualizado para mostrar etiquetas con colores consistentes
-const ConversationTags: React.FC<ConversationTagsProps> = ({ conversationId, organizationId }) => {
-  const [tags, setTags] = useState<ConversationTag[]>([])
-  const [loading, setLoading] = useState(false)
+// Hook personalizado para cargar colores de etiquetas desde la base de datos
+function useTagColors(organizationId: number | undefined) {
+  const [tagColors, setTagColors] = useState<Map<string, string>>(new Map())
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!conversationId || !organizationId) return
+    const loadTagColors = async () => {
+      if (!organizationId) {
+        setLoading(false)
+        return
+      }
 
-    const loadTags = async () => {
-      setLoading(true)
       try {
         const { data, error } = await supabase
-          .from("conversation_tags_view")
-          .select("tag_id, tag_name, color")
-          .eq("conversation_id", conversationId)
+          .from("organization_tags")
+          .select("tag_name, color")
           .eq("organization_id", organizationId)
-          .order("tag_name", { ascending: true })
 
-        if (error) throw error
-
-        const tagsData: ConversationTag[] = (data || []).map(item => ({
-          tag_id: item.tag_id,
-          tag_name: item.tag_name,
-          color: item.color
-        }))
-
-        setTags(tagsData)
+        if (error) {
+          console.error("Error loading tag colors:", error)
+          setTagColors(new Map())
+        } else {
+          const colorMap = new Map<string, string>()
+          data?.forEach(tag => {
+            colorMap.set(tag.tag_name, tag.color)
+          })
+          setTagColors(colorMap)
+        }
       } catch (error) {
-        console.error("Error loading conversation tags:", error)
+        console.error("Error loading tag colors:", error)
+        setTagColors(new Map())
       } finally {
         setLoading(false)
       }
     }
 
-    loadTags()
-  }, [conversationId, organizationId])
+    loadTagColors()
+  }, [organizationId])
 
-  // ✨ Función para obtener color de contraste
-  const getContrastColor = (hexColor: string): string => {
-    const r = parseInt(hexColor.slice(1, 3), 16)
-    const g = parseInt(hexColor.slice(3, 5), 16)
-    const b = parseInt(hexColor.slice(5, 7), 16)
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-    return luminance > 0.5 ? '#000000' : '#ffffff'
-  }
+  return { tagColors, loading }
+}
 
-  if (loading || !tags || tags.length === 0) {
+// Actualizar la interface
+interface ConversationTagsProps {
+  tags: Array<{ 
+    id: string
+    tag_name: string
+    created_at: string
+    color?: string
+  }> | undefined
+  tagColors: Map<string, string>
+  colorsLoading: boolean
+}
+
+// Componente para las etiquetas de conversación
+const ConversationTags: React.FC<ConversationTagsProps> = ({ tags, tagColors, colorsLoading }) => {
+  if (!tags || tags.length === 0) {
     return null
   }
 
@@ -599,39 +604,96 @@ const ConversationTags: React.FC<ConversationTagsProps> = ({ conversationId, org
 
   return (
     <div className="flex items-center gap-1 mt-1">
-      {visibleTags.map((tag) => (
-        <Badge
-          key={tag.tag_id}
-          style={{
-            backgroundColor: tag.color,
-            color: getContrastColor(tag.color)
-          }}
-          className="text-xs px-2 py-0.5 border-0"
-        >
-          {tag.tag_name}
-        </Badge>
-      ))}
+      {visibleTags.map((tag) => {
+        // Si los colores están cargando, mostrar un placeholder
+        if (colorsLoading) {
+          return (
+            <div
+              key={tag.id}
+              className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 animate-pulse"
+            >
+              <div className="w-12 h-3 bg-gray-300 rounded"></div>
+            </div>
+          )
+        }
+
+        // Usar los colores cargados
+        const hexColor = tag.color || tagColors.get(tag.tag_name) || "#8B5CF6"
+        const tagStyle = generateTagStyle(hexColor)
+        
+        return (
+          <span
+            key={tag.id}
+            className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border-0 shadow-sm"
+            style={tagStyle.style}
+          >
+            {tag.tag_name}
+          </span>
+        )
+      })}
       {remainingCount > 0 && (
-        <Badge variant="secondary" className="text-xs px-2 py-0.5">
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200 shadow-sm">
           +{remainingCount}
-        </Badge>
+        </span>
       )}
     </div>
   )
 }
 
+// Mover useTagColors al componente ChatList principal
 export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [viewMode, setViewMode] = useState<"all" | "assigned">("all")
-
+  const [assignedCount, setAssignedCount] = useState(0)
   const { userProfile } = useAuth()
+
   const organizationId = userProfile?.organization_id
   const organizationIdNumber = organizationId ? Number(organizationId) : undefined
-
-  const { conversations, loading, error, refetch } = useConversations(organizationId?.toString(), viewMode)
+  
+  // Cargar colores a nivel superior
+  const { tagColors, loading: colorsLoading } = useTagColors(organizationIdNumber)
+  const { conversations, loading, error, refetch } = useConversations(organizationId, viewMode, userProfile?.id)
 
   // Hook para conteo total de mensajes no leídos
   const { totalUnread } = useTotalUnreadMessages(organizationIdNumber)
+
+  // ✨ Obtener conteo de conversaciones asignadas usando la nueva tabla
+  useEffect(() => {
+    const fetchAssignedCount = async () => {
+      if (!userProfile?.id || !organizationIdNumber) {
+        setAssignedCount(0)
+        return
+      }
+
+      try {
+        // Consultar la tabla users_conversations para obtener conversaciones asignadas al usuario actual
+        const { data, error } = await supabase
+          .from("users_conversations")
+          .select(`
+            conversation_id,
+            conversations!inner(
+              id,
+              organization_id
+            )
+          `)
+          .eq("user_id", userProfile.id)
+          .eq("conversations.organization_id", organizationIdNumber)
+
+        if (error) {
+          console.error("Error fetching assigned conversations count:", error)
+          setAssignedCount(0)
+          return
+        }
+
+        setAssignedCount(data?.length || 0)
+      } catch (error) {
+        console.error("Error fetching assigned conversations count:", error)
+        setAssignedCount(0)
+      }
+    }
+
+    fetchAssignedCount()
+  }, [userProfile?.id, organizationIdNumber, conversations]) // Recalcular cuando cambien las conversaciones
 
   const filteredConversations = conversations
     .filter(
@@ -653,6 +715,7 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
 
   const formatTimestamp = (timestamp: string | null | undefined) => {
     if (!timestamp) return ""
+
     const date = new Date(timestamp)
     const now = new Date()
     const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60)
@@ -672,8 +735,6 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
     }
     return "Nueva conversación"
   }
-
-  const assignedCount = conversations.filter((conv) => conv.assigned_user_ids?.includes(userProfile?.id || "")).length
 
   if (loading) {
     return (
@@ -743,6 +804,7 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
             <span className="ml-2 text-gray-500">({assignedCount})</span>
           </div>
         </div>
+
         <div
           className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-50 ${
             viewMode === "all" ? "bg-green-50 border-r-4 border-green-500" : ""
@@ -788,15 +850,22 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
                 selectedChatId === conversation.id
                   ? "bg-blue-50"
                   : conversation.unread_count > 0
-                  ? "bg-green-50 hover:bg-green-100 border-l-4 border-l-green-500"
-                  : ""
+                    ? "bg-green-50 hover:bg-green-100 border-l-4 border-l-green-500"
+                    : ""
               }`}
             >
               {/* Avatar con icono del canal en la esquina */}
               <div className="relative">
                 <Avatar className="h-12 w-12">
+                  {conversation.client?.avatar_url && (
+                    <AvatarImage
+                      src={conversation.client.avatar_url || "/placeholder.svg"}
+                      alt={conversation.client?.name || "Usuario"}
+                    />
+                  )}
                   <AvatarFallback>{conversation.client?.name?.charAt(0) || "U"}</AvatarFallback>
                 </Avatar>
+
                 {/* Icono del canal en la esquina inferior derecha */}
                 <div className="absolute -bottom-0.5 -right-0.5 bg-white rounded-full p-0.5 border border-gray-200 shadow-sm">
                   <ChannelIcon channelName={conversation.canales_organization?.canal?.nombre || "whatsapp"} />
@@ -822,10 +891,10 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
                     </div>
                   )}
                 </div>
-                {/* ✨ Etiquetas con colores consistentes */}
                 <ConversationTags 
-                  conversationId={conversation.id} 
-                  organizationId={organizationIdNumber} 
+                  tags={conversation.conversation_tags} 
+                  tagColors={tagColors}
+                  colorsLoading={colorsLoading}
                 />
               </div>
             </div>

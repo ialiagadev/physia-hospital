@@ -360,15 +360,33 @@ export async function createConversation({
   }
 }
 
+// Función actualizada para asignar un usuario individual (legacy)
 export async function assignConversation(conversationId: string, userId: string) {
   try {
+    // Verificar si ya existe la asignación
+    const { data: existing, error: checkError } = await supabase
+      .from("users_conversations")
+      .select("conversation_id")
+      .eq("conversation_id", conversationId)
+      .eq("user_id", userId)
+      .single()
+
+    if (checkError && checkError.code !== 'PGRST116') {
+      throw checkError
+    }
+
+    // Si ya existe, no hacer nada
+    if (existing) {
+      return { success: true, message: "Usuario ya asignado" }
+    }
+
+    // Insertar nueva asignación
     const { data, error } = await supabase
-      .from("conversations")
-      .update({
-        assigned_user_id: userId,
-        status: "active",
+      .from("users_conversations")
+      .insert({
+        conversation_id: conversationId,
+        user_id: userId
       })
-      .eq("id", conversationId)
       .select()
       .single()
 
@@ -380,6 +398,46 @@ export async function assignConversation(conversationId: string, userId: string)
     return data
   } catch (error) {
     console.error("Error in assignConversation:", error)
+    throw error
+  }
+}
+
+export async function unassignConversation(conversationId: string, userId: string) {
+  try {
+    const { error } = await supabase
+      .from("users_conversations")
+      .delete()
+      .eq("conversation_id", conversationId)
+      .eq("user_id", userId)
+
+    if (error) {
+      console.error("Error unassigning conversation:", error)
+      throw error
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error("Error in unassignConversation:", error)
+    throw error
+  }
+}
+
+// Nueva función para obtener los IDs de usuarios asignados
+export async function getAssignedUserIds(conversationId: string): Promise<string[]> {
+  try {
+    const { data, error } = await supabase
+      .from("users_conversations")
+      .select("user_id")
+      .eq("conversation_id", conversationId)
+
+    if (error) {
+      console.error("Error getting assigned user IDs:", error)
+      throw error
+    }
+
+    return data?.map(item => item.user_id) || []
+  } catch (error) {
+    console.error("Error in getAssignedUserIds:", error)
     throw error
   }
 }
