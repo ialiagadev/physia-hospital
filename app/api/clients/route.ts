@@ -1,66 +1,106 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { supabase } from "@/lib/supabase/client"
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const organizationId = searchParams.get("organization_id")
+    const organizationId = parseInt(searchParams.get('organization_id') || '0')
+    const page = parseInt(searchParams.get('page') || '1')
+    const limit = parseInt(searchParams.get('limit') || '12')
+    const search = searchParams.get('search')
+    const tagFilter = searchParams.get('tag_filter')
+    const tagType = searchParams.get('tag_type')
 
-    let query = supabase.from("clients").select("*").eq("is_active", true).order("name")
-
-    if (organizationId) {
-      query = query.eq("organization_id", Number.parseInt(organizationId))
+    if (!organizationId) {
+      return NextResponse.json(
+        { error: 'Organization ID is required' },
+        { status: 400 }
+      )
     }
 
-    const { data, error } = await query
+    // Usar la función SQL optimizada
+    const { data, error } = await supabase.rpc('get_clients_paginated_unified', {
+      p_organization_id: organizationId,
+      p_page: page,
+      p_limit: limit,
+      p_search: search,
+      p_tag_filter: tagFilter,
+      p_tag_type: tagType
+    })
 
     if (error) {
-      console.error("Error fetching clients:", error)
-      return NextResponse.json({ error: error.message }, { status: 400 })
+      console.error('Error fetching clients:', error)
+      return NextResponse.json(
+        { error: 'Failed to fetch clients' },
+        { status: 500 }
+      )
     }
 
-    return NextResponse.json(data || [])
+    // Procesar los resultados
+    const clients = data.map((row: any) => row.client_data)
+    const totalCount = data[0]?.total_count || 0
+    const totalPages = data[0]?.total_pages || 1
+
+    return NextResponse.json({
+      data: clients,
+      total: totalCount,
+      page,
+      limit,
+      totalPages
+    })
+
   } catch (error) {
-    console.error("API Error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    console.error('API Error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
+    const { name, email, phone, organization_id } = body
 
-    console.log("Creating client with data:", body)
-
-    // Validar datos requeridos
-    if (!body.name || !body.organization_id) {
-      return NextResponse.json({ error: "Name and organization_id are required" }, { status: 400 })
+    if (!name || !email || !organization_id) {
+      return NextResponse.json(
+        { error: 'Name, email, and organization_id are required' },
+        { status: 400 }
+      )
     }
 
     const { data, error } = await supabase
-      .from("clients")
+      .from('clients')
       .insert({
-        name: body.name,
-        phone: body.phone || null,
-        email: body.email || null,
-        address: body.address || null,
-        birth_date: body.birth_date || null,
-        notes: body.notes || null,
-        organization_id: Number.parseInt(body.organization_id),
-        is_active: true,
+        name,
+        email,
+        phone,
+        organization_id
       })
       .select()
       .single()
 
     if (error) {
-      console.error("Error creating client:", error)
-      return NextResponse.json({ error: error.message }, { status: 400 })
+      console.error('Error creating client:', error)
+      return NextResponse.json(
+        { error: 'Failed to create client' },
+        { status: 500 }
+      )
     }
 
-    console.log("Client created successfully:", data)
     return NextResponse.json(data)
+
   } catch (error) {
-    console.error("API Error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    console.error('API Error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
   }
 }

@@ -1,10 +1,10 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect, useCallback, useRef } from "react"
-import { Search, MoreVertical, Users, MessageCircle, Plus, Phone } from "lucide-react"
+import { Search, MoreVertical, Users, MessageCircle, Plus, Phone } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -14,6 +14,7 @@ import { createConversation } from "@/lib/chatActions"
 import { useConversations } from "@/hooks/use-conversations"
 import { useClients } from "@/hooks/use-clients"
 import { useAuth } from "@/app/contexts/auth-context"
+import { supabase } from "@/lib/supabase/client"
 import type { ConversationWithLastMessage } from "@/types/chat"
 import type { Client } from "@/types/calendar"
 import { useTotalUnreadMessages } from "@/hooks/use-unread-messages"
@@ -122,10 +123,9 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
   const [contactSearch, setContactSearch] = useState("")
   const [searchResults, setSearchResults] = useState<Client[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
-
   const [loading, setLoading] = useState(false)
-  const { userProfile } = useAuth()
 
+  const { userProfile } = useAuth()
   const organizationId = userProfile?.organization_id
   const organizationIdNumber = organizationId ? Number(organizationId) : undefined
   const { searchClientsServer } = useClients(organizationIdNumber)
@@ -241,8 +241,6 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
           name: selectedClient.name,
           phone: selectedClient.phone || undefined,
           email: selectedClient.email || undefined,
-          external_id: selectedClient.external_id || `client-${selectedClient.id}`,
-          avatar_url: selectedClient.avatar_url || undefined,
         },
         initialMessage: initialMessage || "¡Hola! ¿En qué puedo ayudarte?",
         existingClientId: selectedClient.id,
@@ -366,8 +364,7 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
                 />
               </div>
               <p className="text-sm text-gray-500">
-                Número completo: {selectedPrefix}
-                {phoneNumber}
+                Número completo: {selectedPrefix}{phoneNumber}
               </p>
             </div>
 
@@ -462,9 +459,6 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
                         }`}
                       >
                         <Avatar className="h-8 w-8">
-                          {client.avatar_url && (
-                            <AvatarImage src={client.avatar_url || "/placeholder.svg"} alt={client.name} />
-                          )}
                           <AvatarFallback className="text-xs">{client.name.charAt(0)}</AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">
@@ -538,29 +532,65 @@ interface ChatListProps {
   onChatSelect: (chatId: string) => void
 }
 
-// Interface y componente para las etiquetas de conversación
+// ✨ Interface actualizada para las etiquetas de conversación
+interface ConversationTag {
+  tag_id: string
+  tag_name: string
+  color: string
+}
+
 interface ConversationTagsProps {
-  tags: Array<{ id: string; tag_name: string; created_at: string }> | undefined
+  conversationId: string
+  organizationId?: number
 }
 
-const getTagColor = (tagName: string) => {
-  const predefinedTags = [
-    { name: "Consulta General", color: "bg-blue-100 text-blue-800" },
-    { name: "Urgente", color: "bg-red-100 text-red-800" },
-    { name: "Seguimiento", color: "bg-green-100 text-green-800" },
-    { name: "Cita Pendiente", color: "bg-yellow-100 text-yellow-800" },
-    { name: "Tratamiento", color: "bg-purple-100 text-purple-800" },
-    { name: "Rehabilitación", color: "bg-indigo-100 text-indigo-800" },
-    { name: "Dolor Crónico", color: "bg-orange-100 text-orange-800" },
-    { name: "Primera Consulta", color: "bg-cyan-100 text-cyan-800" },
-  ]
+// ✨ Componente actualizado para mostrar etiquetas con colores consistentes
+const ConversationTags: React.FC<ConversationTagsProps> = ({ conversationId, organizationId }) => {
+  const [tags, setTags] = useState<ConversationTag[]>([])
+  const [loading, setLoading] = useState(false)
 
-  const predefined = predefinedTags.find((t) => t.name === tagName)
-  return predefined?.color || "bg-blue-100 text-blue-800" // Azul para etiquetas personalizadas
-}
+  useEffect(() => {
+    if (!conversationId || !organizationId) return
 
-const ConversationTags: React.FC<ConversationTagsProps> = ({ tags }) => {
-  if (!tags || tags.length === 0) {
+    const loadTags = async () => {
+      setLoading(true)
+      try {
+        const { data, error } = await supabase
+          .from("conversation_tags_view")
+          .select("tag_id, tag_name, color")
+          .eq("conversation_id", conversationId)
+          .eq("organization_id", organizationId)
+          .order("tag_name", { ascending: true })
+
+        if (error) throw error
+
+        const tagsData: ConversationTag[] = (data || []).map(item => ({
+          tag_id: item.tag_id,
+          tag_name: item.tag_name,
+          color: item.color
+        }))
+
+        setTags(tagsData)
+      } catch (error) {
+        console.error("Error loading conversation tags:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadTags()
+  }, [conversationId, organizationId])
+
+  // ✨ Función para obtener color de contraste
+  const getContrastColor = (hexColor: string): string => {
+    const r = parseInt(hexColor.slice(1, 3), 16)
+    const g = parseInt(hexColor.slice(3, 5), 16)
+    const b = parseInt(hexColor.slice(5, 7), 16)
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    return luminance > 0.5 ? '#000000' : '#ffffff'
+  }
+
+  if (loading || !tags || tags.length === 0) {
     return null
   }
 
@@ -570,17 +600,21 @@ const ConversationTags: React.FC<ConversationTagsProps> = ({ tags }) => {
   return (
     <div className="flex items-center gap-1 mt-1">
       {visibleTags.map((tag) => (
-        <span
-          key={tag.id}
-          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${getTagColor(tag.tag_name)}`}
+        <Badge
+          key={tag.tag_id}
+          style={{
+            backgroundColor: tag.color,
+            color: getContrastColor(tag.color)
+          }}
+          className="text-xs px-2 py-0.5 border-0"
         >
           {tag.tag_name}
-        </span>
+        </Badge>
       ))}
       {remainingCount > 0 && (
-        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">
+        <Badge variant="secondary" className="text-xs px-2 py-0.5">
           +{remainingCount}
-        </span>
+        </Badge>
       )}
     </div>
   )
@@ -589,11 +623,12 @@ const ConversationTags: React.FC<ConversationTagsProps> = ({ tags }) => {
 export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [viewMode, setViewMode] = useState<"all" | "assigned">("all")
-  const { userProfile } = useAuth()
 
+  const { userProfile } = useAuth()
   const organizationId = userProfile?.organization_id
   const organizationIdNumber = organizationId ? Number(organizationId) : undefined
-  const { conversations, loading, error, refetch } = useConversations(organizationId, viewMode)
+
+  const { conversations, loading, error, refetch } = useConversations(organizationId?.toString(), viewMode)
 
   // Hook para conteo total de mensajes no leídos
   const { totalUnread } = useTotalUnreadMessages(organizationIdNumber)
@@ -618,7 +653,6 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
 
   const formatTimestamp = (timestamp: string | null | undefined) => {
     if (!timestamp) return ""
-
     const date = new Date(timestamp)
     const now = new Date()
     const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60)
@@ -709,7 +743,6 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
             <span className="ml-2 text-gray-500">({assignedCount})</span>
           </div>
         </div>
-
         <div
           className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-50 ${
             viewMode === "all" ? "bg-green-50 border-r-4 border-green-500" : ""
@@ -755,22 +788,15 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
                 selectedChatId === conversation.id
                   ? "bg-blue-50"
                   : conversation.unread_count > 0
-                    ? "bg-green-50 hover:bg-green-100 border-l-4 border-l-green-500"
-                    : ""
+                  ? "bg-green-50 hover:bg-green-100 border-l-4 border-l-green-500"
+                  : ""
               }`}
             >
               {/* Avatar con icono del canal en la esquina */}
               <div className="relative">
                 <Avatar className="h-12 w-12">
-                  {conversation.client?.avatar_url && (
-                    <AvatarImage
-                      src={conversation.client.avatar_url || "/placeholder.svg"}
-                      alt={conversation.client?.name || "Usuario"}
-                    />
-                  )}
                   <AvatarFallback>{conversation.client?.name?.charAt(0) || "U"}</AvatarFallback>
                 </Avatar>
-
                 {/* Icono del canal en la esquina inferior derecha */}
                 <div className="absolute -bottom-0.5 -right-0.5 bg-white rounded-full p-0.5 border border-gray-200 shadow-sm">
                   <ChannelIcon channelName={conversation.canales_organization?.canal?.nombre || "whatsapp"} />
@@ -796,7 +822,11 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
                     </div>
                   )}
                 </div>
-                <ConversationTags tags={conversation.conversation_tags} />
+                {/* ✨ Etiquetas con colores consistentes */}
+                <ConversationTags 
+                  conversationId={conversation.id} 
+                  organizationId={organizationIdNumber} 
+                />
               </div>
             </div>
           ))

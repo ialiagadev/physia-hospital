@@ -9,10 +9,11 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/hooks/use-toast"
 import { AssignUsersDialog } from "@/components/assign-users-dialog"
-import { Users, UserPlus, StickyNote, X, Bot, UserIcon, Sparkles, Tag } from "lucide-react"
+import { Users, UserPlus, StickyNote, X, Bot, UserIcon, Sparkles, Tag } from 'lucide-react'
 import { useAssignedUsers } from "@/hooks/use-assigned-users"
 import { supabase } from "@/lib/supabase/client"
-import type { Conversation, User, ConversationTag, ConversationNote } from "@/types/chat"
+import { useAuth } from "@/app/contexts/auth-context"
+import type { Conversation, User, ConversationNote } from "@/types/chat"
 
 interface ConversationProfilePanelProps {
   isOpen: boolean
@@ -20,19 +21,28 @@ interface ConversationProfilePanelProps {
   conversation: Conversation | null
   currentUser: User
   onAssignmentChange: () => void
-  onTagsChange?: () => void // Agregar esta línea
+  onTagsChange?: () => void
 }
 
-// Etiquetas predefinidas para conversaciones médicas
+// ✨ Interfaz actualizada para etiquetas con tag_id
+interface ConversationTagWithDetails {
+  id: string
+  tag_id: string
+  tag_name: string
+  color: string
+  created_at: string
+}
+
+// ✨ Etiquetas predefinidas actualizadas con colores hexadecimales
 const predefinedTags = [
-  { name: "Consulta General", color: "bg-blue-100 text-blue-800" },
-  { name: "Urgente", color: "bg-red-100 text-red-800" },
-  { name: "Seguimiento", color: "bg-green-100 text-green-800" },
-  { name: "Cita Pendiente", color: "bg-yellow-100 text-yellow-800" },
-  { name: "Tratamiento", color: "bg-purple-100 text-purple-800" },
-  { name: "Rehabilitación", color: "bg-indigo-100 text-indigo-800" },
-  { name: "Dolor Crónico", color: "bg-orange-100 text-orange-800" },
-  { name: "Primera Consulta", color: "bg-cyan-100 text-cyan-800" },
+  { name: "Consulta General", color: "#3B82F6" },
+  { name: "Urgente", color: "#EF4444" },
+  { name: "Seguimiento", color: "#10B981" },
+  { name: "Cita Pendiente", color: "#F59E0B" },
+  { name: "Tratamiento", color: "#8B5CF6" },
+  { name: "Rehabilitación", color: "#6366F1" },
+  { name: "Dolor Crónico", color: "#F97316" },
+  { name: "Primera Consulta", color: "#06B6D4" },
 ]
 
 const getChannelIcon = (channel?: string) => {
@@ -95,6 +105,14 @@ const formatTime = (dateStr: string) => {
   }
 }
 
+const getContrastColor = (hexColor: string): string => {
+  const r = parseInt(hexColor.slice(1, 3), 16)
+  const g = parseInt(hexColor.slice(3, 5), 16)
+  const b = parseInt(hexColor.slice(5, 7), 16)
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+  return luminance > 0.5 ? '#000000' : '#ffffff'
+}
+
 export function ConversationProfilePanel({
   isOpen,
   onOpenChange,
@@ -104,7 +122,8 @@ export function ConversationProfilePanel({
   onTagsChange,
 }: ConversationProfilePanelProps) {
   const [newTagName, setNewTagName] = useState("")
-  const [selectedTags, setSelectedTags] = useState<ConversationTag[]>([])
+  const [selectedTags, setSelectedTags] = useState<ConversationTagWithDetails[]>([])
+  const [availableOrgTags, setAvailableOrgTags] = useState<any[]>([])
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false)
   const [tagsLoading, setTagsLoading] = useState(false)
 
@@ -112,6 +131,8 @@ export function ConversationProfilePanel({
   const [notes, setNotes] = useState<ConversationNote[]>([])
   const [newNote, setNewNote] = useState("")
   const [notesLoading, setNotesLoading] = useState(false)
+
+  const { userProfile } = useAuth()
 
   // Hook para obtener usuarios asignados REALES
   const {
@@ -125,23 +146,34 @@ export function ConversationProfilePanel({
     if (conversation?.id) {
       loadConversationTags()
       loadConversationNotes()
+      loadAvailableOrgTags()
     }
   }, [conversation?.id])
 
+  // ✨ Cargar etiquetas de la conversación usando la vista optimizada
   const loadConversationTags = async () => {
     if (!conversation?.id) return
 
     setTagsLoading(true)
     try {
       const { data, error } = await supabase
-        .from("conversation_tags")
+        .from("conversation_tags_view")
         .select("*")
         .eq("conversation_id", conversation.id)
-        .order("created_at", { ascending: false })
+        .order("assigned_at", { ascending: false })
 
       if (error) throw error
 
-      setSelectedTags(data || [])
+      // ✨ Mapear a la interfaz esperada
+      const tagsWithDetails: ConversationTagWithDetails[] = (data || []).map(item => ({
+        id: item.assignment_id,
+        tag_id: item.tag_id,
+        tag_name: item.tag_name,
+        color: item.color,
+        created_at: item.assigned_at
+      }))
+
+      setSelectedTags(tagsWithDetails)
     } catch (error) {
       console.error("Error loading tags:", error)
       toast({
@@ -151,6 +183,25 @@ export function ConversationProfilePanel({
       })
     } finally {
       setTagsLoading(false)
+    }
+  }
+
+  // ✨ Cargar etiquetas disponibles de la organización
+  const loadAvailableOrgTags = async () => {
+    if (!userProfile?.organization_id) return
+
+    try {
+      const { data, error } = await supabase
+        .from("organization_tags")
+        .select("*")
+        .eq("organization_id", userProfile.organization_id)
+        .order("tag_name", { ascending: true })
+
+      if (error) throw error
+
+      setAvailableOrgTags(data || [])
+    } catch (error) {
+      console.error("Error loading organization tags:", error)
     }
   }
 
@@ -243,12 +294,13 @@ export function ConversationProfilePanel({
     }
   }
 
+  // ✨ Crear nueva etiqueta y asignarla (diseño optimizado)
   const handleAddTag = async () => {
-    if (!newTagName.trim() || !conversation?.id) return
+    if (!newTagName.trim() || !conversation?.id || !userProfile?.organization_id) return
 
     const tagName = newTagName.trim()
 
-    // Verificar si la etiqueta ya existe
+    // Verificar si la etiqueta ya existe en la conversación
     if (selectedTags.some((tag) => tag.tag_name === tagName)) {
       toast({
         title: "Etiqueta duplicada",
@@ -260,11 +312,56 @@ export function ConversationProfilePanel({
 
     setTagsLoading(true)
     try {
+      // ✨ Paso 1: Crear o obtener la etiqueta en organization_tags
+      let orgTag = availableOrgTags.find(tag => tag.tag_name === tagName)
+      
+      if (!orgTag) {
+        const { data: newOrgTag, error: orgError } = await supabase
+          .from("organization_tags")
+          .insert({
+            organization_id: userProfile.organization_id,
+            tag_name: tagName,
+            color: "#8B5CF6", // Color por defecto
+            created_by: currentUser.id
+          })
+          .select()
+          .single()
+
+        if (orgError) throw orgError
+        orgTag = newOrgTag
+        setAvailableOrgTags(prev => [...prev, orgTag])
+      }
+
+      // ✨ Paso 2: Verificar si ya existe la asignación
+      const { data: existing, error: checkError } = await supabase
+        .from("conversation_tags")
+        .select("id")
+        .eq("tag_id", orgTag.id)
+        .eq("conversation_id", conversation.id)
+        .eq("organization_id", userProfile.organization_id)
+        .single()
+
+      if (checkError && checkError.code !== 'PGRST116') {
+        throw checkError
+      }
+
+      if (existing) {
+        toast({
+          title: "Etiqueta duplicada",
+          description: "Esta etiqueta ya existe en la conversación",
+          variant: "destructive",
+        })
+        return
+      }
+
+      // ✨ Paso 3: Asignar la etiqueta a la conversación usando tag_id
       const { data, error } = await supabase
         .from("conversation_tags")
         .insert({
+          tag_id: orgTag.id,
           conversation_id: conversation.id,
-          tag_name: tagName,
+          client_id: conversation.client?.id || null,
+          organization_id: userProfile.organization_id,
           created_by: currentUser.id,
         })
         .select()
@@ -272,7 +369,16 @@ export function ConversationProfilePanel({
 
       if (error) throw error
 
-      setSelectedTags((prev) => [data, ...prev])
+      // ✨ Actualizar estado local con datos completos
+      const newTagWithDetails: ConversationTagWithDetails = {
+        id: data.id,
+        tag_id: orgTag.id,
+        tag_name: orgTag.tag_name,
+        color: orgTag.color,
+        created_at: data.created_at
+      }
+
+      setSelectedTags((prev) => [newTagWithDetails, ...prev])
       setNewTagName("")
 
       if (onTagsChange) {
@@ -295,10 +401,11 @@ export function ConversationProfilePanel({
     }
   }
 
+  // ✨ Asignar etiqueta predefinida (diseño optimizado)
   const handleAddPredefinedTag = async (tagName: string) => {
-    if (!conversation?.id) return
+    if (!conversation?.id || !userProfile?.organization_id) return
 
-    // Verificar si la etiqueta ya existe
+    // Verificar si la etiqueta ya existe en la conversación
     if (selectedTags.some((tag) => tag.tag_name === tagName)) {
       toast({
         title: "Etiqueta duplicada",
@@ -310,11 +417,60 @@ export function ConversationProfilePanel({
 
     setTagsLoading(true)
     try {
+      // ✨ Buscar color predefinido
+      const predefinedTag = predefinedTags.find(t => t.name === tagName)
+      const tagColor = predefinedTag?.color || "#8B5CF6"
+
+      // ✨ Paso 1: Crear o obtener la etiqueta en organization_tags
+      let orgTag = availableOrgTags.find(tag => tag.tag_name === tagName)
+      
+      if (!orgTag) {
+        const { data: newOrgTag, error: orgError } = await supabase
+          .from("organization_tags")
+          .insert({
+            organization_id: userProfile.organization_id,
+            tag_name: tagName,
+            color: tagColor,
+            created_by: currentUser.id
+          })
+          .select()
+          .single()
+
+        if (orgError) throw orgError
+        orgTag = newOrgTag
+        setAvailableOrgTags(prev => [...prev, orgTag])
+      }
+
+      // ✨ Paso 2: Verificar si ya existe la asignación
+      const { data: existing, error: checkError } = await supabase
+        .from("conversation_tags")
+        .select("id")
+        .eq("tag_id", orgTag.id)
+        .eq("conversation_id", conversation.id)
+        .eq("organization_id", userProfile.organization_id)
+        .single()
+
+      if (checkError && checkError.code !== 'PGRST116') {
+        throw checkError
+      }
+
+      if (existing) {
+        toast({
+          title: "Etiqueta duplicada",
+          description: "Esta etiqueta ya existe en la conversación",
+          variant: "destructive",
+        })
+        return
+      }
+
+      // ✨ Paso 3: Asignar la etiqueta a la conversación usando tag_id
       const { data, error } = await supabase
         .from("conversation_tags")
         .insert({
+          tag_id: orgTag.id,
           conversation_id: conversation.id,
-          tag_name: tagName,
+          client_id: conversation.client?.id || null,
+          organization_id: userProfile.organization_id,
           created_by: currentUser.id,
         })
         .select()
@@ -322,7 +478,16 @@ export function ConversationProfilePanel({
 
       if (error) throw error
 
-      setSelectedTags((prev) => [data, ...prev])
+      // ✨ Actualizar estado local con datos completos
+      const newTagWithDetails: ConversationTagWithDetails = {
+        id: data.id,
+        tag_id: orgTag.id,
+        tag_name: orgTag.tag_name,
+        color: orgTag.color,
+        created_at: data.created_at
+      }
+
+      setSelectedTags((prev) => [newTagWithDetails, ...prev])
 
       if (onTagsChange) {
         onTagsChange()
@@ -344,19 +509,19 @@ export function ConversationProfilePanel({
     }
   }
 
-  const handleRemoveTag = async (tagId: string) => {
+  // ✨ Eliminar etiqueta (sin cambios, sigue usando el ID de asignación)
+  const handleRemoveTag = async (assignmentId: string) => {
     setTagsLoading(true)
     try {
-      console.log("🗑️ Attempting to delete tag:", tagId)
-
-      const { error } = await supabase.from("conversation_tags").delete().eq("id", tagId)
+      const { error } = await supabase
+        .from("conversation_tags")
+        .delete()
+        .eq("id", assignmentId)
 
       if (error) throw error
 
-      // Actualizar el estado local inmediatamente
-      setSelectedTags((prev) => prev.filter((tag) => tag.id !== tagId))
+      setSelectedTags((prev) => prev.filter((tag) => tag.id !== assignmentId))
 
-      // Llamar al callback para actualizar el ChatList
       if (onTagsChange) {
         onTagsChange()
       }
@@ -365,8 +530,6 @@ export function ConversationProfilePanel({
         title: "Etiqueta eliminada",
         description: "La etiqueta ha sido eliminada de la conversación",
       })
-
-      console.log("✅ Tag deleted successfully:", tagId)
     } catch (error) {
       console.error("Error removing tag:", error)
       toast({
@@ -408,11 +571,6 @@ export function ConversationProfilePanel({
 
   const handleAssignmentChangeInternal = () => {
     onAssignmentChange()
-  }
-
-  const getTagColor = (tagName: string) => {
-    const predefined = predefinedTags.find((t) => t.name === tagName)
-    return predefined?.color || "bg-blue-100 text-blue-800" // Azul para etiquetas personalizadas
   }
 
   if (!conversation) return null
@@ -618,21 +776,25 @@ export function ConversationProfilePanel({
             </Button>
           </div>
 
-          {/* Sección de Etiquetas */}
+          {/* ✨ Sección de Etiquetas - Actualizada para usar colores consistentes */}
           <div>
             <div className="flex items-center gap-2 mb-3">
               <Tag className="w-5 h-5 text-green-600" />
-              <h4 className="font-medium">Etiquetas</h4>
+              <h4 className="font-medium">Etiquetas de Conversación</h4>
             </div>
 
-            {/* Etiquetas seleccionadas */}
+            {/* ✨ Etiquetas seleccionadas con colores consistentes */}
             {selectedTags.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-3">
                 {selectedTags.map((tag) => (
                   <Badge
                     key={tag.id}
-                    variant="secondary"
-                    className={`text-xs ${getTagColor(tag.tag_name)} cursor-pointer`}
+                    style={{ 
+                      backgroundColor: tag.color, 
+                      color: getContrastColor(tag.color),
+                      boxShadow: `0 2px 8px ${tag.color}40`
+                    }}
+                    className="text-xs px-3 py-1 rounded-xl font-medium cursor-pointer hover:scale-105 transition-all duration-200 border-0"
                     onClick={() => handleRemoveTag(tag.id)}
                   >
                     {tag.tag_name}
@@ -665,7 +827,7 @@ export function ConversationProfilePanel({
               </Button>
             </div>
 
-            {/* Etiquetas predefinidas disponibles */}
+            {/* ✨ Etiquetas predefinidas disponibles con colores consistentes */}
             <div className="space-y-2">
               <p className="text-sm font-medium text-gray-700">Etiquetas disponibles:</p>
               <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
@@ -674,8 +836,12 @@ export function ConversationProfilePanel({
                   .map((predefinedTag) => (
                     <Badge
                       key={predefinedTag.name}
-                      variant="outline"
-                      className="text-xs cursor-pointer hover:bg-gray-50"
+                      style={{
+                        backgroundColor: 'transparent',
+                        color: predefinedTag.color,
+                        borderColor: predefinedTag.color
+                      }}
+                      className="text-xs cursor-pointer hover:scale-105 transition-all duration-200 border"
                       onClick={() => handleAddPredefinedTag(predefinedTag.name)}
                     >
                       {predefinedTag.name}

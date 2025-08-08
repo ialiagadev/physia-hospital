@@ -18,154 +18,182 @@ export function useConversations(
   // Caché local de tags por conversation_id para optimizar DELETE events
   const tagsCache = useRef<Map<string, ConversationTag[]>>(new Map())
 
-  const fetchConversations = useCallback(
-    async (skipLoading = false) => {
-      const now = Date.now()
-      if (now - lastFetchRef.current < 500) {
-        return
+  const fetchConversations = useCallback(async (skipLoading = false) => {
+    const now = Date.now()
+    if (now - lastFetchRef.current < 500) {
+      return
+    }
+    lastFetchRef.current = now
+
+    try {
+      if (!skipLoading) {
+        setLoading(true)
       }
-      lastFetchRef.current = now
 
-      try {
-        if (!skipLoading) {
-          setLoading(true)
-        }
-
-        if (!organizationId) {
-          if (isMounted.current) {
-            setConversations([])
-            setLoading(false)
-          }
-          return
-        }
-
-        const orgIdNumber = Number(organizationId)
-        if (isNaN(orgIdNumber)) {
-          if (isMounted.current) {
-            setError("ID de organización inválido")
-            setLoading(false)
-          }
-          return
-        }
-
-        // Siempre obtener todas las conversaciones de la organización
-        // El filtrado por asignación se hace en el frontend para mejor flexibilidad
-        const query = supabase
-          .from("conversations")
-          .select(`
-            *,
-            client:clients(*),
-            canales_organization:canales_organizations(
-              id,
-              canal:canales(
-                id,
-                nombre,
-                descripcion,
-                imagen
-              )
-            ),
-            conversation_tags(
-              id,
-              conversation_id,
-              tag_name,
-              created_by,
-              created_at
-            )
-          `)
-          .eq("organization_id", orgIdNumber)
-
-        // Aplicar filtro de asignación si es necesario
-        if (viewMode === "assigned" && currentUserId) {
-          query.contains("assigned_user_ids", [currentUserId])
-        }
-
-        const { data: conversationsData, error: conversationsError } = await query.order("last_message_at", {
-          ascending: false,
-          nullsFirst: false,
-        })
-
-        if (conversationsError) {
-          if (isMounted.current) {
-            setError(conversationsError.message)
-          }
-          return
-        }
-
-        const conversationIds = (conversationsData || []).map((conv) => conv.id)
-
-        if (conversationIds.length === 0) {
-          if (isMounted.current) {
-            setConversations([])
-            setError(null)
-            setLoading(false)
-          }
-          return
-        }
-
-        const { data: lastMessages } = await supabase
-          .from("messages")
-          .select("*")
-          .in("conversation_id", conversationIds)
-          .order("created_at", { ascending: false })
-
-        const lastMessageMap = new Map()
-        if (lastMessages) {
-          for (const msg of lastMessages) {
-            if (!lastMessageMap.has(msg.conversation_id)) {
-              lastMessageMap.set(msg.conversation_id, msg)
-            }
-          }
-        }
-
-        const conversationsWithMessages = (conversationsData || []).map((conversation) => {
-          // Actualizar caché de tags
-          if (conversation.conversation_tags) {
-            tagsCache.current.set(conversation.id, conversation.conversation_tags)
-          }
-
-          return {
-            ...conversation,
-            last_message: lastMessageMap.get(conversation.id) || null,
-          }
-        })
-
+      if (!organizationId) {
         if (isMounted.current) {
-          setConversations(conversationsWithMessages)
-          setError(null)
-        }
-      } catch (err) {
-        if (isMounted.current) {
-          setError("Error inesperado al cargar conversaciones")
-        }
-      } finally {
-        if (isMounted.current) {
+          setConversations([])
           setLoading(false)
         }
+        return
       }
-    },
-    [organizationId, viewMode, currentUserId],
-  )
+
+      const orgIdNumber = Number(organizationId)
+      if (isNaN(orgIdNumber)) {
+        if (isMounted.current) {
+          setError("ID de organización inválido")
+          setLoading(false)
+        }
+        return
+      }
+
+      // ✨ Usar la vista optimizada conversation_tags_view
+      const query = supabase
+        .from("conversations")
+        .select(`
+          *,
+          client:clients(*),
+          canales_organization:canales_organizations(
+            id,
+            canal:canales(
+              id,
+              nombre,
+              descripcion,
+              imagen
+            )
+          )
+        `)
+        .eq("organization_id", orgIdNumber)
+
+      // Aplicar filtro de asignación si es necesario
+      if (viewMode === "assigned" && currentUserId) {
+        query.contains("assigned_user_ids", [currentUserId])
+      }
+
+      const { data: conversationsData, error: conversationsError } = await query.order("last_message_at", {
+        ascending: false,
+        nullsFirst: false,
+      })
+
+      if (conversationsError) {
+        if (isMounted.current) {
+          setError(conversationsError.message)
+        }
+        return
+      }
+
+      const conversationIds = (conversationsData || []).map((conv) => conv.id)
+      if (conversationIds.length === 0) {
+        if (isMounted.current) {
+          setConversations([])
+          setError(null)
+          setLoading(false)
+        }
+        return
+      }
+
+      // ✨ Cargar etiquetas usando la vista optimizada
+      const { data: tagsData } = await supabase
+        .from("conversation_tags_view")
+        .select("*")
+        .in("conversation_id", conversationIds)
+
+      // ✨ Cargar últimos mensajes
+      const { data: lastMessages } = await supabase
+        .from("messages")
+        .select("*")
+        .in("conversation_id", conversationIds)
+        .order("created_at", { ascending: false })
+
+      const lastMessageMap = new Map()
+      if (lastMessages) {
+        for (const msg of lastMessages) {
+          if (!lastMessageMap.has(msg.conversation_id)) {
+            lastMessageMap.set(msg.conversation_id, msg)
+          }
+        }
+      }
+
+      // ✨ Agrupar etiquetas por conversación
+      const tagsMap = new Map<string, ConversationTag[]>()
+      if (tagsData) {
+        for (const tagData of tagsData) {
+          const conversationId = tagData.conversation_id
+          if (!tagsMap.has(conversationId)) {
+            tagsMap.set(conversationId, [])
+          }
+          
+          // ✨ Mapear datos de la vista a la interfaz esperada con tipos correctos
+          const tag: ConversationTag = {
+            id: tagData.assignment_id,
+            conversation_id: tagData.conversation_id,
+            tag_name: tagData.tag_name,
+            created_by: tagData.created_by || "", // ✅ Usar string vacío en lugar de null
+            created_at: tagData.assigned_at
+          }
+          
+          tagsMap.get(conversationId)!.push(tag)
+        }
+      }
+
+      const conversationsWithMessages = (conversationsData || []).map((conversation) => {
+        const conversationTags = tagsMap.get(conversation.id) || []
+        
+        // Actualizar caché de tags
+        tagsCache.current.set(conversation.id, conversationTags)
+
+        return {
+          ...conversation,
+          last_message: lastMessageMap.get(conversation.id) || null,
+          conversation_tags: conversationTags,
+        }
+      })
+
+      if (isMounted.current) {
+        setConversations(conversationsWithMessages)
+        setError(null)
+      }
+    } catch (err) {
+      if (isMounted.current) {
+        setError("Error inesperado al cargar conversaciones")
+      }
+    } finally {
+      if (isMounted.current) {
+        setLoading(false)
+      }
+    }
+  }, [organizationId, viewMode, currentUserId])
 
   const updateConversationTags = useCallback(async (conversationId: string) => {
     try {
-      const { data: tags, error } = await supabase
-        .from("conversation_tags")
-        .select("id, conversation_id, tag_name, created_by, created_at")
+      // ✨ Usar la vista optimizada para obtener etiquetas
+      const { data: tagsData, error } = await supabase
+        .from("conversation_tags_view")
+        .select("*")
         .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: true })
+        .order("assigned_at", { ascending: true })
 
       if (error) {
         console.error("Error fetching tags:", error)
         return
       }
 
+      // ✨ Mapear datos de la vista a la interfaz esperada con tipos correctos
+      const tags: ConversationTag[] = (tagsData || []).map(tagData => ({
+        id: tagData.assignment_id,
+        conversation_id: tagData.conversation_id,
+        tag_name: tagData.tag_name,
+        created_by: tagData.created_by || "", // ✅ Usar string vacío en lugar de null
+        created_at: tagData.assigned_at
+      }))
+
       // Actualizar caché
-      tagsCache.current.set(conversationId, (tags || []) as ConversationTag[])
+      tagsCache.current.set(conversationId, tags)
 
       if (isMounted.current) {
         setConversations((prev) => {
           return prev.map((conv) =>
-            conv.id === conversationId ? { ...conv, conversation_tags: (tags || []) as ConversationTag[] } : conv,
+            conv.id === conversationId ? { ...conv, conversation_tags: tags } : conv,
           )
         })
       }
@@ -179,7 +207,6 @@ export function useConversations(
     (tagId: string) => {
       // Buscar en qué conversación estaba este tag usando el caché
       let targetConversationId: string | null = null
-
       for (const [conversationId, tags] of tagsCache.current.entries()) {
         if (tags.some((tag) => tag.id === tagId)) {
           targetConversationId = conversationId

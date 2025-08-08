@@ -8,30 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useVacationRequests } from "@/hooks/use-vacation-requests"
 import { useAuth } from "@/app/contexts/auth-context"
-import {
-  LayoutDashboard,
-  FileText,
-  MessageSquare,
-  BarChart2,
-  User,
-  PanelLeft,
-  CheckSquare,
-  Bot,
-  Radio,
-  Clock,
-  Users,
-  Package,
-  UserCog,
-  Brain,
-  LogOut,
-  HelpCircle,
-  FileIcon as FileTemplate,
-  CreditCard,
-  FileCheck,
-  Megaphone,
-  Warehouse,
-  Calendar,
-} from "lucide-react"
+import { LayoutDashboard, FileText, MessageSquare, BarChart2, User, PanelLeft, CheckSquare, Bot, Radio, Clock, Users, Package, UserCog, Brain, LogOut, HelpCircle, FileIcon as FileTemplate, CreditCard, FileCheck, Megaphone, Warehouse, Calendar, Tag } from 'lucide-react'
 
 interface MenuItem {
   id: string
@@ -132,6 +109,13 @@ export function MainSidebar() {
       isActive: isInSection("facturacion"),
       // Solo mostrar si NO es user
       hidden: userProfile?.role === "user",
+    },
+    {
+      id: "etiquetas",
+      label: "Etiquetas",
+      href: "/dashboard/etiquetas",
+      icon: Tag,
+      isActive: isInSection("etiquetas"),
     },
     {
       id: "tareas",
