@@ -19,7 +19,6 @@ import { ConversationProfilePanel } from "@/components/conversation-profile-pane
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { useToast } from "@/hooks/use-toast"
 import type { Message, User, Client } from "@/types/chat"
-import { autoAssignUserToConversation } from "@/lib/auto-assign-user"
 
 interface TemplateWithVariables {
   id: string
@@ -39,6 +38,8 @@ interface ConversationWindowSimpleProps {
   chatId: string
   currentUser: User
   onBack?: () => void
+  onTagsChange?: () => void // 🔹 Nuevo prop
+
 }
 
 interface FilePreview {
@@ -81,10 +82,7 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
 
   // Auto-marcar como leído cuando se abre la conversación
   useEffect(() => {
-    console.log(`ConversationWindow: chatId cambió a ${chatId}`)
-    // Marcar como leído inmediatamente al abrir
     if (chatId && unreadCount > 0) {
-      console.log(`Auto-marcando ${unreadCount} mensajes como leídos`)
       markAsRead()
     }
   }, [chatId, markAsRead, unreadCount])
@@ -102,7 +100,6 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
   // Auto-marcar como leído cuando la ventana es visible y hay mensajes no leídos
   useEffect(() => {
     if (isWindowVisible && unreadCount > 0 && chatId) {
-      console.log(`Ventana visible con ${unreadCount} mensajes no leídos - marcando como leído`)
       const timer = setTimeout(() => {
         markAsRead()
       }, 1000) // Delay de 1 segundo para mejor UX
@@ -114,7 +111,6 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
   // Marcar como leído cuando el usuario hace scroll hasta abajo
   useEffect(() => {
     if (isNearBottom && unreadCount > 0) {
-      console.log(`Usuario en la parte inferior con ${unreadCount} mensajes no leídos - marcando como leído`)
       const timer = setTimeout(() => {
         markAsRead()
       }, 500) // Delay más corto cuando está en el fondo
@@ -126,41 +122,9 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
   // Debug: Verificar si tenemos datos del cliente
   useEffect(() => {
     if (conversation?.client) {
-      console.log("Cliente disponible:", conversation.client)
     } else {
-      console.warn("Cliente no disponible en la conversación:", conversation)
     }
   }, [conversation])
-
-  // Auto-asignar usuario cuando se abre la conversación
-  useEffect(() => {
-    const assignUserToConversation = async () => {
-      if (chatId && currentUser?.id && conversation) {
-        console.log("🔄 Intentando auto-asignar usuario a conversación:", {
-          chatId,
-          userId: currentUser.id,
-          conversationTitle: conversation.title || conversation.client?.name,
-        })
-
-        const result = await autoAssignUserToConversation(chatId, currentUser.id)
-
-        if (result.success && !result.alreadyAssigned) {
-          console.log("✅ Usuario auto-asignado a la conversación")
-          // Refrescar la conversación para mostrar la asignación actualizada
-          refetchConversation?.()
-        } else if (result.success && result.alreadyAssigned) {
-          console.log("ℹ️ Usuario ya estaba asignado a la conversación")
-        } else {
-          console.warn("⚠️ No se pudo auto-asignar usuario:", result.error)
-        }
-      }
-    }
-
-    // Solo ejecutar cuando tengamos todos los datos necesarios
-    if (conversation && !conversationLoading) {
-      assignUserToConversation()
-    }
-  }, [chatId, currentUser?.id, conversation, conversationLoading, refetchConversation])
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {
@@ -205,7 +169,6 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
         hour12: false,
       }).format(date)
     } catch (error) {
-      console.error("Error al formatear la fecha:", error)
       return ""
     }
   }
@@ -309,12 +272,9 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
       if (filePreview) {
         setUploading(true)
         try {
-          console.log("📤 Subiendo archivo:", filePreview.file.name)
           const uploadResult = await uploadFile(filePreview.file, "chat-media")
           mediaUrl = uploadResult.publicUrl
-          console.log("✅ Archivo subido:", mediaUrl)
         } catch (uploadError) {
-          console.error("❌ Error subiendo archivo:", uploadError)
           toast({
             title: "Error al subir archivo",
             description: "No se pudo subir el archivo. Inténtalo de nuevo.",
@@ -344,7 +304,6 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
       // Limpiar preview
       removeFilePreview()
     } catch (error) {
-      console.error("Error sending message:", error)
       toast({
         title: "Error al enviar mensaje",
         description: "No se pudo enviar el mensaje. Inténtalo de nuevo.",
@@ -357,8 +316,6 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
 
   // Handle template sent - Updated to show template with variables replaced
   const handleTemplateSent = async (template: TemplateWithVariables) => {
-    console.log("Plantilla enviada:", template)
-
     try {
       // Use the final content if available, otherwise build it
       let templateContent = template.finalContent
@@ -399,10 +356,7 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
 
       // Refrescar la conversación para actualizar last_message_at
       refetchConversation?.()
-
-      console.log("✅ Contenido de plantilla agregado al chat:", templateContent)
     } catch (error) {
-      console.error("❌ Error adding template content to chat:", error)
       toast({
         title: "Error",
         description: "La plantilla se envió pero no se pudo mostrar en el chat",
@@ -526,7 +480,6 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
   const handleOpenProfilePanel = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    console.log("Abriendo panel de perfil")
     setShowProfilePanel(true)
   }
 
@@ -642,7 +595,6 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
                 <div>
                   <AssignUsersDialog
                     conversationId={chatId}
-                    assignedUserIds={conversation?.assigned_user_ids || []}
                     onAssignmentChange={handleAssignmentChange}
                   />
                 </div>
@@ -995,6 +947,7 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
         conversation={conversation}
         currentUser={currentUser}
         onAssignmentChange={handleAssignmentChange}
+        
       />
     </div>
   )

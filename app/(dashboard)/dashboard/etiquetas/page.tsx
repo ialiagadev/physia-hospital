@@ -1,19 +1,21 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Label } from "@/components/ui/label"
 import { toast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase/client"
-import { Plus, Tag, Phone, Mail, Edit2, Trash2, Search, Users, Palette, Star, UserPlus } from 'lucide-react'
+import { Plus, Tag, Phone, Mail, Edit2, Trash2, Search, Users, Palette, Star, UserPlus, Check, X } from "lucide-react"
 import { AddTagToClientDialog } from "@/components/add-tag-to-client-dialog"
 import { TagsFilter } from "@/components/tags-filter"
 import { QuickTagAssign } from "@/components/quick-tag-assign"
 import { useAuth } from "@/app/contexts/auth-context"
-import { DynamicTagBadge } from "@/components/dynamic-tag-badge"
 import { generateTagStyle } from "@/lib/dynamic-tag-colors"
 
 interface ClientWithTags {
@@ -46,6 +48,8 @@ export default function TagsPage() {
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedTagsFilter, setSelectedTagsFilter] = useState<string[]>([])
+
+  // Estados para controlar modales principales
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [isAddToClientDialogOpen, setIsAddToClientDialogOpen] = useState(false)
 
@@ -61,18 +65,17 @@ export default function TagsPage() {
     let filtered = clientsWithTags
 
     if (searchTerm) {
-      filtered = filtered.filter(client =>
-        client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        client.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        client.tags.some(tag => tag.tag_name.toLowerCase().includes(searchTerm.toLowerCase()))
+      filtered = filtered.filter(
+        (client) =>
+          client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          client.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          client.tags.some((tag) => tag.tag_name.toLowerCase().includes(searchTerm.toLowerCase())),
       )
     }
 
     if (selectedTagsFilter.length > 0) {
-      filtered = filtered.filter(client =>
-        selectedTagsFilter.some(selectedTagId =>
-          client.tags.some(tag => tag.tag_id === selectedTagId)
-        )
+      filtered = filtered.filter((client) =>
+        selectedTagsFilter.some((selectedTagId) => client.tags.some((tag) => tag.tag_id === selectedTagId)),
       )
     }
 
@@ -92,6 +95,7 @@ export default function TagsPage() {
 
   const loadOrganizationTags = async () => {
     if (!userProfile?.organization_id) return
+
     try {
       const { data, error } = await supabase
         .from("tag_usage_stats")
@@ -101,12 +105,12 @@ export default function TagsPage() {
 
       if (error) throw error
 
-      const tagsWithUsage: OrganizationTag[] = (data || []).map(tag => ({
+      const tagsWithUsage: OrganizationTag[] = (data || []).map((tag) => ({
         id: tag.tag_id,
         tag_name: tag.tag_name,
-        color: tag.color, // Mantener como hex
-        created_at: '',
-        usage_count: tag.clients_count
+        color: tag.color,
+        created_at: "",
+        usage_count: tag.clients_count,
       }))
 
       setOrganizationTags(tagsWithUsage)
@@ -117,6 +121,7 @@ export default function TagsPage() {
 
   const loadClientsWithTags = async () => {
     if (!userProfile?.organization_id) return
+
     try {
       const { data, error } = await supabase
         .from("client_tags_view")
@@ -138,15 +143,15 @@ export default function TagsPage() {
             phone: item.phone,
             full_phone: item.full_phone,
             organization_id: item.organization_id,
-            tags: []
+            tags: [],
           })
         }
 
         clientsMap.get(clientId)?.tags.push({
           tag_id: item.tag_id,
           tag_name: item.tag_name,
-          color: item.color, // Mantener como hex
-          assigned_at: item.assigned_at
+          color: item.color,
+          assigned_at: item.assigned_at,
         })
       })
 
@@ -177,15 +182,15 @@ export default function TagsPage() {
         .insert({
           organization_id: userProfile.organization_id,
           tag_name: tagName,
-          color: color, // Ya es hex
-          created_by: userProfile.id
+          color: color,
+          created_by: userProfile.id,
         })
         .select()
         .single()
 
       if (error) throw error
 
-      setOrganizationTags(prev => [{ ...data, usage_count: 0 }, ...prev])
+      setOrganizationTags((prev) => [{ ...data, usage_count: 0 }, ...prev])
 
       toast({
         title: "Etiqueta creada",
@@ -206,18 +211,19 @@ export default function TagsPage() {
 
   const handleDeleteGlobalTag = async (tagId: string, tagName: string) => {
     try {
-      const { error: deleteError } = await supabase
-        .from("organization_tags")
-        .delete()
-        .eq("id", tagId)
+      const { error: deleteError } = await supabase.from("organization_tags").delete().eq("id", tagId)
 
       if (deleteError) throw deleteError
 
-      setOrganizationTags(prev => prev.filter(tag => tag.id !== tagId))
-      setClientsWithTags(prev => prev.map(client => ({
-        ...client,
-        tags: client.tags.filter(tag => tag.tag_id !== tagId)
-      })).filter(client => client.tags.length > 0))
+      setOrganizationTags((prev) => prev.filter((tag) => tag.id !== tagId))
+      setClientsWithTags((prev) =>
+        prev
+          .map((client) => ({
+            ...client,
+            tags: client.tags.filter((tag) => tag.tag_id !== tagId),
+          }))
+          .filter((client) => client.tags.length > 0),
+      )
 
       toast({
         title: "Etiqueta eliminada",
@@ -235,23 +241,18 @@ export default function TagsPage() {
 
   const handleUpdateTagColor = async (tagId: string, newColor: string) => {
     try {
-      const { error } = await supabase
-        .from("organization_tags")
-        .update({ color: newColor }) // Ya es hex
-        .eq("id", tagId)
+      const { error } = await supabase.from("organization_tags").update({ color: newColor }).eq("id", tagId)
 
       if (error) throw error
 
-      setClientsWithTags(prev => prev.map(client => ({
-        ...client,
-        tags: client.tags.map(tag => 
-          tag.tag_id === tagId ? { ...tag, color: newColor } : tag
-        )
-      })))
-
-      setOrganizationTags(prev =>
-        prev.map(tag => tag.id === tagId ? { ...tag, color: newColor } : tag)
+      setClientsWithTags((prev) =>
+        prev.map((client) => ({
+          ...client,
+          tags: client.tags.map((tag) => (tag.tag_id === tagId ? { ...tag, color: newColor } : tag)),
+        })),
       )
+
+      setOrganizationTags((prev) => prev.map((tag) => (tag.id === tagId ? { ...tag, color: newColor } : tag)))
 
       toast({
         title: "Color actualizado",
@@ -277,10 +278,14 @@ export default function TagsPage() {
 
       if (error) throw error
 
-      setClientsWithTags(prev => prev.map(client => ({
-        ...client,
-        tags: client.tags.filter(tag => tag.tag_id !== tagId)
-      })).filter(client => client.tags.length > 0))
+      setClientsWithTags((prev) =>
+        prev
+          .map((client) => ({
+            ...client,
+            tags: client.tags.filter((tag) => tag.tag_id !== tagId),
+          }))
+          .filter((client) => client.tags.length > 0),
+      )
 
       loadOrganizationTags()
 
@@ -299,7 +304,7 @@ export default function TagsPage() {
   }
 
   const totalTags = clientsWithTags.reduce((acc, client) => acc + client.tags.length, 0)
-  const uniqueTagIds = new Set(clientsWithTags.flatMap(client => client.tags.map(tag => tag.tag_id)))
+  const uniqueTagIds = new Set(clientsWithTags.flatMap((client) => client.tags.map((tag) => tag.tag_id)))
 
   if (loading) {
     return (
@@ -335,13 +340,16 @@ export default function TagsPage() {
                   onOpenChange={setIsAddToClientDialogOpen}
                   onTagAdded={loadData}
                   trigger={
-                    <Button variant="outline" className="gap-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50">
+                    <Button
+                      variant="outline"
+                      className="gap-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50 bg-transparent"
+                    >
                       <UserPlus className="w-4 h-4" />
                       Asignar a Cliente
                     </Button>
                   }
                 />
-                <CreateTagDialog 
+                <CreateTagDialog
                   isOpen={isCreateDialogOpen}
                   onOpenChange={setIsCreateDialogOpen}
                   onTagCreated={handleCreateGlobalTag}
@@ -362,7 +370,6 @@ export default function TagsPage() {
                   </div>
                 </div>
               </div>
-
               <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl p-4 border border-emerald-200">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-emerald-600 rounded-lg flex items-center justify-center">
@@ -374,7 +381,6 @@ export default function TagsPage() {
                   </div>
                 </div>
               </div>
-
               <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4 border border-purple-200">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-purple-600 rounded-lg flex items-center justify-center">
@@ -386,7 +392,6 @@ export default function TagsPage() {
                   </div>
                 </div>
               </div>
-
               <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl p-4 border border-amber-200">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-amber-600 rounded-lg flex items-center justify-center">
@@ -446,7 +451,6 @@ export default function TagsPage() {
               />
             </div>
           </div>
-
           <TagsFilter
             selectedTags={selectedTagsFilter}
             onTagsChange={setSelectedTagsFilter}
@@ -466,7 +470,9 @@ export default function TagsPage() {
                   {selectedTagsFilter.length > 0 || searchTerm ? "No se encontraron resultados" : "No hay etiquetas"}
                 </h3>
                 <p className="text-slate-600 mb-6">
-                  {selectedTagsFilter.length > 0 || searchTerm ? "Intenta ajustar los filtros de búsqueda" : "No se encontraron clientes con etiquetas. ¡Crea algunas!"}
+                  {selectedTagsFilter.length > 0 || searchTerm
+                    ? "Intenta ajustar los filtros de búsqueda"
+                    : "No se encontraron clientes con etiquetas. ¡Crea algunas!"}
                 </p>
                 {!selectedTagsFilter.length && !searchTerm && (
                   <AddTagToClientDialog
@@ -485,7 +491,10 @@ export default function TagsPage() {
             </Card>
           ) : (
             filteredClients.map((client) => (
-              <Card key={client.id} className="border-slate-200 shadow-sm hover:shadow-md transition-all duration-200 bg-white rounded-xl hover:border-slate-300">
+              <Card
+                key={client.id}
+                className="border-slate-200 shadow-sm hover:shadow-md transition-all duration-200 bg-white rounded-xl hover:border-slate-300"
+              >
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
@@ -498,13 +507,13 @@ export default function TagsPage() {
                         <div className="flex-1">
                           <h3 className="text-xl font-semibold text-slate-900 mb-1">{client.name}</h3>
                           <div className="px-2 py-1 bg-slate-100 text-slate-700 rounded-lg text-xs font-medium inline-block">
-                            {client.tags.length} etiqueta{client.tags.length !== 1 ? 's' : ''}
+                            {client.tags.length} etiqueta{client.tags.length !== 1 ? "s" : ""}
                           </div>
                         </div>
                         <QuickTagAssign
                           clientId={client.id}
                           organizationId={client.organization_id}
-                          existingTagIds={client.tags.map(t => t.tag_id)}
+                          existingTagIds={client.tags.map((t) => t.tag_id)}
                           onTagAssigned={loadData}
                         />
                       </div>
@@ -550,7 +559,11 @@ export default function TagsPage() {
   )
 }
 
-function CreateTagDialog({ isOpen, onOpenChange, onTagCreated }: {
+function CreateTagDialog({
+  isOpen,
+  onOpenChange,
+  onTagCreated,
+}: {
   isOpen: boolean
   onOpenChange: (open: boolean) => void
   onTagCreated: (tagName: string, color: string) => Promise<boolean>
@@ -598,7 +611,9 @@ function CreateTagDialog({ isOpen, onOpenChange, onTagCreated }: {
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <Label htmlFor="tagName" className="text-slate-700 font-medium">Nombre de la etiqueta</Label>
+            <Label htmlFor="tagName" className="text-slate-700 font-medium">
+              Nombre de la etiqueta
+            </Label>
             <Input
               id="tagName"
               value={tagName}
@@ -615,14 +630,11 @@ function CreateTagDialog({ isOpen, onOpenChange, onTagCreated }: {
               {/* Vista previa */}
               <div className="flex items-center gap-3">
                 <span className="text-sm text-slate-600">Vista previa:</span>
-                <div 
-                  className="px-3 py-1 rounded-lg text-sm font-medium border"
-                  style={previewStyle.style}
-                >
+                <div className="px-3 py-1 rounded-lg text-sm font-medium border" style={previewStyle.style}>
                   {tagName || "Etiqueta de ejemplo"}
                 </div>
               </div>
-              
+
               {/* Selector de color simple */}
               <div className="flex items-center gap-3">
                 <input
@@ -640,7 +652,11 @@ function CreateTagDialog({ isOpen, onOpenChange, onTagCreated }: {
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="border-slate-200">
               Cancelar
             </Button>
-            <Button type="submit" disabled={loading || !tagName.trim()} className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700">
+            <Button
+              type="submit"
+              disabled={loading || !tagName.trim()}
+              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+            >
               {loading ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
@@ -657,7 +673,11 @@ function CreateTagDialog({ isOpen, onOpenChange, onTagCreated }: {
   )
 }
 
-function GlobalTagBadge({ tag, onDelete, onColorChange }: {
+function GlobalTagBadge({
+  tag,
+  onDelete,
+  onColorChange,
+}: {
   tag: OrganizationTag
   onDelete: () => void
   onColorChange: (color: string) => void
@@ -670,26 +690,82 @@ function GlobalTagBadge({ tag, onDelete, onColorChange }: {
     setIsEditing(false)
   }
 
+  const handleColorCancel = () => {
+    setTempColor(tag.color)
+    setIsEditing(false)
+  }
+
   // Generar estilo dinámico
   const tagStyle = generateTagStyle(tag.color)
 
   return (
     <div className="relative group">
-      <div 
+      <div
         className="px-3 py-1 pr-16 border-0 shadow-sm font-medium rounded-lg text-sm cursor-pointer"
         style={tagStyle.style}
       >
         {tag.tag_name} ({tag.usage_count})
       </div>
+
       <div className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 -translate-y-1 translate-x-1">
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-6 w-6 p-0 bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50"
-          onClick={() => setIsEditing(true)}
-        >
-          <Edit2 className="h-3 w-3 text-slate-600" />
-        </Button>
+        <Popover open={isEditing} onOpenChange={setIsEditing}>
+          <PopoverTrigger asChild>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 w-6 p-0 bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50"
+            >
+              <Edit2 className="h-3 w-3 text-slate-600" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-80 p-4" align="end">
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Palette className="w-4 h-4 text-slate-600" />
+                <h4 className="font-medium text-slate-900">Editar Color</h4>
+              </div>
+
+              <div>
+                <Label className="text-sm text-slate-700 font-medium">Etiqueta: {tag.tag_name}</Label>
+                <div className="mt-2 space-y-3">
+                  {/* Vista previa */}
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-slate-600">Vista previa:</span>
+                    <div
+                      className="px-3 py-1 rounded-lg text-sm font-medium border"
+                      style={generateTagStyle(tempColor).style}
+                    >
+                      {tag.tag_name}
+                    </div>
+                  </div>
+
+                  {/* Selector de color */}
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={tempColor}
+                      onChange={(e) => setTempColor(e.target.value)}
+                      className="w-10 h-8 rounded border border-slate-200 cursor-pointer"
+                    />
+                    <div className="text-sm text-slate-600 font-mono">{tempColor}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button size="sm" variant="outline" onClick={handleColorCancel} className="h-8 bg-transparent">
+                  <X className="w-3 h-3 mr-1" />
+                  Cancelar
+                </Button>
+                <Button size="sm" onClick={handleColorSave} className="h-8 bg-blue-600 hover:bg-blue-700">
+                  <Check className="w-3 h-3 mr-1" />
+                  Guardar
+                </Button>
+              </div>
+            </div>
+          </PopoverContent>
+        </Popover>
+
         <Button
           size="sm"
           variant="ghost"
@@ -699,62 +775,15 @@ function GlobalTagBadge({ tag, onDelete, onColorChange }: {
           <Trash2 className="h-3 w-3" />
         </Button>
       </div>
-
-      {isEditing && (
-        <Dialog open={isEditing} onOpenChange={setIsEditing}>
-          <DialogContent className="sm:max-w-md bg-white rounded-xl">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-slate-900">
-                <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center">
-                  <Palette className="w-4 h-4 text-white" />
-                </div>
-                Editar Color de Etiqueta
-              </DialogTitle>
-            </DialogHeader>
-            <div className="space-y-6">
-              <div>
-                <Label className="text-slate-700 font-medium">Etiqueta: {tag.tag_name}</Label>
-                <div className="mt-3 space-y-3">
-                  {/* Vista previa */}
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm text-slate-600">Vista previa:</span>
-                    <div 
-                      className="px-3 py-1 rounded-lg text-sm font-medium border"
-                      style={generateTagStyle(tempColor).style}
-                    >
-                      {tag.tag_name}
-                    </div>
-                  </div>
-                  
-                  {/* Selector de color simple */}
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="color"
-                      value={tempColor}
-                      onChange={(e) => setTempColor(e.target.value)}
-                      className="w-12 h-10 rounded-lg border border-slate-200 cursor-pointer"
-                    />
-                    <div className="text-sm text-slate-600 font-mono">{tempColor}</div>
-                  </div>
-                </div>
-              </div>
-              <div className="flex justify-end gap-3">
-                <Button variant="outline" onClick={() => setIsEditing(false)} className="border-slate-200">
-                  Cancelar
-                </Button>
-                <Button onClick={handleColorSave} className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700">
-                  Guardar
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
     </div>
   )
 }
 
-function TagBadge({ tag, onColorChange, onDelete }: {
+function TagBadge({
+  tag,
+  onColorChange,
+  onDelete,
+}: {
   tag: { tag_id: string; tag_name: string; color: string }
   onColorChange: (color: string) => void
   onDelete: () => void
@@ -767,26 +796,82 @@ function TagBadge({ tag, onColorChange, onDelete }: {
     setIsEditing(false)
   }
 
+  const handleColorCancel = () => {
+    setTempColor(tag.color)
+    setIsEditing(false)
+  }
+
   // Generar estilo dinámico
   const tagStyle = generateTagStyle(tag.color)
 
   return (
     <div className="relative group">
-      <div 
+      <div
         className="px-3 py-1 pr-12 border-0 shadow-sm font-medium rounded-lg text-sm cursor-pointer"
         style={tagStyle.style}
       >
         {tag.tag_name}
       </div>
+
       <div className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 -translate-y-1 translate-x-1">
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-6 w-6 p-0 bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50"
-          onClick={() => setIsEditing(true)}
-        >
-          <Edit2 className="h-3 w-3 text-slate-600" />
-        </Button>
+        <Popover open={isEditing} onOpenChange={setIsEditing}>
+          <PopoverTrigger asChild>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 w-6 p-0 bg-white border border-slate-200 shadow-sm rounded-lg hover:bg-slate-50"
+            >
+              <Edit2 className="h-3 w-3 text-slate-600" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-80 p-4" align="end">
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Palette className="w-4 h-4 text-slate-600" />
+                <h4 className="font-medium text-slate-900">Editar Color</h4>
+              </div>
+
+              <div>
+                <Label className="text-sm text-slate-700 font-medium">Etiqueta: {tag.tag_name}</Label>
+                <div className="mt-2 space-y-3">
+                  {/* Vista previa */}
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-slate-600">Vista previa:</span>
+                    <div
+                      className="px-3 py-1 rounded-lg text-sm font-medium border"
+                      style={generateTagStyle(tempColor).style}
+                    >
+                      {tag.tag_name}
+                    </div>
+                  </div>
+
+                  {/* Selector de color */}
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={tempColor}
+                      onChange={(e) => setTempColor(e.target.value)}
+                      className="w-10 h-8 rounded border border-slate-200 cursor-pointer"
+                    />
+                    <div className="text-sm text-slate-600 font-mono">{tempColor}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button size="sm" variant="outline" onClick={handleColorCancel} className="h-8 bg-transparent">
+                  <X className="w-3 h-3 mr-1" />
+                  Cancelar
+                </Button>
+                <Button size="sm" onClick={handleColorSave} className="h-8 bg-blue-600 hover:bg-blue-700">
+                  <Check className="w-3 h-3 mr-1" />
+                  Guardar
+                </Button>
+              </div>
+            </div>
+          </PopoverContent>
+        </Popover>
+
         <Button
           size="sm"
           variant="ghost"
@@ -796,57 +881,6 @@ function TagBadge({ tag, onColorChange, onDelete }: {
           <Trash2 className="h-3 w-3" />
         </Button>
       </div>
-
-      {isEditing && (
-        <Dialog open={isEditing} onOpenChange={setIsEditing}>
-          <DialogContent className="sm:max-w-md bg-white rounded-xl">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-slate-900">
-                <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center">
-                  <Palette className="w-4 h-4 text-white" />
-                </div>
-                Editar Color de Etiqueta
-              </DialogTitle>
-            </DialogHeader>
-            <div className="space-y-6">
-              <div>
-                <Label className="text-slate-700 font-medium">Etiqueta: {tag.tag_name}</Label>
-                <div className="mt-3 space-y-3">
-                  {/* Vista previa */}
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm text-slate-600">Vista previa:</span>
-                    <div 
-                      className="px-3 py-1 rounded-lg text-sm font-medium border"
-                      style={generateTagStyle(tempColor).style}
-                    >
-                      {tag.tag_name}
-                    </div>
-                  </div>
-                  
-                  {/* Selector de color simple */}
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="color"
-                      value={tempColor}
-                      onChange={(e) => setTempColor(e.target.value)}
-                      className="w-12 h-10 rounded-lg border border-slate-200 cursor-pointer"
-                    />
-                    <div className="text-sm text-slate-600 font-mono">{tempColor}</div>
-                  </div>
-                </div>
-              </div>
-              <div className="flex justify-end gap-3">
-                <Button variant="outline" onClick={() => setIsEditing(false)} className="border-slate-200">
-                  Cancelar
-                </Button>
-                <Button onClick={handleColorSave} className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700">
-                  Guardar
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
     </div>
   )
 }

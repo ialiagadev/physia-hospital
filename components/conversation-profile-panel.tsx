@@ -127,6 +127,7 @@ export function ConversationProfilePanel({
   const [availableOrgTags, setAvailableOrgTags] = useState<any[]>([])
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false)
   const [tagsLoading, setTagsLoading] = useState(false)
+  const [assignedUserIds, setAssignedUserIds] = useState<string[]>([])
 
   // Estados para notas
   const [notes, setNotes] = useState<ConversationNote[]>([])
@@ -147,8 +148,28 @@ export function ConversationProfilePanel({
       loadConversationTags()
       loadConversationNotes()
       loadAvailableOrgTags()
+      loadAssignedUserIds()
     }
   }, [conversation?.id])
+
+  // Cargar IDs de usuarios asignados desde la tabla users_conversations
+  const loadAssignedUserIds = async () => {
+    if (!conversation?.id) return
+
+    try {
+      const { data, error } = await supabase
+        .from("users_conversations")
+        .select("user_id")
+        .eq("conversation_id", conversation.id)
+
+      if (error) throw error
+
+      const userIds = data?.map((item) => item.user_id) || []
+      setAssignedUserIds(userIds)
+    } catch (error) {
+      console.error("Error loading assigned user IDs:", error)
+    }
+  }
 
   // ✨ Cargar etiquetas de la conversación usando la vista optimizada
   const loadConversationTags = async () => {
@@ -360,7 +381,7 @@ export function ConversationProfilePanel({
         .insert({
           tag_id: orgTag.id,
           conversation_id: conversation.id,
-          client_id: conversation.client?.id || null,
+          // ❌ client_id: conversation.client?.id || null, // REMOVIDO - el trigger se encarga
           organization_id: userProfile.organization_id,
           created_by: currentUser.id,
         })
@@ -447,9 +468,9 @@ export function ConversationProfilePanel({
         .from("conversation_tags")
         .select("id")
         .eq("tag_id", orgTag.id)
-        .eq("conversation_id", conversation.id)
         .eq("organization_id", userProfile.organization_id)
-        .single()
+        .eq("conversation_id", conversation.id)
+        .maybeSingle()
 
       if (checkError && checkError.code !== "PGRST116") {
         throw checkError
@@ -470,7 +491,7 @@ export function ConversationProfilePanel({
         .insert({
           tag_id: orgTag.id,
           conversation_id: conversation.id,
-          client_id: conversation.client?.id || null,
+          // ❌ client_id: conversation.client?.id || null, // REMOVIDO - el trigger se encarga
           organization_id: userProfile.organization_id,
           created_by: currentUser.id,
         })
@@ -568,6 +589,7 @@ export function ConversationProfilePanel({
   }
 
   const handleAssignmentChangeInternal = () => {
+    loadAssignedUserIds() // Recargar los IDs desde users_conversations
     onAssignmentChange()
   }
 
@@ -693,7 +715,6 @@ export function ConversationProfilePanel({
             <div className="mt-2">
               <AssignUsersDialog
                 conversationId={conversation.id}
-                assignedUserIds={conversation.assigned_user_ids || []}
                 onAssignmentChange={handleAssignmentChangeInternal}
                 trigger={
                   <Button variant="outline" size="sm" className="w-full bg-transparent">
@@ -738,7 +759,7 @@ export function ConversationProfilePanel({
                         className="absolute top-1 right-1 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
                         onClick={() => handleDeleteNote(note.id)}
                       >
-                        <X className="h-3 w-3" />
+                        <X className="w-3 h-3" />
                       </Button>
                     </div>
                   ))}

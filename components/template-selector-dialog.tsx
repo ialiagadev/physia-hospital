@@ -144,26 +144,16 @@ export function TemplateSelectorDialog({
   }
 
   // Debug: Log cuando se monta el componente
-  useEffect(() => {
-    console.log("🔧 TemplateSelectorDialog montado:", {
-      recipientPhone,
-      disabled,
-      userProfile: userProfile?.name,
-      organizationId: userProfile?.organization_id,
-    })
-  }, [recipientPhone, disabled, userProfile])
+  useEffect(() => {}, [recipientPhone, disabled, userProfile])
 
   // Función para obtener la configuración WABA del usuario
   const fetchWabaConfig = async (organizationId: number) => {
     try {
-      console.log("🔍 Buscando configuración WABA para organización:", organizationId)
       const { data: canalesOrg, error: canalError } = await supabase
         .from("canales_organizations")
         .select("id, id_canal, id_organization")
         .eq("id_organization", organizationId)
         .eq("estado", true)
-
-      console.log("📋 Resultado canales_organizations:", { canalesOrg, error: canalError })
 
       if (canalError) {
         throw new Error(`Error obteniendo canal: ${canalError.message}`)
@@ -180,20 +170,15 @@ export function TemplateSelectorDialog({
         .eq("id_canales_organization", canalOrg.id)
         .eq("estado", 1)
 
-      console.log("📋 Resultado waba con estado=1:", { wabaData, error: wabaError })
-
       if (wabaError) {
         throw new Error(`Error obteniendo WABA: ${wabaError.message}`)
       }
 
       if (!wabaData || wabaData.length === 0) {
-        console.log("⚠️ No se encontró con estado=1, buscando sin filtro de estado...")
         const { data: wabaDataNoFilter, error: wabaErrorNoFilter } = await supabase
           .from("waba")
           .select("id, id_proyecto, token_proyecto, numero, nombre, estado, id_canales_organization")
           .eq("id_canales_organization", canalOrg.id)
-
-        console.log("📋 Resultado waba sin filtro estado:", { wabaDataNoFilter, error: wabaErrorNoFilter })
 
         if (wabaDataNoFilter && wabaDataNoFilter.length > 0) {
           const waba = wabaDataNoFilter[0]
@@ -230,7 +215,6 @@ export function TemplateSelectorDialog({
 
   // Cargar plantillas cuando se abre el diálogo
   useEffect(() => {
-    console.log("🔄 useEffect loadTemplates:", { open, organizationId: userProfile?.organization_id })
     if (open && userProfile?.organization_id) {
       loadTemplates()
     }
@@ -238,36 +222,26 @@ export function TemplateSelectorDialog({
 
   const loadTemplates = async () => {
     if (!userProfile?.organization_id) {
-      console.log("❌ No hay organization_id")
       return
     }
 
-    console.log("📡 Iniciando carga de plantillas...")
     setLoading(true)
     setError(null)
 
     try {
       // Obtener configuración WABA
-      console.log("🔧 Obteniendo configuración WABA...")
       const config = await fetchWabaConfig(userProfile.organization_id)
       setWabaConfig(config)
-      console.log("✅ Configuración WABA obtenida:", {
-        id_proyecto: config.id_proyecto,
-        hasToken: !!config.token_proyecto,
-      })
 
       // Obtener plantillas
-      console.log("📋 Obteniendo plantillas...")
       const api = new TemplateAPI(config)
       const result = await api.getTemplates()
-      console.log("📋 Resultado de plantillas:", result)
 
       if (Array.isArray(result.data)) {
         // Filtrar solo plantillas aprobadas
         const approvedTemplates = result.data.filter(
           (template: Template) => template.status.toLowerCase() === "approved",
         )
-        console.log(`✅ ${approvedTemplates.length} plantillas aprobadas de ${result.data.length} totales`)
         setTemplates(approvedTemplates)
       } else {
         throw new Error("Formato inesperado en la respuesta")
@@ -287,9 +261,7 @@ export function TemplateSelectorDialog({
   }
 
   // Debug: Log cuando cambia el estado open
-  useEffect(() => {
-    console.log("🔄 Estado open cambió:", open)
-  }, [open])
+  useEffect(() => {}, [open])
 
   // Obtener categorías únicas
   const categories = Array.from(new Set(templates.map((t) => t.category)))
@@ -320,11 +292,9 @@ export function TemplateSelectorDialog({
   }
 
   const handleTemplateSelect = (template: Template) => {
-    console.log("🎯 Plantilla seleccionada:", template.name)
     const bodyComponent = template.components?.find((c) => c.type === "BODY")
     if (bodyComponent?.text) {
       const variables = extractVariables(bodyComponent.text)
-      console.log("🔧 Variables encontradas:", variables)
       if (variables.length > 0) {
         // Si tiene variables, mostrar formulario
         setSelectedTemplate(template)
@@ -363,29 +333,15 @@ export function TemplateSelectorDialog({
       return
     }
 
-    console.log("📤 Enviando plantilla:", {
-      templateName: template.name,
-      recipientPhone,
-      parameters,
-      variableValues,
-      wabaConfig: {
-        id_proyecto: wabaConfig.id_proyecto,
-        hasToken: !!wabaConfig.token_proyecto,
-      },
-    })
-
     setSending(template.id)
 
     try {
       const api = new TemplateAPI(wabaConfig)
       const formattedPhone = formatPhoneNumber(recipientPhone)
-      console.log("📞 Teléfono formateado:", formattedPhone)
 
       if (parameters.length > 0) {
-        console.log("📋 Enviando con parámetros:", parameters)
         await api.sendTemplateWithTextParams(formattedPhone, template.name, parameters, template.language)
       } else {
-        console.log("📋 Enviando sin parámetros")
         await api.sendSimpleTemplate(formattedPhone, template.name, template.language)
       }
 
@@ -419,7 +375,6 @@ export function TemplateSelectorDialog({
   }
 
   const handleClose = () => {
-    console.log("🚪 Cerrando modal")
     setOpen(false)
     setShowVariableForm(false)
     setSelectedTemplate(null)
@@ -429,7 +384,6 @@ export function TemplateSelectorDialog({
   }
 
   const handleOpenChange = (newOpen: boolean) => {
-    console.log("🔄 handleOpenChange:", newOpen)
     setOpen(newOpen)
     if (!newOpen) {
       handleClose()
@@ -438,21 +392,12 @@ export function TemplateSelectorDialog({
 
   // Debug del botón trigger
   const handleTriggerClick = (e: React.MouseEvent) => {
-    console.log("🖱️ Botón de plantillas clickeado:", {
-      disabled,
-      recipientPhone,
-      userProfile: !!userProfile,
-      organizationId: userProfile?.organization_id,
-    })
-
     if (disabled) {
-      console.log("⚠️ Botón deshabilitado")
       e.preventDefault()
       return
     }
 
     if (!userProfile?.organization_id) {
-      console.log("⚠️ No hay organización")
       toast({
         title: "Error",
         description: "No se pudo obtener la información de la organización",

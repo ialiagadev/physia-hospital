@@ -1,44 +1,38 @@
-import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase/client'
+"use client"
+
+import { useState, useEffect } from "react"
+import { supabase } from "@/lib/supabase/client"
 
 interface AssignedUser {
   id: string
   email: string
-  name: string | null
-  avatar_url: string | null
-  role: string | null
-  organization_id: number | null
-  is_physia_admin: boolean | null
-  type: number | null
-  prompt: string | null
+  name?: string
+  avatar_url?: string
+  role?: string
+  organization_id: number
+  is_physia_admin: boolean
+  type: number
+  prompt?: string
   created_at: string
 }
 
-interface UseAssignedUsersReturn {
-  users: AssignedUser[]
-  loading: boolean
-  error: string | null
-  refetch: () => void
-}
-
-export function useAssignedUsers(conversationId: string): UseAssignedUsersReturn {
+export function useAssignedUsers(conversationId: string) {
   const [users, setUsers] = useState<AssignedUser[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const fetchAssignedUsers = async () => {
     if (!conversationId) {
       setUsers([])
-      setLoading(false)
       return
     }
 
-    try {
-      setLoading(true)
-      setError(null)
+    setLoading(true)
+    setError(null)
 
-      const { data, error: supabaseError } = await supabase
-        .from('users_conversations')
+    try {
+      const { data, error } = await supabase
+        .from("users_conversations")
         .select(`
           user_id,
           users!inner (
@@ -54,31 +48,28 @@ export function useAssignedUsers(conversationId: string): UseAssignedUsersReturn
             created_at
           )
         `)
-        .eq('conversation_id', conversationId)
+        .eq("conversation_id", conversationId)
 
-      if (supabaseError) {
-        console.error('Error fetching assigned users:', supabaseError)
-        setError(supabaseError.message)
-        return
-      }
+      if (error) throw error
 
-      const assignedUsers: AssignedUser[] = (data || []).map((item: any) => ({
+      // Mapear los datos para que coincidan con la interfaz AssignedUser
+      const mappedUsers: AssignedUser[] = (data || []).map((item: any) => ({
         id: item.users.id,
         email: item.users.email,
-        name: item.users.name,
-        avatar_url: item.users.avatar_url,
-        role: item.users.role,
+        name: item.users.name || undefined,
+        avatar_url: item.users.avatar_url || undefined,
+        role: item.users.role || undefined,
         organization_id: item.users.organization_id,
-        is_physia_admin: item.users.is_physia_admin,
-        type: item.users.type,
-        prompt: item.users.prompt,
+        is_physia_admin: item.users.is_physia_admin || false,
+        type: item.users.type || 1,
+        prompt: item.users.prompt || undefined,
         created_at: item.users.created_at,
       }))
 
-      setUsers(assignedUsers)
+      setUsers(mappedUsers)
     } catch (err) {
-      console.error('Unexpected error:', err)
-      setError('Error inesperado al cargar usuarios asignados')
+      console.error("Error fetching assigned users:", err)
+      setError(err instanceof Error ? err.message : "Error desconocido")
     } finally {
       setLoading(false)
     }
@@ -92,10 +83,5 @@ export function useAssignedUsers(conversationId: string): UseAssignedUsersReturn
     fetchAssignedUsers()
   }
 
-  return {
-    users,
-    loading,
-    error,
-    refetch
-  }
+  return { users, loading, error, refetch }
 }

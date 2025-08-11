@@ -14,24 +14,23 @@ export interface CanalesOrganization {
   fecha_activacion?: string
   estado?: boolean
   canal?: Canal
-  waba?: Waba[] // Añadimos la relación con WABA
+  waba?: Waba[]
 }
 
 export interface Client {
-  id: number // Es serial, no string
+  id: number
   name: string
-  phone?: string | null // ✅ Cambiado a string | null para consistencia
-  phone_prefix?: string | null // ✅ Campo añadido con null
-  full_phone?: string | null // ✅ Campo añadido (campo calculado) con null
-  email?: string | null // ✅ Cambiado a string | null
+  phone?: string | null
+  phone_prefix?: string | null
+  full_phone?: string | null
+  email?: string | null
   avatar_url?: string | null
   channel?: "whatsapp" | "instagram" | "facebook" | "webchat"
-  channel_id?: number // Añadir referencia al canal
-  external_id?: string | null // ✅ Campo añadido con null
+  channel_id?: number
+  external_id?: string | null
   last_interaction_at?: string | null
   organization_id: number
   created_at: string
-  // Campos adicionales de la tabla clients
   tax_id?: string | null
   address?: string | null
   postal_code?: string | null
@@ -40,8 +39,7 @@ export interface Client {
   country?: string | null
   client_type?: "private" | "public"
   chat_metadata?: any
-  canal?: Canal // Añadir la relación con canal
-  // Campos médicos adicionales
+  canal?: Canal
   birth_date?: string | null
   gender?: string | null
   blood_type?: string | null
@@ -50,7 +48,6 @@ export interface Client {
   emergency_contact_relationship?: string | null
   medical_notes?: string | null
   has_medical_history?: boolean
-  // Campos DIR3
   dir3_codes?: any
 }
 
@@ -59,7 +56,7 @@ export interface Conversation {
   organization_id: number
   client_id: number
   assigned_user_id?: string
-  assigned_user_ids?: string[] // Añadimos este campo como array de strings (UUIDs)
+  assigned_user_ids?: string[]
   status: "active" | "pending" | "resolved" | "closed"
   last_message_at?: string
   unread_count: number
@@ -67,14 +64,11 @@ export interface Conversation {
   created_at: string
   updated_at: string
   metadata?: any
-  // Relación con cliente
   client?: Client
-  // Relación con canal-organización
   id_canales_organization?: number
   canales_organization?: CanalesOrganization
 }
 
-// Interface que extiende Conversation con el último mensaje y etiquetas
 export interface ConversationWithLastMessage extends Conversation {
   last_message?: Message
   conversation_tags?: ConversationTag[]
@@ -107,19 +101,18 @@ export interface Message {
 }
 
 export interface User {
-  id: string // UUID
+  id: string
   email: string
   name?: string | null
   avatar_url?: string | null
   role?: string
-  organization_id?: number // ✅ Cambiado a number para consistencia
+  organization_id?: number
   is_physia_admin?: boolean
-  type?: number // 1 = Usuario normal, 2 = Agente IA
-  prompt?: string // Prompt para agentes IA
+  type?: number
+  prompt?: string
   created_at?: string
 }
 
-// Nuevas interfaces para notas y etiquetas
 export interface ConversationNote {
   id: string
   conversation_id: string
@@ -127,30 +120,27 @@ export interface ConversationNote {
   created_by: string
   created_at: string
   updated_at: string
-  // Relación con usuario
   user?: User
 }
 
+// ✅ Interface corregida con color obligatorio como string
 export interface ConversationTag {
   id: string
   conversation_id: string
   tag_name: string
   created_by: string
   created_at: string
-  // Relación con usuario
+  color: string // ✅ Cambiado de opcional a obligatorio
   user?: User
 }
 
-// Interface extendida de Conversation con notas y etiquetas
 export interface ConversationWithNotesAndTags extends ConversationWithLastMessage {
   notes?: ConversationNote[]
   tags?: ConversationTag[]
 }
 
-// Alias para mantener compatibilidad
 export type UserProfile = User
 
-// Interfaces adicionales para el sistema de canales
 export interface Waba {
   id: number
   id_canales_organization: number
@@ -164,7 +154,7 @@ export interface Waba {
   minutos_reasignar_sin_respuesta?: number
   estado?: number
   id_proyecto?: string
-  token_proyecto?: string // Este es el token que necesitamos para la API
+  token_proyecto?: string
   id_usuario?: string
   fecha_alta?: string
   webhook?: string
@@ -172,7 +162,6 @@ export interface Waba {
   fecha_solicitud_baja?: string
 }
 
-// Tipos para las respuestas de la API
 export interface ConversationsResponse {
   conversations: ConversationWithLastMessage[]
   total: number
@@ -187,7 +176,6 @@ export interface MessagesResponse {
   limit: number
 }
 
-// Tipos para las acciones de mensajes de sistema
 export type SystemMessageAction =
   | "user_assigned"
   | "user_unassigned"
@@ -202,7 +190,6 @@ export interface SystemMessageMetadata {
   timestamp: string
 }
 
-// Tipos auxiliares para formularios de cliente
 export interface CreateClientData {
   name: string
   phone?: string
@@ -211,7 +198,6 @@ export interface CreateClientData {
   external_id?: string
   avatar_url?: string
   organization_id: number
-  // Campos opcionales adicionales
   tax_id?: string
   address?: string
   postal_code?: string
@@ -233,7 +219,6 @@ export interface UpdateClientData extends Partial<CreateClientData> {
   id: number
 }
 
-// Tipos para validación de teléfonos
 export interface PhoneValidationResult {
   isValid: boolean
   formattedPhone?: string
@@ -241,7 +226,6 @@ export interface PhoneValidationResult {
   error?: string
 }
 
-// Tipos para configuración de prefijos telefónicos
 export interface CountryPhonePrefix {
   country: string
   countryCode: string
@@ -250,7 +234,6 @@ export interface CountryPhonePrefix {
   format?: string
 }
 
-// Constantes para prefijos comunes
 export const COMMON_PHONE_PREFIXES: CountryPhonePrefix[] = [
   { country: "España", countryCode: "ES", prefix: "+34", flag: "🇪🇸" },
   { country: "Francia", countryCode: "FR", prefix: "+33", flag: "🇫🇷" },
@@ -263,3 +246,27 @@ export const COMMON_PHONE_PREFIXES: CountryPhonePrefix[] = [
   { country: "Argentina", countryCode: "AR", prefix: "+54", flag: "🇦🇷" },
   { country: "Colombia", countryCode: "CO", prefix: "+57", flag: "🇨🇴" },
 ]
+
+// ✅ Tipos específicos para Supabase con tipado estricto
+export interface SupabaseTagData {
+  id: string
+  conversation_id: string
+  created_at: string
+  created_by: string
+  tag_id: string
+  organization_tags: {
+    id: string
+    tag_name: string
+    color: string
+  } | null
+}
+
+export interface OrganizationTag {
+  id: string
+  tag_name: string
+  color: string
+  organization_id: number
+  created_by: string
+  created_at: string
+  updated_at: string
+}

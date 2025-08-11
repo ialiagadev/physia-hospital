@@ -8,8 +8,14 @@ import { useAuth } from "@/app/contexts/auth-context"
 export default function ChatPage() {
   const { userProfile, isLoading } = useAuth()
   const [selectedChat, setSelectedChat] = useState<string | null>(null)
-  // Eliminar esta línea:
-  // const [viewMode, setViewMode] = useState<"all" | "assigned">("all")
+
+  // Estado para refrescar ChatList cuando se cambien etiquetas
+  const [tagsRefreshKey, setTagsRefreshKey] = useState(0)
+
+  const handleTagsChange = () => {
+    // Esto hará que ChatList se vuelva a renderizar y refetchee
+    setTagsRefreshKey((prev) => prev + 1)
+  }
 
   if (isLoading) {
     return (
@@ -35,15 +41,20 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-full w-full bg-gray-100 overflow-hidden m-0 p-0">
-      {/* Lista de chats - Sidebar izquierdo - 25% del ancho */}
+      {/* Lista de chats */}
       <div className="w-[25%] min-w-[280px] max-w-[350px] bg-white border-r border-gray-200 flex flex-col">
-        <ChatList selectedChatId={selectedChat} onChatSelect={setSelectedChat} />
+        {/* Pasamos el key para que se refresque */}
+        <ChatList key={tagsRefreshKey} selectedChatId={selectedChat} onChatSelect={setSelectedChat} />
       </div>
 
-      {/* Ventana de conversación - 75% del ancho */}
+      {/* Ventana de conversación */}
       <div className="flex-1 flex flex-col min-w-0 m-0 p-0">
         {selectedChat ? (
-          <ConversationWindow chatId={selectedChat} currentUser={userProfile} />
+          <ConversationWindow
+            chatId={selectedChat}
+            currentUser={userProfile}
+            onTagsChange={handleTagsChange} // 🔹 Le pasamos el callback
+          />
         ) : (
           <div className="flex-1 flex items-center justify-center bg-gray-50">
             <div className="text-center">

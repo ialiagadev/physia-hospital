@@ -2,7 +2,19 @@
 
 import type React from "react"
 import { useState, useEffect, useCallback, useRef } from "react"
-import { Search, MoreVertical, Users, MessageCircle, Plus, Phone, FileText, AlertTriangle, Loader2 } from "lucide-react"
+import {
+  Search,
+  MoreVertical,
+  Users,
+  MessageCircle,
+  Plus,
+  Phone,
+  FileText,
+  AlertTriangle,
+  Loader2,
+  Tag,
+  X,
+} from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,6 +22,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { createConversation, sendMessage } from "@/lib/chatActions"
 import { useConversations } from "@/hooks/use-conversations"
 import { useClients } from "@/hooks/use-clients"
@@ -101,6 +116,22 @@ function cleanPhoneNumber(input: string, currentPrefix: string): { cleanPhone: s
     : cleaned.substring(1) // Remover solo el +
 
   return { cleanPhone: phoneWithoutCurrentPrefix }
+}
+
+// Función para asignar automáticamente el usuario a la conversación
+const assignUserToConversation = async (conversationId: string, userId: string) => {
+  try {
+    const { error } = await supabase.from("users_conversations").insert({
+      conversation_id: conversationId,
+      user_id: userId,
+    })
+
+    if (error) {
+      console.error("Error assigning user to conversation:", error)
+    }
+  } catch (err) {
+    console.error("Error assigning user to conversation:", err)
+  }
 }
 
 // Modal unificado para nueva conversación
@@ -245,7 +276,6 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
             exists: true,
             existingClient,
           })
-
           // Si el cliente existe, verificar si ya tiene una conversación activa
           checkExistingConversation(existingClient.id)
         } else {
@@ -300,6 +330,7 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
   const handlePrefixChange = useCallback(
     (newPrefix: string) => {
       setSelectedPrefix(newPrefix)
+
       // Si hay teléfono, re-verificar con el nuevo prefijo
       if (phoneNumber.length >= 9) {
         if (phoneCheckTimeoutRef.current) {
@@ -403,7 +434,7 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
   }, [])
 
   const handleNewContactTemplateSent = async (template: any) => {
-    if (!phoneNumber.trim() || !contactName.trim() || !organizationIdNumber) return
+    if (!phoneNumber.trim() || !contactName.trim() || !organizationIdNumber || !userProfile?.id) return
 
     // Verificar si existe conversación antes de crear
     if (conversationValidation.exists) {
@@ -416,12 +447,13 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
     }
 
     setLoading(true)
+
     try {
       // Asegurar que el phoneNumber esté limpio (sin prefijo)
       const { cleanPhone } = cleanPhoneNumber(phoneNumber, selectedPrefix)
 
       // Crear conversación con nuevo contacto
-      await createConversation({
+      const newConversation = await createConversation({
         organizationId: organizationIdNumber,
         clientData: {
           name: contactName,
@@ -431,6 +463,11 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
         },
         initialMessage: template.finalContent || `Plantilla "${template.name}" enviada`,
       })
+
+      // Asignar automáticamente el usuario que crea la conversación (sin mensaje del sistema)
+      if (newConversation?.id) {
+        await assignUserToConversation(newConversation.id, userProfile.id)
+      }
 
       toast({
         title: "Conversación creada",
@@ -454,7 +491,7 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
   }
 
   const handleExistingContactTemplateSent = async (template: any) => {
-    if (!selectedClientId || !organizationIdNumber) return
+    if (!selectedClientId || !organizationIdNumber || !userProfile?.id) return
 
     const selectedClient = searchResults.find((c) => c.id.toString() === selectedClientId)
     if (!selectedClient) return
@@ -462,17 +499,8 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
     // Si existe conversación, enviar plantilla directamente a esa conversación
     if (conversationValidation.exists && conversationValidation.existingConversation) {
       setLoading(true)
-      try {
-        // Validar que tenemos userProfile
-        if (!userProfile?.id) {
-          toast({
-            title: "Error",
-            description: "No se pudo obtener la información del usuario",
-            variant: "destructive",
-          })
-          return
-        }
 
+      try {
         // Enviar mensaje de plantilla a la conversación existente
         await sendMessage({
           conversationId: conversationValidation.existingConversation.id,
@@ -502,10 +530,11 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
       return
     }
 
-    // Si no existe conversación, crear nueva (código existente)
+    // Si no existe conversación, crear nueva
     setLoading(true)
+
     try {
-      await createConversation({
+      const newConversation = await createConversation({
         organizationId: organizationIdNumber,
         clientData: {
           name: selectedClient.name,
@@ -517,6 +546,11 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
         initialMessage: template.finalContent || `Plantilla "${template.name}" enviada`,
         existingClientId: selectedClient.id,
       })
+
+      // Asignar automáticamente el usuario que crea la conversación (sin mensaje del sistema)
+      if (newConversation?.id) {
+        await assignUserToConversation(newConversation.id, userProfile.id)
+      }
 
       toast({
         title: "Conversación creada",
@@ -988,6 +1022,45 @@ function useTagColors(organizationId: number | undefined) {
   return { tagColors, loading }
 }
 
+// Hook para cargar etiquetas disponibles
+function useAvailableTags(organizationId: number | undefined) {
+  const [tags, setTags] = useState<Array<{ id: string; tag_name: string; color: string }>>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const loadTags = async () => {
+      if (!organizationId) {
+        setLoading(false)
+        return
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from("organization_tags")
+          .select("id, tag_name, color")
+          .eq("organization_id", organizationId)
+          .order("tag_name")
+
+        if (error) {
+          console.error("Error loading tags:", error)
+          setTags([])
+        } else {
+          setTags(data || [])
+        }
+      } catch (error) {
+        console.error("Error loading tags:", error)
+        setTags([])
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadTags()
+  }, [organizationId])
+
+  return { tags, loading }
+}
+
 // Actualizar la interface
 interface ConversationTagsProps {
   tags:
@@ -1049,11 +1122,113 @@ const ConversationTags: React.FC<ConversationTagsProps> = ({ tags, tagColors, co
   )
 }
 
+// Componente para el filtro de etiquetas
+function TagFilter({
+  organizationId,
+  selectedTags,
+  onTagsChange,
+}: {
+  organizationId: number | undefined
+  selectedTags: string[]
+  onTagsChange: (tags: string[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const { tags, loading } = useAvailableTags(organizationId)
+
+  const handleTagToggle = (tagId: string) => {
+    if (selectedTags.includes(tagId)) {
+      onTagsChange(selectedTags.filter((id) => id !== tagId))
+    } else {
+      onTagsChange([...selectedTags, tagId])
+    }
+  }
+
+  const clearTags = () => {
+    onTagsChange([])
+  }
+
+  const selectedTagsData = tags.filter((tag) => selectedTags.includes(tag.id))
+
+  return (
+    <div className="p-3 bg-white border-b border-gray-200">
+      <div className="flex items-center gap-2">
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm" className="h-8 border-dashed bg-transparent" disabled={loading}>
+              <Tag className="h-4 w-4 mr-2" />
+              Filtrar por etiquetas
+              {selectedTags.length > 0 && (
+                <Badge variant="secondary" className="ml-2 h-5 px-1.5">
+                  {selectedTags.length}
+                </Badge>
+              )}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-64 p-0" align="start">
+            <Command>
+              <CommandInput placeholder="Buscar etiquetas..." />
+              <CommandList>
+                <CommandEmpty>No se encontraron etiquetas.</CommandEmpty>
+                <CommandGroup>
+                  {tags.map((tag) => {
+                    const isSelected = selectedTags.includes(tag.id)
+                    return (
+                      <CommandItem
+                        key={tag.id}
+                        onSelect={() => handleTagToggle(tag.id)}
+                        className="flex items-center gap-2"
+                      >
+                        <div
+                          className={`w-3 h-3 rounded-full border-2 ${
+                            isSelected ? "border-gray-900" : "border-gray-300"
+                          }`}
+                          style={{ backgroundColor: tag.color }}
+                        />
+                        <span className="flex-1">{tag.tag_name}</span>
+                        {isSelected && <div className="w-2 h-2 bg-gray-900 rounded-full" />}
+                      </CommandItem>
+                    )
+                  })}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+
+        {selectedTags.length > 0 && (
+          <Button variant="ghost" size="sm" onClick={clearTags} className="h-8 px-2 text-gray-500 hover:text-gray-700">
+            <X className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
+
+      {/* Mostrar etiquetas seleccionadas */}
+      {selectedTagsData.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-2">
+          {selectedTagsData.map((tag) => {
+            const tagStyle = generateTagStyle(tag.color)
+            return (
+              <Badge key={tag.id} variant="secondary" className="text-xs border-0 shadow-sm" style={tagStyle.style}>
+                {tag.tag_name}
+                <button onClick={() => handleTagToggle(tag.id)} className="ml-1 hover:bg-black/10 rounded-full p-0.5">
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Mover useTagColors al componente ChatList principal
 export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [viewMode, setViewMode] = useState<"all" | "assigned">("all")
+  const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [assignedCount, setAssignedCount] = useState(0)
+  const [totalConversationsCount, setTotalConversationsCount] = useState(0)
 
   const { userProfile } = useAuth()
   const organizationId = userProfile?.organization_id
@@ -1066,6 +1241,14 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
     organizationId?.toString(),
     viewMode,
     userProfile?.id,
+    selectedTags, // Pasar las etiquetas seleccionadas
+  ) 
+
+  const { addTagToConversation, removeTagFromConversation } = useConversations(
+    organizationId?.toString(),
+    viewMode,
+    userProfile?.id,
+    selectedTags,
   )
 
   // Hook para conteo total de mensajes no leídos
@@ -1109,13 +1292,46 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
     fetchAssignedCount()
   }, [userProfile?.id, organizationIdNumber, conversations]) // Recalcular cuando cambien las conversaciones
 
+  // Obtener conteo total de conversaciones de la organización
+  useEffect(() => {
+    const fetchTotalConversationsCount = async () => {
+      if (!organizationIdNumber) {
+        setTotalConversationsCount(0)
+        return
+      }
+
+      try {
+        const { count, error } = await supabase
+          .from("conversations")
+          .select("*", { count: "exact", head: true })
+          .eq("organization_id", organizationIdNumber)
+
+        if (error) {
+          console.error("Error fetching total conversations count:", error)
+          setTotalConversationsCount(0)
+          return
+        }
+
+        setTotalConversationsCount(count || 0)
+      } catch (error) {
+        console.error("Error fetching total conversations count:", error)
+        setTotalConversationsCount(0)
+      }
+    }
+
+    fetchTotalConversationsCount()
+  }, [organizationIdNumber, conversations]) // Recalcular cuando cambien las conversaciones
+
+  // Filtrar conversaciones solo por búsqueda (las etiquetas ya se filtran en el servidor)
   const filteredConversations = conversations
-    .filter(
-      (conv) =>
+    .filter((conv) => {
+      // Solo filtro por búsqueda de texto
+      return (
         conv.client?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         conv.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        conv.last_message?.content.toLowerCase().includes(searchQuery.toLowerCase()),
-    )
+        conv.last_message?.content.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    })
     .sort((a, b) => {
       // Primero: conversaciones con mensajes no leídos
       if (a.unread_count > 0 && b.unread_count === 0) return -1
@@ -1229,7 +1445,7 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
           </div>
           <div className="flex-1">
             <span className="font-medium text-gray-900">Todos</span>
-            <span className="ml-2 text-gray-500">({conversations.length})</span>
+            <span className="ml-2 text-gray-500">({totalConversationsCount})</span>
           </div>
         </div>
       </div>
@@ -1247,12 +1463,23 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
         </div>
       </div>
 
+      {/* Filtro de etiquetas */}
+      <TagFilter organizationId={organizationIdNumber} selectedTags={selectedTags} onTagsChange={setSelectedTags} />
+
       {/* Lista de chats */}
       <div className="flex-1 overflow-y-auto">
         {filteredConversations.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-32 text-gray-500 p-4">
-            <p className="text-center mb-2">No hay conversaciones</p>
-            <p className="text-sm text-center">Haz clic en el botón de mensaje para iniciar una nueva conversación</p>
+            <p className="text-center mb-2">
+              {selectedTags.length > 0 || searchQuery
+                ? "No hay conversaciones que coincidan con los filtros"
+                : "No hay conversaciones"}
+            </p>
+            <p className="text-sm text-center">
+              {selectedTags.length > 0 || searchQuery
+                ? "Intenta cambiar los filtros de búsqueda"
+                : "Haz clic en el botón de mensaje para iniciar una nueva conversación"}
+            </p>
           </div>
         ) : (
           filteredConversations.map((conversation: ConversationWithLastMessage) => (
@@ -1307,6 +1534,18 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
           ))
         )}
       </div>
+
+      {/* This would be where you render the conversation profile panel */}
+      {/* Example: */}
+      {/*
+      <ConversationProfilePanel 
+        conversation={selectedConversation}
+        onClose={() => setSelectedConversation(null)}
+        onTagsChange={handleTagsChange}
+        addTagToConversation={addTagToConversation}
+        removeTagFromConversation={removeTagFromConversation}
+      />
+      */}
     </div>
   )
 }

@@ -24,11 +24,17 @@ export async function autoAssignUserToConversation(conversationId: string, userI
       return { success: true, alreadyAssigned: true }
     }
 
-    // Asignar usuario a la conversación
-    const { error: insertError } = await supabase.from("users_conversations").insert({
-      conversation_id: conversationId,
-      user_id: userId,
-    })
+    // Asignar usuario a la conversación usando upsert para evitar conflictos
+    const { error: insertError } = await supabase.from("users_conversations").upsert(
+      {
+        conversation_id: conversationId,
+        user_id: userId,
+      },
+      {
+        onConflict: "conversation_id,user_id",
+        ignoreDuplicates: true,
+      },
+    )
 
     if (insertError) {
       console.error("❌ Error asignando usuario a conversación:", insertError)
