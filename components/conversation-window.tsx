@@ -19,6 +19,7 @@ import { ConversationProfilePanel } from "@/components/conversation-profile-pane
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { useToast } from "@/hooks/use-toast"
 import type { Message, User, Client } from "@/types/chat"
+import { autoAssignUserToConversation } from "@/lib/auto-assign-user"
 
 interface TemplateWithVariables {
   id: string
@@ -130,6 +131,36 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
       console.warn("Cliente no disponible en la conversación:", conversation)
     }
   }, [conversation])
+
+  // Auto-asignar usuario cuando se abre la conversación
+  useEffect(() => {
+    const assignUserToConversation = async () => {
+      if (chatId && currentUser?.id && conversation) {
+        console.log("🔄 Intentando auto-asignar usuario a conversación:", {
+          chatId,
+          userId: currentUser.id,
+          conversationTitle: conversation.title || conversation.client?.name,
+        })
+
+        const result = await autoAssignUserToConversation(chatId, currentUser.id)
+
+        if (result.success && !result.alreadyAssigned) {
+          console.log("✅ Usuario auto-asignado a la conversación")
+          // Refrescar la conversación para mostrar la asignación actualizada
+          refetchConversation?.()
+        } else if (result.success && result.alreadyAssigned) {
+          console.log("ℹ️ Usuario ya estaba asignado a la conversación")
+        } else {
+          console.warn("⚠️ No se pudo auto-asignar usuario:", result.error)
+        }
+      }
+    }
+
+    // Solo ejecutar cuando tengamos todos los datos necesarios
+    if (conversation && !conversationLoading) {
+      assignUserToConversation()
+    }
+  }, [chatId, currentUser?.id, conversation, conversationLoading, refetchConversation])
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {
@@ -366,6 +397,9 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
         messageType: "text",
       })
 
+      // Refrescar la conversación para actualizar last_message_at
+      refetchConversation?.()
+
       console.log("✅ Contenido de plantilla agregado al chat:", templateContent)
     } catch (error) {
       console.error("❌ Error adding template content to chat:", error)
@@ -511,6 +545,19 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
     // Fallback - you might want to handle this differently
     return client?.name || conversation?.title || "unknown"
   }
+
+  // Check if conversation is closed (more than 24 hours since last message)
+  const isConversationClosed = () => {
+    if (!conversation?.last_message_at) return false
+
+    const lastMessageTime = new Date(conversation.last_message_at).getTime()
+    const now = new Date().getTime()
+    const hoursDiff = (now - lastMessageTime) / (1000 * 60 * 60)
+
+    return hoursDiff > 24
+  }
+
+  const conversationClosed = isConversationClosed()
 
   if (loading) {
     return (
@@ -748,6 +795,21 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
             </div>
           ))
         )}
+        {/* Mensaje del sistema si la conversación está cerrada */}
+        {conversationClosed && (
+          <div className="flex justify-center my-4">
+            <div className="bg-gradient-to-r from-amber-50 to-orange-50 text-amber-700 px-6 py-3 rounded-lg text-sm font-medium shadow-sm border border-amber-200 backdrop-blur-sm max-w-md text-center">
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <div className="w-2 h-2 bg-amber-400 rounded-full"></div>
+                <span className="font-semibold">Conversación cerrada</span>
+              </div>
+              <p className="text-xs text-amber-600">
+                Esta conversación se cerró automáticamente después de 24 horas de inactividad. Para reanudar la
+                conversación, envía una plantilla de WhatsApp.
+              </p>
+            </div>
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -800,96 +862,130 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
 
       {/* Input de mensaje mejorado */}
       <div className="p-3 bg-white border-t">
-        <div className="flex items-center gap-2">
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="ghost" size="icon" className="rounded-full text-gray-500">
-                <Smile className="h-5 w-5" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-64 p-2">
-              <div className="grid grid-cols-8 gap-1">
-                {["😀", "😂", "😍", "🥰", "😎", "🤔", "😊", "👍", "❤️", "👏", "🙏", "🔥", "✅", "🎉", "👌", "🤣"].map(
-                  (emoji) => (
-                    <button
-                      key={emoji}
-                      className="text-xl p-1 hover:bg-gray-100 rounded"
-                      onClick={() => addEmoji(emoji)}
-                    >
-                      {emoji}
-                    </button>
-                  ),
-                )}
-              </div>
-            </PopoverContent>
-          </Popover>
+        {conversationClosed ? (
+          // Input deshabilitado con mensaje
+          <div className="flex items-center gap-2 opacity-60">
+            <div className="flex-1 bg-gray-100 rounded-full px-4 py-2 text-gray-500 text-sm">
+              Conversación cerrada - Envía una plantilla para reanudar
+            </div>
 
-          {/* Input de archivo oculto */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,.pdf,.doc,.docx,.txt,.zip,.rar"
-            onChange={handleFileSelect}
-            className="hidden"
-          />
-
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="rounded-full text-gray-500"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploading}
-                >
-                  <Paperclip className="h-5 w-5" />
+            {/* Solo el botón de plantillas habilitado */}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div>
+                    <TemplateSelectorDialog
+                      recipientPhone={getRecipientPhone()}
+                      onTemplateSent={handleTemplateSent}
+                      disabled={sending}
+                      trigger={
+                        <Button
+                          size="icon"
+                          className="rounded-full bg-green-500 hover:bg-green-600 text-white shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 border-2 border-green-400"
+                        >
+                          <FileText className="h-4 w-4" />
+                        </Button>
+                      }
+                    />
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>Enviar plantilla para reanudar conversación</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        ) : (
+          // Input normal cuando la conversación está activa
+          <div className="flex items-center gap-2">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon" className="rounded-full text-gray-500">
+                  <Smile className="h-5 w-5" />
                 </Button>
-              </TooltipTrigger>
-              <TooltipContent>Adjuntar archivo</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-
-          {/* Botón de plantillas - Updated with correct props */}
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div>
-                  <TemplateSelectorDialog
-                    recipientPhone={getRecipientPhone()}
-                    onTemplateSent={handleTemplateSent}
-                    disabled={sending}
-                  />
+              </PopoverTrigger>
+              <PopoverContent className="w-64 p-2">
+                <div className="grid grid-cols-8 gap-1">
+                  {["😀", "😂", "😍", "🥰", "😎", "🤔", "😊", "👍", "❤️", "👏", "🙏", "🔥", "✅", "🎉", "👌", "🤣"].map(
+                    (emoji) => (
+                      <button
+                        key={emoji}
+                        className="text-xl p-1 hover:bg-gray-100 rounded"
+                        onClick={() => addEmoji(emoji)}
+                      >
+                        {emoji}
+                      </button>
+                    ),
+                  )}
                 </div>
-              </TooltipTrigger>
-              <TooltipContent>Enviar plantilla</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+              </PopoverContent>
+            </Popover>
 
-          <Input
-            placeholder="Escribe un mensaje"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
-            disabled={sending || uploading}
-            className="flex-1 rounded-full border-gray-300 focus-visible:ring-green-500"
-          />
+            {/* Input de archivo oculto */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,.pdf,.doc,.docx,.txt,.zip,.rar"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
 
-          <Button
-            onClick={handleSendMessage}
-            disabled={sending || uploading || (!message.trim() && !filePreview)}
-            size="icon"
-            className={`rounded-full ${
-              message.trim() || filePreview ? "bg-green-500 hover:bg-green-600" : "bg-gray-200 text-gray-500"
-            }`}
-          >
-            {sending || uploading ? (
-              <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="rounded-full text-gray-500"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                  >
+                    <Paperclip className="h-5 w-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Adjuntar archivo</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            {/* Botón de plantillas */}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div>
+                    <TemplateSelectorDialog
+                      recipientPhone={getRecipientPhone()}
+                      onTemplateSent={handleTemplateSent}
+                      disabled={sending}
+                    />
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>Enviar plantilla</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            <Input
+              placeholder="Escribe un mensaje"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyPress={handleKeyPress}
+              disabled={sending || uploading}
+              className="flex-1 rounded-full border-gray-300 focus-visible:ring-green-500"
+            />
+
+            <Button
+              onClick={handleSendMessage}
+              disabled={sending || uploading || (!message.trim() && !filePreview)}
+              size="icon"
+              className={`rounded-full ${
+                message.trim() || filePreview ? "bg-green-500 hover:bg-green-600" : "bg-gray-200 text-gray-500"
+              }`}
+            >
+              {sending || uploading ? (
+                <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Panel de perfil de conversación */}

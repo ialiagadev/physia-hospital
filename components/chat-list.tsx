@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { createConversation } from "@/lib/chatActions"
+import { createConversation, sendMessage } from "@/lib/chatActions"
 import { useConversations } from "@/hooks/use-conversations"
 import { useClients } from "@/hooks/use-clients"
 import { useAuth } from "@/app/contexts/auth-context"
@@ -459,24 +459,58 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
     const selectedClient = searchResults.find((c) => c.id.toString() === selectedClientId)
     if (!selectedClient) return
 
-    // Verificar si existe conversación antes de crear
-    if (conversationValidation.exists) {
-      toast({
-        title: "Conversación ya existe",
-        description: `Ya existe una conversación activa con ${selectedClient.name}`,
-        variant: "destructive",
-      })
+    // Si existe conversación, enviar plantilla directamente a esa conversación
+    if (conversationValidation.exists && conversationValidation.existingConversation) {
+      setLoading(true)
+      try {
+        // Validar que tenemos userProfile
+        if (!userProfile?.id) {
+          toast({
+            title: "Error",
+            description: "No se pudo obtener la información del usuario",
+            variant: "destructive",
+          })
+          return
+        }
+
+        // Enviar mensaje de plantilla a la conversación existente
+        await sendMessage({
+          conversationId: conversationValidation.existingConversation.id,
+          content: template.finalContent || `Plantilla "${template.name}" enviada`,
+          userId: userProfile.id,
+          messageType: "text",
+        })
+
+        toast({
+          title: "Plantilla enviada",
+          description: `Se ha enviado la plantilla "${template.name}" a la conversación existente con ${selectedClient.name}`,
+        })
+
+        resetForm()
+        setOpen(false)
+        onConversationCreated()
+      } catch (error) {
+        console.error("Error sending template to existing conversation:", error)
+        toast({
+          title: "Error",
+          description: "No se pudo enviar la plantilla a la conversación",
+          variant: "destructive",
+        })
+      } finally {
+        setLoading(false)
+      }
       return
     }
 
+    // Si no existe conversación, crear nueva (código existente)
     setLoading(true)
     try {
       await createConversation({
         organizationId: organizationIdNumber,
         clientData: {
           name: selectedClient.name,
-          phone: selectedClient.phone || undefined, // Solo el número sin prefijo
-          phone_prefix: selectedClient.phone_prefix || "+34", // Prefijo por separado
+          phone: selectedClient.phone || undefined,
+          phone_prefix: selectedClient.phone_prefix || "+34",
           email: selectedClient.email || undefined,
           external_id: selectedClient.external_id || `client-${selectedClient.id}`,
         },
@@ -541,7 +575,7 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
     }
   }
 
-  // Determinar si se puede crear la conversación
+  // Determinar si se puede crear la conversación o enviar plantilla
   const canCreateConversation = () => {
     if (activeTab === "new") {
       return (
@@ -552,7 +586,8 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
         !conversationValidation.exists
       )
     } else {
-      return selectedClientId && !conversationValidation.checking && !conversationValidation.exists
+      // Para contacto existente, permitir si hay cliente seleccionado y no está verificando
+      return selectedClientId && !conversationValidation.checking
     }
   }
 
@@ -833,18 +868,6 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
                 </div>
               )}
 
-              {/* Alerta si ya existe una conversación con el cliente seleccionado */}
-              {conversationValidation.exists && conversationValidation.existingConversation && (
-                <Alert className="border-red-200 bg-red-50">
-                  <AlertTriangle className="h-4 w-4 text-red-500" />
-                  <AlertDescription className="text-red-700">
-                    <strong>⚠️ Conversación ya existe</strong>
-                    <br />
-                    Ya existe una conversación activa con este cliente. No puedes crear otra conversación.
-                  </AlertDescription>
-                </Alert>
-              )}
-
               {/* Indicador de verificación */}
               {conversationValidation.checking && (
                 <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -889,15 +912,15 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
 
                   {/* Información adicional */}
                   {conversationValidation.exists ? (
-                    <div className="mt-3 p-2 bg-red-100 rounded-md">
-                      <p className="text-xs text-red-700 text-center">
-                        ❌ No puedes crear una conversación porque ya existe una activa con este cliente
+                    <div className="mt-3 p-2 bg-blue-100 rounded-md">
+                      <p className="text-xs text-blue-700 text-center">
+                        ✨ Se enviará la plantilla a la conversación existente con este cliente
                       </p>
                     </div>
                   ) : (
                     <div className="mt-3 p-2 bg-blue-100 rounded-md">
                       <p className="text-xs text-blue-700 text-center">
-                        ✨ Se enviará la plantilla al contacto seleccionado
+                        ✨ Se creará una nueva conversación y se enviará la plantilla seleccionada
                       </p>
                     </div>
                   )}
