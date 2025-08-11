@@ -48,7 +48,12 @@ interface FilePreview {
   type: "image" | "document"
 }
 
-export default function ConversationWindowSimple({ chatId, currentUser, onBack }: ConversationWindowSimpleProps) {
+export default function ConversationWindowSimple({
+  chatId,
+  currentUser,
+  onBack,
+  onTagsChange // 🔹 lo añadimos aquí
+}: ConversationWindowSimpleProps) {
   // Estado local
   const [message, setMessage] = useState("")
   const [sending, setSending] = useState(false)
@@ -58,6 +63,7 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
   const [isWindowVisible, setIsWindowVisible] = useState(true)
   const [filePreview, setFilePreview] = useState<FilePreview | null>(null)
   const [uploading, setUploading] = useState(false)
+
 
   // Referencias
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -947,7 +953,8 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
         conversation={conversation}
         currentUser={currentUser}
         onAssignmentChange={handleAssignmentChange}
-        
+        onTagsChange={onTagsChange} // 🔹 Se lo mandas aquí
+
       />
     </div>
   )
