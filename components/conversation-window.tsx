@@ -20,12 +20,18 @@ import { useMediaQuery } from "@/hooks/use-media-query"
 import { useToast } from "@/hooks/use-toast"
 import type { Message, User, Client } from "@/types/chat"
 
-interface Template {
+interface TemplateWithVariables {
   id: string
   name: string
-  content: string
+  status: string
+  language: string
   category: string
-  variables?: string[]
+  components?: Array<{
+    text?: string
+    type?: string
+  }>
+  variableValues?: Record<string, string>
+  finalContent?: string
 }
 
 interface ConversationWindowSimpleProps {
@@ -75,7 +81,6 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
   // Auto-marcar como leído cuando se abre la conversación
   useEffect(() => {
     console.log(`ConversationWindow: chatId cambió a ${chatId}`)
-
     // Marcar como leído inmediatamente al abrir
     if (chatId && unreadCount > 0) {
       console.log(`Auto-marcando ${unreadCount} mensajes como leídos`)
@@ -142,6 +147,7 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
       const { scrollTop, scrollHeight, clientHeight } = container
       const scrollPosition = scrollHeight - scrollTop - clientHeight
       const isNear = scrollPosition < 100
+
       setIsNearBottom(isNear)
       setShowScrollButton(!isNear)
     }
@@ -273,10 +279,8 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
         setUploading(true)
         try {
           console.log("📤 Subiendo archivo:", filePreview.file.name)
-
           const uploadResult = await uploadFile(filePreview.file, "chat-media")
           mediaUrl = uploadResult.publicUrl
-
           console.log("✅ Archivo subido:", mediaUrl)
         } catch (uploadError) {
           console.error("❌ Error subiendo archivo:", uploadError)
@@ -320,23 +324,56 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
     }
   }
 
-  // Handle template selection
-  const handleTemplateSelect = async (template: Template) => {
-    if (currentUser && !sending) {
-      setSending(true)
+  // Handle template sent - Updated to show template with variables replaced
+  const handleTemplateSent = async (template: TemplateWithVariables) => {
+    console.log("Plantilla enviada:", template)
 
-      try {
-        await sendMessage({
-          conversationId: chatId,
-          content: template.content,
-          userId: currentUser.id,
-          messageType: "text",
-        })
-      } catch (error) {
-        console.error("Error sending template:", error)
-      } finally {
-        setSending(false)
+    try {
+      // Use the final content if available, otherwise build it
+      let templateContent = template.finalContent
+
+      if (!templateContent) {
+        // Fallback: build content from components
+        const bodyComponent = template.components?.find((c) => c.type === "BODY")
+        const headerComponent = template.components?.find((c) => c.type === "HEADER")
+        const footerComponent = template.components?.find((c) => c.type === "FOOTER")
+
+        templateContent = ""
+
+        if (headerComponent?.text) {
+          templateContent += `*${headerComponent.text}*\n\n`
+        }
+
+        if (bodyComponent?.text) {
+          templateContent += bodyComponent.text
+        }
+
+        if (footerComponent?.text) {
+          templateContent += `\n\n_${footerComponent.text}_`
+        }
+
+        // Fallback if no content found
+        if (!templateContent.trim()) {
+          templateContent = `Plantilla "${template.name}" enviada`
+        }
       }
+
+      // Add the template content as a message in the chat
+      await sendMessage({
+        conversationId: chatId,
+        content: templateContent,
+        userId: currentUser.id,
+        messageType: "text",
+      })
+
+      console.log("✅ Contenido de plantilla agregado al chat:", templateContent)
+    } catch (error) {
+      console.error("❌ Error adding template content to chat:", error)
+      toast({
+        title: "Error",
+        description: "La plantilla se envió pero no se pudo mostrar en el chat",
+        variant: "destructive",
+      })
     }
   }
 
@@ -457,6 +494,22 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
     e.stopPropagation()
     console.log("Abriendo panel de perfil")
     setShowProfilePanel(true)
+  }
+
+  // Get recipient phone number for template selector
+  const getRecipientPhone = () => {
+    // Try to get phone from client data
+    if (client?.phone) {
+      return client.phone
+    }
+
+    // Try to get from conversation title if it looks like a phone number
+    if (conversation?.title && /^\+?\d{10,15}$/.test(conversation.title.replace(/\D/g, ""))) {
+      return conversation.title
+    }
+
+    // Fallback - you might want to handle this differently
+    return client?.name || conversation?.title || "unknown"
   }
 
   if (loading) {
@@ -664,7 +717,7 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
 
                           {/* Doble checkmark solo para mensajes enviados */}
                           {msg.sender_type === "agent" && (
-                            <div className="flex items-center">
+                            <div className="flex items-center ml-1">
                               <svg className="w-4 h-4 text-gray-400" viewBox="0 0 16 15" fill="none">
                                 <path
                                   d="M15.01 3.316l-.478-.372a.365.365 0 0 0-.51.063L8.666 9.879a.32.32 0 0 1-.484.033l-.358-.325a.319.319 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.063-.51zm-4.1 0l-.478-.372a.365.365 0 0 0-.51.063L4.566 9.879a.32.32 0 0 1-.484.033L3.724 9.587a.319.319 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.063-.51z"
@@ -797,12 +850,16 @@ export default function ConversationWindowSimple({ chatId, currentUser, onBack }
             </Tooltip>
           </TooltipProvider>
 
-          {/* Botón de plantillas */}
+          {/* Botón de plantillas - Updated with correct props */}
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
                 <div>
-                  <TemplateSelectorDialog onTemplateSelect={handleTemplateSelect} disabled={sending} />
+                  <TemplateSelectorDialog
+                    recipientPhone={getRecipientPhone()}
+                    onTemplateSent={handleTemplateSent}
+                    disabled={sending}
+                  />
                 </div>
               </TooltipTrigger>
               <TooltipContent>Enviar plantilla</TooltipContent>

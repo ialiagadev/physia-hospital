@@ -2,22 +2,24 @@
 
 import type React from "react"
 import { useState, useEffect, useCallback, useRef } from "react"
-import { Search, MoreVertical, Users, MessageCircle, Plus, Phone } from 'lucide-react'
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Search, MoreVertical, Users, MessageCircle, Plus, Phone, FileText, AlertTriangle, Loader2 } from "lucide-react"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { createConversation } from "@/lib/chatActions"
 import { useConversations } from "@/hooks/use-conversations"
 import { useClients } from "@/hooks/use-clients"
 import { useAuth } from "@/app/contexts/auth-context"
-import type { ConversationWithLastMessage } from "@/types/chat"
-import type { Client } from "@/types/calendar"
+import { TemplateSelectorDialog } from "@/components/template-selector-dialog"
+import type { ConversationWithLastMessage, Client } from "@/types/chat"
 import { useTotalUnreadMessages } from "@/hooks/use-unread-messages"
 import { supabase } from "@/lib/supabase/client"
 import { generateTagStyle } from "@/lib/dynamic-tag-colors"
+import { toast } from "@/hooks/use-toast"
 
 // Componente para mostrar el icono del canal con letra
 function ChannelIcon({ channelName }: { channelName?: string }) {
@@ -72,39 +74,34 @@ const countryPrefixes = [
   { code: "GB", prefix: "+44", name: "Reino Unido", flag: "🇬🇧" },
 ]
 
-// Plantillas de ejemplo (mock data)
-const messageTemplates = [
-  {
-    id: "welcome",
-    name: "Bienvenida",
-    content: "¡Hola! 👋 Bienvenido/a a nuestro servicio. ¿En qué podemos ayudarte hoy?",
-    category: "Saludo",
-  },
-  {
-    id: "appointment",
-    name: "Recordatorio de cita",
-    content: "Hola, te recordamos que tienes una cita programada. ¿Necesitas confirmar o reprogramar?",
-    category: "Citas",
-  },
-  {
-    id: "promotion",
-    name: "Promoción especial",
-    content: "🎉 ¡Oferta especial! Aprovecha nuestros descuentos exclusivos. ¡No te lo pierdas!",
-    category: "Marketing",
-  },
-  {
-    id: "support",
-    name: "Soporte técnico",
-    content: "Hola, somos el equipo de soporte. Estamos aquí para ayudarte con cualquier consulta técnica.",
-    category: "Soporte",
-  },
-  {
-    id: "followup",
-    name: "Seguimiento",
-    content: "Hola, queremos saber cómo ha sido tu experiencia con nosotros. ¿Podrías compartir tu opinión?",
-    category: "Seguimiento",
-  },
-]
+// Función para limpiar el número de teléfono y detectar prefijo
+function cleanPhoneNumber(input: string, currentPrefix: string): { cleanPhone: string; detectedPrefix?: string } {
+  // Remover todos los caracteres no numéricos excepto el +
+  const cleaned = input.replace(/[^\d+]/g, "")
+
+  // Si no empieza con +, es solo el número
+  if (!cleaned.startsWith("+")) {
+    return { cleanPhone: cleaned }
+  }
+
+  // Buscar el prefijo en nuestra lista
+  for (const country of countryPrefixes) {
+    if (cleaned.startsWith(country.prefix)) {
+      const phoneWithoutPrefix = cleaned.substring(country.prefix.length)
+      return {
+        cleanPhone: phoneWithoutPrefix,
+        detectedPrefix: country.prefix,
+      }
+    }
+  }
+
+  // Si no encontramos el prefijo, asumir que es el prefijo actual
+  const phoneWithoutCurrentPrefix = cleaned.startsWith(currentPrefix)
+    ? cleaned.substring(currentPrefix.length)
+    : cleaned.substring(1) // Remover solo el +
+
+  return { cleanPhone: phoneWithoutCurrentPrefix }
+}
 
 // Modal unificado para nueva conversación
 function UnifiedNewConversationModal({ onConversationCreated }: { onConversationCreated: () => void }) {
@@ -115,25 +112,224 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
   const [selectedPrefix, setSelectedPrefix] = useState("+34")
   const [phoneNumber, setPhoneNumber] = useState("")
   const [contactName, setContactName] = useState("")
-  const [selectedTemplate, setSelectedTemplate] = useState("")
 
   // Estados para contacto existente
   const [selectedClientId, setSelectedClientId] = useState<string>("")
-  const [initialMessage, setInitialMessage] = useState("")
   const [contactSearch, setContactSearch] = useState("")
   const [searchResults, setSearchResults] = useState<Client[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
 
+  // Estados para validación de teléfono
+  const [phoneValidation, setPhoneValidation] = useState<{
+    checking: boolean
+    exists: boolean
+    existingClient?: Client
+    error?: string
+  }>({
+    checking: false,
+    exists: false,
+  })
+
+  // Estados para validación de conversación existente
+  const [conversationValidation, setConversationValidation] = useState<{
+    checking: boolean
+    exists: boolean
+    existingConversation?: any
+    error?: string
+  }>({
+    checking: false,
+    exists: false,
+  })
+
   const [loading, setLoading] = useState(false)
   const { userProfile } = useAuth()
-
   const organizationId = userProfile?.organization_id
   const organizationIdNumber = organizationId ? Number(organizationId) : undefined
   const { searchClientsServer } = useClients(organizationIdNumber)
 
   // Use useRef to store the timeout ID and prevent re-renders
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const phoneCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const conversationCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const isSearchingRef = useRef(false)
+
+  // Función para verificar si ya existe una conversación activa con el cliente
+  const checkExistingConversation = useCallback(
+    async (clientId: number) => {
+      if (!organizationIdNumber || !clientId) {
+        setConversationValidation({ checking: false, exists: false })
+        return
+      }
+
+      setConversationValidation({ checking: true, exists: false })
+
+      try {
+        // Buscar conversaciones activas o pendientes con este cliente
+        const { data, error } = await supabase
+          .from("conversations")
+          .select(`
+          *,
+          client:clients(*)
+        `)
+          .eq("organization_id", organizationIdNumber)
+          .eq("client_id", clientId)
+          .in("status", ["active", "pending"])
+          .limit(1)
+
+        if (error) {
+          console.error("Error checking existing conversation:", error)
+          setConversationValidation({
+            checking: false,
+            exists: false,
+            error: "Error al verificar conversaciones existentes",
+          })
+          return
+        }
+
+        if (data && data.length > 0) {
+          setConversationValidation({
+            checking: false,
+            exists: true,
+            existingConversation: data[0],
+          })
+        } else {
+          setConversationValidation({ checking: false, exists: false })
+        }
+      } catch (error) {
+        console.error("Error checking existing conversation:", error)
+        setConversationValidation({
+          checking: false,
+          exists: false,
+          error: "Error al verificar conversaciones existentes",
+        })
+      }
+    },
+    [organizationIdNumber],
+  )
+
+  // Función para verificar si el teléfono ya existe
+  const checkPhoneExists = useCallback(
+    async (phone: string, prefix: string) => {
+      if (!organizationIdNumber || phone.length < 9) {
+        setPhoneValidation({ checking: false, exists: false })
+        setConversationValidation({ checking: false, exists: false })
+        return
+      }
+
+      const fullPhone = prefix + phone
+      setPhoneValidation({ checking: true, exists: false })
+
+      try {
+        // Buscar por teléfono completo o por partes
+        const { data, error } = await supabase
+          .from("clients")
+          .select("*")
+          .eq("organization_id", organizationIdNumber)
+          .or(`full_phone.eq.${fullPhone},phone.eq.${phone}`)
+          .limit(1)
+
+        if (error) {
+          console.error("Error checking phone:", error)
+          setPhoneValidation({
+            checking: false,
+            exists: false,
+            error: "Error al verificar el teléfono",
+          })
+          return
+        }
+
+        if (data && data.length > 0) {
+          const existingClient = data[0] as Client
+          setPhoneValidation({
+            checking: false,
+            exists: true,
+            existingClient,
+          })
+
+          // Si el cliente existe, verificar si ya tiene una conversación activa
+          checkExistingConversation(existingClient.id)
+        } else {
+          setPhoneValidation({ checking: false, exists: false })
+          setConversationValidation({ checking: false, exists: false })
+        }
+      } catch (error) {
+        console.error("Error checking phone:", error)
+        setPhoneValidation({
+          checking: false,
+          exists: false,
+          error: "Error al verificar el teléfono",
+        })
+      }
+    },
+    [organizationIdNumber, checkExistingConversation],
+  )
+
+  // Manejar cambios en el número de teléfono con debounce
+  const handlePhoneChange = useCallback(
+    (value: string) => {
+      const { cleanPhone, detectedPrefix } = cleanPhoneNumber(value, selectedPrefix)
+
+      // Si detectamos un prefijo diferente, actualizarlo
+      if (detectedPrefix && detectedPrefix !== selectedPrefix) {
+        setSelectedPrefix(detectedPrefix)
+      }
+
+      setPhoneNumber(cleanPhone)
+
+      // Clear previous timeout
+      if (phoneCheckTimeoutRef.current) {
+        clearTimeout(phoneCheckTimeoutRef.current)
+      }
+
+      // Si tiene menos de 9 dígitos, no verificar
+      if (cleanPhone.length < 9) {
+        setPhoneValidation({ checking: false, exists: false })
+        setConversationValidation({ checking: false, exists: false })
+        return
+      }
+
+      // Set new timeout for phone check
+      phoneCheckTimeoutRef.current = setTimeout(() => {
+        checkPhoneExists(cleanPhone, detectedPrefix || selectedPrefix)
+      }, 1000) // 1 segundo de delay
+    },
+    [selectedPrefix, checkPhoneExists],
+  )
+
+  // Manejar cambios en el prefijo
+  const handlePrefixChange = useCallback(
+    (newPrefix: string) => {
+      setSelectedPrefix(newPrefix)
+      // Si hay teléfono, re-verificar con el nuevo prefijo
+      if (phoneNumber.length >= 9) {
+        if (phoneCheckTimeoutRef.current) {
+          clearTimeout(phoneCheckTimeoutRef.current)
+        }
+        phoneCheckTimeoutRef.current = setTimeout(() => {
+          checkPhoneExists(phoneNumber, newPrefix)
+        }, 500)
+      }
+    },
+    [phoneNumber, checkPhoneExists],
+  )
+
+  // Manejar selección de cliente existente
+  const handleClientSelection = useCallback(
+    (clientId: string) => {
+      setSelectedClientId(clientId)
+
+      // Clear previous timeout
+      if (conversationCheckTimeoutRef.current) {
+        clearTimeout(conversationCheckTimeoutRef.current)
+      }
+
+      // Verificar si ya existe una conversación con este cliente
+      conversationCheckTimeoutRef.current = setTimeout(() => {
+        checkExistingConversation(Number(clientId))
+      }, 300)
+    },
+    [checkExistingConversation],
+  )
 
   // Stable search function that doesn't change on every render
   const performSearch = useCallback(
@@ -197,24 +393,49 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current)
       }
+      if (phoneCheckTimeoutRef.current) {
+        clearTimeout(phoneCheckTimeoutRef.current)
+      }
+      if (conversationCheckTimeoutRef.current) {
+        clearTimeout(conversationCheckTimeoutRef.current)
+      }
     }
   }, [])
 
-  const handleSubmitNew = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!phoneNumber.trim() || !selectedTemplate || !contactName.trim()) return
+  const handleNewContactTemplateSent = async (template: any) => {
+    if (!phoneNumber.trim() || !contactName.trim() || !organizationIdNumber) return
+
+    // Verificar si existe conversación antes de crear
+    if (conversationValidation.exists) {
+      toast({
+        title: "Conversación ya existe",
+        description: "Ya existe una conversación activa con este cliente",
+        variant: "destructive",
+      })
+      return
+    }
 
     setLoading(true)
     try {
-      // Aquí irá la lógica para crear la conversación con nuevo contacto
-      console.log("Crear conversación con nuevo contacto:", {
-        name: contactName,
-        phone: selectedPrefix + phoneNumber,
-        template: selectedTemplate,
+      // Asegurar que el phoneNumber esté limpio (sin prefijo)
+      const { cleanPhone } = cleanPhoneNumber(phoneNumber, selectedPrefix)
+
+      // Crear conversación con nuevo contacto
+      await createConversation({
+        organizationId: organizationIdNumber,
+        clientData: {
+          name: contactName,
+          phone: phoneNumber, // Solo el número sin prefijo
+          phone_prefix: selectedPrefix, // Prefijo por separado
+          external_id: `phone-${selectedPrefix}${phoneNumber}`,
+        },
+        initialMessage: template.finalContent || `Plantilla "${template.name}" enviada`,
       })
 
-      // Simular delay
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      toast({
+        title: "Conversación creada",
+        description: `Se ha creado una conversación con ${contactName} y se ha enviado la plantilla "${template.name}"`,
+      })
 
       // Limpiar formulario y cerrar modal
       resetForm()
@@ -222,17 +443,31 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
       onConversationCreated()
     } catch (error) {
       console.error("Error creating conversation:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo crear la conversación",
+        variant: "destructive",
+      })
     } finally {
       setLoading(false)
     }
   }
 
-  const handleSubmitExisting = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleExistingContactTemplateSent = async (template: any) => {
     if (!selectedClientId || !organizationIdNumber) return
 
     const selectedClient = searchResults.find((c) => c.id.toString() === selectedClientId)
     if (!selectedClient) return
+
+    // Verificar si existe conversación antes de crear
+    if (conversationValidation.exists) {
+      toast({
+        title: "Conversación ya existe",
+        description: `Ya existe una conversación activa con ${selectedClient.name}`,
+        variant: "destructive",
+      })
+      return
+    }
 
     setLoading(true)
     try {
@@ -240,13 +475,18 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
         organizationId: organizationIdNumber,
         clientData: {
           name: selectedClient.name,
-          phone: selectedClient.phone || undefined,
+          phone: selectedClient.phone || undefined, // Solo el número sin prefijo
+          phone_prefix: selectedClient.phone_prefix || "+34", // Prefijo por separado
           email: selectedClient.email || undefined,
           external_id: selectedClient.external_id || `client-${selectedClient.id}`,
-          avatar_url: selectedClient.avatar_url || undefined,
         },
-        initialMessage: initialMessage || "¡Hola! ¿En qué puedo ayudarte?",
+        initialMessage: template.finalContent || `Plantilla "${template.name}" enviada`,
         existingClientId: selectedClient.id,
+      })
+
+      toast({
+        title: "Conversación creada",
+        description: `Se ha creado una conversación con ${selectedClient.name} y se ha enviado la plantilla "${template.name}"`,
       })
 
       resetForm()
@@ -254,6 +494,11 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
       onConversationCreated()
     } catch (error) {
       console.error("Error creating conversation:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo crear la conversación",
+        variant: "destructive",
+      })
     } finally {
       setLoading(false)
     }
@@ -262,21 +507,54 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
   const resetForm = () => {
     setPhoneNumber("")
     setContactName("")
-    setSelectedTemplate("")
     setSelectedClientId("")
-    setInitialMessage("")
     setContactSearch("")
     setSearchResults([])
     setSearchLoading(false)
+    setPhoneValidation({ checking: false, exists: false })
+    setConversationValidation({ checking: false, exists: false })
     isSearchingRef.current = false
 
     // Clear any pending search
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current)
     }
+    if (phoneCheckTimeoutRef.current) {
+      clearTimeout(phoneCheckTimeoutRef.current)
+    }
+    if (conversationCheckTimeoutRef.current) {
+      clearTimeout(conversationCheckTimeoutRef.current)
+    }
   }
 
-  const selectedTemplateData = messageTemplates.find((t) => t.id === selectedTemplate)
+  // Obtener número de teléfono para el selector de plantillas
+  const getRecipientPhone = () => {
+    if (activeTab === "new") {
+      return selectedPrefix + phoneNumber
+    } else {
+      const selectedClient = searchResults.find((c) => c.id.toString() === selectedClientId)
+      if (selectedClient?.phone) {
+        const prefix = selectedClient.phone_prefix || "+34"
+        return prefix + selectedClient.phone
+      }
+      return selectedClient?.phone || ""
+    }
+  }
+
+  // Determinar si se puede crear la conversación
+  const canCreateConversation = () => {
+    if (activeTab === "new") {
+      return (
+        phoneNumber.trim().length >= 9 &&
+        contactName.trim() &&
+        !phoneValidation.checking &&
+        !conversationValidation.checking &&
+        !conversationValidation.exists
+      )
+    } else {
+      return selectedClientId && !conversationValidation.checking && !conversationValidation.exists
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -324,113 +602,172 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
 
         {/* Contenido de la pestaña "Nuevo contacto" */}
         {activeTab === "new" && (
-          <form onSubmit={handleSubmitNew} className="space-y-4">
-            {/* Nombre del contacto */}
-            <div className="space-y-2">
-              <Label htmlFor="contactName">Nombre del contacto</Label>
-              <Input
-                id="contactName"
-                value={contactName}
-                onChange={(e) => setContactName(e.target.value)}
-                placeholder="Nombre completo"
-                required
-              />
-            </div>
-
-            {/* Número de teléfono */}
-            <div className="space-y-2">
-              <Label htmlFor="phone">Número de teléfono</Label>
-              <div className="flex gap-2">
-                <Select value={selectedPrefix} onValueChange={setSelectedPrefix}>
-                  <SelectTrigger className="w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {countryPrefixes.map((country) => (
-                      <SelectItem key={country.code} value={country.prefix}>
-                        <div className="flex items-center gap-2">
-                          <span>{country.flag}</span>
-                          <span>{country.prefix}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+          <div className="space-y-4">
+            <div className="space-y-4">
+              {/* Nombre del contacto */}
+              <div className="space-y-2">
+                <Label htmlFor="contactName">Nombre del contacto</Label>
                 <Input
-                  id="phone"
-                  type="tel"
-                  placeholder="Número de teléfono"
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ""))}
-                  className="flex-1"
+                  id="contactName"
+                  value={contactName}
+                  onChange={(e) => setContactName(e.target.value)}
+                  placeholder="Nombre completo"
                   required
                 />
               </div>
-              <p className="text-sm text-gray-500">
-                Número completo: {selectedPrefix}
-                {phoneNumber}
-              </p>
-            </div>
 
-            {/* Plantilla de mensaje */}
-            <div className="space-y-2">
-              <Label htmlFor="template">Plantilla de mensaje</Label>
-              <Select value={selectedTemplate} onValueChange={setSelectedTemplate}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona una plantilla" />
-                </SelectTrigger>
-                <SelectContent>
-                  {messageTemplates.map((template) => (
-                    <SelectItem key={template.id} value={template.id}>
-                      <div>
-                        <div className="font-medium">{template.name}</div>
-                        <div className="text-xs text-gray-500">{template.category}</div>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Vista previa de la plantilla */}
-            {selectedTemplateData && (
+              {/* Número de teléfono */}
               <div className="space-y-2">
-                <Label>Vista previa del mensaje</Label>
-                <div className="p-3 bg-gray-50 rounded-lg border">
-                  <p className="text-sm text-gray-700">{selectedTemplateData.content}</p>
+                <Label htmlFor="phone">Número de teléfono</Label>
+                <div className="flex gap-2">
+                  <Select value={selectedPrefix} onValueChange={handlePrefixChange}>
+                    <SelectTrigger className="w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {countryPrefixes.map((country) => (
+                        <SelectItem key={country.code} value={country.prefix}>
+                          <div className="flex items-center gap-2">
+                            <span>{country.flag}</span>
+                            <span>{country.prefix}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="flex-1 relative">
+                    <Input
+                      id="phone"
+                      type="tel"
+                      placeholder="Número de teléfono"
+                      value={phoneNumber}
+                      onChange={(e) => handlePhoneChange(e.target.value)}
+                      className={`${
+                        phoneValidation.exists || conversationValidation.exists
+                          ? "border-red-500 focus:border-red-500"
+                          : ""
+                      }`}
+                      required
+                    />
+                    {(phoneValidation.checking || conversationValidation.checking) && (
+                      <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                        <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Información del número completo */}
+                <p className="text-sm text-gray-500">
+                  Número completo: {selectedPrefix}
+                  {phoneNumber}
+                </p>
+
+                {/* Alerta si el teléfono ya existe */}
+                {phoneValidation.exists && phoneValidation.existingClient && (
+                  <Alert className="border-amber-200 bg-amber-50">
+                    <AlertTriangle className="h-4 w-4 text-amber-500" />
+                    <AlertDescription className="text-amber-700">
+                      <strong>Cliente ya existe:</strong> {phoneValidation.existingClient.name}
+                      <br />
+                      <span className="text-sm">
+                        Te recomendamos usar la pestaña "Contacto existente" para enviar plantillas a este cliente.
+                      </span>
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {/* Alerta si ya existe una conversación */}
+                {conversationValidation.exists && conversationValidation.existingConversation && (
+                  <Alert className="border-red-200 bg-red-50">
+                    <AlertTriangle className="h-4 w-4 text-red-500" />
+                    <AlertDescription className="text-red-700">
+                      <strong>⚠️ Conversación ya existe</strong>
+                      <br />
+                      Ya existe una conversación activa con este cliente. No puedes crear otra conversación.
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {/* Error de validación */}
+                {(phoneValidation.error || conversationValidation.error) && (
+                  <Alert className="border-red-200 bg-red-50">
+                    <AlertTriangle className="h-4 w-4 text-red-500" />
+                    <AlertDescription className="text-red-700">
+                      {phoneValidation.error || conversationValidation.error}
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </div>
+
+              {/* Selector de plantillas mejorado */}
+              <div className="space-y-2">
+                <Label>Enviar plantilla</Label>
+                <div className="p-4 border border-gray-200 rounded-lg bg-gradient-to-br from-green-50 to-emerald-50">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 bg-gradient-to-r from-green-500 to-emerald-600 rounded-lg flex items-center justify-center">
+                      <FileText className="h-5 w-5 text-white" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Plantillas WhatsApp</p>
+                      <p className="text-xs text-gray-600">Selecciona una plantilla para enviar al contacto</p>
+                    </div>
+                  </div>
+                  <div className="flex justify-center">
+                    <TemplateSelectorDialog
+                      recipientPhone={getRecipientPhone()}
+                      onTemplateSent={handleNewContactTemplateSent}
+                      disabled={loading || !canCreateConversation()}
+                      trigger={
+                        <Button
+                          className={`bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 ${
+                            loading || !canCreateConversation() ? "opacity-50 cursor-not-allowed" : ""
+                          }`}
+                          disabled={loading || !canCreateConversation()}
+                        >
+                          <FileText className="h-4 w-4 mr-2" />
+                          Seleccionar Plantilla
+                        </Button>
+                      }
+                    />
+                  </div>
+
+                  {/* Información adicional */}
+                  {conversationValidation.exists ? (
+                    <div className="mt-3 p-2 bg-red-100 rounded-md">
+                      <p className="text-xs text-red-700 text-center">
+                        ❌ No puedes crear una conversación porque ya existe una activa con este cliente
+                      </p>
+                    </div>
+                  ) : phoneValidation.exists ? (
+                    <div className="mt-3 p-2 bg-amber-100 rounded-md">
+                      <p className="text-xs text-amber-700 text-center">
+                        ⚠️ No puedes crear un nuevo contacto con este número porque ya existe
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="mt-3 p-2 bg-green-100 rounded-md">
+                      <p className="text-xs text-green-700 text-center">
+                        ✨ Se creará un nuevo contacto y se enviará la plantilla seleccionada
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
-            )}
+            </div>
 
-            {/* Botones */}
-            <div className="flex justify-end gap-2 pt-4">
+            {/* Botón cancelar */}
+            <div className="flex justify-end pt-4">
               <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={loading}>
                 Cancelar
               </Button>
-              <Button
-                type="submit"
-                disabled={loading || !phoneNumber.trim() || !selectedTemplate || !contactName.trim()}
-                className="bg-green-600 hover:bg-green-700"
-              >
-                {loading ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Enviando...
-                  </>
-                ) : (
-                  <>
-                    <Phone className="h-4 w-4 mr-2" />
-                    Enviar mensaje
-                  </>
-                )}
-              </Button>
             </div>
-          </form>
+          </div>
         )}
 
         {/* Contenido de la pestaña "Contacto existente" */}
         {activeTab === "existing" && (
-          <form onSubmit={handleSubmitExisting} className="space-y-4">
+          <div className="space-y-4">
             <div className="space-y-2">
               <Label>Buscar contacto</Label>
               <Input
@@ -455,7 +792,7 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
                       <div
                         key={client.id}
                         onClick={() => {
-                          setSelectedClientId(client.id.toString())
+                          handleClientSelection(client.id.toString())
                           setContactSearch(client.name)
                         }}
                         className={`flex items-center gap-3 p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 ${
@@ -463,9 +800,6 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
                         }`}
                       >
                         <Avatar className="h-8 w-8">
-                          {client.avatar_url && (
-                            <AvatarImage src={client.avatar_url || "/placeholder.svg"} alt={client.name} />
-                          )}
                           <AvatarFallback className="text-xs">{client.name.charAt(0)}</AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">
@@ -490,6 +824,7 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
                     onClick={() => {
                       setSelectedClientId("")
                       setContactSearch("")
+                      setConversationValidation({ checking: false, exists: false })
                     }}
                     className="ml-2 text-green-700 hover:text-green-800 underline"
                   >
@@ -497,37 +832,86 @@ function UnifiedNewConversationModal({ onConversationCreated }: { onConversation
                   </button>
                 </div>
               )}
+
+              {/* Alerta si ya existe una conversación con el cliente seleccionado */}
+              {conversationValidation.exists && conversationValidation.existingConversation && (
+                <Alert className="border-red-200 bg-red-50">
+                  <AlertTriangle className="h-4 w-4 text-red-500" />
+                  <AlertDescription className="text-red-700">
+                    <strong>⚠️ Conversación ya existe</strong>
+                    <br />
+                    Ya existe una conversación activa con este cliente. No puedes crear otra conversación.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {/* Indicador de verificación */}
+              {conversationValidation.checking && (
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Verificando conversaciones existentes...
+                </div>
+              )}
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="message">Mensaje inicial (opcional)</Label>
-              <Input
-                id="message"
-                value={initialMessage}
-                onChange={(e) => setInitialMessage(e.target.value)}
-                placeholder="¡Hola! ¿En qué puedo ayudarte?"
-              />
-            </div>
+            {/* Selector de plantillas para contacto existente */}
+            {selectedClientId && (
+              <div className="space-y-2">
+                <Label>Enviar plantilla</Label>
+                <div className="p-4 border border-gray-200 rounded-lg bg-gradient-to-br from-blue-50 to-indigo-50">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
+                      <FileText className="h-5 w-5 text-white" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Plantillas WhatsApp</p>
+                      <p className="text-xs text-gray-600">Selecciona una plantilla para enviar al contacto</p>
+                    </div>
+                  </div>
+                  <div className="flex justify-center">
+                    <TemplateSelectorDialog
+                      recipientPhone={getRecipientPhone()}
+                      onTemplateSent={handleExistingContactTemplateSent}
+                      disabled={loading || !canCreateConversation()}
+                      trigger={
+                        <Button
+                          className={`bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 ${
+                            loading || !canCreateConversation() ? "opacity-50 cursor-not-allowed" : ""
+                          }`}
+                          disabled={loading || !canCreateConversation()}
+                        >
+                          <FileText className="h-4 w-4 mr-2" />
+                          Seleccionar Plantilla
+                        </Button>
+                      }
+                    />
+                  </div>
 
-            <div className="flex justify-end gap-2 pt-4">
+                  {/* Información adicional */}
+                  {conversationValidation.exists ? (
+                    <div className="mt-3 p-2 bg-red-100 rounded-md">
+                      <p className="text-xs text-red-700 text-center">
+                        ❌ No puedes crear una conversación porque ya existe una activa con este cliente
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="mt-3 p-2 bg-blue-100 rounded-md">
+                      <p className="text-xs text-blue-700 text-center">
+                        ✨ Se enviará la plantilla al contacto seleccionado
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Botón cancelar */}
+            <div className="flex justify-end pt-4">
               <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={loading}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={loading || !selectedClientId} className="bg-green-600 hover:bg-green-700">
-                {loading ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Creando...
-                  </>
-                ) : (
-                  <>
-                    <MessageCircle className="h-4 w-4 mr-2" />
-                    Iniciar conversación
-                  </>
-                )}
-              </Button>
             </div>
-          </form>
+          </div>
         )}
       </DialogContent>
     </Dialog>
@@ -562,7 +946,7 @@ function useTagColors(organizationId: number | undefined) {
           setTagColors(new Map())
         } else {
           const colorMap = new Map<string, string>()
-          data?.forEach(tag => {
+          data?.forEach((tag) => {
             colorMap.set(tag.tag_name, tag.color)
           })
           setTagColors(colorMap)
@@ -583,12 +967,14 @@ function useTagColors(organizationId: number | undefined) {
 
 // Actualizar la interface
 interface ConversationTagsProps {
-  tags: Array<{ 
-    id: string
-    tag_name: string
-    created_at: string
-    color?: string
-  }> | undefined
+  tags:
+    | Array<{
+        id: string
+        tag_name: string
+        created_at: string
+        color?: string
+      }>
+    | undefined
   tagColors: Map<string, string>
   colorsLoading: boolean
 }
@@ -620,7 +1006,7 @@ const ConversationTags: React.FC<ConversationTagsProps> = ({ tags, tagColors, co
         // Usar los colores cargados
         const hexColor = tag.color || tagColors.get(tag.tag_name) || "#8B5CF6"
         const tagStyle = generateTagStyle(hexColor)
-        
+
         return (
           <span
             key={tag.id}
@@ -645,14 +1031,19 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
   const [searchQuery, setSearchQuery] = useState("")
   const [viewMode, setViewMode] = useState<"all" | "assigned">("all")
   const [assignedCount, setAssignedCount] = useState(0)
-  const { userProfile } = useAuth()
 
+  const { userProfile } = useAuth()
   const organizationId = userProfile?.organization_id
   const organizationIdNumber = organizationId ? Number(organizationId) : undefined
-  
+
   // Cargar colores a nivel superior
   const { tagColors, loading: colorsLoading } = useTagColors(organizationIdNumber)
-  const { conversations, loading, error, refetch } = useConversations(organizationId, viewMode, userProfile?.id)
+
+  const { conversations, loading, error, refetch } = useConversations(
+    organizationId?.toString(),
+    viewMode,
+    userProfile?.id,
+  )
 
   // Hook para conteo total de mensajes no leídos
   const { totalUnread } = useTotalUnreadMessages(organizationIdNumber)
@@ -804,7 +1195,6 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
             <span className="ml-2 text-gray-500">({assignedCount})</span>
           </div>
         </div>
-
         <div
           className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-50 ${
             viewMode === "all" ? "bg-green-50 border-r-4 border-green-500" : ""
@@ -854,18 +1244,11 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
                     : ""
               }`}
             >
-              {/* Avatar con icono del canal en la esquina */}
+              {/* Avatar sin imagen - solo iniciales */}
               <div className="relative">
                 <Avatar className="h-12 w-12">
-                  {conversation.client?.avatar_url && (
-                    <AvatarImage
-                      src={conversation.client.avatar_url || "/placeholder.svg"}
-                      alt={conversation.client?.name || "Usuario"}
-                    />
-                  )}
                   <AvatarFallback>{conversation.client?.name?.charAt(0) || "U"}</AvatarFallback>
                 </Avatar>
-
                 {/* Icono del canal en la esquina inferior derecha */}
                 <div className="absolute -bottom-0.5 -right-0.5 bg-white rounded-full p-0.5 border border-gray-200 shadow-sm">
                   <ChannelIcon channelName={conversation.canales_organization?.canal?.nombre || "whatsapp"} />
@@ -891,8 +1274,8 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
                     </div>
                   )}
                 </div>
-                <ConversationTags 
-                  tags={conversation.conversation_tags} 
+                <ConversationTags
+                  tags={conversation.conversation_tags}
                   tagColors={tagColors}
                   colorsLoading={colorsLoading}
                 />

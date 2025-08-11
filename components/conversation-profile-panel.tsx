@@ -9,11 +9,12 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/hooks/use-toast"
 import { AssignUsersDialog } from "@/components/assign-users-dialog"
-import { Users, UserPlus, StickyNote, X, Bot, UserIcon, Sparkles, Tag } from 'lucide-react'
+import { Users, UserPlus, StickyNote, X, Bot, UserIcon, Sparkles, Tag } from "lucide-react"
 import { useAssignedUsers } from "@/hooks/use-assigned-users"
 import { supabase } from "@/lib/supabase/client"
 import { useAuth } from "@/app/contexts/auth-context"
 import type { Conversation, User, ConversationNote } from "@/types/chat"
+import { DynamicTagBadge } from "@/components/dynamic-tag-badge"
 
 interface ConversationProfilePanelProps {
   isOpen: boolean
@@ -113,14 +114,6 @@ const formatTime = (dateStr: string) => {
   }
 }
 
-const getContrastColor = (hexColor: string): string => {
-  const r = parseInt(hexColor.slice(1, 3), 16)
-  const g = parseInt(hexColor.slice(3, 5), 16)
-  const b = parseInt(hexColor.slice(5, 7), 16)
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-  return luminance > 0.5 ? '#000000' : '#ffffff'
-}
-
 export function ConversationProfilePanel({
   isOpen,
   onOpenChange,
@@ -143,11 +136,7 @@ export function ConversationProfilePanel({
   const { userProfile } = useAuth()
 
   // ✨ Hook para obtener usuarios asignados REALES - Arreglado el tipo
-  const {
-    users: assignedUsersRaw,
-    loading: usersLoading,
-    error: usersError,
-  } = useAssignedUsers(conversation?.id || "")
+  const { users: assignedUsersRaw, loading: usersLoading, error: usersError } = useAssignedUsers(conversation?.id || "")
 
   // ✨ Convertir AssignedUser[] a User[] para evitar conflictos de tipos
   const assignedUsers: User[] = assignedUsersRaw.map(adaptAssignedUserToUser)
@@ -176,12 +165,12 @@ export function ConversationProfilePanel({
       if (error) throw error
 
       // ✨ Mapear a la interfaz esperada
-      const tagsWithDetails: ConversationTagWithDetails[] = (data || []).map(item => ({
+      const tagsWithDetails: ConversationTagWithDetails[] = (data || []).map((item) => ({
         id: item.assignment_id,
         tag_id: item.tag_id,
         tag_name: item.tag_name,
         color: item.color,
-        created_at: item.assigned_at
+        created_at: item.assigned_at,
       }))
 
       setSelectedTags(tagsWithDetails)
@@ -324,8 +313,8 @@ export function ConversationProfilePanel({
     setTagsLoading(true)
     try {
       // ✨ Paso 1: Crear o obtener la etiqueta en organization_tags
-      let orgTag = availableOrgTags.find(tag => tag.tag_name === tagName)
-      
+      let orgTag = availableOrgTags.find((tag) => tag.tag_name === tagName)
+
       if (!orgTag) {
         const { data: newOrgTag, error: orgError } = await supabase
           .from("organization_tags")
@@ -333,14 +322,14 @@ export function ConversationProfilePanel({
             organization_id: userProfile.organization_id,
             tag_name: tagName,
             color: "#8B5CF6", // Color por defecto
-            created_by: currentUser.id
+            created_by: currentUser.id,
           })
           .select()
           .single()
 
         if (orgError) throw orgError
         orgTag = newOrgTag
-        setAvailableOrgTags(prev => [...prev, orgTag])
+        setAvailableOrgTags((prev) => [...prev, orgTag])
       }
 
       // ✨ Paso 2: Verificar si ya existe la asignación
@@ -352,7 +341,7 @@ export function ConversationProfilePanel({
         .eq("organization_id", userProfile.organization_id)
         .single()
 
-      if (checkError && checkError.code !== 'PGRST116') {
+      if (checkError && checkError.code !== "PGRST116") {
         throw checkError
       }
 
@@ -386,7 +375,7 @@ export function ConversationProfilePanel({
         tag_id: orgTag.id,
         tag_name: orgTag.tag_name,
         color: orgTag.color,
-        created_at: data.created_at
+        created_at: data.created_at,
       }
 
       setSelectedTags((prev) => [newTagWithDetails, ...prev])
@@ -428,28 +417,29 @@ export function ConversationProfilePanel({
 
     setTagsLoading(true)
     try {
-      // ✨ Buscar color predefinido
-      const predefinedTag = predefinedTags.find(t => t.name === tagName)
-      const tagColor = predefinedTag?.color || "#8B5CF6"
+      // ✨ Paso 1: Buscar si ya existe en organization_tags
+      let orgTag = availableOrgTags.find((tag) => tag.tag_name === tagName)
 
-      // ✨ Paso 1: Crear o obtener la etiqueta en organization_tags
-      let orgTag = availableOrgTags.find(tag => tag.tag_name === tagName)
-      
       if (!orgTag) {
+        // ✨ Si no existe, buscar en predefinidas para obtener el color
+        const predefinedTag = predefinedTags.find((t) => t.name === tagName)
+        const tagColor = predefinedTag?.color || "#8B5CF6"
+
+        // ✨ Crear nueva etiqueta en organization_tags
         const { data: newOrgTag, error: orgError } = await supabase
           .from("organization_tags")
           .insert({
             organization_id: userProfile.organization_id,
             tag_name: tagName,
             color: tagColor,
-            created_by: currentUser.id
+            created_by: currentUser.id,
           })
           .select()
           .single()
 
         if (orgError) throw orgError
         orgTag = newOrgTag
-        setAvailableOrgTags(prev => [...prev, orgTag])
+        setAvailableOrgTags((prev) => [...prev, orgTag])
       }
 
       // ✨ Paso 2: Verificar si ya existe la asignación
@@ -461,7 +451,7 @@ export function ConversationProfilePanel({
         .eq("organization_id", userProfile.organization_id)
         .single()
 
-      if (checkError && checkError.code !== 'PGRST116') {
+      if (checkError && checkError.code !== "PGRST116") {
         throw checkError
       }
 
@@ -494,8 +484,8 @@ export function ConversationProfilePanel({
         id: data.id,
         tag_id: orgTag.id,
         tag_name: orgTag.tag_name,
-        color: orgTag.color,
-        created_at: data.created_at
+        color: orgTag.color, // ✨ Usar el color real de la base de datos
+        created_at: data.created_at,
       }
 
       setSelectedTags((prev) => [newTagWithDetails, ...prev])
@@ -524,10 +514,7 @@ export function ConversationProfilePanel({
   const handleRemoveTag = async (assignmentId: string) => {
     setTagsLoading(true)
     try {
-      const { error } = await supabase
-        .from("conversation_tags")
-        .delete()
-        .eq("id", assignmentId)
+      const { error } = await supabase.from("conversation_tags").delete().eq("id", assignmentId)
 
       if (error) throw error
 
@@ -709,7 +696,7 @@ export function ConversationProfilePanel({
                 assignedUserIds={conversation.assigned_user_ids || []}
                 onAssignmentChange={handleAssignmentChangeInternal}
                 trigger={
-                  <Button variant="outline" size="sm" className="w-full">
+                  <Button variant="outline" size="sm" className="w-full bg-transparent">
                     <UserPlus className="h-4 w-4 mr-2" />
                     Añadir participante
                   </Button>
@@ -769,7 +756,12 @@ export function ConversationProfilePanel({
               <Sparkles className="w-5 h-5 text-purple-600" />
               <h4 className="font-medium">Resumen IA</h4>
             </div>
-            <Button variant="outline" className="w-full" onClick={handleGenerateSummary} disabled={isGeneratingSummary}>
+            <Button
+              variant="outline"
+              className="w-full bg-transparent"
+              onClick={handleGenerateSummary}
+              disabled={isGeneratingSummary}
+            >
               {isGeneratingSummary ? (
                 <>
                   <div className="w-4 h-4 border border-gray-400 border-t-transparent rounded-full animate-spin mr-2"></div>
@@ -795,18 +787,15 @@ export function ConversationProfilePanel({
             {selectedTags.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-3">
                 {selectedTags.map((tag) => (
-                  <Badge
+                  <DynamicTagBadge
                     key={tag.id}
-                    style={{ 
-                      backgroundColor: tag.color, 
-                      color: getContrastColor(tag.color)
-                    }}
-                    className="text-xs px-3 py-1 rounded-xl font-medium cursor-pointer hover:scale-105 transition-all duration-200 border-0"
+                    tagName={tag.tag_name}
+                    color={tag.color}
+                    className="text-xs rounded-xl font-medium cursor-pointer hover:scale-105 transition-all duration-200 shadow-sm"
                     onClick={() => handleRemoveTag(tag.id)}
                   >
-                    {tag.tag_name}
                     <X className="w-3 h-3 ml-1" />
-                  </Badge>
+                  </DynamicTagBadge>
                 ))}
               </div>
             )}
@@ -838,21 +827,34 @@ export function ConversationProfilePanel({
             <div className="space-y-2">
               <p className="text-sm font-medium text-gray-700">Etiquetas disponibles:</p>
               <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
+                {/* ✨ Primero mostrar etiquetas existentes de la organización */}
+                {availableOrgTags
+                  .filter((orgTag) => !selectedTags.some((tag) => tag.tag_id === orgTag.id))
+                  .map((orgTag) => (
+                    <DynamicTagBadge
+                      key={orgTag.id}
+                      tagName={orgTag.tag_name}
+                      color={orgTag.color}
+                      className="text-xs cursor-pointer hover:scale-105 transition-all duration-200 shadow-sm rounded-lg font-medium border-2 border-transparent hover:border-gray-200"
+                      onClick={() => handleAddPredefinedTag(orgTag.tag_name)}
+                    />
+                  ))}
+
+                {/* ✨ Luego mostrar etiquetas predefinidas que NO existen en la organización */}
                 {predefinedTags
-                  .filter((predefinedTag) => !selectedTags.some((tag) => tag.tag_name === predefinedTag.name))
+                  .filter(
+                    (predefinedTag) =>
+                      !availableOrgTags.some((orgTag) => orgTag.tag_name === predefinedTag.name) &&
+                      !selectedTags.some((tag) => tag.tag_name === predefinedTag.name),
+                  )
                   .map((predefinedTag) => (
-                    <Badge
+                    <DynamicTagBadge
                       key={predefinedTag.name}
-                      style={{
-                        backgroundColor: 'transparent',
-                        color: predefinedTag.color,
-                        borderColor: predefinedTag.color
-                      }}
-                      className="text-xs cursor-pointer hover:scale-105 transition-all duration-200 border"
+                      tagName={predefinedTag.name}
+                      color={predefinedTag.color}
+                      className="text-xs cursor-pointer hover:scale-105 transition-all duration-200 shadow-sm rounded-lg font-medium border-2 border-transparent hover:border-gray-200 opacity-75"
                       onClick={() => handleAddPredefinedTag(predefinedTag.name)}
-                    >
-                      {predefinedTag.name}
-                    </Badge>
+                    />
                   ))}
               </div>
             </div>

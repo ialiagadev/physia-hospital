@@ -1,8 +1,7 @@
 "use client"
 
 import type React from "react"
-
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,9 +10,12 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { ArrowLeft, Eye, AlertCircle, CheckCircle } from "lucide-react"
+import { ArrowLeft, Eye, AlertCircle, CheckCircle, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useAuth } from "@/app/contexts/auth-context"
+import { supabase } from "@/lib/supabase/client"
+import { toast } from "@/hooks/use-toast"
 
 const LANGUAGES = [
   { code: "es", name: "Español" },
@@ -54,17 +56,209 @@ interface ValidationError {
   message: string
 }
 
+interface WabaConfig {
+  id_proyecto: string
+  token_proyecto: string
+  nombre: string
+}
+
+interface TemplateComponent {
+  type: string
+  text: string
+  example?: {
+    body_text: string[][]
+  }
+}
+
+interface CreateTemplateData {
+  name: string
+  category: string
+  language: string
+  components: TemplateComponent[]
+}
+
 export default function NewTemplatePage() {
   const router = useRouter()
+  const { user, userProfile, isLoading: authLoading } = useAuth()
+  const [wabaConfig, setWabaConfig] = useState<WabaConfig | null>(null)
+  const [loadingConfig, setLoadingConfig] = useState(true)
   const [form, setForm] = useState<TemplateForm>({
     name: "",
-    language: "",
-    category: "",
+    language: "es",
+    category: "UTILITY",
     body: "",
     footer: "",
   })
   const [errors, setErrors] = useState<ValidationError[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Función para obtener la configuración WABA del usuario
+  const fetchWabaConfig = async (organizationId: number) => {
+    try {
+      const { data: canalesOrg, error: canalError } = await supabase
+        .from("canales_organizations")
+        .select("id, id_canal, id_organization")
+        .eq("id_organization", organizationId)
+        .eq("estado", true)
+
+      if (canalError) {
+        throw new Error(`Error obteniendo canal: ${canalError.message}`)
+      }
+
+      if (!canalesOrg || canalesOrg.length === 0) {
+        throw new Error("No se encontró configuración de canal para esta organización")
+      }
+
+      const canalOrg = canalesOrg[0]
+
+      const { data: wabaData, error: wabaError } = await supabase
+        .from("waba")
+        .select("id, id_proyecto, token_proyecto, numero, nombre, estado, id_canales_organization")
+        .eq("id_canales_organization", canalOrg.id)
+        .eq("estado", 1)
+
+      if (wabaError) {
+        throw new Error(`Error obteniendo WABA: ${wabaError.message}`)
+      }
+
+      if (!wabaData || wabaData.length === 0) {
+        const { data: wabaDataNoFilter, error: wabaErrorNoFilter } = await supabase
+          .from("waba")
+          .select("id, id_proyecto, token_proyecto, numero, nombre, estado, id_canales_organization")
+          .eq("id_canales_organization", canalOrg.id)
+
+        if (wabaDataNoFilter && wabaDataNoFilter.length > 0) {
+          const waba = wabaDataNoFilter[0]
+          if (!waba.id_proyecto || !waba.token_proyecto) {
+            throw new Error("La configuración WABA no tiene proyecto ID o token válidos")
+          }
+
+          return {
+            id_proyecto: waba.id_proyecto,
+            token_proyecto: waba.token_proyecto,
+            nombre: waba.nombre || "WhatsApp Business",
+          }
+        }
+      }
+
+      if (!wabaData || wabaData.length === 0) {
+        throw new Error("No se encontró configuración WABA para este canal")
+      }
+
+      const waba = wabaData[0]
+
+      if (!waba.id_proyecto || !waba.token_proyecto) {
+        throw new Error("La configuración WABA no tiene proyecto ID o token válidos")
+      }
+
+      return {
+        id_proyecto: waba.id_proyecto,
+        token_proyecto: waba.token_proyecto,
+        nombre: waba.nombre || "WhatsApp Business",
+      }
+    } catch (err: any) {
+      throw err
+    }
+  }
+
+  // Función para crear plantilla
+  const createTemplate = async (templateData: CreateTemplateData) => {
+    if (!wabaConfig) {
+      throw new Error("No hay configuración WABA disponible")
+    }
+
+    const res = await fetch(`https://backend.aisensy.com/direct-apis/t1/wa_template`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${wabaConfig.token_proyecto}`,
+      },
+      body: JSON.stringify(templateData),
+    })
+
+    if (!res.ok) {
+      const errorText = await res.text()
+      throw new Error(`Error ${res.status}: ${errorText}`)
+    }
+
+    const result = await res.json()
+    return result
+  }
+
+  useEffect(() => {
+    const loadWabaConfig = async () => {
+      if (authLoading) return
+
+      if (!userProfile?.organization_id) {
+        setLoadingConfig(false)
+        return
+      }
+
+      try {
+        const config = await fetchWabaConfig(userProfile.organization_id)
+        setWabaConfig(config)
+      } catch (error) {
+        console.error("Error cargando configuración WABA:", error)
+      } finally {
+        setLoadingConfig(false)
+      }
+    }
+
+    loadWabaConfig()
+  }, [userProfile, authLoading])
+
+  // Verificar si el usuario tiene acceso
+  if (!user || !userProfile) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <AlertCircle className="h-12 w-12 text-yellow-500 mb-4" />
+            <h3 className="text-lg font-semibold mb-2">Acceso no autorizado</h3>
+            <p className="text-muted-foreground text-center mb-4">Debes iniciar sesión para crear plantillas.</p>
+            <Link href="/dashboard/templates">
+              <Button>Volver a plantillas</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // Verificar si tiene proyecto WABA configurado
+  if (loadingConfig) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <Loader2 className="h-12 w-12 animate-spin text-blue-500 mb-4" />
+            <h3 className="text-lg font-semibold mb-2">Cargando configuración...</h3>
+            <p className="text-muted-foreground text-center">Verificando configuración WABA</p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (!wabaConfig) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <AlertCircle className="h-12 w-12 text-red-500 mb-4" />
+            <h3 className="text-lg font-semibold mb-2">Configuración requerida</h3>
+            <p className="text-muted-foreground text-center mb-4">
+              Necesitas configurar un proyecto WABA antes de crear plantillas.
+            </p>
+            <Link href="/dashboard/templates">
+              <Button>Volver y configurar</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   // Extraer variables del body
   const extractVariables = (text: string): string[] => {
@@ -133,22 +327,74 @@ export default function NewTemplatePage() {
     setErrors(validationErrors)
 
     if (validationErrors.length > 0) {
+      toast({
+        title: "Errores en el formulario",
+        description: "Por favor corrige los errores antes de continuar",
+        variant: "destructive",
+      })
       return
     }
 
     setIsSubmitting(true)
 
     try {
-      // Aquí conectaremos con la API/Supabase
-      console.log("Enviando plantilla:", form)
+      // Construir los componentes de la plantilla según el formato de Aisensy
+      const components: TemplateComponent[] = []
 
-      // Simular delay
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      // Componente BODY (obligatorio)
+      const bodyComponent: TemplateComponent = {
+        type: "BODY",
+        text: form.body.trim(),
+      }
 
-      // Redirigir a la lista
-      router.push("/dashboard/whatsapp/templates")
+      // Si hay variables, agregar ejemplos
+      const variables = extractVariables(form.body)
+      if (variables.length > 0) {
+        const exampleValues = variables.map((_, index) => `Ejemplo${index + 1}`)
+        bodyComponent.example = {
+          body_text: [exampleValues],
+        }
+      }
+
+      components.push(bodyComponent)
+
+      // Componente FOOTER (opcional)
+      if (form.footer.trim()) {
+        components.push({
+          type: "FOOTER",
+          text: form.footer.trim(),
+        })
+      }
+
+      // Datos para crear la plantilla
+      const templateData: CreateTemplateData = {
+        name: form.name.trim(),
+        category: form.category,
+        language: form.language,
+        components: components,
+      }
+
+      // Crear la plantilla
+      await createTemplate(templateData)
+
+      toast({
+        title: "¡Plantilla creada!",
+        description: "La plantilla se ha enviado para revisión de Meta. Puede tardar 24-48 horas en ser aprobada.",
+      })
+
+      // Redirigir a la lista de plantillas
+      router.push("/dashboard/templates")
     } catch (error) {
-      console.error("Error al crear plantilla:", error)
+      let errorMessage = "No se pudo crear la plantilla"
+      if (error instanceof Error) {
+        errorMessage = error.message
+      }
+
+      toast({
+        title: "Error al crear plantilla",
+        description: errorMessage,
+        variant: "destructive",
+      })
     } finally {
       setIsSubmitting(false)
     }
@@ -164,7 +410,7 @@ export default function NewTemplatePage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center space-x-4">
-        <Link href="/dashboard/whatsapp/templates">
+        <Link href="/dashboard/templates">
           <Button variant="outline" size="sm">
             <ArrowLeft className="h-4 w-4 mr-2" />
             Volver
@@ -175,6 +421,27 @@ export default function NewTemplatePage() {
           <p className="text-muted-foreground">Crea una plantilla de mensaje para WhatsApp Business API</p>
         </div>
       </div>
+
+      {/* Información del proyecto WABA */}
+      <Card>
+        <CardContent className="flex items-center justify-between py-4">
+          <div>
+            <p className="text-sm font-medium">Proyecto: {wabaConfig.nombre}</p>
+            <p className="text-xs text-muted-foreground">Organización: {userProfile.name}</p>
+          </div>
+          <Badge variant="outline">Configurado</Badge>
+        </CardContent>
+      </Card>
+
+      {/* Ejemplo de formato correcto */}
+      <Alert>
+        <AlertCircle className="h-4 w-4" />
+        <AlertDescription>
+          <strong>Formato de ejemplo:</strong> "Hola {`{{1}}`}, tu pedido {`{{2}}`} está listo para recoger."
+          <br />
+          <span className="text-xs">Las variables deben ser secuenciales: {`{{1}}, {{2}}, {{3}}`}, etc.</span>
+        </AlertDescription>
+      </Alert>
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Formulario */}
@@ -192,7 +459,12 @@ export default function NewTemplatePage() {
                   id="name"
                   placeholder="ej: welcome_message"
                   value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value.toLowerCase() })}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""),
+                    })
+                  }
                   className={getFieldError("name") ? "border-red-500" : ""}
                 />
                 {getFieldError("name") && <p className="text-sm text-red-500">{getFieldError("name")}</p>}
@@ -246,7 +518,7 @@ export default function NewTemplatePage() {
                 </Label>
                 <Textarea
                   id="body"
-                  placeholder="Escribe tu mensaje aquí. Usa {{1}}, {{2}} para variables..."
+                  placeholder="Hola {{1}}, tu pedido {{2}} está listo para recoger."
                   value={form.body}
                   onChange={(e) => setForm({ ...form, body: e.target.value })}
                   className={`min-h-[120px] ${getFieldError("body") ? "border-red-500" : ""}`}
@@ -262,12 +534,15 @@ export default function NewTemplatePage() {
                 <div className="space-y-2">
                   <Label>Variables detectadas:</Label>
                   <div className="flex flex-wrap gap-2">
-                    {variables.map((variable) => (
+                    {variables.map((variable, index) => (
                       <Badge key={variable} variant="secondary">
-                        {variable}
+                        {variable} → Ejemplo{index + 1}
                       </Badge>
                     ))}
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    Se generarán ejemplos automáticamente para cada variable
+                  </p>
                 </div>
               )}
 
@@ -290,9 +565,16 @@ export default function NewTemplatePage() {
               {/* Botones */}
               <div className="flex space-x-3 pt-4">
                 <Button type="submit" disabled={isSubmitting}>
-                  {isSubmitting ? "Creando..." : "Crear Plantilla"}
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Creando...
+                    </>
+                  ) : (
+                    "Crear Plantilla"
+                  )}
                 </Button>
-                <Link href="/dashboard/whatsapp/templates">
+                <Link href="/dashboard/templates">
                   <Button type="button" variant="outline">
                     Cancelar
                   </Button>
@@ -326,11 +608,12 @@ export default function NewTemplatePage() {
               <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                 <div className="bg-white rounded-lg p-3 shadow-sm">
                   {form.body ? (
-                    <p className="text-sm whitespace-pre-wrap">{form.body}</p>
+                    <p className="text-sm whitespace-pre-wrap">
+                      {form.body.replace(/\{\{(\d+)\}\}/g, (match, num) => `[Ejemplo${num}]`)}
+                    </p>
                   ) : (
                     <p className="text-sm text-muted-foreground italic">El contenido aparecerá aquí...</p>
                   )}
-
                   {form.footer && (
                     <div className="mt-3 pt-2 border-t border-gray-100">
                       <p className="text-xs text-muted-foreground">{form.footer}</p>
@@ -355,7 +638,7 @@ export default function NewTemplatePage() {
                     <strong>Variables encontradas:</strong> {variables.join(", ")}
                     <br />
                     <span className="text-xs">
-                      Deberás proporcionar valores para estas variables al enviar el mensaje.
+                      Se generarán ejemplos automáticamente: {variables.map((_, i) => `Ejemplo${i + 1}`).join(", ")}
                     </span>
                   </AlertDescription>
                 </Alert>

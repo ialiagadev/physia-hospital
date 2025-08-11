@@ -20,35 +20,35 @@ export interface CanalesOrganization {
 export interface Client {
   id: number // Es serial, no string
   name: string
-  phone?: string
-  phone_prefix?: string // ✅ Nuevo campo añadido
-  full_phone?: string // ✅ Nuevo campo añadido (campo calculado)
-  email?: string
-  avatar_url?: string
+  phone?: string | null // ✅ Cambiado a string | null para consistencia
+  phone_prefix?: string | null // ✅ Campo añadido con null
+  full_phone?: string | null // ✅ Campo añadido (campo calculado) con null
+  email?: string | null // ✅ Cambiado a string | null
+  avatar_url?: string | null
   channel?: "whatsapp" | "instagram" | "facebook" | "webchat"
   channel_id?: number // Añadir referencia al canal
-  external_id?: string
-  last_interaction_at?: string
+  external_id?: string | null // ✅ Campo añadido con null
+  last_interaction_at?: string | null
   organization_id: number
   created_at: string
   // Campos adicionales de la tabla clients
-  tax_id?: string
-  address?: string
-  postal_code?: string
-  city?: string
-  province?: string
-  country?: string
+  tax_id?: string | null
+  address?: string | null
+  postal_code?: string | null
+  city?: string | null
+  province?: string | null
+  country?: string | null
   client_type?: "private" | "public"
   chat_metadata?: any
   canal?: Canal // Añadir la relación con canal
   // Campos médicos adicionales
-  birth_date?: string
-  gender?: string
-  blood_type?: string
-  emergency_contact_name?: string
-  emergency_contact_phone?: string
-  emergency_contact_relationship?: string
-  medical_notes?: string
+  birth_date?: string | null
+  gender?: string | null
+  blood_type?: string | null
+  emergency_contact_name?: string | null
+  emergency_contact_phone?: string | null
+  emergency_contact_relationship?: string | null
+  medical_notes?: string | null
   has_medical_history?: boolean
   // Campos DIR3
   dir3_codes?: any
@@ -109,10 +109,10 @@ export interface Message {
 export interface User {
   id: string // UUID
   email: string
-  name?:  string | null
-  avatar_url?: string
+  name?: string | null
+  avatar_url?: string | null
   role?: string
-  organization_id?: string // Cambiado a string para ser consistente
+  organization_id?: number // ✅ Cambiado a number para consistencia
   is_physia_admin?: boolean
   type?: number // 1 = Usuario normal, 2 = Agente IA
   prompt?: string // Prompt para agentes IA

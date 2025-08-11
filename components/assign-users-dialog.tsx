@@ -155,7 +155,9 @@ export function AssignUsersDialog({
                 Selecciona los usuarios que pueden ver y responder esta conversación:
               </div>
               <div className="max-h-80 overflow-y-auto space-y-2">
-                {users.map((user) => (
+              {users
+  .filter(user => user.type === 1 || user.type === 2)
+  .map((user) => (
                   <div
                     key={user.id}
                     className="flex items-center space-x-3 p-3 rounded-lg hover:bg-gray-50 cursor-pointer border border-gray-100"

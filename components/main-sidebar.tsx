@@ -18,8 +18,6 @@ interface MenuItem {
   isActive: boolean
   badge?: number | null
   hidden?: boolean
-  disabled?: boolean
-  comingSoon?: boolean
 }
 
 export function MainSidebar() {
@@ -70,11 +68,9 @@ export function MainSidebar() {
     {
       id: "chat",
       label: "Chat",
-      href: "#",
+      href: "/dashboard/chat",
       icon: MessageSquare,
-      isActive: false,
-      disabled: true,
-      comingSoon: true,
+      isActive: isInSection("chat"),
     },
     {
       id: "clientes",
@@ -86,20 +82,16 @@ export function MainSidebar() {
     {
       id: "marketing",
       label: "Marketing",
-      href: "#",
+      href: "/dashboard/marketing",
       icon: Megaphone,
-      isActive: false,
-      disabled: true,
-      comingSoon: true,
+      isActive: isInSection("marketing"),
     },
     {
       id: "stock",
       label: "Stock",
-      href: "#",
+      href: "/dashboard/stock",
       icon: Warehouse,
-      isActive: false,
-      disabled: true,
-      comingSoon: true,
+      isActive: isInSection("stock"),
     },
     {
       id: "facturacion",
@@ -127,20 +119,16 @@ export function MainSidebar() {
     {
       id: "agents",
       label: "Agentes IA",
-      href: "#",
+      href: "/dashboard/agents",
       icon: Bot,
-      isActive: false,
-      disabled: true,
-      comingSoon: true,
+      isActive: isInSection("agents"),
     },
     {
       id: "physia-ai",
       label: "PHYSIA AI",
-      href: "#",
+      href: "/dashboard/physia-ai",
       icon: Brain,
-      isActive: false,
-      disabled: true,
-      comingSoon: true,
+      isActive: isInSection("physia-ai"),
     },
     {
       id: "fichaje",
@@ -172,11 +160,9 @@ export function MainSidebar() {
     {
       id: "templates",
       label: "Plantillas",
-      href: "#",
+      href: "/dashboard/templates",
       icon: FileTemplate,
-      isActive: false,
-      disabled: true,
-      comingSoon: true,
+      isActive: isInSection("templates"),
     },
     {
       id: "consent-forms",
@@ -202,10 +188,9 @@ export function MainSidebar() {
     {
       id: "public-booking",
       label: "Reservas Públicas",
-      href: userProfile?.organization_id ? `/booking/${userProfile.organization_id}` : "#",
+      href: "/dashboard/public-calendar",
       icon: Calendar,
-      isActive: false,
-      disabled: !userProfile?.organization_id,
+      isActive: isInSection("public-calendar"),
     },
   ]
 
@@ -228,11 +213,9 @@ export function MainSidebar() {
     {
       id: "help",
       label: "Ayuda",
-      href: "#",
+      href: "/dashboard/help",
       icon: HelpCircle,
-      isActive: false,
-      disabled: true,
-      comingSoon: true,
+      isActive: isInSection("help"),
     },
     {
       id: "logout",
@@ -244,18 +227,15 @@ export function MainSidebar() {
   ]
 
   const renderMenuSection = (title: string, items: MenuItem[]) => {
-    // Separar items disponibles y próximamente
-    const availableItems = items.filter((item) => !item.hidden && !item.disabled)
-    const comingSoonItems = items.filter((item) => !item.hidden && item.disabled)
+    // Filtrar solo items visibles
+    const visibleItems = items.filter((item) => !item.hidden)
 
     return (
       <div className="mb-6">
         <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4 px-3">{title}</h2>
         <nav className="space-y-1">
-          {/* Renderizar primero los items disponibles */}
-          {availableItems.map((item) => {
+          {visibleItems.map((item) => {
             const Icon = item.icon
-
             return (
               <Link
                 key={item.id}
@@ -277,37 +257,6 @@ export function MainSidebar() {
               </Link>
             )
           })}
-
-          {/* Separador visual si hay items de ambos tipos */}
-          {availableItems.length > 0 && comingSoonItems.length > 0 && (
-            <div className="py-2">
-              <div className="border-t border-gray-100"></div>
-            </div>
-          )}
-
-          {/* Renderizar después los items de próximamente */}
-          {comingSoonItems.map((item) => {
-            const Icon = item.icon
-
-            return (
-              <div key={item.id} className="relative">
-                <div className="flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium cursor-not-allowed opacity-60">
-                  <div className="flex items-center space-x-3">
-                    <Icon className="h-5 w-5 text-gray-400" />
-                    <span className="text-gray-500">{item.label}</span>
-                  </div>
-                </div>
-                {item.comingSoon && (
-                  <Badge
-                    variant="secondary"
-                    className="absolute top-1 right-1 h-4 text-xs bg-orange-100 text-orange-700 hover:bg-orange-100 px-1.5"
-                  >
-                    Pronto
-                  </Badge>
-                )}
-              </div>
-            )
-          })}
         </nav>
       </div>
     )
@@ -326,12 +275,10 @@ export function MainSidebar() {
 
         {/* Iconos colapsados */}
         <div className="flex flex-col space-y-2">
-          {/* Primero los disponibles de todas las secciones */}
           {[...principalItems, ...configItems, ...generalItems]
-            .filter((item) => !item.hidden && !item.disabled)
+            .filter((item) => !item.hidden)
             .map((item) => {
               const Icon = item.icon
-
               return (
                 <div key={item.id} className="relative">
                   <Link
@@ -353,33 +300,6 @@ export function MainSidebar() {
                     >
                       {item.badge > 9 ? "9+" : item.badge}
                     </Badge>
-                  )}
-                </div>
-              )
-            })}
-
-          {/* Separador visual */}
-          {[...principalItems, ...configItems, ...generalItems].some((item) => !item.hidden && !item.disabled) &&
-            [...principalItems, ...configItems, ...generalItems].some((item) => !item.hidden && item.disabled) && (
-              <div className="w-8 h-px bg-gray-200 mx-auto my-2"></div>
-            )}
-
-          {/* Después los de próximamente */}
-          {[...principalItems, ...configItems, ...generalItems]
-            .filter((item) => !item.hidden && item.disabled)
-            .map((item) => {
-              const Icon = item.icon
-
-              return (
-                <div key={item.id} className="relative">
-                  <div
-                    className="p-2 rounded-lg cursor-not-allowed opacity-60 text-gray-400"
-                    title={`${item.label} - Pronto`}
-                  >
-                    <Icon className="h-5 w-5" />
-                  </div>
-                  {item.comingSoon && (
-                    <div className="absolute -top-1 -right-1 h-3 w-3 bg-orange-500 rounded-full"></div>
                   )}
                 </div>
               )

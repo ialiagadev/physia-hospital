@@ -21,21 +21,35 @@ export interface WabaProject {
   webhook: string
 }
 
-// Actualizar la función `getWabaByUserId` para recibir directamente el `organization_id`
-export async function getWabaByOrganizationId(organizationId: number): Promise<WabaProject | null> {
+export async function getWabaByUserId(userId: string): Promise<WabaProject | null> {
   try {
-    console.log("🔍 Buscando WABA para organización:", organizationId)
+    // Primero obtener la organización del usuario
+    const { data: userData, error: userError } = await supabase
+      .from("users")
+      .select("organization_id")
+      .eq("id", userId)
+      .single()
+
+    if (userError || !userData?.organization_id) {
+      console.error("Error fetching user organization:", userError)
+      return null
+    }
+
+    console.log("✅ User organization found:", userData.organization_id)
 
     // Buscar el canal de WhatsApp para esta organización
     const { data: canalData, error: canalError } = await supabase
       .from("canales_organizations")
-      .select("id")
-      .eq("id_organization", organizationId)
+      .select(`
+        id,
+        canales!inner(id, nombre)
+      `)
+      .eq("id_organization", userData.organization_id)
       .eq("estado", true)
       .single()
 
     if (canalError || !canalData) {
-      console.error("❌ Error fetching organization channel:", canalError)
+      console.error("Error fetching organization channel:", canalError)
       return null
     }
 
@@ -50,35 +64,14 @@ export async function getWabaByOrganizationId(organizationId: number): Promise<W
       .single()
 
     if (wabaError || !wabaData) {
-      console.error("❌ Error fetching WABA project:", wabaError)
+      console.error("Error fetching WABA project:", wabaError)
       return null
     }
 
     console.log("✅ WABA project found:", wabaData.nombre)
     return wabaData
   } catch (error) {
-    console.error("💥 Database error:", error)
-    return null
-  }
-}
-
-export async function getWabaByUserId(userId: string): Promise<WabaProject | null> {
-  try {
-    // Obtener la organización del usuario
-    const { data: userData, error: userError } = await supabase
-      .from("users")
-      .select("organization_id")
-      .eq("id", userId)
-      .single()
-
-    if (userError || !userData?.organization_id) {
-      console.error("❌ Error fetching user organization:", userError)
-      return null
-    }
-
-    return getWabaByOrganizationId(userData.organization_id)
-  } catch (error) {
-    console.error("💥 Database error:", error)
+    console.error("Database error:", error)
     return null
   }
 }
@@ -116,5 +109,41 @@ export async function updateWabaToken(wabaId: number, newToken: string): Promise
   } catch (error) {
     console.error("Database error:", error)
     return false
+  }
+}
+
+// Agregar nueva función para obtener WABA por organización directamente
+export async function getWabaByOrganizationId(organizationId: number): Promise<WabaProject | null> {
+  try {
+    // Buscar el canal de WhatsApp para esta organización
+    const { data: canalData, error: canalError } = await supabase
+      .from("canales_organizations")
+      .select("id")
+      .eq("id_organization", organizationId)
+      .eq("estado", true)
+      .single()
+
+    if (canalError || !canalData) {
+      console.error("Error fetching organization channel:", canalError)
+      return null
+    }
+
+    // Buscar el WABA asociado a este canal
+    const { data: wabaData, error: wabaError } = await supabase
+      .from("waba")
+      .select("*")
+      .eq("id_canales_organization", canalData.id)
+      .eq("estado", 1)
+      .single()
+
+    if (wabaError || !wabaData) {
+      console.error("Error fetching WABA project:", wabaError)
+      return null
+    }
+
+    return wabaData
+  } catch (error) {
+    console.error("Database error:", error)
+    return null
   }
 }

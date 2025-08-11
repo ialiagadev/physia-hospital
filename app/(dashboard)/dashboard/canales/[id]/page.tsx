@@ -1,7 +1,4 @@
 "use client"
-
-import type React from "react"
-
 import { useState, useEffect } from "react"
 import {
   Plus,
@@ -14,19 +11,19 @@ import {
   Phone,
   MessageCircle,
   Facebook,
+  Users,
 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { supabase } from "@/lib/supabase/client"
 import { useAuth } from "@/app/contexts/auth-context"
 import Link from "next/link"
 import { notFound } from "next/navigation"
+import { AssignmentCard } from "@/components/assignment-card"
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -39,6 +36,19 @@ interface Canal {
   imagen: string | null
   href_button_action: string | null
   estado: number | null
+}
+
+interface User {
+  id: string
+  name: string
+  email: string
+  role: string
+}
+
+interface UserAssignment {
+  waba_id: number
+  user_id: string
+  user: User // Changed back to 'user' (singular)
 }
 
 // Prefijos de países más comunes
@@ -59,7 +69,6 @@ const countryPrefixes = [
 const getChannelData = async (canalId: number, organizationId: number) => {
   try {
     console.log("🔍 Buscando datos:", { canalId, organizationId })
-
     // Primero obtener el id de canales_organizations
     const { data: canalOrgs, error: canalOrgError } = await supabase
       .from("canales_organizations")
@@ -102,6 +111,66 @@ const getChannelData = async (canalId: number, organizationId: number) => {
   }
 }
 
+// Función para obtener usuarios de la organización
+const getOrganizationUsers = async (organizationId: number) => {
+  try {
+    const { data, error } = await supabase
+      .from("users")
+      .select("id, name, email, role")
+      .eq("organization_id", organizationId)
+      .in("role", ["user", "admin"]) // Incluir tanto usuarios tipo 1 (user) como tipo 2 (admin)
+      .order("name")
+
+    if (error) {
+      console.error("❌ Error fetching users:", error)
+      return []
+    }
+
+    return data || []
+  } catch (error) {
+    console.error("💥 Error inesperado obteniendo usuarios:", error)
+    return []
+  }
+}
+
+// Función para obtener asignaciones de usuarios
+const getUserAssignments = async (wabaId: number): Promise<UserAssignment[]> => {
+  try {
+    const { data, error } = await supabase
+      .from("users_waba")
+      .select(`
+        waba_id,
+        user_id,
+        users:user_id (
+          id,
+          name,
+          email,
+          role
+        )
+      `)
+      .eq("waba_id", wabaId)
+
+    if (error) {
+      console.error("❌ Error fetching user assignments:", error)
+      return []
+    }
+
+    // Transform the data to match our interface
+    const transformedData: UserAssignment[] = (data || [])
+      .filter((item) => item.users) // Filter out null users
+      .map((item) => ({
+        waba_id: item.waba_id,
+        user_id: item.user_id,
+        user: Array.isArray(item.users) ? item.users[0] : item.users, // Handle both array and object cases
+      }))
+
+    return transformedData
+  } catch (error) {
+    console.error("💥 Error inesperado obteniendo asignaciones:", error)
+    return []
+  }
+}
+
 // Configuración específica para cada canal
 const getChannelConfig = (canalNombre: string) => {
   const configMap: Record<string, any> = {
@@ -135,7 +204,6 @@ const getChannelConfig = (canalNombre: string) => {
 
 function StatusBadge({ status }: { status: number }) {
   const isActive = status === 1
-
   return (
     <Badge
       variant={isActive ? "default" : "secondary"}
@@ -149,7 +217,17 @@ function StatusBadge({ status }: { status: number }) {
   )
 }
 
-function ActionButtons({ status, id, onRegister }: { status: number; id: number; onRegister: (id: number) => void }) {
+function ActionButtons({
+  status,
+  id,
+  onRegister,
+  onViewAssignments,
+}: {
+  status: number
+  id: number
+  onRegister: (id: number) => void
+  onViewAssignments: (id: number) => void
+}) {
   if (status === 0) {
     return (
       <div className="flex gap-2">
@@ -163,6 +241,14 @@ function ActionButtons({ status, id, onRegister }: { status: number; id: number;
 
   return (
     <div className="flex gap-1">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-8 w-8 p-0 hover:bg-blue-50 hover:text-blue-600"
+        onClick={() => onViewAssignments(id)}
+      >
+        <Users className="h-4 w-4" />
+      </Button>
       <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-blue-50 hover:text-blue-600">
         <Eye className="h-4 w-4" />
       </Button>
@@ -179,7 +265,17 @@ function ActionButtons({ status, id, onRegister }: { status: number; id: number;
   )
 }
 
-function TableRowComponent({ item, config, onRegister }: { item: any; config: any; onRegister: (id: number) => void }) {
+function TableRowComponent({
+  item,
+  config,
+  onRegister,
+  onViewAssignments,
+}: {
+  item: any
+  config: any
+  onRegister: (id: number) => void
+  onViewAssignments: (id: number) => void
+}) {
   const firstColumnValue = item[config.firstColumnKey]
   const IconComponent = config.icon
 
@@ -214,7 +310,12 @@ function TableRowComponent({ item, config, onRegister }: { item: any; config: an
         <span className="text-gray-500 text-sm">{formatDate(item.fecha_alta)}</span>
       </td>
       <td className="p-4">
-        <ActionButtons status={item.estado} id={item.id} onRegister={onRegister} />
+        <ActionButtons
+          status={item.estado}
+          id={item.id}
+          onRegister={onRegister}
+          onViewAssignments={onViewAssignments}
+        />
       </td>
     </tr>
   )
@@ -238,113 +339,33 @@ function AddNumberModal({
     prefix: "+34",
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const { userProfile } = useAuth()
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!canalOrganizationId || !userProfile?.id) return
-
-    setIsSubmitting(true)
-    try {
-      const fullNumber = `${formData.prefix}${formData.numero}`
-
-      const { data, error } = await supabase
-        .from("waba")
-        .insert({
-          id_canales_organization: canalOrganizationId,
-          waba_id: 1,
-          numero: fullNumber,
-          nombre: formData.nombre,
-          descripcion: formData.descripcion,
-          estado: 0,
-          id_usuario: userProfile.id,
-          fecha_alta: new Date().toISOString(),
-        })
-        .select()
-        .single()
-
-      if (error) {
-        console.error("Error adding number:", error)
-        return
-      }
-
-      onAdd(data)
-      setFormData({ nombre: "", numero: "", descripcion: "", prefix: "+34" })
-      onClose()
-    } catch (error) {
-      console.error("Error:", error)
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Añadir nuevo número</DialogTitle>
+          <DialogTitle>Asignar Usuarios</DialogTitle>
+          <p className="text-sm text-muted-foreground">Selecciona los usuarios para: {""}</p>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="nombre">Nombre</Label>
-            <Input
-              id="nombre"
-              value={formData.nombre}
-              onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
-              placeholder="Nombre del número"
-              required
-            />
-          </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="numero">Número de teléfono</Label>
-            <div className="flex gap-2">
-              <Select value={formData.prefix} onValueChange={(value) => setFormData({ ...formData, prefix: value })}>
-                <SelectTrigger className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {countryPrefixes.map((country) => (
-                    <SelectItem key={country.code} value={country.prefix}>
-                      <span className="flex items-center gap-2">
-                        <span>{country.flag}</span>
-                        <span>{country.prefix}</span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Input
-                id="numero"
-                value={formData.numero}
-                onChange={(e) => setFormData({ ...formData, numero: e.target.value.replace(/\D/g, "") })}
-                placeholder="123456789"
-                className="flex-1"
-                required
-              />
+        <div className="space-y-4">
+          {false ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-4 border-gray-200 border-t-blue-600"></div>
             </div>
-          </div>
+          ) : (
+            <div className="space-y-2 max-h-60 overflow-y-auto">{[]}</div>
+          )}
+        </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="descripcion">Descripción</Label>
-            <Textarea
-              id="descripcion"
-              value={formData.descripcion}
-              onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
-              placeholder="Descripción opcional"
-              rows={3}
-            />
-          </div>
-
-          <div className="flex gap-2 pt-4">
-            <Button type="button" variant="outline" onClick={onClose} className="flex-1 bg-transparent">
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={isSubmitting} className="flex-1 bg-green-600 hover:bg-green-700">
-              {isSubmitting ? "Guardando..." : "Guardar"}
-            </Button>
-          </div>
-        </form>
+        <div className="flex gap-2 pt-4">
+          <Button type="button" variant="outline" onClick={onClose} className="flex-1 bg-transparent" disabled={false}>
+            Cancelar
+          </Button>
+          <Button onClick={() => {}} disabled={false || false} className="flex-1">
+            {false ? "Guardando..." : "Guardar"}
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   )
@@ -358,9 +379,13 @@ export default function CanalPage({ params }: PageProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
+  const [isAssignmentsModalOpen, setIsAssignmentsModalOpen] = useState(false)
+  const [selectedWabaId, setSelectedWabaId] = useState<number | null>(null)
+  const [selectedWabaName, setSelectedWabaName] = useState("")
   const [canalOrganizationId, setCanalOrganizationId] = useState<number | null>(null)
-  const itemsPerPage = 8
+  const [activeTab, setActiveTab] = useState("numbers")
 
+  const itemsPerPage = 8
   const { userProfile, isLoading: authLoading } = useAuth()
 
   const handleRegister = async (wabaId: number) => {
@@ -380,6 +405,13 @@ export default function CanalPage({ params }: PageProps) {
 
   const handleAddNumber = (newNumber: any) => {
     setData((prevData) => [newNumber, ...prevData])
+  }
+
+  const handleViewAssignments = (wabaId: number) => {
+    const waba = data.find((item) => item.id === wabaId)
+    setSelectedWabaId(wabaId)
+    setSelectedWabaName(waba?.nombre || "")
+    setIsAssignmentsModalOpen(true)
   }
 
   useEffect(() => {
@@ -572,130 +604,154 @@ export default function CanalPage({ params }: PageProps) {
           </Card>
         </div>
 
-        {/* Search */}
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-4">
-              <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder={config.searchPlaceholder}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              <div className="text-sm text-gray-600">
-                {filteredData.length} resultado{filteredData.length !== 1 ? "s" : ""}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        {/* Tabs */}
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="numbers">Números</TabsTrigger>
+            <TabsTrigger value="assignments">Asignaciones</TabsTrigger>
+          </TabsList>
 
-        {/* Table */}
-        <Card>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="bg-gray-50 border-b">
-                  {config.columns.map((column: string) => (
-                    <th key={column} className="h-12 px-4 text-left text-sm font-medium text-gray-700">
-                      {column}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {currentData.map((item) => (
-                  <TableRowComponent key={item.id} item={item} config={config} onRegister={handleRegister} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-
-        {/* Empty State */}
-        {filteredData.length === 0 && (
-          <Card>
-            <CardContent className="p-12 text-center">
-              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Search className="h-8 w-8 text-gray-400" />
-              </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                {searchQuery ? "No se encontraron resultados" : `No hay ${canal.nombre.toLowerCase()} configurados`}
-              </h3>
-              <p className="text-gray-600">
-                {searchQuery
-                  ? "Intenta con otros términos de búsqueda"
-                  : `Comienza añadiendo tu primer ${canal.nombre.toLowerCase()}`}
-              </p>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Pagination */}
-        {filteredData.length > 0 && (
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div className="text-sm text-gray-600">
-                  Mostrando <span className="font-medium">{startIndex + 1}</span> a{" "}
-                  <span className="font-medium">{Math.min(endIndex, filteredData.length)}</span> de{" "}
-                  <span className="font-medium">{filteredData.length}</span> resultados
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                    disabled={currentPage === 1}
-                  >
-                    <ChevronLeft className="h-4 w-4 mr-1" />
-                    Anterior
-                  </Button>
-
-                  <div className="flex gap-1">
-                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                      let pageNum
-                      if (totalPages <= 5) {
-                        pageNum = i + 1
-                      } else if (currentPage <= 3) {
-                        pageNum = i + 1
-                      } else if (currentPage >= totalPages - 2) {
-                        pageNum = totalPages - 4 + i
-                      } else {
-                        pageNum = currentPage - 2 + i
-                      }
-
-                      return (
-                        <Button
-                          key={pageNum}
-                          variant={currentPage === pageNum ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => setCurrentPage(pageNum)}
-                          className="w-10 h-10 p-0"
-                        >
-                          {pageNum}
-                        </Button>
-                      )
-                    })}
+          <TabsContent value="numbers" className="space-y-6">
+            {/* Search */}
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-4">
+                  <div className="relative flex-1 max-w-md">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      placeholder={config.searchPlaceholder}
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-10"
+                    />
                   </div>
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                    disabled={currentPage === totalPages}
-                  >
-                    Siguiente
-                    <ChevronRight className="h-4 w-4 ml-1" />
-                  </Button>
+                  <div className="text-sm text-gray-600">
+                    {filteredData.length} resultado{filteredData.length !== 1 ? "s" : ""}
+                  </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Table */}
+            <Card>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-gray-50 border-b">
+                      {config.columns.map((column: string) => (
+                        <th key={column} className="h-12 px-4 text-left text-sm font-medium text-gray-700">
+                          {column}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {currentData.map((item) => (
+                      <TableRowComponent
+                        key={item.id}
+                        item={item}
+                        config={config}
+                        onRegister={handleRegister}
+                        onViewAssignments={handleViewAssignments}
+                      />
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            </CardContent>
-          </Card>
-        )}
+            </Card>
+
+            {/* Empty State */}
+            {filteredData.length === 0 && (
+              <Card>
+                <CardContent className="p-12 text-center">
+                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Search className="h-8 w-8 text-gray-400" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                    {searchQuery ? "No se encontraron resultados" : `No hay ${canal.nombre.toLowerCase()} configurados`}
+                  </h3>
+                  <p className="text-gray-600">
+                    {searchQuery
+                      ? "Intenta con otros términos de búsqueda"
+                      : `Comienza añadiendo tu primer ${canal.nombre.toLowerCase()}`}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Pagination */}
+            {filteredData.length > 0 && (
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="text-sm text-gray-600">
+                      Mostrando <span className="font-medium">{startIndex + 1}</span> a{" "}
+                      <span className="font-medium">{Math.min(endIndex, filteredData.length)}</span> de{" "}
+                      <span className="font-medium">{filteredData.length}</span> resultados
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                        disabled={currentPage === 1}
+                      >
+                        <ChevronLeft className="h-4 w-4 mr-1" />
+                        Anterior
+                      </Button>
+                      <div className="flex gap-1">
+                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                          let pageNum
+                          if (totalPages <= 5) {
+                            pageNum = i + 1
+                          } else if (currentPage <= 3) {
+                            pageNum = i + 1
+                          } else if (currentPage >= totalPages - 2) {
+                            pageNum = totalPages - 4 + i
+                          } else {
+                            pageNum = currentPage - 2 + i
+                          }
+
+                          return (
+                            <Button
+                              key={pageNum}
+                              variant={currentPage === pageNum ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => setCurrentPage(pageNum)}
+                              className="w-10 h-10 p-0"
+                            >
+                              {pageNum}
+                            </Button>
+                          )
+                        })}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                        disabled={currentPage === totalPages}
+                      >
+                        Siguiente
+                        <ChevronRight className="h-4 w-4 ml-1" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          <TabsContent value="assignments" className="space-y-6">
+            {data.map((waba) => (
+              <AssignmentCard
+                key={waba.id}
+                waba={waba}
+                organizationId={userProfile?.organization_id || 0}
+                onAssignmentsChange={() => {}}
+              />
+            ))}
+          </TabsContent>
+        </Tabs>
 
         {/* Add Number Modal */}
         <AddNumberModal
@@ -704,6 +760,39 @@ export default function CanalPage({ params }: PageProps) {
           onAdd={handleAddNumber}
           canalOrganizationId={canalOrganizationId}
         />
+        {/* Assignments Modal */}
+        <Dialog open={isAssignmentsModalOpen} onOpenChange={setIsAssignmentsModalOpen}>
+          <DialogContent className="sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Asignaciones de Usuario</DialogTitle>
+              <p className="text-sm text-muted-foreground">Gestiona las asignaciones para: {selectedWabaName}</p>
+            </DialogHeader>
+
+            <div className="mt-4">
+              {selectedWabaId && (
+                <AssignmentCard
+                  waba={
+                    data.find((item) => item.id === selectedWabaId) || {
+                      id: selectedWabaId,
+                      numero: "",
+                      nombre: selectedWabaName,
+                    }
+                  }
+                  organizationId={userProfile?.organization_id || 0}
+                  onAssignmentsChange={() => {
+                    // Optionally refresh data or update UI
+                  }}
+                />
+              )}
+            </div>
+
+            <div className="flex justify-end pt-4">
+              <Button variant="outline" onClick={() => setIsAssignmentsModalOpen(false)}>
+                Cerrar
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   )

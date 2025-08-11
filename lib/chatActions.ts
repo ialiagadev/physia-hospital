@@ -11,7 +11,7 @@ export async function sendMessage({
   conversationId: string
   content: string
   userId: string
-  messageType?: "text" | "image" | "audio" | "video" | "document" | "location"
+  messageType?: "text" | "image" | "audio" | "video" | "document" | "location" | "system"
   mediaUrl?: string
 }) {
   try {
@@ -99,10 +99,11 @@ export async function sendMessage({
     })
 
     // Si es WhatsApp y tenemos configuración WABA, enviar por API externa
-    if (isWhatsApp && wabaConfig?.token_proyecto && conversation.client) {
+    // No enviar mensajes de sistema por WhatsApp
+    if (isWhatsApp && wabaConfig?.token_proyecto && conversation.client && messageType !== "system") {
       try {
         console.log("📱 Intentando envío por WhatsApp...")
-        
+
         // Determinar el número de teléfono a usar - PRIORIZAR full_phone
         let phoneNumber = conversation.client.full_phone
 
@@ -161,7 +162,7 @@ export async function sendMessage({
         console.log("✅ Metadata de mensaje actualizada (éxito)")
       } catch (whatsappError: any) {
         console.error("💥 Error enviando mensaje de WhatsApp:", whatsappError)
-        
+
         // Marcar el mensaje como fallido pero no lanzar error
         await supabase
           .from("messages")
@@ -182,12 +183,14 @@ export async function sendMessage({
         reason: !isWhatsApp
           ? "No es canal WhatsApp"
           : !wabaConfig
-          ? "No hay configuración WABA"
-          : !wabaConfig.token_proyecto
-          ? "No hay token"
-          : !conversation.client
-          ? "No hay cliente"
-          : "Razón desconocida",
+            ? "No hay configuración WABA"
+            : !wabaConfig.token_proyecto
+              ? "No hay token"
+              : !conversation.client
+                ? "No hay cliente"
+                : messageType === "system"
+                  ? "Es mensaje de sistema"
+                  : "Razón desconocida",
       })
     }
 
@@ -291,7 +294,7 @@ export async function createConversation({
             organization_id: organizationId,
             name: clientData.name,
             phone: clientData.phone,
-            phone_prefix: clientData.phone_prefix || '+34', // Valor por defecto
+            phone_prefix: clientData.phone_prefix || "+34", // Valor por defecto
             email: clientData.email,
             external_id: clientData.external_id,
             avatar_url: clientData.avatar_url,
@@ -371,7 +374,7 @@ export async function assignConversation(conversationId: string, userId: string)
       .eq("user_id", userId)
       .single()
 
-    if (checkError && checkError.code !== 'PGRST116') {
+    if (checkError && checkError.code !== "PGRST116") {
       throw checkError
     }
 
@@ -385,7 +388,7 @@ export async function assignConversation(conversationId: string, userId: string)
       .from("users_conversations")
       .insert({
         conversation_id: conversationId,
-        user_id: userId
+        user_id: userId,
       })
       .select()
       .single()
@@ -435,7 +438,7 @@ export async function getAssignedUserIds(conversationId: string): Promise<string
       throw error
     }
 
-    return data?.map(item => item.user_id) || []
+    return data?.map((item) => item.user_id) || []
   } catch (error) {
     console.error("Error in getAssignedUserIds:", error)
     throw error
