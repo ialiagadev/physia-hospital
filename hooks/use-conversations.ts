@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { supabase } from "@/lib/supabase/client"
 import type { ConversationWithLastMessage, ConversationTag } from "@/types/chat"
 
@@ -36,6 +36,7 @@ export function useConversations(
   const [error, setError] = useState<string | null>(null)
   const isMounted = useRef(true)
   const lastFetchRef = useRef<number>(0)
+  const channelRef = useRef<any>(null)
 
   // Caché local de tags por conversation_id para optimizar DELETE events
   const tagsCache = useRef<Map<string, ConversationTag[]>>(new Map())
@@ -70,6 +71,8 @@ export function useConversations(
           return
         }
 
+        console.log("🔄 Fetching conversations for org:", orgIdNumber, "viewMode:", viewMode)
+
         let conversationIds: string[] = []
 
         if (viewMode === "assigned" && currentUserId) {
@@ -86,6 +89,7 @@ export function useConversations(
             .eq("conversations.organization_id", orgIdNumber)
 
           if (assignedError) {
+            console.error("❌ Error fetching assigned conversations:", assignedError)
             if (isMounted.current) {
               setError(assignedError.message)
             }
@@ -93,6 +97,7 @@ export function useConversations(
           }
 
           conversationIds = (assignedData || []).map((item) => item.conversation_id)
+          console.log("📋 Assigned conversation IDs:", conversationIds.length)
         }
 
         if (selectedTags.length > 0) {
@@ -104,6 +109,7 @@ export function useConversations(
             .not("conversation_id", "is", null)
 
           if (tagError) {
+            console.error("❌ Error fetching tagged conversations:", tagError)
             if (isMounted.current) {
               setError(tagError.message)
             }
@@ -117,6 +123,7 @@ export function useConversations(
           } else {
             conversationIds = taggedConversationIds
           }
+          console.log("🏷️ Tagged conversation IDs:", conversationIds.length)
         }
 
         let query = supabase
@@ -138,6 +145,7 @@ export function useConversations(
 
         if (viewMode === "assigned" || selectedTags.length > 0) {
           if (conversationIds.length === 0) {
+            console.log("📭 No conversations found for filters")
             if (isMounted.current) {
               setConversations([])
               setError(null)
@@ -154,11 +162,14 @@ export function useConversations(
         })
 
         if (conversationsError) {
+          console.error("❌ Error fetching conversations:", conversationsError)
           if (isMounted.current) {
             setError(conversationsError.message)
           }
           return
         }
+
+        console.log("💬 Conversations fetched:", conversationsData?.length || 0)
 
         const finalConversationIds = (conversationsData || []).map((conv) => conv.id)
 
@@ -171,6 +182,7 @@ export function useConversations(
           return
         }
 
+        // Fetch tags
         const { data: tagsData } = await supabase
           .from("conversation_tags")
           .select(`
@@ -189,6 +201,7 @@ export function useConversations(
           .not("conversation_id", "is", null)
           .order("created_at", { ascending: true })
 
+        // Fetch last messages
         const { data: lastMessages } = await supabase
           .from("messages")
           .select("*")
@@ -208,7 +221,6 @@ export function useConversations(
         const tagsMap = new Map<string, ConversationTag[]>()
         if (tagsData && Array.isArray(tagsData)) {
           for (const rawTagData of tagsData) {
-            // ✅ Cast seguro con verificación
             const tagData = rawTagData as unknown as SupabaseTagData
             const conversationId = tagData.conversation_id
 
@@ -216,7 +228,6 @@ export function useConversations(
               tagsMap.set(conversationId, [])
             }
 
-            // ✅ Verificar que organization_tags sea válido usando type guard
             if (isValidOrganizationTag(tagData.organization_tags)) {
               const tag: ConversationTag = {
                 id: tagData.id,
@@ -224,7 +235,7 @@ export function useConversations(
                 tag_name: tagData.organization_tags.tag_name,
                 created_by: tagData.created_by || "",
                 created_at: tagData.created_at,
-                color: tagData.organization_tags.color || "#8B5CF6", // ✅ Valor por defecto
+                color: tagData.organization_tags.color || "#8B5CF6",
               }
               tagsMap.get(conversationId)!.push(tag)
             }
@@ -233,8 +244,6 @@ export function useConversations(
 
         const conversationsWithMessages = (conversationsData || []).map((conversation) => {
           const conversationTags = tagsMap.get(conversation.id) || []
-
-          // Actualizar caché de tags
           tagsCache.current.set(conversation.id, conversationTags)
 
           return {
@@ -247,8 +256,10 @@ export function useConversations(
         if (isMounted.current) {
           setConversations(conversationsWithMessages)
           setError(null)
+          console.log("✅ Conversations updated:", conversationsWithMessages.length)
         }
       } catch (err) {
+        console.error("💥 Unexpected error fetching conversations:", err)
         if (isMounted.current) {
           setError("Error inesperado al cargar conversaciones")
         }
@@ -286,7 +297,6 @@ export function useConversations(
         return
       }
 
-      // ✅ Procesamiento seguro con type guards
       const tags: ConversationTag[] = []
 
       if (tagsData && Array.isArray(tagsData)) {
@@ -306,7 +316,6 @@ export function useConversations(
         }
       }
 
-      // Actualizar caché
       tagsCache.current.set(conversationId, tags)
 
       if (isMounted.current) {
@@ -328,7 +337,6 @@ export function useConversations(
             const tagExists = currentTags.some((tag) => tag.id === newTag.id)
             if (!tagExists) {
               const updatedTags = [...currentTags, newTag]
-              // Actualizar caché también
               tagsCache.current.set(conversationId, updatedTags)
               return { ...conv, conversation_tags: updatedTags }
             }
@@ -346,7 +354,6 @@ export function useConversations(
           if (conv.id === conversationId) {
             const currentTags = conv.conversation_tags || []
             const updatedTags = currentTags.filter((tag) => tag.id !== tagId)
-            // Actualizar caché también
             tagsCache.current.set(conversationId, updatedTags)
             return { ...conv, conversation_tags: updatedTags }
           }
@@ -368,8 +375,6 @@ export function useConversations(
 
       if (targetConversationId) {
         removeTagFromConversation(targetConversationId, tagId)
-
-        // Verificar después para asegurar consistencia
         setTimeout(() => {
           updateConversationTags(targetConversationId!)
         }, 500)
@@ -382,6 +387,7 @@ export function useConversations(
     [updateConversationTags, fetchConversations, removeTagFromConversation],
   )
 
+  // 🔥 CLAVE: Mejorar el manejo de realtime para actualizar cuando llegan mensajes
   useEffect(() => {
     isMounted.current = true
     fetchConversations()
@@ -389,8 +395,16 @@ export function useConversations(
     if (organizationId) {
       const orgIdNumber = Number(organizationId)
       if (!isNaN(orgIdNumber)) {
+        console.log("🔌 Setting up realtime for org:", orgIdNumber)
+
+        // Limpiar canal anterior si existe
+        if (channelRef.current) {
+          console.log("🧹 Cleaning up previous channel")
+          supabase.removeChannel(channelRef.current)
+        }
+
         const channel = supabase
-          .channel(`conversations-changes-${orgIdNumber}`)
+          .channel(`conversations-org-${orgIdNumber}-${Date.now()}`) // Nombre único
           .on(
             "postgres_changes",
             {
@@ -400,7 +414,32 @@ export function useConversations(
               filter: `organization_id=eq.${orgIdNumber}`,
             },
             (payload) => {
-              fetchConversations(true)
+              console.log("🔄 Conversation change detected:", payload.eventType, payload)
+
+              // 🔥 CLAVE: Actualizar inmediatamente cuando cambia una conversación
+              if (payload.eventType === "UPDATE") {
+                const updatedConv = payload.new as any
+                if (updatedConv) {
+                  setConversations((prev) => {
+                    return prev.map((conv) => {
+                      if (conv.id === updatedConv.id) {
+                        return {
+                          ...conv,
+                          ...updatedConv,
+                          // Mantener los datos relacionados existentes
+                          client: conv.client,
+                          canales_organization: conv.canales_organization,
+                          conversation_tags: conv.conversation_tags,
+                        }
+                      }
+                      return conv
+                    })
+                  })
+                }
+              }
+
+              // También hacer fetch completo para asegurar consistencia
+              setTimeout(() => fetchConversations(true), 1000)
             },
           )
           .on(
@@ -411,15 +450,47 @@ export function useConversations(
               table: "messages",
             },
             (payload) => {
+              console.log("💬 Message change detected:", payload.eventType, payload)
               const messageData = payload.new as any
+
               if (messageData && messageData.conversation_id) {
+                console.log("🔄 Message for conversation:", messageData.conversation_id)
+
+                // 🔥 CLAVE: Actualizar la conversación inmediatamente cuando llega un mensaje
                 setConversations((currentConversations) => {
                   const conversationExists = currentConversations.some((c) => c.id === messageData.conversation_id)
+
                   if (conversationExists) {
-                    fetchConversations(true)
+                    console.log("✅ Updating conversation with new message")
+
+                    // Actualizar la conversación con el nuevo mensaje
+                    const updatedConversations = currentConversations.map((conv) => {
+                      if (conv.id === messageData.conversation_id) {
+                        return {
+                          ...conv,
+                          last_message: messageData,
+                          last_message_at: messageData.created_at,
+                          // Incrementar unread_count si el mensaje no es del usuario actual
+                          unread_count:
+                            messageData.sender_type !== "user" ? (conv.unread_count || 0) + 1 : conv.unread_count || 0,
+                        }
+                      }
+                      return conv
+                    })
+
+                    // Reordenar por fecha del último mensaje
+                    return updatedConversations.sort((a, b) => {
+                      const aTime = new Date(a.last_message_at || a.updated_at || 0).getTime()
+                      const bTime = new Date(b.last_message_at || b.updated_at || 0).getTime()
+                      return bTime - aTime
+                    })
                   }
+
                   return currentConversations
                 })
+
+                // También hacer un fetch completo después de un tiempo para asegurar consistencia
+                setTimeout(() => fetchConversations(true), 2000)
               }
             },
           )
@@ -432,6 +503,8 @@ export function useConversations(
               filter: `organization_id=eq.${orgIdNumber}`,
             },
             (payload) => {
+              console.log("🏷️ Tag change detected:", payload.eventType, payload)
+
               if (payload.eventType === "DELETE") {
                 const deletedTagId = (payload.old as any)?.id
                 if (deletedTagId) {
@@ -443,7 +516,6 @@ export function useConversations(
               if (payload.eventType === "INSERT") {
                 const tagData = payload.new as any
                 if (tagData && tagData.conversation_id) {
-                  // Actualización inmediata sin delay para INSERT
                   updateConversationTags(tagData.conversation_id)
                 }
                 return
@@ -452,7 +524,6 @@ export function useConversations(
               if (payload.eventType === "UPDATE") {
                 const tagData = payload.new as any
                 if (tagData && tagData.conversation_id) {
-                  // Actualización inmediata para UPDATE también
                   updateConversationTags(tagData.conversation_id)
                 }
                 return
@@ -467,14 +538,32 @@ export function useConversations(
               table: "users_conversations",
             },
             (payload) => {
+              console.log("👥 User assignment change detected:", payload.eventType, payload)
               fetchConversations(true)
             },
           )
-          .subscribe()
+          .subscribe((status) => {
+            console.log("📡 Realtime subscription status:", status)
+            if (status === "SUBSCRIBED") {
+              console.log("✅ Successfully subscribed to realtime")
+            } else if (status === "CHANNEL_ERROR") {
+              console.error("❌ Realtime channel error")
+            } else if (status === "TIMED_OUT") {
+              console.error("⏰ Realtime subscription timed out")
+            } else if (status === "CLOSED") {
+              console.log("🔒 Realtime channel closed")
+            }
+          })
+
+        channelRef.current = channel
 
         return () => {
+          console.log("🧹 Cleaning up realtime subscription")
           isMounted.current = false
-          supabase.removeChannel(channel)
+          if (channelRef.current) {
+            supabase.removeChannel(channelRef.current)
+            channelRef.current = null
+          }
         }
       }
     }
@@ -485,6 +574,7 @@ export function useConversations(
   }, [organizationId, fetchConversations, updateConversationTags, handleTagDelete])
 
   const refetch = useCallback(() => {
+    console.log("🔄 Manual refetch triggered")
     fetchConversations()
   }, [fetchConversations])
 

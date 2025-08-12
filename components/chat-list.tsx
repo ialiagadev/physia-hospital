@@ -35,6 +35,25 @@ import { useTotalUnreadMessages } from "@/hooks/use-unread-messages"
 import { supabase } from "@/lib/supabase/client"
 import { generateTagStyle } from "@/lib/dynamic-tag-colors"
 import { toast } from "@/hooks/use-toast"
+import {
+  debugRealtimeConnection,
+  checkRealtimeSettings,
+  testPostgresChanges,
+  checkRLSPermissions,
+} from "@/lib/supabase/realtime-debug"
+
+// Debug realtime solo cuando sea necesario (no automático)
+const debugRealtime = () => {
+  if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
+    debugRealtimeConnection()
+    checkRealtimeSettings()
+  }
+}
+
+// Exponer función de debug globalmente para uso manual
+if (typeof window !== "undefined") {
+  ;(window as any).debugRealtime = debugRealtime
+}
 
 // Componente para mostrar el icono del canal con letra
 function ChannelIcon({ channelName }: { channelName?: string }) {
@@ -1237,22 +1256,41 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
   // Cargar colores a nivel superior
   const { tagColors, loading: colorsLoading } = useTagColors(organizationIdNumber)
 
-  const { conversations, loading, error, refetch } = useConversations(
+  const {
+    conversations,
+    loading,
+    error,
+    refetch,
+    addTagToConversation,
+    removeTagFromConversation
+  } = useConversations(
     organizationId?.toString(),
     viewMode,
     userProfile?.id,
-    selectedTags, // Pasar las etiquetas seleccionadas
-  ) 
-
-  const { addTagToConversation, removeTagFromConversation } = useConversations(
-    organizationId?.toString(),
-    viewMode,
-    userProfile?.id,
-    selectedTags,
+    selectedTags // Pasar las etiquetas seleccionadas
   )
+  
 
   // Hook para conteo total de mensajes no leídos
   const { totalUnread } = useTotalUnreadMessages(organizationIdNumber)
+
+  // Debug adicional en desarrollo
+  useEffect(() => {
+    if (process.env.NODE_ENV === "development" && userProfile?.id && organizationIdNumber) {
+      // Test postgres changes después de que el usuario esté cargado
+      const testChannel = testPostgresChanges(organizationIdNumber)
+      checkRLSPermissions(userProfile.id, organizationIdNumber)
+
+      // Cleanup después de 30 segundos
+      const cleanup = setTimeout(() => {
+        if (testChannel) {
+          supabase.removeChannel(testChannel)
+        }
+      }, 30000)
+
+      return () => clearTimeout(cleanup)
+    }
+  }, [userProfile?.id, organizationIdNumber])
 
   // ✨ Obtener conteo de conversaciones asignadas usando la nueva tabla
   useEffect(() => {
@@ -1534,18 +1572,7 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
           ))
         )}
       </div>
-
-      {/* This would be where you render the conversation profile panel */}
-      {/* Example: */}
-      {/*
-      <ConversationProfilePanel 
-        conversation={selectedConversation}
-        onClose={() => setSelectedConversation(null)}
-        onTagsChange={handleTagsChange}
-        addTagToConversation={addTagToConversation}
-        removeTagFromConversation={removeTagFromConversation}
-      />
-      */}
     </div>
   )
 }
+  
