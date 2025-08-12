@@ -71,8 +71,6 @@ export function useConversations(
           return
         }
 
-        console.log("🔄 Fetching conversations for org:", orgIdNumber, "viewMode:", viewMode)
-
         let conversationIds: string[] = []
 
         if (viewMode === "assigned" && currentUserId) {
@@ -97,7 +95,6 @@ export function useConversations(
           }
 
           conversationIds = (assignedData || []).map((item) => item.conversation_id)
-          console.log("📋 Assigned conversation IDs:", conversationIds.length)
         }
 
         if (selectedTags.length > 0) {
@@ -123,7 +120,6 @@ export function useConversations(
           } else {
             conversationIds = taggedConversationIds
           }
-          console.log("🏷️ Tagged conversation IDs:", conversationIds.length)
         }
 
         let query = supabase
@@ -145,7 +141,6 @@ export function useConversations(
 
         if (viewMode === "assigned" || selectedTags.length > 0) {
           if (conversationIds.length === 0) {
-            console.log("📭 No conversations found for filters")
             if (isMounted.current) {
               setConversations([])
               setError(null)
@@ -168,8 +163,6 @@ export function useConversations(
           }
           return
         }
-
-        console.log("💬 Conversations fetched:", conversationsData?.length || 0)
 
         const finalConversationIds = (conversationsData || []).map((conv) => conv.id)
 
@@ -256,7 +249,6 @@ export function useConversations(
         if (isMounted.current) {
           setConversations(conversationsWithMessages)
           setError(null)
-          console.log("✅ Conversations updated:", conversationsWithMessages.length)
         }
       } catch (err) {
         console.error("💥 Unexpected error fetching conversations:", err)
@@ -395,11 +387,8 @@ export function useConversations(
     if (organizationId) {
       const orgIdNumber = Number(organizationId)
       if (!isNaN(orgIdNumber)) {
-        console.log("🔌 Setting up realtime for org:", orgIdNumber)
-
         // Limpiar canal anterior si existe
         if (channelRef.current) {
-          console.log("🧹 Cleaning up previous channel")
           supabase.removeChannel(channelRef.current)
         }
 
@@ -414,8 +403,6 @@ export function useConversations(
               filter: `organization_id=eq.${orgIdNumber}`,
             },
             (payload) => {
-              console.log("🔄 Conversation change detected:", payload.eventType, payload)
-
               // 🔥 CLAVE: Actualizar inmediatamente cuando cambia una conversación
               if (payload.eventType === "UPDATE") {
                 const updatedConv = payload.new as any
@@ -450,19 +437,13 @@ export function useConversations(
               table: "messages",
             },
             (payload) => {
-              console.log("💬 Message change detected:", payload.eventType, payload)
               const messageData = payload.new as any
 
               if (messageData && messageData.conversation_id) {
-                console.log("🔄 Message for conversation:", messageData.conversation_id)
-
-                // 🔥 CLAVE: Actualizar la conversación inmediatamente cuando llega un mensaje
                 setConversations((currentConversations) => {
                   const conversationExists = currentConversations.some((c) => c.id === messageData.conversation_id)
 
                   if (conversationExists) {
-                    console.log("✅ Updating conversation with new message")
-
                     // Actualizar la conversación con el nuevo mensaje
                     const updatedConversations = currentConversations.map((conv) => {
                       if (conv.id === messageData.conversation_id) {
@@ -503,8 +484,6 @@ export function useConversations(
               filter: `organization_id=eq.${orgIdNumber}`,
             },
             (payload) => {
-              console.log("🏷️ Tag change detected:", payload.eventType, payload)
-
               if (payload.eventType === "DELETE") {
                 const deletedTagId = (payload.old as any)?.id
                 if (deletedTagId) {
@@ -538,27 +517,20 @@ export function useConversations(
               table: "users_conversations",
             },
             (payload) => {
-              console.log("👥 User assignment change detected:", payload.eventType, payload)
               fetchConversations(true)
             },
           )
           .subscribe((status) => {
-            console.log("📡 Realtime subscription status:", status)
-            if (status === "SUBSCRIBED") {
-              console.log("✅ Successfully subscribed to realtime")
-            } else if (status === "CHANNEL_ERROR") {
+            if (status === "CHANNEL_ERROR") {
               console.error("❌ Realtime channel error")
             } else if (status === "TIMED_OUT") {
               console.error("⏰ Realtime subscription timed out")
-            } else if (status === "CLOSED") {
-              console.log("🔒 Realtime channel closed")
             }
           })
 
         channelRef.current = channel
 
         return () => {
-          console.log("🧹 Cleaning up realtime subscription")
           isMounted.current = false
           if (channelRef.current) {
             supabase.removeChannel(channelRef.current)
@@ -574,7 +546,6 @@ export function useConversations(
   }, [organizationId, fetchConversations, updateConversationTags, handleTagDelete])
 
   const refetch = useCallback(() => {
-    console.log("🔄 Manual refetch triggered")
     fetchConversations()
   }, [fetchConversations])
 
