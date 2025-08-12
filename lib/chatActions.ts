@@ -82,6 +82,105 @@ export async function sendMessage({
 
     console.log("💾 Mensaje guardado en BD:", messageData.id)
 
+    // 🤖 LÓGICA DE DESASIGNACIÓN AUTOMÁTICA DE IA
+    // Si el usuario que envía el mensaje es tipo 1 (usuario normal), desasignar automáticamente cualquier IA (tipo 2) asignada
+    try {
+      // Obtener información del usuario que envía el mensaje
+      const { data: senderUser, error: senderError } = await supabase
+        .from("users")
+        .select("id, name, email, type")
+        .eq("id", userId)
+        .single()
+
+      if (senderError) {
+        console.warn("⚠️ No se pudo obtener información del usuario que envía:", senderError)
+      } else if (senderUser && senderUser.type === 1) {
+        // El usuario que envía es tipo 1 (usuario normal)
+        console.log("👤 Usuario normal enviando mensaje, verificando IAs asignadas...")
+
+        // Buscar IAs (tipo 2) asignadas a esta conversación
+        const { data: assignedAIs, error: aiError } = await supabase
+          .from("users_conversations")
+          .select(`
+            user_id,
+            users!inner(
+              id,
+              name,
+              email,
+              type
+            )
+          `)
+          .eq("conversation_id", conversationId)
+          .eq("users.type", 2) // Solo usuarios tipo 2 (IA)
+
+        if (aiError) {
+          console.warn("⚠️ Error buscando IAs asignadas:", aiError)
+        } else if (assignedAIs && assignedAIs.length > 0) {
+          console.log(`🤖 Encontradas ${assignedAIs.length} IAs asignadas, desasignando...`)
+
+          // Desasignar todas las IAs
+          const aiUserIds = assignedAIs.map((ai) => ai.user_id)
+
+          const { error: unassignError } = await supabase
+            .from("users_conversations")
+            .delete()
+            .eq("conversation_id", conversationId)
+            .in("user_id", aiUserIds)
+
+          if (unassignError) {
+            console.error("❌ Error desasignando IAs:", unassignError)
+          } else {
+            console.log("✅ IAs desasignadas exitosamente")
+
+            // Crear mensaje del sistema usando el mismo formato que AssignUsersDialog
+            const getUserName = (user: any) => {
+              return user.name || user.email || "Usuario desconocido"
+            }
+
+            const getUserType = (user: any) => {
+              return user.type === 2 ? "Agente IA" : "Usuario"
+            }
+
+            const unassignedDetails = assignedAIs.map((ai) => {
+              const name = getUserName(ai.users)
+              const type = getUserType(ai.users)
+              return `${name} (${type})`
+            })
+
+            const senderName = senderUser.name || senderUser.email || "un usuario"
+
+            const systemMessage =
+              aiUserIds.length === 1
+                ? `❌ ${unassignedDetails[0]} ha sido desasignado automáticamente porque ${senderName} ha respondido en la conversación`
+                : `❌ Los siguientes usuarios han sido desasignados automáticamente porque ${senderName} ha respondido en la conversación: ${unassignedDetails.join(", ")}`
+
+            // Insertar mensaje del sistema
+            const { error: systemMsgError } = await supabase.from("messages").insert({
+              conversation_id: conversationId,
+              sender_type: "system",
+              message_type: "system",
+              content: systemMessage,
+              user_id: null,
+              is_read: false,
+            })
+
+            if (systemMsgError) {
+              console.error("❌ Error creando mensaje del sistema:", systemMsgError)
+            } else {
+              console.log("✅ Mensaje del sistema creado para desasignación de IA")
+            }
+          }
+        } else {
+          console.log("ℹ️ No hay IAs asignadas a esta conversación")
+        }
+      } else {
+        console.log("ℹ️ El usuario que envía no es tipo 1, no se desasignan IAs")
+      }
+    } catch (autoUnassignError) {
+      console.error("❌ Error en lógica de desasignación automática:", autoUnassignError)
+      // No lanzar error para no interrumpir el envío del mensaje
+    }
+
     // Verificar si es un canal de WhatsApp y tiene configuración WABA
     const isWhatsApp = conversation.canales_organization?.canal?.nombre?.toLowerCase().includes("whatsapp")
     const wabaConfig = conversation.canales_organization?.waba?.[0] // Tomar la primera configuración WABA

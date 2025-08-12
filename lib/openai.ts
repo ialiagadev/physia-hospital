@@ -116,3 +116,39 @@ Formato profesional y médico.
 
   return generateAIText(prompt)
 }
+
+// Función para generar resúmenes de conversación
+export async function generateConversationSummary(messages: any[], clientName: string) {
+  // Formatear mensajes para el prompt
+  const formattedMessages = messages
+    .map((msg) => {
+      const sender = msg.sender_type === "whatsapp" ? clientName : "Agente"
+      const timestamp = new Date(msg.created_at).toLocaleString("es-ES")
+      return `[${timestamp}] ${sender}: ${msg.content}`
+    })
+    .join("\n")
+
+  const prompt = `
+Analiza la siguiente conversación y genera un resumen elaborado y bien redactado.
+
+Cliente: ${clientName}
+Conversación:
+${formattedMessages}
+
+Genera un resumen profesional que incluya:
+- Los temas principales tratados en la conversación
+- Las consultas o solicitudes del cliente
+- Las respuestas y soluciones proporcionadas
+- Cualquier acuerdo o próximos pasos mencionados
+
+El resumen debe ser:
+- Bien estructurado en párrafos
+- Profesional y claro
+- Completo pero conciso
+- Fácil de leer y entender
+
+Devuelve solo el resumen, sin títulos adicionales ni explicaciones.
+`
+
+  return generateAIText(prompt, "gpt-4o")
+}

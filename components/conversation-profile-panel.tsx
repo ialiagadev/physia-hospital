@@ -9,7 +9,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/hooks/use-toast"
 import { AssignUsersDialog } from "@/components/assign-users-dialog"
-import { Users, UserPlus, StickyNote, X, Bot, UserIcon, Sparkles, Tag } from "lucide-react"
+import { Users, UserPlus, StickyNote, X, Bot, UserIcon, Sparkles, Tag } from 'lucide-react'
 import { useAssignedUsers } from "@/hooks/use-assigned-users"
 import { supabase } from "@/lib/supabase/client"
 import { useAuth } from "@/app/contexts/auth-context"
@@ -22,7 +22,7 @@ interface ConversationProfilePanelProps {
   conversation: Conversation | null
   currentUser: User
   onAssignmentChange: () => void
-  onTagsChange?: () => void
+  onTagsChange?: (conversationId: string, tags: ConversationTagWithDetails[]) => void // <-- CAMBIO: Actualizada la interfaz
 }
 
 // ✨ Interfaz actualizada para etiquetas con tag_id
@@ -92,6 +92,7 @@ const getUserTypeInfo = (user: User) => {
       badgeColor: "bg-purple-100 text-purple-800",
     }
   }
+
   return {
     label: "Usuario",
     icon: UserIcon,
@@ -256,8 +257,8 @@ export function ConversationProfilePanel({
     if (!newNote.trim() || !conversation?.id) return
 
     const noteContent = newNote.trim()
-
     setNotesLoading(true)
+
     try {
       const { data, error } = await supabase
         .from("conversation_notes")
@@ -292,6 +293,7 @@ export function ConversationProfilePanel({
 
   const handleDeleteNote = async (noteId: string) => {
     setNotesLoading(true)
+
     try {
       const { error } = await supabase.from("conversation_notes").delete().eq("id", noteId)
 
@@ -315,7 +317,7 @@ export function ConversationProfilePanel({
     }
   }
 
-  // ✨ Crear nueva etiqueta y asignarla (diseño optimizado)
+  // ✅ Crear nueva etiqueta y asignarla (SIN client_id)
   const handleAddTag = async () => {
     if (!newTagName.trim() || !conversation?.id || !userProfile?.organization_id) return
 
@@ -332,6 +334,7 @@ export function ConversationProfilePanel({
     }
 
     setTagsLoading(true)
+
     try {
       // ✨ Paso 1: Crear o obtener la etiqueta en organization_tags
       let orgTag = availableOrgTags.find((tag) => tag.tag_name === tagName)
@@ -349,116 +352,7 @@ export function ConversationProfilePanel({
           .single()
 
         if (orgError) throw orgError
-        orgTag = newOrgTag
-        setAvailableOrgTags((prev) => [...prev, orgTag])
-      }
 
-      // ✨ Paso 2: Verificar si ya existe la asignación
-      const { data: existing, error: checkError } = await supabase
-        .from("conversation_tags")
-        .select("id")
-        .eq("tag_id", orgTag.id)
-        .eq("conversation_id", conversation.id)
-        .eq("organization_id", userProfile.organization_id)
-        .single()
-
-      if (checkError && checkError.code !== "PGRST116") {
-        throw checkError
-      }
-
-      if (existing) {
-        toast({
-          title: "Etiqueta duplicada",
-          description: "Esta etiqueta ya existe en la conversación",
-          variant: "destructive",
-        })
-        return
-      }
-
-      // ✨ Paso 3: Asignar la etiqueta a la conversación usando tag_id
-      const { data, error } = await supabase
-        .from("conversation_tags")
-        .insert({
-          tag_id: orgTag.id,
-          conversation_id: conversation.id,
-          // ❌ client_id: conversation.client?.id || null, // REMOVIDO - el trigger se encarga
-          organization_id: userProfile.organization_id,
-          created_by: currentUser.id,
-        })
-        .select()
-        .single()
-
-      if (error) throw error
-
-      // ✨ Actualizar estado local con datos completos
-      const newTagWithDetails: ConversationTagWithDetails = {
-        id: data.id,
-        tag_id: orgTag.id,
-        tag_name: orgTag.tag_name,
-        color: orgTag.color,
-        created_at: data.created_at,
-      }
-
-      setSelectedTags((prev) => [newTagWithDetails, ...prev])
-      setNewTagName("")
-
-      if (onTagsChange) {
-        onTagsChange()
-      }
-
-      toast({
-        title: "Etiqueta agregada",
-        description: `Se agregó la etiqueta "${tagName}" a la conversación`,
-      })
-    } catch (error) {
-      console.error("Error adding tag:", error)
-      toast({
-        title: "Error",
-        description: "No se pudo agregar la etiqueta",
-        variant: "destructive",
-      })
-    } finally {
-      setTagsLoading(false)
-    }
-  }
-
-  // ✨ Asignar etiqueta predefinida (diseño optimizado)
-  const handleAddPredefinedTag = async (tagName: string) => {
-    if (!conversation?.id || !userProfile?.organization_id) return
-
-    // Verificar si la etiqueta ya existe en la conversación
-    if (selectedTags.some((tag) => tag.tag_name === tagName)) {
-      toast({
-        title: "Etiqueta duplicada",
-        description: "Esta etiqueta ya existe en la conversación",
-        variant: "destructive",
-      })
-      return
-    }
-
-    setTagsLoading(true)
-    try {
-      // ✨ Paso 1: Buscar si ya existe en organization_tags
-      let orgTag = availableOrgTags.find((tag) => tag.tag_name === tagName)
-
-      if (!orgTag) {
-        // ✨ Si no existe, buscar en predefinidas para obtener el color
-        const predefinedTag = predefinedTags.find((t) => t.name === tagName)
-        const tagColor = predefinedTag?.color || "#8B5CF6"
-
-        // ✨ Crear nueva etiqueta en organization_tags
-        const { data: newOrgTag, error: orgError } = await supabase
-          .from("organization_tags")
-          .insert({
-            organization_id: userProfile.organization_id,
-            tag_name: tagName,
-            color: tagColor,
-            created_by: currentUser.id,
-          })
-          .select()
-          .single()
-
-        if (orgError) throw orgError
         orgTag = newOrgTag
         setAvailableOrgTags((prev) => [...prev, orgTag])
       }
@@ -485,7 +379,120 @@ export function ConversationProfilePanel({
         return
       }
 
-      // ✨ Paso 3: Asignar la etiqueta a la conversación usando tag_id
+      // ✅ Paso 3: Asignar la etiqueta SOLO a la conversación (sin client_id)
+      const { data, error } = await supabase
+        .from("conversation_tags")
+        .insert({
+          tag_id: orgTag.id,
+          conversation_id: conversation.id,
+          // ❌ client_id: conversation.client?.id || null, // REMOVIDO - el trigger se encarga
+          organization_id: userProfile.organization_id,
+          created_by: currentUser.id,
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      // ✨ Actualizar estado local con datos completos
+      const newTagWithDetails: ConversationTagWithDetails = {
+        id: data.id,
+        tag_id: orgTag.id,
+        tag_name: orgTag.tag_name,
+        color: orgTag.color,
+        created_at: data.created_at,
+      }
+
+      setSelectedTags((prev) => [newTagWithDetails, ...prev])
+      setNewTagName("")
+
+      // <CHANGE> Pasar conversationId y tags actualizadas al componente padre
+      if (onTagsChange) {
+        onTagsChange(conversation.id, [newTagWithDetails, ...selectedTags])
+      }
+
+      toast({
+        title: "Etiqueta agregada",
+        description: `Se agregó la etiqueta "${tagName}" a la conversación`,
+      })
+    } catch (error) {
+      console.error("Error adding tag:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo agregar la etiqueta",
+        variant: "destructive",
+      })
+    } finally {
+      setTagsLoading(false)
+    }
+  }
+
+  // ✅ Asignar etiqueta predefinida (SIN client_id)
+  const handleAddPredefinedTag = async (tagName: string) => {
+    if (!conversation?.id || !userProfile?.organization_id) return
+
+    // Verificar si la etiqueta ya existe en la conversación
+    if (selectedTags.some((tag) => tag.tag_name === tagName)) {
+      toast({
+        title: "Etiqueta duplicada",
+        description: "Esta etiqueta ya existe en la conversación",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setTagsLoading(true)
+
+    try {
+      // ✨ Paso 1: Buscar si ya existe en organization_tags
+      let orgTag = availableOrgTags.find((tag) => tag.tag_name === tagName)
+
+      if (!orgTag) {
+        // ✨ Si no existe, buscar en predefinidas para obtener el color
+        const predefinedTag = predefinedTags.find((t) => t.name === tagName)
+        const tagColor = predefinedTag?.color || "#8B5CF6"
+
+        // ✨ Crear nueva etiqueta en organization_tags
+        const { data: newOrgTag, error: orgError } = await supabase
+          .from("organization_tags")
+          .insert({
+            organization_id: userProfile.organization_id,
+            tag_name: tagName,
+            color: tagColor,
+            created_by: currentUser.id,
+          })
+          .select()
+          .single()
+
+        if (orgError) throw orgError
+
+        orgTag = newOrgTag
+        setAvailableOrgTags((prev) => [...prev, orgTag])
+      }
+
+      // ✨ Paso 2: Verificar si ya existe la asignación
+      const { data: existing, error: checkError } = await supabase
+        .from("conversation_tags")
+        .select("id")
+        .eq("tag_id", orgTag.id)
+        .eq("organization_id", userProfile.organization_id)
+        .eq("conversation_id", conversation.id)
+        .maybeSingle()
+
+      if (checkError && checkError.code !== "PGRST116") {
+        throw checkError
+      }
+
+      if (existing) {
+        toast({
+          title: "Etiqueta duplicada",
+          description: "Esta etiqueta ya existe en la conversación",
+          variant: "destructive",
+        })
+        return
+      }
+
+      // ✅ Paso 3: Asignar la etiqueta SOLO a la conversación (sin client_id)
       const { data, error } = await supabase
         .from("conversation_tags")
         .insert({
@@ -511,8 +518,9 @@ export function ConversationProfilePanel({
 
       setSelectedTags((prev) => [newTagWithDetails, ...prev])
 
+      // <CHANGE> Pasar conversationId y tags actualizadas al componente padre
       if (onTagsChange) {
-        onTagsChange()
+        onTagsChange(conversation.id, [newTagWithDetails, ...selectedTags])
       }
 
       toast({
@@ -534,15 +542,18 @@ export function ConversationProfilePanel({
   // ✨ Eliminar etiqueta (sin cambios, sigue usando el ID de asignación)
   const handleRemoveTag = async (assignmentId: string) => {
     setTagsLoading(true)
+
     try {
       const { error } = await supabase.from("conversation_tags").delete().eq("id", assignmentId)
 
       if (error) throw error
 
-      setSelectedTags((prev) => prev.filter((tag) => tag.id !== assignmentId))
+      const updatedTags = selectedTags.filter((tag) => tag.id !== assignmentId)
+      setSelectedTags(updatedTags)
 
+      // <CHANGE> Pasar conversationId y tags actualizadas al componente padre
       if (onTagsChange) {
-        onTagsChange()
+        onTagsChange(conversation.id, updatedTags)
       }
 
       toast({
@@ -563,8 +574,10 @@ export function ConversationProfilePanel({
 
   const handleGenerateSummary = async () => {
     setIsGeneratingSummary(true)
+
     try {
       await new Promise((resolve) => setTimeout(resolve, 2000))
+
       toast({
         title: "Resumen generado",
         description: "El resumen de la conversación ha sido generado exitosamente",
@@ -685,7 +698,6 @@ export function ConversationProfilePanel({
                           )}
                         </div>
                       </div>
-
                       <div className="flex items-center gap-2">
                         <Badge variant="secondary" className={userInfo.badgeColor}>
                           {userInfo.label}
@@ -732,6 +744,7 @@ export function ConversationProfilePanel({
               <StickyNote className="w-5 h-5 text-blue-600" />
               <h4 className="font-medium">Notas</h4>
             </div>
+
             <div className="space-y-2">
               <Textarea
                 rows={3}
@@ -759,7 +772,7 @@ export function ConversationProfilePanel({
                         className="absolute top-1 right-1 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
                         onClick={() => handleDeleteNote(note.id)}
                       >
-                        <X className="w-3 h-3" />
+                        <X className="h-3 w-3" />
                       </Button>
                     </div>
                   ))}
@@ -777,6 +790,7 @@ export function ConversationProfilePanel({
               <Sparkles className="w-5 h-5 text-purple-600" />
               <h4 className="font-medium">Resumen IA</h4>
             </div>
+
             <Button
               variant="outline"
               className="w-full bg-transparent"
