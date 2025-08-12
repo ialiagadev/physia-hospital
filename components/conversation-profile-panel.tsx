@@ -9,7 +9,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/hooks/use-toast"
 import { AssignUsersDialog } from "@/components/assign-users-dialog"
-import { Users, UserPlus, StickyNote, X, Bot, UserIcon, Sparkles, Tag } from 'lucide-react'
+import { Users, UserPlus, StickyNote, X, Bot, UserIcon, Sparkles, Tag, Copy, Download, FileText } from "lucide-react"
 import { useAssignedUsers } from "@/hooks/use-assigned-users"
 import { supabase } from "@/lib/supabase/client"
 import { useAuth } from "@/app/contexts/auth-context"
@@ -22,10 +22,9 @@ interface ConversationProfilePanelProps {
   conversation: Conversation | null
   currentUser: User
   onAssignmentChange: () => void
-  onTagsChange?: (conversationId: string, tags: ConversationTagWithDetails[]) => void // <-- CAMBIO: Actualizada la interfaz
+  onTagsChange?: () => void
 }
 
-// ✨ Interfaz actualizada para etiquetas con tag_id
 interface ConversationTagWithDetails {
   id: string
   tag_id: string
@@ -34,7 +33,6 @@ interface ConversationTagWithDetails {
   created_at: string
 }
 
-// ✨ Etiquetas predefinidas actualizadas con colores hexadecimales
 const predefinedTags = [
   { name: "Consulta General", color: "#3B82F6" },
   { name: "Urgente", color: "#EF4444" },
@@ -75,11 +73,10 @@ const getAvatarFallback = (name: string) => {
     .slice(0, 2)
 }
 
-// ✨ Función adaptadora para convertir AssignedUser a User
 const adaptAssignedUserToUser = (assignedUser: any): User => {
   return {
     ...assignedUser,
-    avatar_url: assignedUser.avatar_url || undefined, // Convierte null a undefined
+    avatar_url: assignedUser.avatar_url || undefined,
   }
 }
 
@@ -92,7 +89,6 @@ const getUserTypeInfo = (user: User) => {
       badgeColor: "bg-purple-100 text-purple-800",
     }
   }
-
   return {
     label: "Usuario",
     icon: UserIcon,
@@ -129,6 +125,9 @@ export function ConversationProfilePanel({
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false)
   const [tagsLoading, setTagsLoading] = useState(false)
   const [assignedUserIds, setAssignedUserIds] = useState<string[]>([])
+  const [conversationSummary, setConversationSummary] = useState<string>("")
+  const [summaryStats, setSummaryStats] = useState<any>(null)
+  const [showSummaryModal, setShowSummaryModal] = useState(false)
 
   // Estados para notas
   const [notes, setNotes] = useState<ConversationNote[]>([])
@@ -137,10 +136,8 @@ export function ConversationProfilePanel({
 
   const { userProfile } = useAuth()
 
-  // ✨ Hook para obtener usuarios asignados REALES - Arreglado el tipo
   const { users: assignedUsersRaw, loading: usersLoading, error: usersError } = useAssignedUsers(conversation?.id || "")
 
-  // ✨ Convertir AssignedUser[] a User[] para evitar conflictos de tipos
   const assignedUsers: User[] = assignedUsersRaw.map(adaptAssignedUserToUser)
 
   // Cargar datos cuando cambia la conversación
@@ -153,7 +150,6 @@ export function ConversationProfilePanel({
     }
   }, [conversation?.id])
 
-  // Cargar IDs de usuarios asignados desde la tabla users_conversations
   const loadAssignedUserIds = async () => {
     if (!conversation?.id) return
 
@@ -172,7 +168,6 @@ export function ConversationProfilePanel({
     }
   }
 
-  // ✨ Cargar etiquetas de la conversación usando la vista optimizada
   const loadConversationTags = async () => {
     if (!conversation?.id) return
 
@@ -186,7 +181,6 @@ export function ConversationProfilePanel({
 
       if (error) throw error
 
-      // ✨ Mapear a la interfaz esperada
       const tagsWithDetails: ConversationTagWithDetails[] = (data || []).map((item) => ({
         id: item.assignment_id,
         tag_id: item.tag_id,
@@ -208,7 +202,6 @@ export function ConversationProfilePanel({
     }
   }
 
-  // ✨ Cargar etiquetas disponibles de la organización
   const loadAvailableOrgTags = async () => {
     if (!userProfile?.organization_id) return
 
@@ -257,8 +250,8 @@ export function ConversationProfilePanel({
     if (!newNote.trim() || !conversation?.id) return
 
     const noteContent = newNote.trim()
-    setNotesLoading(true)
 
+    setNotesLoading(true)
     try {
       const { data, error } = await supabase
         .from("conversation_notes")
@@ -293,7 +286,6 @@ export function ConversationProfilePanel({
 
   const handleDeleteNote = async (noteId: string) => {
     setNotesLoading(true)
-
     try {
       const { error } = await supabase.from("conversation_notes").delete().eq("id", noteId)
 
@@ -317,13 +309,11 @@ export function ConversationProfilePanel({
     }
   }
 
-  // ✅ Crear nueva etiqueta y asignarla (SIN client_id)
   const handleAddTag = async () => {
     if (!newTagName.trim() || !conversation?.id || !userProfile?.organization_id) return
 
     const tagName = newTagName.trim()
 
-    // Verificar si la etiqueta ya existe en la conversación
     if (selectedTags.some((tag) => tag.tag_name === tagName)) {
       toast({
         title: "Etiqueta duplicada",
@@ -334,9 +324,7 @@ export function ConversationProfilePanel({
     }
 
     setTagsLoading(true)
-
     try {
-      // ✨ Paso 1: Crear o obtener la etiqueta en organization_tags
       let orgTag = availableOrgTags.find((tag) => tag.tag_name === tagName)
 
       if (!orgTag) {
@@ -345,26 +333,24 @@ export function ConversationProfilePanel({
           .insert({
             organization_id: userProfile.organization_id,
             tag_name: tagName,
-            color: "#8B5CF6", // Color por defecto
+            color: "#8B5CF6",
             created_by: currentUser.id,
           })
           .select()
           .single()
 
         if (orgError) throw orgError
-
         orgTag = newOrgTag
         setAvailableOrgTags((prev) => [...prev, orgTag])
       }
 
-      // ✨ Paso 2: Verificar si ya existe la asignación
       const { data: existing, error: checkError } = await supabase
         .from("conversation_tags")
         .select("id")
         .eq("tag_id", orgTag.id)
-        .eq("organization_id", userProfile.organization_id)
         .eq("conversation_id", conversation.id)
-        .maybeSingle()
+        .eq("organization_id", userProfile.organization_id)
+        .single()
 
       if (checkError && checkError.code !== "PGRST116") {
         throw checkError
@@ -379,13 +365,11 @@ export function ConversationProfilePanel({
         return
       }
 
-      // ✅ Paso 3: Asignar la etiqueta SOLO a la conversación (sin client_id)
       const { data, error } = await supabase
         .from("conversation_tags")
         .insert({
           tag_id: orgTag.id,
           conversation_id: conversation.id,
-          // ❌ client_id: conversation.client?.id || null, // REMOVIDO - el trigger se encarga
           organization_id: userProfile.organization_id,
           created_by: currentUser.id,
         })
@@ -394,7 +378,6 @@ export function ConversationProfilePanel({
 
       if (error) throw error
 
-      // ✨ Actualizar estado local con datos completos
       const newTagWithDetails: ConversationTagWithDetails = {
         id: data.id,
         tag_id: orgTag.id,
@@ -406,9 +389,8 @@ export function ConversationProfilePanel({
       setSelectedTags((prev) => [newTagWithDetails, ...prev])
       setNewTagName("")
 
-      // <CHANGE> Pasar conversationId y tags actualizadas al componente padre
       if (onTagsChange) {
-        onTagsChange(conversation.id, [newTagWithDetails, ...selectedTags])
+        onTagsChange()
       }
 
       toast({
@@ -427,11 +409,9 @@ export function ConversationProfilePanel({
     }
   }
 
-  // ✅ Asignar etiqueta predefinida (SIN client_id)
   const handleAddPredefinedTag = async (tagName: string) => {
     if (!conversation?.id || !userProfile?.organization_id) return
 
-    // Verificar si la etiqueta ya existe en la conversación
     if (selectedTags.some((tag) => tag.tag_name === tagName)) {
       toast({
         title: "Etiqueta duplicada",
@@ -442,17 +422,13 @@ export function ConversationProfilePanel({
     }
 
     setTagsLoading(true)
-
     try {
-      // ✨ Paso 1: Buscar si ya existe en organization_tags
       let orgTag = availableOrgTags.find((tag) => tag.tag_name === tagName)
 
       if (!orgTag) {
-        // ✨ Si no existe, buscar en predefinidas para obtener el color
         const predefinedTag = predefinedTags.find((t) => t.name === tagName)
         const tagColor = predefinedTag?.color || "#8B5CF6"
 
-        // ✨ Crear nueva etiqueta en organization_tags
         const { data: newOrgTag, error: orgError } = await supabase
           .from("organization_tags")
           .insert({
@@ -465,12 +441,10 @@ export function ConversationProfilePanel({
           .single()
 
         if (orgError) throw orgError
-
         orgTag = newOrgTag
         setAvailableOrgTags((prev) => [...prev, orgTag])
       }
 
-      // ✨ Paso 2: Verificar si ya existe la asignación
       const { data: existing, error: checkError } = await supabase
         .from("conversation_tags")
         .select("id")
@@ -492,13 +466,11 @@ export function ConversationProfilePanel({
         return
       }
 
-      // ✅ Paso 3: Asignar la etiqueta SOLO a la conversación (sin client_id)
       const { data, error } = await supabase
         .from("conversation_tags")
         .insert({
           tag_id: orgTag.id,
           conversation_id: conversation.id,
-          // ❌ client_id: conversation.client?.id || null, // REMOVIDO - el trigger se encarga
           organization_id: userProfile.organization_id,
           created_by: currentUser.id,
         })
@@ -507,20 +479,18 @@ export function ConversationProfilePanel({
 
       if (error) throw error
 
-      // ✨ Actualizar estado local con datos completos
       const newTagWithDetails: ConversationTagWithDetails = {
         id: data.id,
         tag_id: orgTag.id,
         tag_name: orgTag.tag_name,
-        color: orgTag.color, // ✨ Usar el color real de la base de datos
+        color: orgTag.color,
         created_at: data.created_at,
       }
 
       setSelectedTags((prev) => [newTagWithDetails, ...prev])
 
-      // <CHANGE> Pasar conversationId y tags actualizadas al componente padre
       if (onTagsChange) {
-        onTagsChange(conversation.id, [newTagWithDetails, ...selectedTags])
+        onTagsChange()
       }
 
       toast({
@@ -539,21 +509,17 @@ export function ConversationProfilePanel({
     }
   }
 
-  // ✨ Eliminar etiqueta (sin cambios, sigue usando el ID de asignación)
   const handleRemoveTag = async (assignmentId: string) => {
     setTagsLoading(true)
-
     try {
       const { error } = await supabase.from("conversation_tags").delete().eq("id", assignmentId)
 
       if (error) throw error
 
-      const updatedTags = selectedTags.filter((tag) => tag.id !== assignmentId)
-      setSelectedTags(updatedTags)
+      setSelectedTags((prev) => prev.filter((tag) => tag.id !== assignmentId))
 
-      // <CHANGE> Pasar conversationId y tags actualizadas al componente padre
       if (onTagsChange) {
-        onTagsChange(conversation.id, updatedTags)
+        onTagsChange()
       }
 
       toast({
@@ -573,23 +539,93 @@ export function ConversationProfilePanel({
   }
 
   const handleGenerateSummary = async () => {
-    setIsGeneratingSummary(true)
+    if (!conversation?.id || !userProfile?.organization_id) return
 
+    setIsGeneratingSummary(true)
     try {
-      await new Promise((resolve) => setTimeout(resolve, 2000))
+      console.log("Generando resumen para conversación:", conversation.id)
+
+      const response = await fetch("/api/generate-conversation-summary", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          conversationId: conversation.id,
+          organizationId: userProfile.organization_id,
+        }),
+      })
+
+      console.log("Response status:", response.status)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error("Error response:", errorText)
+        throw new Error(`Error ${response.status}: ${errorText}`)
+      }
+
+      const result = await response.json()
+      console.log("API Result:", result)
+
+      if (!result.success) {
+        throw new Error(result.error || "Error al generar resumen")
+      }
+
+      setConversationSummary(result.summary)
+      setSummaryStats(result.statistics)
+      setShowSummaryModal(true)
 
       toast({
         title: "Resumen generado",
-        description: "El resumen de la conversación ha sido generado exitosamente",
+        description: "El resumen de la conversación se ha generado correctamente",
       })
     } catch (error) {
+      console.error("Error generando resumen:", error)
       toast({
         title: "Error",
-        description: "No se pudo generar el resumen",
+        description: error instanceof Error ? error.message : "No se pudo generar el resumen",
         variant: "destructive",
       })
     } finally {
       setIsGeneratingSummary(false)
+    }
+  }
+
+  const handleCopySummary = () => {
+    if (conversationSummary) {
+      navigator.clipboard.writeText(conversationSummary)
+      toast({
+        title: "Copiado",
+        description: "El resumen ha sido copiado al portapapeles",
+      })
+    }
+  }
+
+  const handleDownloadSummary = () => {
+    if (conversationSummary && summaryStats) {
+      const content = `RESUMEN DE CONVERSACIÓN
+Cliente: ${summaryStats.clientName}
+Fecha: ${summaryStats.conversationDate}
+Duración: ${summaryStats.durationMinutes} minutos
+Total mensajes: ${summaryStats.totalMessages}
+Mensajes analizados: ${summaryStats.analyzedMessages}
+
+${conversationSummary}`
+
+      const blob = new Blob([content], { type: "text/plain" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `resumen-${summaryStats.clientName}-${summaryStats.conversationDate}.txt`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      toast({
+        title: "Descargado",
+        description: "El resumen ha sido descargado como archivo de texto",
+      })
     }
   }
 
@@ -602,7 +638,7 @@ export function ConversationProfilePanel({
   }
 
   const handleAssignmentChangeInternal = () => {
-    loadAssignedUserIds() // Recargar los IDs desde users_conversations
+    loadAssignedUserIds()
     onAssignmentChange()
   }
 
@@ -698,6 +734,7 @@ export function ConversationProfilePanel({
                           )}
                         </div>
                       </div>
+
                       <div className="flex items-center gap-2">
                         <Badge variant="secondary" className={userInfo.badgeColor}>
                           {userInfo.label}
@@ -744,7 +781,6 @@ export function ConversationProfilePanel({
               <StickyNote className="w-5 h-5 text-blue-600" />
               <h4 className="font-medium">Notas</h4>
             </div>
-
             <div className="space-y-2">
               <Textarea
                 rows={3}
@@ -772,7 +808,7 @@ export function ConversationProfilePanel({
                         className="absolute top-1 right-1 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
                         onClick={() => handleDeleteNote(note.id)}
                       >
-                        <X className="h-3 w-3" />
+                        <X className="w-3 h-3" />
                       </Button>
                     </div>
                   ))}
@@ -790,7 +826,6 @@ export function ConversationProfilePanel({
               <Sparkles className="w-5 h-5 text-purple-600" />
               <h4 className="font-medium">Resumen IA</h4>
             </div>
-
             <Button
               variant="outline"
               className="w-full bg-transparent"
@@ -811,14 +846,14 @@ export function ConversationProfilePanel({
             </Button>
           </div>
 
-          {/* ✨ Sección de Etiquetas - Actualizada para usar colores consistentes */}
+          {/* Sección de Etiquetas */}
           <div>
             <div className="flex items-center gap-2 mb-3">
               <Tag className="w-5 h-5 text-green-600" />
               <h4 className="font-medium">Etiquetas de Conversación</h4>
             </div>
 
-            {/* ✨ Etiquetas seleccionadas con colores consistentes */}
+            {/* Etiquetas seleccionadas */}
             {selectedTags.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-3">
                 {selectedTags.map((tag) => (
@@ -858,11 +893,10 @@ export function ConversationProfilePanel({
               </Button>
             </div>
 
-            {/* ✨ Etiquetas predefinidas disponibles con colores consistentes */}
+            {/* Etiquetas predefinidas disponibles */}
             <div className="space-y-2">
               <p className="text-sm font-medium text-gray-700">Etiquetas disponibles:</p>
               <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
-                {/* ✨ Primero mostrar etiquetas existentes de la organización */}
                 {availableOrgTags
                   .filter((orgTag) => !selectedTags.some((tag) => tag.tag_id === orgTag.id))
                   .map((orgTag) => (
@@ -875,7 +909,6 @@ export function ConversationProfilePanel({
                     />
                   ))}
 
-                {/* ✨ Luego mostrar etiquetas predefinidas que NO existen en la organización */}
                 {predefinedTags
                   .filter(
                     (predefinedTag) =>
@@ -895,6 +928,149 @@ export function ConversationProfilePanel({
             </div>
           </div>
         </div>
+
+        {/* Modal de Resumen IA - Idéntico al del conversation-window */}
+        {showSummaryModal && conversationSummary && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+              {/* Header con gradiente */}
+              <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-4 sm:p-6 text-white flex-shrink-0">
+                <div className="flex justify-between items-start">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div className="p-2 bg-white bg-opacity-20 rounded-lg flex-shrink-0">
+                      <Sparkles className="h-5 w-5 sm:h-6 sm:w-6" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-lg sm:text-xl font-semibold truncate">Resumen de Conversación</h3>
+                      <p className="text-purple-100 text-sm">Generado con IA</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-1 sm:gap-2 flex-shrink-0 ml-2">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleCopySummary}
+                      className="text-white hover:bg-white hover:bg-opacity-20 h-8 w-8 sm:h-10 sm:w-10"
+                      title="Copiar resumen"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleDownloadSummary}
+                      className="text-white hover:bg-white hover:bg-opacity-20 h-8 w-8 sm:h-10 sm:w-10"
+                      title="Descargar resumen"
+                    >
+                      <Download className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setShowSummaryModal(false)}
+                      className="text-white hover:bg-white hover:bg-opacity-20 h-8 w-8 sm:h-10 sm:w-10"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Contenido del modal */}
+              <div className="p-4 sm:p-6 overflow-y-auto flex-1">
+                {/* Estadísticas con cards coloridas */}
+                {summaryStats && (
+                  <div className="mb-6">
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                      <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-3 sm:p-4 rounded-lg border border-blue-200">
+                        <div className="text-blue-600 text-xs sm:text-sm font-medium">Cliente</div>
+                        <div
+                          className="text-blue-900 font-semibold text-sm sm:text-base truncate"
+                          title={summaryStats.clientName}
+                        >
+                          {summaryStats.clientName}
+                        </div>
+                      </div>
+                      <div className="bg-gradient-to-br from-green-50 to-green-100 p-3 sm:p-4 rounded-lg border border-green-200">
+                        <div className="text-green-600 text-xs sm:text-sm font-medium">Fecha</div>
+                        <div className="text-green-900 font-semibold text-sm sm:text-base">
+                          {summaryStats.conversationDate}
+                        </div>
+                      </div>
+                      <div className="bg-gradient-to-br from-orange-50 to-orange-100 p-3 sm:p-4 rounded-lg border border-orange-200">
+                        <div className="text-orange-600 text-xs sm:text-sm font-medium">Duración</div>
+                        <div className="text-orange-900 font-semibold text-sm sm:text-base">
+                          {summaryStats.durationMinutes} min
+                        </div>
+                      </div>
+                      <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-3 sm:p-4 rounded-lg border border-purple-200">
+                        <div className="text-purple-600 text-xs sm:text-sm font-medium">Mensajes</div>
+                        <div className="text-purple-900 font-semibold text-sm sm:text-base">
+                          {summaryStats.totalMessages}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Resumen con diseño mejorado */}
+                <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-4 sm:p-6 border border-gray-200">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="p-1.5 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-lg">
+                      <FileText className="h-4 w-4 text-white" />
+                    </div>
+                    <h4 className="font-semibold text-gray-800">Resumen Detallado</h4>
+                  </div>
+
+                  <div className="prose prose-sm max-w-none">
+                    <div
+                      className="text-gray-700 leading-relaxed whitespace-pre-wrap text-sm sm:text-base"
+                      style={{
+                        lineHeight: "1.6",
+                      }}
+                    >
+                      {
+                        conversationSummary
+                          .replace(/\*\*(.*?)\*\*/g, "$1") // Remove **bold**
+                          .replace(/\*(.*?)\*/g, "$1") // Remove *italic*
+                          .replace(/_(.*?)_/g, "$1") // Remove _underline_
+                          .replace(/`(.*?)`/g, "$1") // Remove `code`
+                      }
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer con botones */}
+              <div className="bg-gray-50 px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-200 flex-shrink-0">
+                <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={handleCopySummary}
+                    className="border-purple-200 text-purple-700 hover:bg-purple-50 bg-transparent w-full sm:w-auto"
+                  >
+                    <Copy className="h-4 w-4 mr-2" />
+                    Copiar
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleDownloadSummary}
+                    className="border-indigo-200 text-indigo-700 hover:bg-indigo-50 bg-transparent w-full sm:w-auto"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Descargar
+                  </Button>
+                  <Button
+                    onClick={() => setShowSummaryModal(false)}
+                    className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 w-full sm:w-auto"
+                  >
+                    Cerrar
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </SheetContent>
     </Sheet>
   )
