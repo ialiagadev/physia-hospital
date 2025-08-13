@@ -16,6 +16,7 @@ import {
   Square,
   Trash2,
   Paperclip,
+  ChevronDown,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -84,6 +85,7 @@ export default function ConversationWindowSimple({
   const [message, setMessage] = useState("")
   const [sending, setSending] = useState(false)
   const [isNearBottom, setIsNearBottom] = useState(true)
+  const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [showProfilePanel, setShowProfilePanel] = useState(false)
   const [isWindowVisible, setIsWindowVisible] = useState(true)
   const [filePreview, setFilePreview] = useState<FilePreview | null>(null)
@@ -180,31 +182,6 @@ export default function ConversationWindowSimple({
 
   // Marcar como leído cuando el usuario hace scroll hasta abajo
   useEffect(() => {
-    if (isNearBottom && unreadCount > 0) {
-      const timer = setTimeout(() => {
-        markAsRead()
-      }, 500) // Delay más corto cuando está en el fondo
-
-      return () => clearTimeout(timer)
-    }
-  }, [isNearBottom, unreadCount, markAsRead])
-
-  // Debug: Verificar si tenemos datos del cliente
-  useEffect(() => {
-    if (conversation?.client) {
-    } else {
-    }
-  }, [conversation])
-
-  // Scroll to bottom when new messages arrive
-  useEffect(() => {
-    if (isNearBottom) {
-      scrollToBottom()
-    }
-  }, [messages, isNearBottom])
-
-  // Check if user is near bottom of the scroll container
-  useEffect(() => {
     const container = messagesContainerRef.current
     if (!container) return
 
@@ -214,12 +191,29 @@ export default function ConversationWindowSimple({
       const isNear = scrollPosition < 100
 
       setIsNearBottom(isNear)
-      // setShowScrollButton(!isNear)
     }
 
     container.addEventListener("scroll", handleScroll)
     return () => container.removeEventListener("scroll", handleScroll)
   }, [])
+
+  useEffect(() => {
+    if (conversation?.client && isInitialLoad && messagesContainerRef.current) {
+      // Posicionar instantáneamente al final sin animación
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+      setIsInitialLoad(false)
+    }
+  }, [conversation, isInitialLoad])
+
+  useEffect(() => {
+    if (!isInitialLoad && isNearBottom && messages.length > 0) {
+      const timer = setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+      }, 100) // Small delay to ensure initial load is complete
+
+      return () => clearTimeout(timer)
+    }
+  }, [messages.length, isNearBottom, isInitialLoad]) // Changed dependency from messages to messages.length
 
   // Format timestamp to readable time
   const formatTime = (dateStr: string | null | undefined) => {
@@ -278,6 +272,14 @@ export default function ConversationWindowSimple({
     }
 
     return ""
+  }
+
+  // Scroll to bottom of messages
+  const scrollToBottomInstant = () => {
+    const container = messagesContainerRef.current
+    if (container) {
+      container.scrollTop = container.scrollHeight
+    }
   }
 
   // Scroll to bottom of messages
@@ -1128,6 +1130,17 @@ export default function ConversationWindowSimple({
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Botón de scroll siempre visible */}
+      <div className="fixed bottom-24 right-6 z-10">
+        <button
+          onClick={scrollToBottom}
+          className="p-2 text-gray-400 hover:text-gray-600 transition-colors opacity-60 hover:opacity-100"
+          title="Ir al final"
+        >
+          <ChevronDown className="h-5 w-5" />
+        </button>
+      </div>
+
       {/* Preview de archivo */}
       {filePreview && (
         <div className="p-3 bg-gray-50 border-t">
@@ -1283,7 +1296,7 @@ export default function ConversationWindowSimple({
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.rtf,.odt,.ods,.odp,.zip,.rar,.7z,.tar,.gz,.json,.xml,.html,.css,.js,.ts,.jsx,.tsx,.py,.java,.cpp,.c,.h,.sql,.md,.yaml,.yml,.ini,.cfg,.log,.epub,.mobi,.azw,.azw3,.fb2,.lit,.pdb,.tcr,.woff,.woff2,.ttf,.otf,.eot,.svg,.dwg,.dxf,.step,.stp,.iges,.igs,.stl,.obj,.3ds,.max,.blend,.fbx,.dae,.x3d,.ply,.off"
+                  accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.rtf,.odt,.ods,.odp,.zip,.rar,.7z,.tar,.gz,.json,.xml,.html,.css,.js,.ts,.jsx,.py,.java,.cpp,.c,.h,.sql,.md,.yaml,.yml,.ini,.cfg,.log,.epub,.mobi,.azw,.azw3,.fb2,.lit,.pdb,.tcr,.woff,.woff2,.ttf,.otf,.eot,.svg,.dwg,.dxf,.step,.stp,.iges,.igs,.stl,.obj,.3ds,.max,.blend,.fbx,.dae,.x3d,.ply,.off"
                   onChange={handleFileSelect}
                   className="hidden"
                 />

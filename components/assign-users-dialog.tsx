@@ -247,8 +247,8 @@ export function AssignUsersDialog({ conversationId, onAssignmentChange, trigger 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger || defaultTrigger}</DialogTrigger>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
+      <DialogContent className="max-w-4xl w-full">
+      <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Users className="h-5 w-5" />
             Asignar usuarios a la conversación
