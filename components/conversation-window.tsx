@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useLayoutEffect } from "react"
 import {
   Send,
   Smile,
@@ -173,7 +173,9 @@ export default function ConversationWindowSimple({
   useEffect(() => {
     if (isWindowVisible && unreadCount > 0 && chatId) {
       const timer = setTimeout(() => {
-        markAsRead()
+        if (messagesContainerRef.current) {
+          messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+        }
       }, 1000) // Delay de 1 segundo para mejor UX
 
       return () => clearTimeout(timer)
@@ -197,9 +199,9 @@ export default function ConversationWindowSimple({
     return () => container.removeEventListener("scroll", handleScroll)
   }, [])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (conversation?.client && isInitialLoad && messagesContainerRef.current) {
-      // Posicionar instantáneamente al final sin animación
+      // Scroll inmediato sin setTimeout para evitar pestañeo
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
       setIsInitialLoad(false)
     }
@@ -208,12 +210,14 @@ export default function ConversationWindowSimple({
   useEffect(() => {
     if (!isInitialLoad && isNearBottom && messages.length > 0) {
       const timer = setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-      }, 100) // Small delay to ensure initial load is complete
+        if (messagesContainerRef.current) {
+          messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+        }
+      }, 100)
 
       return () => clearTimeout(timer)
     }
-  }, [messages.length, isNearBottom, isInitialLoad]) // Changed dependency from messages to messages.length
+  }, [messages.length, isNearBottom, isInitialLoad])
 
   // Format timestamp to readable time
   const formatTime = (dateStr: string | null | undefined) => {
@@ -274,7 +278,6 @@ export default function ConversationWindowSimple({
     return ""
   }
 
-  // Scroll to bottom of messages
   const scrollToBottomInstant = () => {
     const container = messagesContainerRef.current
     if (container) {
@@ -284,7 +287,10 @@ export default function ConversationWindowSimple({
 
   // Scroll to bottom of messages
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    const container = messagesContainerRef.current
+    if (container) {
+      container.scrollTop = container.scrollHeight
+    }
   }
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
