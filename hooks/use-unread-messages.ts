@@ -18,7 +18,6 @@ export function useUnreadMessages(conversationId?: string) {
         const count = await getUnreadMessagesCount(conversationId)
         setUnreadCount(count)
       } catch (error) {
-        console.error("Error fetching unread count:", error)
       } finally {
         setLoading(false)
       }
@@ -42,7 +41,6 @@ export function useUnreadMessages(conversationId?: string) {
           filter: `id=eq.${conversationId}`,
         },
         (payload) => {
-          console.log("Conversation updated:", payload)
           if (payload.new && typeof payload.new.unread_count === "number") {
             setUnreadCount(payload.new.unread_count)
           }
@@ -57,7 +55,6 @@ export function useUnreadMessages(conversationId?: string) {
           filter: `conversation_id=eq.${conversationId}`,
         },
         (payload) => {
-          console.log("New message:", payload)
           // Si es un mensaje del contacto, incrementar contador
           if (payload.new && payload.new.sender_type === "contact") {
             setUnreadCount((prev) => prev + 1)
@@ -78,9 +75,7 @@ export function useUnreadMessages(conversationId?: string) {
     try {
       await markMessagesAsRead(conversationId)
       setUnreadCount(0)
-    } catch (error) {
-      console.error("Error marking as read:", error)
-    }
+    } catch (error) {}
   }
 
   return {
@@ -103,7 +98,6 @@ export function useTotalUnreadMessages(organizationId?: number) {
         const total = await getTotalUnreadCount(organizationId)
         setTotalUnread(total)
       } catch (error) {
-        console.error("Error fetching total unread:", error)
       } finally {
         setLoading(false)
       }

@@ -69,12 +69,7 @@ interface WhatsAppMessageParams {
           }
       }
   
-      console.log("🚀 Enviando mensaje de WhatsApp:", {
-        to: cleanPhone,
-        type: messageType,
-        hasMedia: !!mediaUrl,
-        payload: JSON.stringify(payload, null, 2),
-      })
+     
   
       const response = await fetch("https://backend.aisensy.com/direct-apis/t1/messages", {
         method: "POST",
@@ -87,12 +82,7 @@ interface WhatsAppMessageParams {
       })
   
       const responseText = await response.text()
-      console.log("📱 Respuesta de WhatsApp API:", {
-        status: response.status,
-        statusText: response.statusText,
-        headers: Object.fromEntries(response.headers.entries()),
-        body: responseText,
-      })
+     
   
       if (!response.ok) {
         console.error("❌ Error response from WhatsApp API:", {

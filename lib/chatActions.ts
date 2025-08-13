@@ -15,14 +15,6 @@ export async function sendMessage({
   mediaUrl?: string
 }) {
   try {
-    console.log("🔄 Iniciando envío de mensaje:", {
-      conversationId,
-      content: content.substring(0, 50) + "...",
-      userId,
-      messageType,
-      hasMediaUrl: !!mediaUrl,
-    })
-
     // Primero obtener información de la conversación y el cliente
     const { data: conversation, error: convError } = await supabase
       .from("conversations")
@@ -43,22 +35,8 @@ export async function sendMessage({
       .single()
 
     if (convError || !conversation) {
-      console.error("❌ Error obteniendo conversación:", convError)
       throw new Error("No se pudo obtener la información de la conversación")
     }
-
-    console.log("📋 Información de conversación obtenida:", {
-      conversationId: conversation.id,
-      clientId: conversation.client?.id,
-      clientName: conversation.client?.name,
-      clientPhone: conversation.client?.phone,
-      clientPhonePrefix: conversation.client?.phone_prefix,
-      clientFullPhone: conversation.client?.full_phone,
-      clientExternalId: conversation.client?.external_id,
-      canalNombre: conversation.canales_organization?.canal?.nombre,
-      wabaCount: conversation.canales_organization?.waba?.length || 0,
-      wabaToken: conversation.canales_organization?.waba?.[0]?.token_proyecto ? "✅ Presente" : "❌ Ausente",
-    })
 
     // Insertar el mensaje en la base de datos primero
     const { data: messageData, error: messageError } = await supabase
@@ -76,11 +54,8 @@ export async function sendMessage({
       .single()
 
     if (messageError) {
-      console.error("❌ Error guardando mensaje:", messageError)
       throw messageError
     }
-
-    console.log("💾 Mensaje guardado en BD:", messageData.id)
 
     // 🤖 LÓGICA DE DESASIGNACIÓN AUTOMÁTICA DE IA
     // Si el usuario que envía el mensaje es tipo 1 (usuario normal), desasignar automáticamente cualquier IA (tipo 2) asignada
@@ -92,12 +67,8 @@ export async function sendMessage({
         .eq("id", userId)
         .single()
 
-      if (senderError) {
-        console.warn("⚠️ No se pudo obtener información del usuario que envía:", senderError)
-      } else if (senderUser && senderUser.type === 1) {
+      if (!senderError && senderUser && senderUser.type === 1) {
         // El usuario que envía es tipo 1 (usuario normal)
-        console.log("👤 Usuario normal enviando mensaje, verificando IAs asignadas...")
-
         // Buscar IAs (tipo 2) asignadas a esta conversación
         const { data: assignedAIs, error: aiError } = await supabase
           .from("users_conversations")
@@ -113,11 +84,7 @@ export async function sendMessage({
           .eq("conversation_id", conversationId)
           .eq("users.type", 2) // Solo usuarios tipo 2 (IA)
 
-        if (aiError) {
-          console.warn("⚠️ Error buscando IAs asignadas:", aiError)
-        } else if (assignedAIs && assignedAIs.length > 0) {
-          console.log(`🤖 Encontradas ${assignedAIs.length} IAs asignadas, desasignando...`)
-
+        if (!aiError && assignedAIs && assignedAIs.length > 0) {
           // Desasignar todas las IAs
           const aiUserIds = assignedAIs.map((ai) => ai.user_id)
 
@@ -127,11 +94,7 @@ export async function sendMessage({
             .eq("conversation_id", conversationId)
             .in("user_id", aiUserIds)
 
-          if (unassignError) {
-            console.error("❌ Error desasignando IAs:", unassignError)
-          } else {
-            console.log("✅ IAs desasignadas exitosamente")
-
+          if (!unassignError) {
             // Crear mensaje del sistema usando el mismo formato que AssignUsersDialog
             const getUserName = (user: any) => {
               return user.name || user.email || "Usuario desconocido"
@@ -155,7 +118,7 @@ export async function sendMessage({
                 : `❌ Los siguientes usuarios han sido desasignados automáticamente porque ${senderName} ha respondido en la conversación: ${unassignedDetails.join(", ")}`
 
             // Insertar mensaje del sistema
-            const { error: systemMsgError } = await supabase.from("messages").insert({
+            await supabase.from("messages").insert({
               conversation_id: conversationId,
               sender_type: "system",
               message_type: "system",
@@ -163,21 +126,10 @@ export async function sendMessage({
               user_id: null,
               is_read: false,
             })
-
-            if (systemMsgError) {
-              console.error("❌ Error creando mensaje del sistema:", systemMsgError)
-            } else {
-              console.log("✅ Mensaje del sistema creado para desasignación de IA")
-            }
           }
-        } else {
-          console.log("ℹ️ No hay IAs asignadas a esta conversación")
         }
-      } else {
-        console.log("ℹ️ El usuario que envía no es tipo 1, no se desasignan IAs")
       }
     } catch (autoUnassignError) {
-      console.error("❌ Error en lógica de desasignación automática:", autoUnassignError)
       // No lanzar error para no interrumpir el envío del mensaje
     }
 
@@ -185,24 +137,10 @@ export async function sendMessage({
     const isWhatsApp = conversation.canales_organization?.canal?.nombre?.toLowerCase().includes("whatsapp")
     const wabaConfig = conversation.canales_organization?.waba?.[0] // Tomar la primera configuración WABA
 
-    console.log("🔍 Verificando envío de WhatsApp:", {
-      isWhatsApp,
-      canalNombre: conversation.canales_organization?.canal?.nombre,
-      hasWabaConfig: !!wabaConfig,
-      hasToken: !!wabaConfig?.token_proyecto,
-      wabaId: wabaConfig?.id,
-      wabaNumero: wabaConfig?.numero,
-      clientPhone: conversation.client?.phone,
-      clientFullPhone: conversation.client?.full_phone,
-      clientExternalId: conversation.client?.external_id,
-    })
-
     // Si es WhatsApp y tenemos configuración WABA, enviar por API externa
     // No enviar mensajes de sistema por WhatsApp
     if (isWhatsApp && wabaConfig?.token_proyecto && conversation.client && messageType !== "system") {
       try {
-        console.log("📱 Intentando envío por WhatsApp...")
-
         // Determinar el número de teléfono a usar - PRIORIZAR full_phone
         let phoneNumber = conversation.client.full_phone
 
@@ -225,15 +163,12 @@ export async function sendMessage({
           throw new Error("No se encontró número de teléfono para el cliente")
         }
 
-        console.log("📞 Número de teléfono determinado:", phoneNumber)
-
         // Validar y formatear el número
         if (!validatePhoneNumber(phoneNumber)) {
           throw new Error(`Número de teléfono inválido: ${phoneNumber}`)
         }
 
         const formattedPhone = formatPhoneForWhatsApp(phoneNumber)
-        console.log("📞 Número formateado:", formattedPhone)
 
         await sendWhatsAppMessage({
           to: formattedPhone,
@@ -242,8 +177,6 @@ export async function sendMessage({
           messageType,
           mediaUrl,
         })
-
-        console.log("✅ Mensaje de WhatsApp enviado exitosamente")
 
         // Marcar el mensaje como enviado exitosamente
         await supabase
@@ -257,11 +190,7 @@ export async function sendMessage({
             },
           })
           .eq("id", messageData.id)
-
-        console.log("✅ Metadata de mensaje actualizada (éxito)")
       } catch (whatsappError: any) {
-        console.error("💥 Error enviando mensaje de WhatsApp:", whatsappError)
-
         // Marcar el mensaje como fallido pero no lanzar error
         await supabase
           .from("messages")
@@ -274,23 +203,7 @@ export async function sendMessage({
             },
           })
           .eq("id", messageData.id)
-
-        console.log("⚠️ Metadata de mensaje actualizada (error)")
       }
-    } else {
-      console.log("ℹ️ No se enviará por WhatsApp:", {
-        reason: !isWhatsApp
-          ? "No es canal WhatsApp"
-          : !wabaConfig
-            ? "No hay configuración WABA"
-            : !wabaConfig.token_proyecto
-              ? "No hay token"
-              : !conversation.client
-                ? "No hay cliente"
-                : messageType === "system"
-                  ? "Es mensaje de sistema"
-                  : "Razón desconocida",
-      })
     }
 
     // Actualizar la conversación con el timestamp del último mensaje
@@ -302,45 +215,30 @@ export async function sendMessage({
       })
       .eq("id", conversationId)
 
-    console.log("✅ Proceso de envío completado")
     return messageData
   } catch (error) {
-    console.error("💥 Error in sendMessage:", error)
     throw error
   }
 }
 
 export async function markMessagesAsRead(conversationId: string, userId?: string) {
   try {
-    console.log(`Marcando mensajes como leídos para conversación: ${conversationId}`)
-
     // Usar la función de PostgreSQL que creamos
     const { data, error } = await supabase.rpc("mark_conversation_as_read", {
       conversation_uuid: conversationId,
     })
 
     if (error) {
-      console.error("Error marking messages as read:", error)
       throw error
     }
 
-    console.log(`Mensajes marcados como leídos:`, data)
-
     // Opcional: Actualizar el timestamp de última interacción del cliente
     if (userId) {
-      const { error: clientError } = await supabase
-        .from("clients")
-        .update({ last_interaction_at: new Date().toISOString() })
-        .eq("id", userId)
-
-      if (clientError) {
-        console.warn("Error updating client last interaction:", clientError)
-      }
+      await supabase.from("clients").update({ last_interaction_at: new Date().toISOString() }).eq("id", userId)
     }
 
     return data
   } catch (error) {
-    console.error("Error in markMessagesAsRead:", error)
     throw error
   }
 }
@@ -457,7 +355,6 @@ export async function createConversation({
 
     return conversation
   } catch (error) {
-    console.error("Error in createConversation:", error)
     throw error
   }
 }
@@ -493,13 +390,11 @@ export async function assignConversation(conversationId: string, userId: string)
       .single()
 
     if (error) {
-      console.error("Error assigning conversation:", error)
       throw error
     }
 
     return data
   } catch (error) {
-    console.error("Error in assignConversation:", error)
     throw error
   }
 }
@@ -513,13 +408,11 @@ export async function unassignConversation(conversationId: string, userId: strin
       .eq("user_id", userId)
 
     if (error) {
-      console.error("Error unassigning conversation:", error)
       throw error
     }
 
     return { success: true }
   } catch (error) {
-    console.error("Error in unassignConversation:", error)
     throw error
   }
 }
@@ -533,13 +426,11 @@ export async function getAssignedUserIds(conversationId: string): Promise<string
       .eq("conversation_id", conversationId)
 
     if (error) {
-      console.error("Error getting assigned user IDs:", error)
       throw error
     }
 
     return data?.map((item) => item.user_id) || []
   } catch (error) {
-    console.error("Error in getAssignedUserIds:", error)
     throw error
   }
 }
@@ -557,13 +448,11 @@ export async function updateConversationStatus(
       .single()
 
     if (error) {
-      console.error("Error updating conversation status:", error)
       throw error
     }
 
     return data
   } catch (error) {
-    console.error("Error in updateConversationStatus:", error)
     throw error
   }
 }
@@ -577,13 +466,11 @@ export async function getUnreadMessagesCount(conversationId: string) {
       .single()
 
     if (error) {
-      console.error("Error getting unread count:", error)
       return 0
     }
 
     return data?.unread_count || 0
   } catch (error) {
-    console.error("Error in getUnreadMessagesCount:", error)
     return 0
   }
 }
@@ -597,13 +484,11 @@ export async function getTotalUnreadCount(organizationId: number) {
       .gt("unread_count", 0)
 
     if (error) {
-      console.error("Error getting total unread count:", error)
       return 0
     }
 
     return data?.reduce((total, conv) => total + (conv.unread_count || 0), 0) || 0
   } catch (error) {
-    console.error("Error in getTotalUnreadCount:", error)
     return 0
   }
 }

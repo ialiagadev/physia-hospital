@@ -9,12 +9,13 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/hooks/use-toast"
 import { AssignUsersDialog } from "@/components/assign-users-dialog"
-import { Users, UserPlus, StickyNote, X, Bot, UserIcon, Sparkles, Tag, Copy, Download, FileText } from "lucide-react"
+import { Users, UserPlus, StickyNote, X, Bot, UserIcon, Sparkles, Tag } from "lucide-react"
 import { useAssignedUsers } from "@/hooks/use-assigned-users"
 import { supabase } from "@/lib/supabase/client"
 import { useAuth } from "@/app/contexts/auth-context"
 import type { Conversation, User, ConversationNote } from "@/types/chat"
 import { DynamicTagBadge } from "@/components/dynamic-tag-badge"
+import { ConversationSummaryModal } from "@/components/conversation-summary-modal"
 
 interface ConversationProfilePanelProps {
   isOpen: boolean
@@ -122,11 +123,8 @@ export function ConversationProfilePanel({
   const [newTagName, setNewTagName] = useState("")
   const [selectedTags, setSelectedTags] = useState<ConversationTagWithDetails[]>([])
   const [availableOrgTags, setAvailableOrgTags] = useState<any[]>([])
-  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false)
   const [tagsLoading, setTagsLoading] = useState(false)
   const [assignedUserIds, setAssignedUserIds] = useState<string[]>([])
-  const [conversationSummary, setConversationSummary] = useState<string>("")
-  const [summaryStats, setSummaryStats] = useState<any>(null)
   const [showSummaryModal, setShowSummaryModal] = useState(false)
 
   // Estados para notas
@@ -538,97 +536,6 @@ export function ConversationProfilePanel({
     }
   }
 
-  const handleGenerateSummary = async () => {
-    if (!conversation?.id || !userProfile?.organization_id) return
-
-    setIsGeneratingSummary(true)
-    try {
-      console.log("Generando resumen para conversación:", conversation.id)
-
-      const response = await fetch("/api/generate-conversation-summary", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          conversationId: conversation.id,
-          organizationId: userProfile.organization_id,
-        }),
-      })
-
-      console.log("Response status:", response.status)
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error("Error response:", errorText)
-        throw new Error(`Error ${response.status}: ${errorText}`)
-      }
-
-      const result = await response.json()
-      console.log("API Result:", result)
-
-      if (!result.success) {
-        throw new Error(result.error || "Error al generar resumen")
-      }
-
-      setConversationSummary(result.summary)
-      setSummaryStats(result.statistics)
-      setShowSummaryModal(true)
-
-      toast({
-        title: "Resumen generado",
-        description: "El resumen de la conversación se ha generado correctamente",
-      })
-    } catch (error) {
-      console.error("Error generando resumen:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "No se pudo generar el resumen",
-        variant: "destructive",
-      })
-    } finally {
-      setIsGeneratingSummary(false)
-    }
-  }
-
-  const handleCopySummary = () => {
-    if (conversationSummary) {
-      navigator.clipboard.writeText(conversationSummary)
-      toast({
-        title: "Copiado",
-        description: "El resumen ha sido copiado al portapapeles",
-      })
-    }
-  }
-
-  const handleDownloadSummary = () => {
-    if (conversationSummary && summaryStats) {
-      const content = `RESUMEN DE CONVERSACIÓN
-Cliente: ${summaryStats.clientName}
-Fecha: ${summaryStats.conversationDate}
-Duración: ${summaryStats.durationMinutes} minutos
-Total mensajes: ${summaryStats.totalMessages}
-Mensajes analizados: ${summaryStats.analyzedMessages}
-
-${conversationSummary}`
-
-      const blob = new Blob([content], { type: "text/plain" })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = `resumen-${summaryStats.clientName}-${summaryStats.conversationDate}.txt`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-
-      toast({
-        title: "Descargado",
-        description: "El resumen ha sido descargado como archivo de texto",
-      })
-    }
-  }
-
   const handleRemoveUser = (userId: string) => {
     toast({
       title: "Usuario desasignado",
@@ -826,23 +733,9 @@ ${conversationSummary}`
               <Sparkles className="w-5 h-5 text-purple-600" />
               <h4 className="font-medium">Resumen IA</h4>
             </div>
-            <Button
-              variant="outline"
-              className="w-full bg-transparent"
-              onClick={handleGenerateSummary}
-              disabled={isGeneratingSummary}
-            >
-              {isGeneratingSummary ? (
-                <>
-                  <div className="w-4 h-4 border border-gray-400 border-t-transparent rounded-full animate-spin mr-2"></div>
-                  Generando...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4 mr-2" />
-                  Generar Resumen
-                </>
-              )}
+            <Button variant="outline" className="w-full bg-transparent" onClick={() => setShowSummaryModal(true)}>
+              <Sparkles className="w-4 h-4 mr-2" />
+              Generar Resumen
             </Button>
           </div>
 
@@ -929,147 +822,14 @@ ${conversationSummary}`
           </div>
         </div>
 
-        {/* Modal de Resumen IA - Idéntico al del conversation-window */}
-        {showSummaryModal && conversationSummary && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-              {/* Header con gradiente */}
-              <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-4 sm:p-6 text-white flex-shrink-0">
-                <div className="flex justify-between items-start">
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div className="p-2 bg-white bg-opacity-20 rounded-lg flex-shrink-0">
-                      <Sparkles className="h-5 w-5 sm:h-6 sm:w-6" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <h3 className="text-lg sm:text-xl font-semibold truncate">Resumen de Conversación</h3>
-                      <p className="text-purple-100 text-sm">Generado con IA</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-1 sm:gap-2 flex-shrink-0 ml-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={handleCopySummary}
-                      className="text-white hover:bg-white hover:bg-opacity-20 h-8 w-8 sm:h-10 sm:w-10"
-                      title="Copiar resumen"
-                    >
-                      <Copy className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={handleDownloadSummary}
-                      className="text-white hover:bg-white hover:bg-opacity-20 h-8 w-8 sm:h-10 sm:w-10"
-                      title="Descargar resumen"
-                    >
-                      <Download className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setShowSummaryModal(false)}
-                      className="text-white hover:bg-white hover:bg-opacity-20 h-8 w-8 sm:h-10 sm:w-10"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Contenido del modal */}
-              <div className="p-4 sm:p-6 overflow-y-auto flex-1">
-                {/* Estadísticas con cards coloridas */}
-                {summaryStats && (
-                  <div className="mb-6">
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-                      <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-3 sm:p-4 rounded-lg border border-blue-200">
-                        <div className="text-blue-600 text-xs sm:text-sm font-medium">Cliente</div>
-                        <div
-                          className="text-blue-900 font-semibold text-sm sm:text-base truncate"
-                          title={summaryStats.clientName}
-                        >
-                          {summaryStats.clientName}
-                        </div>
-                      </div>
-                      <div className="bg-gradient-to-br from-green-50 to-green-100 p-3 sm:p-4 rounded-lg border border-green-200">
-                        <div className="text-green-600 text-xs sm:text-sm font-medium">Fecha</div>
-                        <div className="text-green-900 font-semibold text-sm sm:text-base">
-                          {summaryStats.conversationDate}
-                        </div>
-                      </div>
-                      <div className="bg-gradient-to-br from-orange-50 to-orange-100 p-3 sm:p-4 rounded-lg border border-orange-200">
-                        <div className="text-orange-600 text-xs sm:text-sm font-medium">Duración</div>
-                        <div className="text-orange-900 font-semibold text-sm sm:text-base">
-                          {summaryStats.durationMinutes} min
-                        </div>
-                      </div>
-                      <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-3 sm:p-4 rounded-lg border border-purple-200">
-                        <div className="text-purple-600 text-xs sm:text-sm font-medium">Mensajes</div>
-                        <div className="text-purple-900 font-semibold text-sm sm:text-base">
-                          {summaryStats.totalMessages}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Resumen con diseño mejorado */}
-                <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-4 sm:p-6 border border-gray-200">
-                  <div className="flex items-center gap-2 mb-4">
-                    <div className="p-1.5 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-lg">
-                      <FileText className="h-4 w-4 text-white" />
-                    </div>
-                    <h4 className="font-semibold text-gray-800">Resumen Detallado</h4>
-                  </div>
-
-                  <div className="prose prose-sm max-w-none">
-                    <div
-                      className="text-gray-700 leading-relaxed whitespace-pre-wrap text-sm sm:text-base"
-                      style={{
-                        lineHeight: "1.6",
-                      }}
-                    >
-                      {
-                        conversationSummary
-                          .replace(/\*\*(.*?)\*\*/g, "$1") // Remove **bold**
-                          .replace(/\*(.*?)\*/g, "$1") // Remove *italic*
-                          .replace(/_(.*?)_/g, "$1") // Remove _underline_
-                          .replace(/`(.*?)`/g, "$1") // Remove `code`
-                      }
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Footer con botones */}
-              <div className="bg-gray-50 px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-200 flex-shrink-0">
-                <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3">
-                  <Button
-                    variant="outline"
-                    onClick={handleCopySummary}
-                    className="border-purple-200 text-purple-700 hover:bg-purple-50 bg-transparent w-full sm:w-auto"
-                  >
-                    <Copy className="h-4 w-4 mr-2" />
-                    Copiar
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={handleDownloadSummary}
-                    className="border-indigo-200 text-indigo-700 hover:bg-indigo-50 bg-transparent w-full sm:w-auto"
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    Descargar
-                  </Button>
-                  <Button
-                    onClick={() => setShowSummaryModal(false)}
-                    className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 w-full sm:w-auto"
-                  >
-                    Cerrar
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
+        {/* Modal de Resumen IA compartido */}
+        {showSummaryModal && conversation && (
+          <ConversationSummaryModal
+            isOpen={showSummaryModal}
+            onClose={() => setShowSummaryModal(false)}
+            conversationId={conversation.id}
+            clientName={clientName}
+          />
         )}
       </SheetContent>
     </Sheet>

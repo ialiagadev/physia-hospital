@@ -10,8 +10,8 @@ export interface UploadResult {
 
 export class StorageService {
   private static readonly BUCKET_NAME = "expense-receipts"
-  private static readonly CHAT_BUCKET_NAME = "chat-media"
-  private static readonly MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB para chat
+  private static readonly CHAT_BUCKET_NAME = "logos"
+  private static readonly MAX_FILE_SIZE = 16 * 1024 * 1024 // 16MB para WhatsApp
   private static readonly EXPENSE_MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB para gastos
   private static readonly ALLOWED_TYPES = [
     "image/jpeg",
@@ -24,30 +24,65 @@ export class StorageService {
     "text/plain",
     "application/zip",
     "application/x-rar-compressed",
+    "audio/mpeg",
+    "audio/wav",
+    "audio/ogg",
+    "video/mp4",
+    "video/webm",
+    "video/quicktime",
   ]
   private static readonly DEFAULT_EXPIRY = 3600 // 1 hora
 
   /**
-   * Sube un archivo para chat (función principal para el chat)
+   * Verifica si el bucket existe y lo crea si no existe (usando API route)
    */
-  static async uploadFile(file: File, folder = "chat-media"): Promise<UploadResult> {
+  private static async ensureBucketExists(bucketName: string, isPublic = true): Promise<boolean> {
     try {
-      console.log("📤 Iniciando subida de archivo:", file.name, "Tamaño:", file.size)
+      const response = await fetch("/api/storage/ensure-bucket", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          bucketName,
+          isPublic,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error(`❌ Error en API ensure-bucket:`, errorData)
+        return false
+      }
+
+      const result = await response.json()
+      return result.success
+    } catch (error) {
+      console.error(`💥 Error llamando a API ensure-bucket:`, error)
+      return false
+    }
+  }
+
+  /**
+   * Sube un archivo para chat usando el bucket público "logos"
+   */
+  static async uploadFile(file: File): Promise<UploadResult> {
+    try {
 
       // Validar tipo de archivo
       if (!this.ALLOWED_TYPES.includes(file.type)) {
         return {
           success: false,
           error:
-            "Tipo de archivo no permitido. Solo se permiten imágenes, PDFs, documentos de texto y archivos comprimidos.",
+            "Tipo de archivo no permitido. Solo se permiten imágenes, PDFs, documentos de texto, archivos comprimidos, audio y video.",
         }
       }
 
-      // Validar tamaño
+      // Validar tamaño (16MB para WhatsApp)
       if (file.size > this.MAX_FILE_SIZE) {
         return {
           success: false,
-          error: "El archivo es demasiado grande. Máximo 10MB.",
+          error: "El archivo es demasiado grande. Máximo 16MB.",
         }
       }
 
@@ -62,21 +97,17 @@ export class StorageService {
         }
       }
 
-      // Generar nombre único para el archivo
       const timestamp = Date.now()
       const randomString = Math.random().toString(36).substring(7)
       const extension = file.name.split(".").pop()
       const fileName = `${timestamp}-${randomString}.${extension}`
+      const filePath = `chat-media/${user.id}/${fileName}`
 
-      // Crear ruta: folder/userId/fileName
-      const filePath = `${folder}/${user.id}/${fileName}`
 
-      console.log("📁 Ruta del archivo:", filePath)
-
-      // Subir archivo al bucket de chat
       const { data, error } = await supabase.storage.from(this.CHAT_BUCKET_NAME).upload(filePath, file, {
         cacheControl: "3600",
         upsert: false,
+        contentType: file.type,
       })
 
       if (error) {
@@ -87,12 +118,9 @@ export class StorageService {
         }
       }
 
-      console.log("✅ Archivo subido exitosamente:", data.path)
 
-      // Obtener URL pública del archivo
       const { data: publicUrlData } = supabase.storage.from(this.CHAT_BUCKET_NAME).getPublicUrl(filePath)
 
-      console.log("🔗 URL pública generada:", publicUrlData.publicUrl)
 
       return {
         success: true,
@@ -464,7 +492,6 @@ export class StorageService {
 
       if (filesToDelete.length > 0) {
         await supabase.storage.from(this.CHAT_BUCKET_NAME).remove(filesToDelete)
-        console.log(`🧹 Limpiados ${filesToDelete.length} archivos antiguos de chat`)
       }
     } catch (error) {
       console.error("Error in cleanupOldChatFiles:", error)

@@ -14,8 +14,8 @@ import {
   FileText,
   X,
   Sparkles,
-  Copy,
-  Download,
+  Music,
+  Play,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -24,12 +24,14 @@ import { useConversation } from "@/hooks/useChatWindow"
 import { useUnreadMessages } from "@/hooks/use-unread-messages"
 import { sendMessage } from "@/lib/chatActions"
 import { uploadFile } from "@/lib/storage-service"
+import { supabase } from "@/lib/supabase/client"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { AssignUsersDialog } from "@/components/assign-users-dialog"
 import { TemplateSelectorDialog } from "@/components/template-selector-dialog"
 import { ConversationProfilePanel } from "@/components/conversation-profile-panel"
+import { ConversationSummaryModal } from "@/components/conversation-summary-modal"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/app/contexts/auth-context"
@@ -59,7 +61,7 @@ interface ConversationWindowSimpleProps {
 interface FilePreview {
   file: File
   url: string
-  type: "image" | "document"
+  type: "image" | "document" | "audio" | "video"
 }
 
 export default function ConversationWindowSimple({
@@ -77,11 +79,6 @@ export default function ConversationWindowSimple({
   const [isWindowVisible, setIsWindowVisible] = useState(true)
   const [filePreview, setFilePreview] = useState<FilePreview | null>(null)
   const [uploading, setUploading] = useState(false)
-
-  // Estados para resumen IA
-  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false)
-  const [conversationSummary, setConversationSummary] = useState<string>("")
-  const [summaryStats, setSummaryStats] = useState<any>(null)
   const [showSummaryModal, setShowSummaryModal] = useState(false)
 
   // Referencias
@@ -105,6 +102,29 @@ export default function ConversationWindowSimple({
   // Estado combinado de carga y error
   const loading = messagesLoading || conversationLoading
   const error = messagesError || conversationError
+
+  const getAisensyToken = async (): Promise<string | null> => {
+    try {
+      const { data, error } = await supabase.from("waba").select("token_proyecto").eq("estado", 1).single()
+
+      if (error) {
+        console.error("Error getting Aisensy token:", error)
+        return null
+      }
+
+      return data?.token_proyecto || null
+    } catch (error) {
+      console.error("Error fetching Aisensy token:", error)
+      return null
+    }
+  }
+
+  const getMessageType = (fileType: string): "image" | "audio" | "video" | "document" => {
+    if (fileType.startsWith("image/")) return "image"
+    if (fileType.startsWith("audio/")) return "audio"
+    if (fileType.startsWith("video/")) return "video"
+    return "document"
+  }
 
   // Auto-marcar como leído cuando se abre la conversación
   useEffect(() => {
@@ -241,24 +261,23 @@ export default function ConversationWindowSimple({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }
 
-  // Handle file selection
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
 
-    // Validar tamaño del archivo (máximo 10MB)
-    if (file.size > 10 * 1024 * 1024) {
+    if (file.size > 16 * 1024 * 1024) {
       toast({
         title: "Archivo demasiado grande",
-        description: "El archivo no puede ser mayor a 10MB",
+        description: "El archivo no puede ser mayor a 16MB",
         variant: "destructive",
       })
       return
     }
 
-    // Determinar tipo de archivo
-    const isImage = file.type.startsWith("image/")
-    const fileType = isImage ? "image" : "document"
+    let fileType: "image" | "document" | "audio" | "video" = "document"
+    if (file.type.startsWith("image/")) fileType = "image"
+    else if (file.type.startsWith("audio/")) fileType = "audio"
+    else if (file.type.startsWith("video/")) fileType = "video"
 
     // Crear preview
     const url = URL.createObjectURL(file)
@@ -282,7 +301,6 @@ export default function ConversationWindowSimple({
     }
   }
 
-  // Send message function
   const handleSendMessage = async () => {
     if ((!message.trim() && !filePreview) || sending || uploading) return
 
@@ -298,9 +316,19 @@ export default function ConversationWindowSimple({
       if (filePreview) {
         setUploading(true)
         try {
-          const uploadResult = await uploadFile(filePreview.file, "chat-media")
-          mediaUrl = uploadResult.publicUrl
+          console.log("🔄 Iniciando subida de archivo:", filePreview.file.name, "Tamaño:", filePreview.file.size)
+          const uploadResult = await uploadFile(filePreview.file)
+          console.log("📤 Resultado completo de subida:", JSON.stringify(uploadResult, null, 2))
+
+          if (uploadResult.success && uploadResult.publicUrl) {
+            mediaUrl = uploadResult.publicUrl
+            console.log("✅ URL obtenida exitosamente:", mediaUrl)
+          } else {
+            console.error("❌ Error en subida - success:", uploadResult.success, "error:", uploadResult.error)
+            throw new Error(uploadResult.error || "Upload failed")
+          }
         } catch (uploadError) {
+          console.error("💥 Error crítico subiendo archivo:", uploadError)
           toast({
             title: "Error al subir archivo",
             description: "No se pudo subir el archivo. Inténtalo de nuevo.",
@@ -313,15 +341,30 @@ export default function ConversationWindowSimple({
       }
 
       // Determinar tipo de mensaje
-      let messageType: "text" | "image" | "document" = "text"
+      let messageType: "text" | "image" | "document" | "audio" | "video" = "text"
       if (filePreview) {
-        messageType = filePreview.type === "image" ? "image" : "document"
+        messageType = getMessageType(filePreview.file.type)
+      }
+
+      if (filePreview && !mediaUrl) {
+        console.error("❌ No se obtuvo URL del archivo subido")
+        toast({
+          title: "Error",
+          description: "No se pudo obtener la URL del archivo subido.",
+          variant: "destructive",
+        })
+        return
       }
 
       await sendMessage({
         conversationId: chatId,
         content:
-          messageContent || `${filePreview?.type === "image" ? "Imagen" : "Documento"}: ${filePreview?.file.name}`,
+          messageContent ||
+          (filePreview?.type === "image"
+            ? "" // Send empty content for images
+            : `${
+                filePreview?.type === "audio" ? "Audio" : filePreview?.type === "video" ? "Video" : "Documento"
+              }: ${filePreview?.file.name}`),
         userId: currentUser.id,
         messageType,
         mediaUrl,
@@ -404,97 +447,6 @@ export default function ConversationWindowSimple({
     setMessage((prev) => prev + emoji)
   }
 
-  // Generate summary function
-  const handleGenerateSummary = async () => {
-    if (!conversation?.id || !userProfile?.organization_id) return
-
-    setIsGeneratingSummary(true)
-    try {
-      console.log("Generando resumen para conversación:", conversation.id)
-
-      const response = await fetch("/api/generate-conversation-summary", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          conversationId: conversation.id,
-          organizationId: userProfile.organization_id,
-        }),
-      })
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error("Error response:", errorText)
-        throw new Error(`Error ${response.status}: ${errorText}`)
-      }
-
-      const result = await response.json()
-
-      if (!result.success) {
-        throw new Error(result.error || "Error al generar resumen")
-      }
-
-      setConversationSummary(result.summary)
-      setSummaryStats(result.statistics)
-      setShowSummaryModal(true)
-
-      toast({
-        title: "Resumen generado",
-        description: "El resumen de la conversación se ha generado correctamente",
-      })
-    } catch (error) {
-      console.error("Error generando resumen:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "No se pudo generar el resumen",
-        variant: "destructive",
-      })
-    } finally {
-      setIsGeneratingSummary(false)
-    }
-  }
-
-  // Copy summary to clipboard
-  const handleCopySummary = () => {
-    if (conversationSummary) {
-      navigator.clipboard.writeText(conversationSummary)
-      toast({
-        title: "Copiado",
-        description: "El resumen ha sido copiado al portapapeles",
-      })
-    }
-  }
-
-  // Download summary as text file
-  const handleDownloadSummary = () => {
-    if (conversationSummary && summaryStats) {
-      const content = `RESUMEN DE CONVERSACIÓN
-Cliente: ${summaryStats.clientName}
-Fecha: ${summaryStats.conversationDate}
-Duración: ${summaryStats.durationMinutes} minutos
-Total mensajes: ${summaryStats.totalMessages}
-Mensajes analizados: ${summaryStats.analyzedMessages}
-
-${conversationSummary}`
-
-      const blob = new Blob([content], { type: "text/plain" })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = `resumen-${summaryStats.clientName}-${summaryStats.conversationDate}.txt`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-
-      toast({
-        title: "Descargado",
-        description: "El resumen ha sido descargado como archivo de texto",
-      })
-    }
-  }
-
   // Group messages by date
   const groupMessagesByDate = (messages: Message[]) => {
     const groups: { [key: string]: Message[] } = {}
@@ -539,7 +491,6 @@ ${conversationSummary}`
     refetchConversation?.()
   }
 
-  // Render message content based on type
   const renderMessageContent = (msg: Message) => {
     switch (msg.message_type) {
       case "image":
@@ -554,6 +505,37 @@ ${conversationSummary}`
               />
             )}
             {msg.content && msg.content !== `Imagen: ${msg.media_url?.split("/").pop()}` && (
+              <div className="text-sm">{msg.content}</div>
+            )}
+          </div>
+        )
+
+      case "audio":
+        return (
+          <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg max-w-xs">
+            <Music className="h-8 w-8 text-green-500 flex-shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium">Audio</div>
+              {msg.media_url && (
+                <audio controls className="w-full mt-1">
+                  <source src={msg.media_url} />
+                  Tu navegador no soporta audio.
+                </audio>
+              )}
+            </div>
+          </div>
+        )
+
+      case "video":
+        return (
+          <div className="space-y-2">
+            {msg.media_url && (
+              <video controls className="max-w-xs rounded-lg" style={{ maxHeight: "200px" }}>
+                <source src={msg.media_url} />
+                Tu navegador no soporta video.
+              </video>
+            )}
+            {msg.content && msg.content !== `Video: ${msg.media_url?.split("/").pop()}` && (
               <div className="text-sm">{msg.content}</div>
             )}
           </div>
@@ -887,7 +869,7 @@ ${conversationSummary}`
               <Button
                 size="icon"
                 variant="secondary"
-                className="absolute bottom-20 right-6 rounded-full shadow-md"
+                className="absolute bottom-20 right-6 rounded-full shadow-md hover:shadow-xl transition-all duration-200 transform hover:scale-105 border-2 border-green-400"
                 onClick={scrollToBottom}
               >
                 <ArrowDown className="h-4 w-4" />
@@ -898,7 +880,6 @@ ${conversationSummary}`
         </TooltipProvider>
       )}
 
-      {/* Preview de archivo */}
       {filePreview && (
         <div className="p-3 bg-gray-50 border-t">
           <div className="flex items-center gap-3 p-3 bg-white rounded-lg border">
@@ -909,6 +890,14 @@ ${conversationSummary}`
                   alt="Preview"
                   className="w-12 h-12 object-cover rounded"
                 />
+              ) : filePreview.type === "audio" ? (
+                <div className="w-12 h-12 bg-green-100 rounded flex items-center justify-center">
+                  <Music className="h-6 w-6 text-green-600" />
+                </div>
+              ) : filePreview.type === "video" ? (
+                <div className="w-12 h-12 bg-purple-100 rounded flex items-center justify-center">
+                  <Play className="h-6 w-6 text-purple-600" />
+                </div>
               ) : (
                 <div className="w-12 h-12 bg-blue-100 rounded flex items-center justify-center">
                   <FileText className="h-6 w-6 text-blue-600" />
@@ -985,11 +974,10 @@ ${conversationSummary}`
               </PopoverContent>
             </Popover>
 
-            {/* Input de archivo oculto */}
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*,.pdf,.doc,.docx,.txt,.zip,.rar"
+              accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.txt,.zip,.rar"
               onChange={handleFileSelect}
               className="hidden"
             />
@@ -1044,14 +1032,10 @@ ${conversationSummary}`
                     variant="ghost"
                     size="icon"
                     className="rounded-full text-purple-600 hover:bg-purple-50"
-                    onClick={handleGenerateSummary}
-                    disabled={isGeneratingSummary || !messages.length}
+                    onClick={() => setShowSummaryModal(true)}
+                    disabled={!messages.length}
                   >
-                    {isGeneratingSummary ? (
-                      <div className="h-4 w-4 border-2 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
-                    ) : (
-                      <Sparkles className="h-4 w-4" />
-                    )}
+                    <Sparkles className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Generar resumen IA</TooltipContent>
@@ -1077,147 +1061,12 @@ ${conversationSummary}`
       </div>
 
       {/* Modal de Resumen IA */}
-      {showSummaryModal && conversationSummary && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-            {/* Header con gradiente */}
-            <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-4 sm:p-6 text-white flex-shrink-0">
-              <div className="flex justify-between items-start">
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div className="p-2 bg-white bg-opacity-20 rounded-lg flex-shrink-0">
-                    <Sparkles className="h-5 w-5 sm:h-6 sm:w-6" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-lg sm:text-xl font-semibold truncate">Resumen de Conversación</h3>
-                    <p className="text-purple-100 text-sm">Generado con IA</p>
-                  </div>
-                </div>
-                <div className="flex gap-1 sm:gap-2 flex-shrink-0 ml-2">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleCopySummary}
-                    className="text-white hover:bg-white hover:bg-opacity-20 h-8 w-8 sm:h-10 sm:w-10"
-                    title="Copiar resumen"
-                  >
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleDownloadSummary}
-                    className="text-white hover:bg-white hover:bg-opacity-20 h-8 w-8 sm:h-10 sm:w-10"
-                    title="Descargar resumen"
-                  >
-                    <Download className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setShowSummaryModal(false)}
-                    className="text-white hover:bg-white hover:bg-opacity-20 h-8 w-8 sm:h-10 sm:w-10"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-
-            {/* Contenido del modal */}
-            <div className="p-4 sm:p-6 overflow-y-auto flex-1">
-              {/* Estadísticas con cards coloridas */}
-              {summaryStats && (
-                <div className="mb-6">
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-                    <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-3 sm:p-4 rounded-lg border border-blue-200">
-                      <div className="text-blue-600 text-xs sm:text-sm font-medium">Cliente</div>
-                      <div
-                        className="text-blue-900 font-semibold text-sm sm:text-base truncate"
-                        title={summaryStats.clientName}
-                      >
-                        {summaryStats.clientName}
-                      </div>
-                    </div>
-                    <div className="bg-gradient-to-br from-green-50 to-green-100 p-3 sm:p-4 rounded-lg border border-green-200">
-                      <div className="text-green-600 text-xs sm:text-sm font-medium">Fecha</div>
-                      <div className="text-green-900 font-semibold text-sm sm:text-base">
-                        {summaryStats.conversationDate}
-                      </div>
-                    </div>
-                    <div className="bg-gradient-to-br from-orange-50 to-orange-100 p-3 sm:p-4 rounded-lg border border-orange-200">
-                      <div className="text-orange-600 text-xs sm:text-sm font-medium">Duración</div>
-                      <div className="text-orange-900 font-semibold text-sm sm:text-base">
-                        {summaryStats.durationMinutes} min
-                      </div>
-                    </div>
-                    <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-3 sm:p-4 rounded-lg border border-purple-200">
-                      <div className="text-purple-600 text-xs sm:text-sm font-medium">Mensajes</div>
-                      <div className="text-purple-900 font-semibold text-sm sm:text-base">
-                        {summaryStats.totalMessages}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Resumen con diseño mejorado */}
-              <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-4 sm:p-6 border border-gray-200">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="p-1.5 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-lg">
-                    <FileText className="h-4 w-4 text-white" />
-                  </div>
-                  <h4 className="font-semibold text-gray-800">Resumen Detallado</h4>
-                </div>
-
-                <div className="prose prose-sm max-w-none">
-                  <div
-                    className="text-gray-700 leading-relaxed whitespace-pre-wrap text-sm sm:text-base"
-                    style={{
-                      lineHeight: "1.6",
-                    }}
-                  >
-                    {
-                      conversationSummary
-                        .replace(/\*\*(.*?)\*\*/g, "$1") // Remove **bold**
-                        .replace(/\*(.*?)\*/g, "$1") // Remove *italic*
-                        .replace(/_(.*?)_/g, "$1") // Remove _underline_
-                        .replace(/`(.*?)`/g, "$1") // Remove `code`
-                    }
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Footer con botones */}
-            <div className="bg-gray-50 px-4 sm:px-6 py-3 sm:py-4 border-t border-gray-200 flex-shrink-0">
-              <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3">
-                <Button
-                  variant="outline"
-                  onClick={handleCopySummary}
-                  className="border-purple-200 text-purple-700 hover:bg-purple-50 bg-transparent w-full sm:w-auto"
-                >
-                  <Copy className="h-4 w-4 mr-2" />
-                  Copiar
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={handleDownloadSummary}
-                  className="border-indigo-200 text-indigo-700 hover:bg-indigo-50 bg-transparent w-full sm:w-auto"
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Descargar
-                </Button>
-                <Button
-                  onClick={() => setShowSummaryModal(false)}
-                  className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 w-full sm:w-auto"
-                >
-                  Cerrar
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConversationSummaryModal
+        isOpen={showSummaryModal}
+        onClose={() => setShowSummaryModal(false)}
+        conversationId={chatId}
+        clientName={clientName}
+      />
 
       {/* Panel de perfil de conversación */}
       <ConversationProfilePanel
