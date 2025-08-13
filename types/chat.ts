@@ -82,6 +82,7 @@ export interface Message {
   content: string
   message_type: "text" | "image" | "audio" | "video" | "document" | "location" | "system"
   media_url?: string
+  duration?: number // Added duration property for audio/video messages
   is_read: boolean
   external_message_id?: string
   created_at: string

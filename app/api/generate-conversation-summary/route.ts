@@ -259,28 +259,7 @@ ${formattedMessages}
 
 INSTRUCCIONES:
 1. Crea un resumen profesional de máximo 250 palabras
-2. Identifica el motivo principal de la consulta
-3. Menciona los puntos clave discutidos
-4. Incluye cualquier síntoma, tratamiento o recomendación mencionada
-5. Si la conversación es muy larga, enfócate en los aspectos más relevantes médicamente
-6. Usa terminología médica apropiada pero clara
-7. Mantén un tono profesional y objetivo
-8. Si hay información incompleta debido al tamaño de la conversación, menciónalo
 
-FORMATO DEL RESUMEN:
-**Motivo de consulta:** [breve descripción]
-
-**Puntos clave:**
-- [punto 1]
-- [punto 2]
-- [punto 3]
-- [etc.]
-
-**Recomendaciones/Tratamiento:** [si aplica]
-
-**Observaciones:** [cualquier nota relevante, incluyendo si la conversación fue muy extensa]
-
-Genera solo el resumen, sin explicaciones adicionales.
 `
 
     console.log("Generando resumen con IA...")

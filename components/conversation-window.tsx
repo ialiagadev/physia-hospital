@@ -4,7 +4,6 @@ import type React from "react"
 import { useState, useRef, useEffect } from "react"
 import {
   Send,
-  Paperclip,
   Smile,
   ArrowDown,
   Phone,
@@ -12,10 +11,12 @@ import {
   MoreVertical,
   ArrowLeft,
   FileText,
-  X,
   Sparkles,
   Music,
-  Play,
+  Mic,
+  Square,
+  Trash2,
+  Paperclip,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -25,7 +26,6 @@ import { useUnreadMessages } from "@/hooks/use-unread-messages"
 import { sendMessage } from "@/lib/chatActions"
 import { uploadFile } from "@/lib/storage-service"
 import { supabase } from "@/lib/supabase/client"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { AssignUsersDialog } from "@/components/assign-users-dialog"
@@ -36,6 +36,8 @@ import { useMediaQuery } from "@/hooks/use-media-query"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/app/contexts/auth-context"
 import type { Message, User, Client } from "@/types/chat"
+
+import EmojiPicker from "emoji-picker-react"
 
 interface TemplateWithVariables {
   id: string
@@ -64,6 +66,15 @@ interface FilePreview {
   type: "image" | "document" | "audio" | "video"
 }
 
+interface VoiceRecording {
+  isRecording: boolean
+  duration: number
+  audioBlob: Blob | null
+  audioUrl: string | null
+  mimeType: string
+  fileExtension: string
+}
+
 export default function ConversationWindowSimple({
   chatId,
   currentUser,
@@ -81,10 +92,25 @@ export default function ConversationWindowSimple({
   const [uploading, setUploading] = useState(false)
   const [showSummaryModal, setShowSummaryModal] = useState(false)
 
+  const [voiceRecording, setVoiceRecording] = useState<VoiceRecording>({
+    isRecording: false,
+    duration: 0,
+    audioBlob: null,
+    audioUrl: null,
+    mimeType: "audio/webm;codecs=opus",
+    fileExtension: "webm",
+  })
+
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+
   // Referencias
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   // Hooks personalizados
   const { messages, loading: messagesLoading, error: messagesError } = useMessages(chatId)
@@ -447,6 +473,11 @@ export default function ConversationWindowSimple({
     setMessage((prev) => prev + emoji)
   }
 
+  const onEmojiClick = (emojiObject: any) => {
+    setMessage((prev) => prev + emojiObject.emoji)
+    setShowEmojiPicker(false)
+  }
+
   // Group messages by date
   const groupMessagesByDate = (messages: Message[]) => {
     const groups: { [key: string]: Message[] } = {}
@@ -491,25 +522,170 @@ export default function ConversationWindowSimple({
     refetchConversation?.()
   }
 
-  const renderMessageContent = (msg: Message) => {
-    switch (msg.message_type) {
-      case "image":
-        return (
-          <div className="space-y-2">
-            {msg.media_url && (
-              <img
-                src={msg.media_url || "/placeholder.svg"}
-                alt="Imagen enviada"
-                className="max-w-xs rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                onClick={() => window.open(msg.media_url, "_blank")}
-              />
-            )}
-            {msg.content && msg.content !== `Imagen: ${msg.media_url?.split("/").pop()}` && (
-              <div className="text-sm">{msg.content}</div>
+  const sendVoiceNote = async () => {
+    if (!voiceRecording.audioBlob) return
+
+    setSending(true)
+    setUploading(true)
+
+    try {
+      const fileName = `nota-voz-${Date.now()}`
+      const audioFile = new File([voiceRecording.audioBlob], `${fileName}.${voiceRecording.fileExtension}`, {
+        type: voiceRecording.mimeType,
+      })
+
+      console.log(
+        "🎤 Enviando nota de voz:",
+        audioFile.name,
+        "Tipo:",
+        audioFile.type,
+        "Duración:",
+        voiceRecording.duration,
+        "s",
+      )
+
+      const uploadResult = await uploadFile(audioFile)
+
+      if (uploadResult.success && uploadResult.publicUrl) {
+        await sendMessage({
+          conversationId: chatId,
+          content: `Nota de voz (${voiceRecording.duration}s)`,
+          userId: currentUser.id,
+          messageType: "document", // Cambiar de "audio" a "document" para WhatsApp
+          mediaUrl: uploadResult.publicUrl,
+        })
+
+        // Limpiar grabación
+        cancelVoiceRecording()
+
+        toast({
+          title: "Nota de voz enviada",
+          description: "Tu nota de voz se ha enviado correctamente por WhatsApp",
+        })
+      } else {
+        throw new Error(uploadResult.error || "Error al subir nota de voz")
+      }
+    } catch (error) {
+      console.error("Error enviando nota de voz:", error)
+      toast({
+        title: "Error al enviar nota de voz",
+        description: "No se pudo enviar la nota de voz. Inténtalo de nuevo.",
+        variant: "destructive",
+      })
+    } finally {
+      setSending(false)
+      setUploading(false)
+    }
+  }
+
+  // Format timestamp to readable time
+  const formatRecordingDuration = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins}:${secs.toString().padStart(2, "0")}`
+  }
+
+  // Limpiar recursos al desmontar
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current)
+      }
+      if (voiceRecording.audioUrl) {
+        URL.revokeObjectURL(voiceRecording.audioUrl)
+      }
+    }
+  }, [voiceRecording.audioUrl])
+
+  const VoiceNoteMessage = ({ msg }: { msg: any }) => {
+    const [isPlaying, setIsPlaying] = useState(false)
+    const audioRef = useRef<HTMLAudioElement>(null)
+
+    // Determinar si es mensaje enviado o recibido
+    const isSent = msg.sender_type === "agent"
+
+    const togglePlay = () => {
+      if (audioRef.current) {
+        if (isPlaying) {
+          audioRef.current.pause()
+        } else {
+          audioRef.current.play()
+        }
+        setIsPlaying(!isPlaying)
+      }
+    }
+
+    return (
+      <div className={`flex items-center gap-3 p-3 rounded-lg max-w-xs ${isSent ? "bg-[#d9fdd2]" : "bg-white"}`}>
+        {/* Botón de play mejorado */}
+        <button
+          onClick={togglePlay}
+          className="w-12 h-12 bg-transparent rounded-full flex items-center justify-center hover:bg-black/5 transition-colors flex-shrink-0"
+        >
+          {isPlaying ? (
+            // Ícono de pausa (dos barras verticales más grandes)
+            <div className="flex gap-1">
+              <div className="w-1.5 h-5 bg-gray-700 rounded-full" />
+              <div className="w-1.5 h-5 bg-gray-700 rounded-full" />
+            </div>
+          ) : (
+            <div className="w-0 h-0 border-l-[12px] border-l-gray-700 border-t-[8px] border-t-transparent border-b-[8px] border-b-transparent ml-1" />
+          )}
+        </button>
+
+        {/* Círculo indicador de progreso */}
+        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isSent ? "bg-gray-600" : "bg-blue-500"}`} />
+
+        {/* Ondas de audio más realistas */}
+        <div className="flex-1 min-w-0 flex items-center">
+          <div className="flex items-center gap-[1px]">
+            {/* Patrón de ondas más realista basado en las imágenes de WhatsApp */}
+            {[1, 3, 2, 4, 1, 3, 5, 2, 4, 1, 3, 2, 5, 3, 1, 4, 2, 3, 1, 4, 2, 5, 3, 1, 4, 2, 3, 5, 1, 3].map(
+              (height, i) => (
+                <div key={i} className="w-[2px] bg-gray-400 rounded-full" style={{ height: `${height * 2 + 2}px` }} />
+              ),
             )}
           </div>
-        )
+        </div>
 
+        <audio ref={audioRef} src={msg.media_url} onEnded={() => setIsPlaying(false)} className="hidden" />
+      </div>
+    )
+  }
+
+  const renderMessageContent = (msg: any) => {
+    switch (msg.message_type) {
+      case "text":
+        return <div className="whitespace-pre-wrap break-words">{msg.content}</div>
+      case "image":
+        return (
+          <div className="max-w-xs">
+            <img src={msg.media_url || "/placeholder.svg"} alt="Imagen" className="rounded-lg max-w-full h-auto" />
+          </div>
+        )
+      case "document":
+        if (isVoiceNote(msg)) {
+          return <VoiceNoteMessage msg={msg} />
+        }
+        // Renderizar como documento normal
+        return (
+          <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg max-w-xs">
+            <FileText className="h-8 w-8 text-blue-500 flex-shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium">Documento</div>
+              {msg.media_url && (
+                <a
+                  href={msg.media_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-blue-600 hover:underline"
+                >
+                  Descargar archivo
+                </a>
+              )}
+            </div>
+          </div>
+        )
       case "audio":
         return (
           <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg max-w-xs">
@@ -526,43 +702,6 @@ export default function ConversationWindowSimple({
           </div>
         )
 
-      case "video":
-        return (
-          <div className="space-y-2">
-            {msg.media_url && (
-              <video controls className="max-w-xs rounded-lg" style={{ maxHeight: "200px" }}>
-                <source src={msg.media_url} />
-                Tu navegador no soporta video.
-              </video>
-            )}
-            {msg.content && msg.content !== `Video: ${msg.media_url?.split("/").pop()}` && (
-              <div className="text-sm">{msg.content}</div>
-            )}
-          </div>
-        )
-
-      case "document":
-        return (
-          <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg max-w-xs">
-            <FileText className="h-8 w-8 text-blue-500 flex-shrink-0" />
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-medium truncate">
-                {msg.content.replace("Documento: ", "") || "Documento"}
-              </div>
-              {msg.media_url && (
-                <a
-                  href={msg.media_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-blue-600 hover:underline"
-                >
-                  Descargar
-                </a>
-              )}
-            </div>
-          </div>
-        )
-
       default:
         return (
           <div className="whitespace-pre-wrap break-words text-[14px] leading-[1.3] text-gray-900 min-w-0 flex-1">
@@ -570,6 +709,13 @@ export default function ConversationWindowSimple({
           </div>
         )
     }
+  }
+
+  const isVoiceNote = (msg: any) => {
+    if (msg.message_type !== "document" || !msg.media_url) return false
+
+    const fileName = msg.media_url.toLowerCase()
+    return fileName.endsWith(".ogg") || fileName.endsWith(".mp3")
   }
 
   const messageGroups = groupMessagesByDate(messages)
@@ -610,6 +756,133 @@ export default function ConversationWindowSimple({
   }
 
   const conversationClosed = isConversationClosed()
+
+  const startVoiceRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: 16000,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      })
+
+      let mimeType = "audio/webm"
+      let fileExtension = "webm"
+
+      // Probar formatos en orden de preferencia para WhatsApp
+      const preferredFormats = [
+        { mime: "audio/ogg; codecs=opus", ext: "ogg" },
+        { mime: "audio/ogg", ext: "ogg" },
+        { mime: "audio/webm; codecs=opus", ext: "webm" },
+        { mime: "audio/webm", ext: "webm" },
+        { mime: "audio/mp4", ext: "mp4" },
+      ]
+
+      for (const format of preferredFormats) {
+        if (MediaRecorder.isTypeSupported(format.mime)) {
+          mimeType = format.mime
+          fileExtension = format.ext
+          console.log("Formato soportado encontrado:", mimeType)
+          break
+        }
+      }
+
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: mimeType,
+      })
+
+      mediaRecorderRef.current = mediaRecorder
+      audioChunksRef.current = []
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data)
+        }
+      }
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/ogg; codecs=opus" })
+        const audioUrl = URL.createObjectURL(audioBlob)
+
+        setVoiceRecording((prev) => ({
+          ...prev,
+          audioBlob,
+          audioUrl,
+          isRecording: false,
+          mimeType: "audio/ogg; codecs=opus", // Siempre reportar como OGG para WhatsApp
+          fileExtension: "ogg", // Siempre usar extensión OGG
+        }))
+
+        // Detener todas las pistas de audio
+        stream.getTracks().forEach((track) => track.stop())
+      }
+
+      mediaRecorder.start()
+      setVoiceRecording((prev) => ({
+        ...prev,
+        isRecording: true,
+        duration: 0,
+      }))
+
+      // Iniciar contador de duración
+      recordingTimerRef.current = setInterval(() => {
+        setVoiceRecording((prev) => ({
+          ...prev,
+          duration: prev.duration + 1,
+        }))
+      }, 1000)
+
+      toast({
+        title: "Grabando nota de voz",
+        description: "Presiona el botón rojo para detener la grabación",
+      })
+    } catch (error) {
+      console.error("Error accessing microphone:", error)
+      toast({
+        title: "Error de micrófono",
+        description: "No se pudo acceder al micrófono. Verifica los permisos.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const stopVoiceRecording = () => {
+    if (mediaRecorderRef.current && voiceRecording.isRecording) {
+      mediaRecorderRef.current.stop()
+
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current)
+        recordingTimerRef.current = null
+      }
+    }
+  }
+
+  const cancelVoiceRecording = () => {
+    if (mediaRecorderRef.current && voiceRecording.isRecording) {
+      mediaRecorderRef.current.stop()
+
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current)
+        recordingTimerRef.current = null
+      }
+    }
+
+    // Limpiar estado de grabación
+    if (voiceRecording.audioUrl) {
+      URL.revokeObjectURL(voiceRecording.audioUrl)
+    }
+
+    setVoiceRecording({
+      isRecording: false,
+      duration: 0,
+      audioBlob: null,
+      audioUrl: null,
+      mimeType: "audio/webm;codecs=opus",
+      fileExtension: "webm",
+    })
+  }
 
   if (loading) {
     return (
@@ -753,7 +1026,7 @@ export default function ConversationWindowSimple({
       <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {Object.keys(messageGroups).length === 0 ? (
           <div className="flex items-center justify-center h-full">
-            <div className="bg-white bg-opacity-80 p-4 rounded-lg text-center">
+            <div className="bg-white/80 backdrop-blur-sm px-4 py-2 rounded-lg text-center">
               <p className="text-gray-500">No hay mensajes en esta conversación</p>
               <p className="text-sm text-gray-400">Envía el primer mensaje para comenzar</p>
             </div>
@@ -777,7 +1050,7 @@ export default function ConversationWindowSimple({
                     <div key={msg.id} className="flex justify-center my-3">
                       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 px-4 py-2 rounded-full text-xs font-medium shadow-sm border border-blue-100 backdrop-blur-sm">
                         <div className="flex items-center gap-1">
-                          <div className="w-1.5 h-1.5 bg-blue-400 rounded-full"></div>
+                          <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse"></div>
                           {msg.content}
                         </div>
                       </div>
@@ -796,7 +1069,7 @@ export default function ConversationWindowSimple({
                     <div
                       className={`relative px-2 py-1 max-w-[85%] ${
                         msg.sender_type === "agent"
-                          ? "bg-[#dcf8c6] rounded-lg rounded-br-none"
+                          ? "bg-[#d9fdd2] rounded-lg rounded-br-none"
                           : "bg-white rounded-lg rounded-bl-none shadow-sm"
                       }`}
                     >
@@ -815,7 +1088,7 @@ export default function ConversationWindowSimple({
                             <div className="flex items-center ml-1">
                               <svg className="w-4 h-4 text-gray-400" viewBox="0 0 16 15" fill="none">
                                 <path
-                                  d="M15.01 3.316l-.478-.372a.365.365 0 0 0-.51.063L8.666 9.879a.32.32 0 0 1-.484.033l-.358-.325a.319.319 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.063-.51zm-4.1 0l-.478-.372a.365.365 0 0 0-.51.063L4.566 9.879a.32.32 0 0 1-.484.033L3.724 9.587a.319.319 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.063-.51z"
+                                  d="M15.01 3.316l-.478-.372a.365.365 0 0 0-.51.063L8.666 9.879a.32.32 0 0 1-.484.033l-.358-.325a.319.319 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.063-.51zm-4.1 0l-.478-.372a.365.365 0 0 0-.51.063L4.566 9.879a.32.32 0 0 1-.484.033l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.063-.51z"
                                   fill="currentColor"
                                 />
                               </svg>
@@ -827,7 +1100,7 @@ export default function ConversationWindowSimple({
                       {/* Cola del mensaje estilo WhatsApp */}
                       <div
                         className={`absolute bottom-0 w-2 h-2 ${
-                          msg.sender_type === "agent" ? "right-[-2px] bg-[#dcf8c6]" : "left-[-2px] bg-white"
+                          msg.sender_type === "agent" ? "right-[-2px] bg-[#d9fdd2]" : "left-[-2px] bg-white"
                         }`}
                         style={{
                           clipPath:
@@ -880,6 +1153,7 @@ export default function ConversationWindowSimple({
         </TooltipProvider>
       )}
 
+      {/* Preview de archivo */}
       {filePreview && (
         <div className="p-3 bg-gray-50 border-t">
           <div className="flex items-center gap-3 p-3 bg-white rounded-lg border">
@@ -896,7 +1170,7 @@ export default function ConversationWindowSimple({
                 </div>
               ) : filePreview.type === "video" ? (
                 <div className="w-12 h-12 bg-purple-100 rounded flex items-center justify-center">
-                  <Play className="h-6 w-6 text-purple-600" />
+                  <FileText className="h-6 w-6 text-purple-600" />
                 </div>
               ) : (
                 <div className="w-12 h-12 bg-blue-100 rounded flex items-center justify-center">
@@ -909,8 +1183,50 @@ export default function ConversationWindowSimple({
               <p className="text-xs text-gray-500">{(filePreview.file.size / 1024 / 1024).toFixed(2)} MB</p>
             </div>
             <Button variant="ghost" size="icon" onClick={removeFilePreview} className="flex-shrink-0">
-              <X className="h-4 w-4" />
+              <Trash2 className="h-4 w-4" />
             </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Preview de nota de voz */}
+      {voiceRecording.audioUrl && !voiceRecording.isRecording && (
+        <div className="p-3 bg-green-50 border-t border-green-200">
+          <div className="flex items-center gap-3 bg-white rounded-lg p-3 shadow-sm">
+            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+              <Music className="h-6 w-6 text-green-600" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-green-800">Nota de voz grabada</p>
+              <p className="text-xs text-green-600">Duración: {formatRecordingDuration(voiceRecording.duration)}</p>
+              {voiceRecording.audioUrl && (
+                <audio controls className="mt-2 w-full h-8">
+                  <source src={voiceRecording.audioUrl} type="audio/webm" />
+                </audio>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={cancelVoiceRecording}
+                className="text-red-500 hover:bg-red-50"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+              <Button
+                size="icon"
+                onClick={sendVoiceNote}
+                disabled={sending || uploading}
+                className="bg-green-500 hover:bg-green-600 text-white"
+              >
+                {sending || uploading ? (
+                  <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
           </div>
         </div>
       )}
@@ -951,111 +1267,168 @@ export default function ConversationWindowSimple({
         ) : (
           // Input normal cuando la conversación está activa
           <div className="flex items-center gap-2">
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="ghost" size="icon" className="rounded-full text-gray-500">
-                  <Smile className="h-5 w-5" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-64 p-2">
-                <div className="grid grid-cols-8 gap-1">
-                  {["😀", "😂", "😍", "🥰", "😎", "🤔", "😊", "👍", "❤️", "👏", "🙏", "🔥", "✅", "🎉", "👌", "🤣"].map(
-                    (emoji) => (
-                      <button
-                        key={emoji}
-                        className="text-xl p-1 hover:bg-gray-100 rounded"
-                        onClick={() => addEmoji(emoji)}
-                      >
-                        {emoji}
-                      </button>
-                    ),
-                  )}
+            {voiceRecording.isRecording ? (
+              // Interfaz de grabación activa
+              <div className="flex-1 flex items-center gap-3 bg-red-50 rounded-full px-4 py-2 border-2 border-red-200">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+                  <span className="text-red-600 font-medium text-sm">
+                    Grabando... {formatRecordingDuration(voiceRecording.duration)}
+                  </span>
                 </div>
-              </PopoverContent>
-            </Popover>
+                <div className="flex-1"></div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={cancelVoiceRecording}
+                  className="text-red-500 hover:bg-red-100 rounded-full"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="icon"
+                  onClick={stopVoiceRecording}
+                  className="bg-red-500 hover:bg-red-600 text-white rounded-full"
+                >
+                  <Square className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              // Interfaz normal
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
+                  title="Emojis"
+                >
+                  <Smile className="w-5 h-5" />
+                </button>
 
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.txt,.zip,.rar"
-              onChange={handleFileSelect}
-              className="hidden"
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.rtf,.odt,.ods,.odp,.zip,.rar,.7z,.tar,.gz,.json,.xml,.html,.css,.js,.ts,.jsx,.tsx,.py,.java,.cpp,.c,.h,.sql,.md,.yaml,.yml,.ini,.cfg,.log,.epub,.mobi,.azw,.azw3,.fb2,.lit,.pdb,.tcr,.woff,.woff2,.ttf,.otf,.eot,.svg,.dwg,.dxf,.step,.stp,.iges,.igs,.stl,.obj,.3ds,.max,.blend,.fbx,.dae,.x3d,.ply,.off"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+
+                {/* Botón de plantillas */}
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div>
+                        <TemplateSelectorDialog
+                          recipientPhone={getRecipientPhone()}
+                          onTemplateSent={handleTemplateSent}
+                          disabled={sending}
+                        />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>Enviar plantilla</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="rounded-full text-gray-500 hover:bg-gray-50"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={sending || uploading}
+                      >
+                        <Paperclip className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Adjuntar archivo</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
+                <Input
+                  placeholder="Escribe un mensaje"
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault()
+                      if (message.trim() || filePreview) {
+                        handleSendMessage()
+                      }
+                    }
+                  }}
+                  onKeyPress={handleKeyPress}
+                  disabled={sending || uploading}
+                  className="flex-1 rounded-full border-gray-300 focus-visible:ring-green-500"
+                />
+
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="rounded-full text-blue-600 hover:bg-blue-50"
+                        onClick={startVoiceRecording}
+                        disabled={sending || uploading || voiceRecording.audioBlob !== null}
+                      >
+                        <Mic className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Grabar nota de voz</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
+                {/* Botón de resumen IA */}
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="rounded-full text-purple-600 hover:bg-purple-50"
+                        onClick={() => setShowSummaryModal(true)}
+                        disabled={!messages.length}
+                      >
+                        <Sparkles className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Generar resumen IA</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
+                <Button
+                  onClick={handleSendMessage}
+                  disabled={sending || uploading || (!message.trim() && !filePreview)}
+                  size="icon"
+                  className={`rounded-full ${
+                    message.trim() || filePreview ? "bg-green-500 hover:bg-green-600" : "bg-gray-200 text-gray-500"
+                  }`}
+                >
+                  {sending || uploading ? (
+                    <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                </Button>
+              </>
+            )}
+          </div>
+        )}
+
+        {showEmojiPicker && (
+          <div className="absolute bottom-20 center z-50">
+            <EmojiPicker
+              onEmojiClick={onEmojiClick}
+              width={350}
+              height={400}
+              searchDisabled={false}
+              skinTonesDisabled={false}
+              previewConfig={{
+                showPreview: false,
+              }}
             />
-
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="rounded-full text-gray-500"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploading}
-                  >
-                    <Paperclip className="h-5 w-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Adjuntar archivo</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-
-            {/* Botón de plantillas */}
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div>
-                    <TemplateSelectorDialog
-                      recipientPhone={getRecipientPhone()}
-                      onTemplateSent={handleTemplateSent}
-                      disabled={sending}
-                    />
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent>Enviar plantilla</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-
-            <Input
-              placeholder="Escribe un mensaje"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              onKeyPress={handleKeyPress}
-              disabled={sending || uploading}
-              className="flex-1 rounded-full border-gray-300 focus-visible:ring-green-500"
-            />
-
-            {/* Botón de resumen IA */}
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="rounded-full text-purple-600 hover:bg-purple-50"
-                    onClick={() => setShowSummaryModal(true)}
-                    disabled={!messages.length}
-                  >
-                    <Sparkles className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Generar resumen IA</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-
-            <Button
-              onClick={handleSendMessage}
-              disabled={sending || uploading || (!message.trim() && !filePreview)}
-              size="icon"
-              className={`rounded-full ${
-                message.trim() || filePreview ? "bg-green-500 hover:bg-green-600" : "bg-gray-200 text-gray-500"
-              }`}
-            >
-              {sending || uploading ? (
-                <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
-            </Button>
           </div>
         )}
       </div>
