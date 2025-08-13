@@ -84,7 +84,6 @@ export default function ConversationWindowSimple({
   // Estado local
   const [message, setMessage] = useState("")
   const [sending, setSending] = useState(false)
-  const [showScrollButton, setShowScrollButton] = useState(false)
   const [isNearBottom, setIsNearBottom] = useState(true)
   const [showProfilePanel, setShowProfilePanel] = useState(false)
   const [isWindowVisible, setIsWindowVisible] = useState(true)
@@ -216,7 +215,7 @@ export default function ConversationWindowSimple({
       const isNear = scrollPosition < 100
 
       setIsNearBottom(isNear)
-      setShowScrollButton(!isNear)
+      // setShowScrollButton(!isNear)
     }
 
     container.addEventListener("scroll", handleScroll)
@@ -1048,7 +1047,7 @@ export default function ConversationWindowSimple({
                 if (msg.message_type === "system") {
                   return (
                     <div key={msg.id} className="flex justify-center my-3">
-                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 px-4 py-2 rounded-full text-xs font-medium shadow-sm border border-blue-100 backdrop-blur-sm">
+                      <div className="bg-gradient-to-r from-blue-50 to indigo-50 text-blue-700 px-4 py-2 rounded-full text-xs font-medium shadow-sm border border-blue-100 backdrop-blur-sm">
                         <div className="flex items-center gap-1">
                           <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse"></div>
                           {msg.content}
@@ -1134,24 +1133,22 @@ export default function ConversationWindowSimple({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Botón de scroll */}
-      {showScrollButton && (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                size="icon"
-                variant="secondary"
-                className="absolute bottom-20 right-6 rounded-full shadow-md hover:shadow-xl transition-all duration-200 transform hover:scale-105 border-2 border-green-400"
-                onClick={scrollToBottom}
-              >
-                <ArrowDown className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Ir al final</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      )}
+      <TooltipProvider>
+  <Tooltip>
+    <TooltipTrigger asChild>
+      <Button
+        size="icon"
+        variant="ghost"
+        className="fixed bottom-32 right-6 h-8 w-8 p-0 bg-white/80 shadow-sm hover:bg-white text-green-600 rounded-full border border-gray-200"
+        onClick={scrollToBottom}
+      >
+        <ArrowDown className="h-4 w-4" />
+      </Button>
+    </TooltipTrigger>
+    <TooltipContent>Ir al final</TooltipContent>
+  </Tooltip>
+</TooltipProvider>
+
 
       {/* Preview de archivo */}
       {filePreview && (
@@ -1418,7 +1415,7 @@ export default function ConversationWindowSimple({
         )}
 
         {showEmojiPicker && (
-          <div className="absolute bottom-20 center z-50">
+          <div className="absolute bottom-20 right-4 z-50">
             <EmojiPicker
               onEmojiClick={onEmojiClick}
               width={350}
