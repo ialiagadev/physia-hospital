@@ -1047,7 +1047,7 @@ export default function ConversationWindowSimple({
                 if (msg.message_type === "system") {
                   return (
                     <div key={msg.id} className="flex justify-center my-3">
-                      <div className="bg-gradient-to-r from-blue-50 to indigo-50 text-blue-700 px-4 py-2 rounded-full text-xs font-medium shadow-sm border border-blue-100 backdrop-blur-sm">
+                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 px-4 py-2 rounded-full text-xs font-medium shadow-sm border border-blue-100 backdrop-blur-sm">
                         <div className="flex items-center gap-1">
                           <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse"></div>
                           {msg.content}
