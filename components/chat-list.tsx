@@ -1247,6 +1247,81 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
   // Hook para conteo total de mensajes no leídos
   const { totalUnread } = useTotalUnreadMessages(organizationIdNumber)
 
+  useEffect(() => {
+    const calculateCounts = async () => {
+      if (!organizationIdNumber || !userProfile?.id) return
+
+      try {
+        // Calcular total de conversaciones de la organización
+        const { count: totalCount } = await supabase
+          .from("conversations")
+          .select("*", { count: "exact", head: true })
+          .eq("organization_id", organizationIdNumber)
+
+        setTotalConversationsCount(totalCount || 0)
+
+        // Calcular conversaciones asignadas al usuario actual
+        const { count: assignedCountResult } = await supabase
+          .from("users_conversations")
+          .select("*", { count: "exact", head: true })
+          .eq("user_id", userProfile.id)
+
+        setAssignedCount(assignedCountResult || 0)
+      } catch (error) {
+        console.error("Error calculating conversation counts:", error)
+      }
+    }
+
+    calculateCounts()
+  }, [organizationIdNumber, userProfile?.id])
+
+  useEffect(() => {
+    if (!organizationIdNumber || !userProfile?.id) return
+
+    const calculateCounts = async () => {
+      try {
+        // Calcular total de conversaciones de la organización
+        const { count: totalCount } = await supabase
+          .from("conversations")
+          .select("*", { count: "exact", head: true })
+          .eq("organization_id", organizationIdNumber)
+
+        setTotalConversationsCount(totalCount || 0)
+
+        // Calcular conversaciones asignadas al usuario actual
+        const { count: assignedCountResult } = await supabase
+          .from("users_conversations")
+          .select("*", { count: "exact", head: true })
+          .eq("user_id", userProfile.id)
+
+        setAssignedCount(assignedCountResult || 0)
+      } catch (error) {
+        console.error("Error calculating conversation counts:", error)
+      }
+    }
+
+    // Subscribe to changes in users_conversations table
+    const channel = supabase
+      .channel("assignment-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*", // Listen to all events (INSERT, UPDATE, DELETE)
+          schema: "public",
+          table: "users_conversations",
+        },
+        () => {
+          // Recalculate counts when assignments change
+          calculateCounts()
+        },
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [organizationIdNumber, userProfile?.id])
+
   // Filtrar conversaciones solo por búsqueda (las etiquetas ya se filtran en el servidor)
   const filteredConversations = conversations
     .filter((conv) => {
