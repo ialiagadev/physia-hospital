@@ -5,7 +5,6 @@ import { useState, useRef, useEffect } from "react"
 import {
   Send,
   Smile,
-  ArrowDown,
   Phone,
   Video,
   MoreVertical,
@@ -686,20 +685,7 @@ export default function ConversationWindowSimple({
           </div>
         )
       case "audio":
-        return (
-          <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg max-w-xs">
-            <Music className="h-8 w-8 text-green-500 flex-shrink-0" />
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-medium">Audio</div>
-              {msg.media_url && (
-                <audio controls className="w-full mt-1">
-                  <source src={msg.media_url} />
-                  Tu navegador no soporta audio.
-                </audio>
-              )}
-            </div>
-          </div>
-        )
+        return <VoiceNoteMessage msg={msg} />
 
       default:
         return (
@@ -711,6 +697,7 @@ export default function ConversationWindowSimple({
   }
 
   const isVoiceNote = (msg: any) => {
+    if (msg.message_type === "audio") return true
     if (msg.message_type !== "document" || !msg.media_url) return false
 
     const fileName = msg.media_url.toLowerCase()
@@ -1047,7 +1034,7 @@ export default function ConversationWindowSimple({
                 if (msg.message_type === "system") {
                   return (
                     <div key={msg.id} className="flex justify-center my-3">
-                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 px-4 py-2 rounded-full text-xs font-medium shadow-sm border border-blue-100 backdrop-blur-sm">
+                      <div className="bg-gradient-to-r from-blue-50 to indigo-50 text-blue-700 px-4 py-2 rounded-full text-xs font-medium shadow-sm border border-blue-100 backdrop-blur-sm">
                         <div className="flex items-center gap-1">
                           <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse"></div>
                           {msg.content}
@@ -1132,23 +1119,6 @@ export default function ConversationWindowSimple({
         )}
         <div ref={messagesEndRef} />
       </div>
-
-      <TooltipProvider>
-  <Tooltip>
-    <TooltipTrigger asChild>
-      <Button
-        size="icon"
-        variant="ghost"
-        className="fixed bottom-32 right-6 h-8 w-8 p-0 bg-white/80 shadow-sm hover:bg-white text-green-600 rounded-full border border-gray-200"
-        onClick={scrollToBottom}
-      >
-        <ArrowDown className="h-4 w-4" />
-      </Button>
-    </TooltipTrigger>
-    <TooltipContent>Ir al final</TooltipContent>
-  </Tooltip>
-</TooltipProvider>
-
 
       {/* Preview de archivo */}
       {filePreview && (
