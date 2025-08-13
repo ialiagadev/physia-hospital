@@ -661,6 +661,14 @@ export default function ConversationWindowSimple({
             <img src={msg.media_url || "/placeholder.svg"} alt="Imagen" className="rounded-lg max-w-full h-auto" />
           </div>
         )
+      case "video":
+        return (
+          <div className="max-w-xs">
+            <video src={msg.media_url} controls className="rounded-lg max-w-full h-auto" preload="metadata">
+              Tu navegador no soporta el elemento video.
+            </video>
+          </div>
+        )
       case "document":
         if (isVoiceNote(msg)) {
           return <VoiceNoteMessage msg={msg} />
