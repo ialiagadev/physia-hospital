@@ -534,7 +534,6 @@ export function useConversations(
                 
 
                 // También hacer un fetch completo después de un tiempo para asegurar consistencia
-                setTimeout(() => fetchConversations(true), 2000)
               }
             },
           )
