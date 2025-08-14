@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase/client"
 import { sendWhatsAppMessage, formatPhoneForWhatsApp, validatePhoneNumber } from "@/lib/whatsapp/sendMessage"
+import { transcribeAudio } from "@/lib/whatsapp-utils"
 
 export async function sendMessage({
   conversationId,
@@ -170,12 +171,61 @@ export async function sendMessage({
 
         const formattedPhone = formatPhoneForWhatsApp(phoneNumber)
 
+        let whatsappContent = content
+        let whatsappMessageType = messageType
+        let whatsappMediaUrl = mediaUrl
+        let transcriptionText = ""
+
+        const isAudioMessage =
+          messageType === "audio" ||
+          (messageType === "document" &&
+            mediaUrl &&
+            (mediaUrl.includes(".ogg") ||
+              mediaUrl.includes(".mp3") ||
+              mediaUrl.includes(".wav") ||
+              mediaUrl.includes(".m4a") ||
+              content.includes("Nota de voz")))
+
+        if (isAudioMessage && mediaUrl) {
+          console.log("🎤 Detectado mensaje de audio, iniciando transcripción...")
+          console.log("📁 URL del audio:", mediaUrl)
+          console.log("🔍 Tipo de mensaje:", messageType)
+          console.log("📝 Contenido:", content)
+
+          try {
+            // Transcribir el audio usando Whisper
+            console.log("🤖 Llamando a transcribeAudio...")
+            transcriptionText = await transcribeAudio(mediaUrl)
+            console.log("✅ Transcripción completada:", transcriptionText)
+
+            // Para WhatsApp, enviar como texto transcrito
+            whatsappContent = `🎤 Mensaje de voz transcrito:\n\n${transcriptionText}`
+            whatsappMessageType = "text"
+            whatsappMediaUrl = undefined // No enviar el archivo de audio
+
+            console.log("📝 Enviando como texto transcrito a WhatsApp")
+          } catch (transcriptionError) {
+            console.error("❌ Error transcribiendo audio:", transcriptionError)
+            // Si falla la transcripción, enviar como audio normal
+            whatsappContent = content
+            whatsappMessageType = messageType
+            whatsappMediaUrl = mediaUrl
+            console.log("📁 Enviando como archivo de audio por error en transcripción")
+          }
+        }
+
+        console.log("🚀 Enviando mensaje de WhatsApp:", {
+          tipo: whatsappMessageType,
+          contenido: whatsappContent.substring(0, 100) + "...",
+          tieneMedia: !!whatsappMediaUrl,
+        })
+
         await sendWhatsAppMessage({
           to: formattedPhone,
-          message: content,
+          message: whatsappContent,
           token: wabaConfig.token_proyecto,
-          messageType,
-          mediaUrl,
+          messageType: whatsappMessageType,
+          mediaUrl: whatsappMediaUrl,
         })
 
         // Marcar el mensaje como enviado exitosamente
@@ -187,6 +237,7 @@ export async function sendMessage({
               whatsapp_sent: true,
               whatsapp_sent_at: new Date().toISOString(),
               whatsapp_phone: formattedPhone,
+              ...(transcriptionText && { transcription: transcriptionText }),
             },
           })
           .eq("id", messageData.id)

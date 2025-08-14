@@ -113,7 +113,14 @@ export default function ConversationWindowSimple({
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   // Hooks personalizados
-  const { messages, loading: messagesLoading, error: messagesError } = useMessages(chatId)
+  const {
+    messages,
+    loading: messagesLoading,
+    loadingMore,
+    hasMore,
+    error: messagesError,
+    loadMoreMessages,
+  } = useMessages(chatId)
   const {
     conversation,
     loading: conversationLoading,
@@ -193,11 +200,26 @@ export default function ConversationWindowSimple({
       const isNear = scrollPosition < 100
 
       setIsNearBottom(isNear)
+
+      // Load more messages when scrolling near the top
+      if (scrollTop < 100 && hasMore && !loadingMore && !messagesLoading) {
+        const previousScrollHeight = scrollHeight
+        loadMoreMessages().then(() => {
+          // Maintain scroll position after loading more messages
+          setTimeout(() => {
+            if (container) {
+              const newScrollHeight = container.scrollHeight
+              const scrollDifference = newScrollHeight - previousScrollHeight
+              container.scrollTop = scrollTop + scrollDifference
+            }
+          }, 50)
+        })
+      }
     }
 
     container.addEventListener("scroll", handleScroll)
     return () => container.removeEventListener("scroll", handleScroll)
-  }, [])
+  }, [hasMore, loadingMore, messagesLoading, loadMoreMessages])
 
   useLayoutEffect(() => {
     if (conversation?.client && isInitialLoad && messagesContainerRef.current) {
@@ -1025,7 +1047,28 @@ export default function ConversationWindowSimple({
       </div>
 
       {/* Área de mensajes mejorada */}
-      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div
+        ref={messagesContainerRef}
+        className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth"
+        style={{ scrollBehavior: "auto" }}
+      >
+        {/* Loading indicator for older messages */}
+        {loadingMore && (
+          <div className="flex justify-center py-4">
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+              Cargando mensajes anteriores...
+            </div>
+          </div>
+        )}
+
+        {/* No more messages indicator */}
+        {!hasMore && messages.length > 0 && (
+          <div className="flex justify-center py-2">
+            <div className="text-xs text-gray-400 bg-gray-100 px-3 py-1 rounded-full">Inicio de la conversación</div>
+          </div>
+        )}
+
         {Object.keys(messageGroups).length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <div className="bg-white/80 backdrop-blur-sm px-4 py-2 rounded-lg text-center">
@@ -1050,7 +1093,7 @@ export default function ConversationWindowSimple({
                 if (msg.message_type === "system") {
                   return (
                     <div key={msg.id} className="flex justify-center my-3">
-                      <div className="bg-gradient-to-r from-blue-50 to indigo-50 text-blue-700 px-4 py-2 rounded-full text-xs font-medium shadow-sm border border-blue-100 backdrop-blur-sm">
+                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 px-4 py-2 rounded-full text-xs font-medium shadow-sm border border-blue-100 backdrop-blur-sm">
                         <div className="flex items-center gap-1">
                           <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse"></div>
                           {msg.content}
@@ -1068,13 +1111,21 @@ export default function ConversationWindowSimple({
                       isFirst ? "mt-2" : "mt-1"
                     }`}
                   >
-                    <div
-                      className={`relative px-2 py-1 max-w-[85%] ${
-                        msg.sender_type === "agent"
-                          ? "bg-[#d9fdd2] rounded-lg rounded-br-none"
-                          : "bg-white rounded-lg rounded-bl-none shadow-sm"
-                      }`}
-                    >
+
+
+                        {/* Burbuja del mensaje */}
+
+                    
+                        <div
+  className={`relative px-2 py-1 max-w-[85%] ${
+    msg.sender_type === "agent"
+      ? msg.user?.type === 2
+        ? "bg-[#F3E8FF] rounded-lg rounded-br-none" // 💜 Lila suave para IA
+        : "bg-[#d9fdd2] rounded-lg rounded-br-none" // Verde para agente humano
+      : "bg-white rounded-lg rounded-bl-none shadow-sm"
+  }`}
+>
+
                       {/* Contenedor flexible para texto y metadata */}
                       <div className="flex items-end gap-1">
                         {renderMessageContent(msg)}
@@ -1084,6 +1135,26 @@ export default function ConversationWindowSimple({
                           <span className="text-[11px] text-gray-500 font-normal whitespace-nowrap">
                             {formatTime(msg.created_at)}
                           </span>
+                             {/* Avatar solo si es enviado por el agente y es el primero del grupo */}
+    {isFirst && msg.sender_type === "agent" && (
+      <div className="mt-1">
+        <Avatar className="h-6 w-6">
+          {msg.user?.type === 2 ? (
+            <>
+              <AvatarImage src="/images/IA.jpeg" alt="IA" />
+              <AvatarFallback>IA</AvatarFallback>
+            </>
+          ) : (
+            <>
+              <AvatarImage src={msg.user?.avatar_url || undefined} alt={msg.user?.name || "U"} />
+              <AvatarFallback>
+                {msg.user?.name?.charAt(0).toUpperCase() || "U"}
+              </AvatarFallback>
+            </>
+          )}
+        </Avatar>
+      </div>
+      )}
 
                           {/* Doble checkmark solo para mensajes enviados */}
                           {msg.sender_type === "agent" && (
