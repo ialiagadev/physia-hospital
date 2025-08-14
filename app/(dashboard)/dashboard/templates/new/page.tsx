@@ -10,7 +10,8 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { ArrowLeft, Eye, AlertCircle, CheckCircle, Loader2 } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ArrowLeft, Eye, AlertCircle, CheckCircle, Loader2, Plus, ImageIcon, Play, FileText, X } from "lucide-react"
 import Link from "next/link"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAuth } from "@/app/contexts/auth-context"
@@ -64,10 +65,11 @@ interface WabaConfig {
 
 interface TemplateComponent {
   type: string
-  text: string
+  text?: string // Made text optional since BUTTONS components don't need it
   example?: {
     body_text: string[][]
   }
+  buttons?: any[]
 }
 
 interface CreateTemplateData {
@@ -75,6 +77,18 @@ interface CreateTemplateData {
   category: string
   language: string
   components: TemplateComponent[]
+}
+
+interface QuickReply {
+  id: string
+  text: string
+}
+
+interface CallToAction {
+  type: "url" | "phone"
+  text: string
+  url?: string
+  phone?: string
 }
 
 export default function NewTemplatePage() {
@@ -91,8 +105,10 @@ export default function NewTemplatePage() {
   })
   const [errors, setErrors] = useState<ValidationError[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [actionType, setActionType] = useState<"none" | "cta" | "quick_replies">("none")
+  const [quickReplies, setQuickReplies] = useState<QuickReply[]>([])
+  const [callToAction, setCallToAction] = useState<CallToAction>({ type: "url", text: "", url: "" })
 
-  // Función para obtener la configuración WABA del usuario
   const fetchWabaConfig = async (organizationId: number) => {
     try {
       const { data: canalesOrg, error: canalError } = await supabase
@@ -161,7 +177,6 @@ export default function NewTemplatePage() {
     }
   }
 
-  // Función para crear plantilla
   const createTemplate = async (templateData: CreateTemplateData) => {
     if (!wabaConfig) {
       throw new Error("No hay configuración WABA disponible")
@@ -208,7 +223,6 @@ export default function NewTemplatePage() {
     loadWabaConfig()
   }, [userProfile, authLoading])
 
-  // Verificar si el usuario tiene acceso
   if (!user || !userProfile) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -226,7 +240,6 @@ export default function NewTemplatePage() {
     )
   }
 
-  // Verificar si tiene proyecto WABA configurado
   if (loadingConfig) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -260,17 +273,14 @@ export default function NewTemplatePage() {
     )
   }
 
-  // Extraer variables del body
   const extractVariables = (text: string): string[] => {
     const matches = text.match(/\{\{\d+\}\}/g) || []
     return [...new Set(matches)].sort()
   }
 
-  // Validar formulario
   const validateForm = (): ValidationError[] => {
     const newErrors: ValidationError[] = []
 
-    // Validar nombre
     if (!form.name.trim()) {
       newErrors.push({ field: "name", message: "El nombre es obligatorio" })
     } else if (!/^[a-z0-9_]+$/.test(form.name)) {
@@ -282,24 +292,20 @@ export default function NewTemplatePage() {
       newErrors.push({ field: "name", message: "Máximo 512 caracteres" })
     }
 
-    // Validar idioma
     if (!form.language) {
       newErrors.push({ field: "language", message: "Selecciona un idioma" })
     }
 
-    // Validar categoría
     if (!form.category) {
       newErrors.push({ field: "category", message: "Selecciona una categoría" })
     }
 
-    // Validar body
     if (!form.body.trim()) {
       newErrors.push({ field: "body", message: "El contenido es obligatorio" })
     } else if (form.body.length > 1024) {
       newErrors.push({ field: "body", message: "Máximo 1024 caracteres" })
     }
 
-    // Validar variables secuenciales
     const variables = extractVariables(form.body)
     for (let i = 0; i < variables.length; i++) {
       const expected = `{{${i + 1}}}`
@@ -312,12 +318,50 @@ export default function NewTemplatePage() {
       }
     }
 
-    // Validar footer
     if (form.footer && form.footer.length > 60) {
       newErrors.push({ field: "footer", message: "El pie máximo 60 caracteres" })
     }
 
     return newErrors
+  }
+
+  const addVariable = () => {
+    const variables = extractVariables(form.body)
+    const nextVariableNumber = variables.length + 1
+    const newVariable = `{{${nextVariableNumber}}}`
+
+    const newBody = form.body + (form.body.endsWith(" ") ? "" : " ") + newVariable
+    setForm({ ...form, body: newBody })
+
+    toast({
+      title: "Variable añadida",
+      description: `Se añadió la variable ${newVariable}`,
+    })
+  }
+
+  const addQuickReply = () => {
+    if (quickReplies.length >= 3) {
+      toast({
+        title: "Límite alcanzado",
+        description: "Máximo 3 respuestas rápidas permitidas",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const newReply: QuickReply = {
+      id: Date.now().toString(),
+      text: `Opción ${quickReplies.length + 1}`,
+    }
+    setQuickReplies([...quickReplies, newReply])
+  }
+
+  const removeQuickReply = (id: string) => {
+    setQuickReplies(quickReplies.filter((reply) => reply.id !== id))
+  }
+
+  const updateQuickReply = (id: string, text: string) => {
+    setQuickReplies(quickReplies.map((reply) => (reply.id === id ? { ...reply, text } : reply)))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -338,16 +382,13 @@ export default function NewTemplatePage() {
     setIsSubmitting(true)
 
     try {
-      // Construir los componentes de la plantilla según el formato de Aisensy
       const components: TemplateComponent[] = []
 
-      // Componente BODY (obligatorio)
       const bodyComponent: TemplateComponent = {
         type: "BODY",
         text: form.body.trim(),
       }
 
-      // Si hay variables, agregar ejemplos
       const variables = extractVariables(form.body)
       if (variables.length > 0) {
         const exampleValues = variables.map((_, index) => `Ejemplo${index + 1}`)
@@ -358,7 +399,6 @@ export default function NewTemplatePage() {
 
       components.push(bodyComponent)
 
-      // Componente FOOTER (opcional)
       if (form.footer.trim()) {
         components.push({
           type: "FOOTER",
@@ -366,7 +406,32 @@ export default function NewTemplatePage() {
         })
       }
 
-      // Datos para crear la plantilla
+      if (actionType === "quick_replies" && quickReplies.length > 0) {
+        components.push({
+          type: "BUTTONS",
+          buttons: quickReplies.map((reply) => ({
+            type: "QUICK_REPLY",
+            text: reply.text,
+          })),
+        })
+      } else if (actionType === "cta" && callToAction.text) {
+        const button: any = {
+          type: callToAction.type === "url" ? "URL" : "PHONE_NUMBER",
+          text: callToAction.text,
+        }
+
+        if (callToAction.type === "url" && callToAction.url) {
+          button.url = callToAction.url
+        } else if (callToAction.type === "phone" && callToAction.phone) {
+          button.phone_number = callToAction.phone
+        }
+
+        components.push({
+          type: "BUTTONS",
+          buttons: [button],
+        })
+      }
+
       const templateData: CreateTemplateData = {
         name: form.name.trim(),
         category: form.category,
@@ -374,7 +439,6 @@ export default function NewTemplatePage() {
         components: components,
       }
 
-      // Crear la plantilla
       await createTemplate(templateData)
 
       toast({
@@ -382,7 +446,6 @@ export default function NewTemplatePage() {
         description: "La plantilla se ha enviado para revisión de Meta. Puede tardar 24-48 horas en ser aprobada.",
       })
 
-      // Redirigir a la lista de plantillas
       router.push("/dashboard/templates")
     } catch (error) {
       let errorMessage = "No se pudo crear la plantilla"
@@ -408,7 +471,6 @@ export default function NewTemplatePage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center space-x-4">
         <Link href="/dashboard/templates">
           <Button variant="outline" size="sm">
@@ -422,7 +484,6 @@ export default function NewTemplatePage() {
         </div>
       </div>
 
-      {/* Información del proyecto WABA */}
       <Card>
         <CardContent className="flex items-center justify-between py-4">
           <div>
@@ -433,7 +494,6 @@ export default function NewTemplatePage() {
         </CardContent>
       </Card>
 
-      {/* Ejemplo de formato correcto */}
       <Alert>
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
@@ -444,7 +504,6 @@ export default function NewTemplatePage() {
       </Alert>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Formulario */}
         <Card>
           <CardHeader>
             <CardTitle>Información de la Plantilla</CardTitle>
@@ -452,7 +511,6 @@ export default function NewTemplatePage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Nombre */}
               <div className="space-y-2">
                 <Label htmlFor="name">Nombre de la plantilla *</Label>
                 <Input
@@ -471,7 +529,6 @@ export default function NewTemplatePage() {
                 <p className="text-xs text-muted-foreground">Solo letras minúsculas, números y guiones bajos</p>
               </div>
 
-              {/* Idioma */}
               <div className="space-y-2">
                 <Label htmlFor="language">Idioma *</Label>
                 <Select value={form.language} onValueChange={(value) => setForm({ ...form, language: value })}>
@@ -489,7 +546,6 @@ export default function NewTemplatePage() {
                 {getFieldError("language") && <p className="text-sm text-red-500">{getFieldError("language")}</p>}
               </div>
 
-              {/* Categoría */}
               <div className="space-y-2">
                 <Label htmlFor="category">Categoría *</Label>
                 <Select value={form.category} onValueChange={(value) => setForm({ ...form, category: value })}>
@@ -510,12 +566,55 @@ export default function NewTemplatePage() {
                 {getFieldError("category") && <p className="text-sm text-red-500">{getFieldError("category")}</p>}
               </div>
 
-              {/* Contenido */}
               <div className="space-y-2">
                 <Label htmlFor="body">
                   Contenido del mensaje *
                   <span className="text-xs text-muted-foreground ml-2">({form.body.length}/1024)</span>
                 </Label>
+
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-10 w-10 p-0 bg-orange-100 hover:bg-orange-200 border-orange-300"
+                      title="Añadir imagen"
+                    >
+                      <ImageIcon className="h-5 w-5 text-orange-600" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-10 w-10 p-0 bg-blue-100 hover:bg-blue-200 border-blue-300"
+                      title="Añadir video"
+                    >
+                      <Play className="h-5 w-5 text-blue-600" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-10 w-10 p-0 bg-pink-100 hover:bg-pink-200 border-pink-300"
+                      title="Añadir documento"
+                    >
+                      <FileText className="h-5 w-5 text-pink-600" />
+                    </Button>
+                  </div>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addVariable}
+                    className="text-sm bg-transparent"
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Añadir variable
+                  </Button>
+                </div>
+
                 <Textarea
                   id="body"
                   placeholder="Hola {{1}}, tu pedido {{2}} está listo para recoger."
@@ -529,7 +628,6 @@ export default function NewTemplatePage() {
                 </p>
               </div>
 
-              {/* Variables detectadas */}
               {variables.length > 0 && (
                 <div className="space-y-2">
                   <Label>Variables detectadas:</Label>
@@ -546,7 +644,6 @@ export default function NewTemplatePage() {
                 </div>
               )}
 
-              {/* Footer */}
               <div className="space-y-2">
                 <Label htmlFor="footer">
                   Pie del mensaje (opcional)
@@ -562,7 +659,104 @@ export default function NewTemplatePage() {
                 {getFieldError("footer") && <p className="text-sm text-red-500">{getFieldError("footer")}</p>}
               </div>
 
-              {/* Botones */}
+              <div className="space-y-4">
+                <Label>Acciones</Label>
+                <Tabs value={actionType} onValueChange={(value) => setActionType(value as any)}>
+                  <TabsList className="grid w-full grid-cols-3">
+                    <TabsTrigger value="none">None</TabsTrigger>
+                    <TabsTrigger value="cta">Call to Action</TabsTrigger>
+                    <TabsTrigger value="quick_replies">Quick Replies</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="none" className="mt-4">
+                    <p className="text-sm text-muted-foreground">Sin botones de acción</p>
+                  </TabsContent>
+
+                  <TabsContent value="cta" className="mt-4 space-y-3">
+                    <div className="space-y-2">
+                      <Label>Tipo de acción</Label>
+                      <Select
+                        value={callToAction.type}
+                        onValueChange={(value) => setCallToAction({ ...callToAction, type: value as "url" | "phone" })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="url">Enlace web</SelectItem>
+                          <SelectItem value="phone">Número de teléfono</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Texto del botón</Label>
+                      <Input
+                        placeholder="Ej: Ver más"
+                        value={callToAction.text}
+                        onChange={(e) => setCallToAction({ ...callToAction, text: e.target.value })}
+                        maxLength={25}
+                      />
+                    </div>
+
+                    {callToAction.type === "url" && (
+                      <div className="space-y-2">
+                        <Label>URL</Label>
+                        <Input
+                          placeholder="https://ejemplo.com"
+                          value={callToAction.url || ""}
+                          onChange={(e) => setCallToAction({ ...callToAction, url: e.target.value })}
+                        />
+                      </div>
+                    )}
+
+                    {callToAction.type === "phone" && (
+                      <div className="space-y-2">
+                        <Label>Número de teléfono</Label>
+                        <Input
+                          placeholder="+34123456789"
+                          value={callToAction.phone || ""}
+                          onChange={(e) => setCallToAction({ ...callToAction, phone: e.target.value })}
+                        />
+                      </div>
+                    )}
+                  </TabsContent>
+
+                  <TabsContent value="quick_replies" className="mt-4 space-y-3">
+                    {quickReplies.map((reply) => (
+                      <div key={reply.id} className="flex items-center space-x-2">
+                        <Input
+                          placeholder="Título del botón"
+                          value={reply.text}
+                          onChange={(e) => updateQuickReply(reply.id, e.target.value)}
+                          maxLength={20}
+                        />
+                        <Button type="button" variant="outline" size="sm" onClick={() => removeQuickReply(reply.id)}>
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+
+                    {quickReplies.length < 3 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={addQuickReply}
+                        className="w-full bg-transparent"
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add More
+                      </Button>
+                    )}
+
+                    <p className="text-xs text-muted-foreground">
+                      Máximo 3 respuestas rápidas. Cada botón máximo 20 caracteres.
+                    </p>
+                  </TabsContent>
+                </Tabs>
+              </div>
+
               <div className="flex space-x-3 pt-4">
                 <Button type="submit" disabled={isSubmitting}>
                   {isSubmitting ? (
@@ -584,7 +778,6 @@ export default function NewTemplatePage() {
           </CardContent>
         </Card>
 
-        {/* Preview */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center space-x-2">
@@ -595,7 +788,6 @@ export default function NewTemplatePage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {/* Información de la plantilla */}
               <div className="space-y-2">
                 <div className="flex items-center space-x-2">
                   <Badge variant="outline">{form.name || "nombre_plantilla"}</Badge>
@@ -604,7 +796,6 @@ export default function NewTemplatePage() {
                 </div>
               </div>
 
-              {/* Simulación de WhatsApp */}
               <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                 <div className="bg-white rounded-lg p-3 shadow-sm">
                   {form.body ? (
@@ -614,15 +805,39 @@ export default function NewTemplatePage() {
                   ) : (
                     <p className="text-sm text-muted-foreground italic">El contenido aparecerá aquí...</p>
                   )}
+
                   {form.footer && (
                     <div className="mt-3 pt-2 border-t border-gray-100">
                       <p className="text-xs text-muted-foreground">{form.footer}</p>
                     </div>
                   )}
+
+                  {actionType === "quick_replies" && quickReplies.length > 0 && (
+                    <div className="mt-3 space-y-1">
+                      {quickReplies.map((reply) => (
+                        <div key={reply.id} className="bg-gray-100 rounded px-3 py-1 text-sm text-center border">
+                          {reply.text}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {actionType === "cta" && callToAction.text && (
+                    <div className="mt-3">
+                      <div className="bg-blue-100 rounded px-3 py-2 text-sm text-center border border-blue-300">
+                        {callToAction.text}
+                        {callToAction.type === "url" && callToAction.url && (
+                          <div className="text-xs text-blue-600 mt-1">{callToAction.url}</div>
+                        )}
+                        {callToAction.type === "phone" && callToAction.phone && (
+                          <div className="text-xs text-blue-600 mt-1">{callToAction.phone}</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Información adicional */}
               <Alert>
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>

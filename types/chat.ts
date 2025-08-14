@@ -70,11 +70,13 @@ export interface Conversation {
 }
 
 export interface ConversationWithLastMessage extends Conversation {
+  assigned_to: string | undefined
   last_message?: Message
   conversation_tags?: ConversationTag[]
 }
 
 export interface Message {
+  user: any
   id: string
   conversation_id: string
   sender_type: "contact" | "agent" | "system"

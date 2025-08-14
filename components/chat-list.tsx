@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import {
   Search,
   MoreVertical,
@@ -1237,12 +1237,13 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
   // Cargar colores a nivel superior
   const { tagColors, loading: colorsLoading } = useTagColors(organizationIdNumber)
 
-  const { conversations, loading, error, refetch, addTagToConversation, removeTagFromConversation } = useConversations(
-    organizationId?.toString(),
-    viewMode,
-    userProfile?.id,
-    selectedTags, // Pasar las etiquetas seleccionadas
-  )
+  const { conversations, loading, error, refetch, addTagToConversation, removeTagFromConversation, markAsRead } =
+    useConversations(
+      organizationId?.toString(),
+      viewMode,
+      userProfile?.id,
+      selectedTags, // Pasar las etiquetas seleccionadas
+    )
 
   // Hook para conteo total de mensajes no leídos
   const { totalUnread } = useTotalUnreadMessages(organizationIdNumber)
@@ -1366,6 +1367,12 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
     return "Nueva conversación"
   }
 
+  // Calcular siempre los no leídos
+const assignedUnreadCount = useMemo(() => {
+  return conversations.reduce((total, conv) => total + (conv.unread_count || 0), 0)
+}, [conversations])
+
+
   if (loading) {
     return (
       <div className="flex flex-col h-full">
@@ -1394,18 +1401,12 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
       </div>
     )
   }
-
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center justify-between p-4 bg-gray-50 border-b border-gray-200">
         <h1 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
           Chats
-          {totalUnread > 0 && (
-            <span className="bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
-              {totalUnread > 99 ? "99+" : totalUnread}
-            </span>
-          )}
         </h1>
         <div className="flex items-center gap-2">
           <UnifiedNewConversationModal onConversationCreated={refetch} />
@@ -1417,9 +1418,10 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
           </Button>
         </div>
       </div>
-
+  
       {/* Filtros principales */}
       <div className="bg-white border-b border-gray-200">
+        {/* Asignados */}
         <div
           className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-50 ${
             viewMode === "assigned" ? "bg-green-50 border-r-4 border-green-500" : ""
@@ -1429,11 +1431,16 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
           <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
             <MessageCircle className="h-4 w-4 text-green-600" />
           </div>
-          <div className="flex-1">
-            <span className="font-medium text-gray-900">Asignados</span>
-            <span className="ml-2 text-gray-500">({assignedCount})</span>
+          <div className="flex-1 flex items-center gap-2">
+          <div>
+              <span className="font-medium text-gray-900">Asignados</span>
+              <span className="ml-2 text-gray-500">({assignedCount})</span>
+            </div>
+           
           </div>
         </div>
+  
+        {/* Todos */}
         <div
           className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-50 ${
             viewMode === "all" ? "bg-green-50 border-r-4 border-green-500" : ""
@@ -1443,13 +1450,16 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
           <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
             <Users className="h-4 w-4 text-gray-600" />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 flex items-center gap-2">
             <span className="font-medium text-gray-900">Todos</span>
-            <span className="ml-2 text-gray-500">({totalConversationsCount})</span>
+            <span className="text-gray-500">({totalConversationsCount})</span>
+           
           </div>
         </div>
       </div>
+  
 
+  
       {/* Barra de búsqueda */}
       <div className="p-3 bg-white border-b border-gray-200">
         <div className="relative">
@@ -1485,7 +1495,13 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
           filteredConversations.map((conversation: ConversationWithLastMessage) => (
             <div
               key={conversation.id}
-              onClick={() => onChatSelect(conversation.id)}
+              onClick={() => {
+                onChatSelect(conversation.id)
+                if (conversation.unread_count > 0) {
+                  markAsRead(conversation.id)
+                }
+              }}
+              
               className={`flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 transition-colors ${
                 selectedChatId === conversation.id
                   ? "bg-blue-50"

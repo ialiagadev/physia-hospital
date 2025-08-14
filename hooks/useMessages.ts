@@ -116,13 +116,14 @@ export function useMessages(conversationId: string | null) {
   .from("messages")
   .select(`
     *,
-    user:users (
+    user:users!messages_user_id_fkey (
       id,
       name,
       avatar_url,
       type
     )
   `)
+  
   .eq("conversation_id", conversationId)
   .order("created_at", { ascending: false })
   .limit(MESSAGES_PER_PAGE)

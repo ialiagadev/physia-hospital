@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import { supabase } from "@/lib/supabase/client"
 import type { ConversationWithLastMessage, ConversationTag } from "@/types/chat"
 
-// ✅ Interface corregida para los datos que vienen de Supabase
 interface SupabaseTagData {
   id: string
   conversation_id: string
@@ -18,7 +17,6 @@ interface SupabaseTagData {
   } | null
 }
 
-// ✅ Type guard para verificar si organization_tags es válido
 function isValidOrganizationTag(orgTag: any): orgTag is { id: string; tag_name: string; color: string } {
   return (
     orgTag && typeof orgTag.id === "string" && typeof orgTag.tag_name === "string" && typeof orgTag.color === "string"
@@ -37,22 +35,16 @@ export function useConversations(
   const isMounted = useRef(true)
   const lastFetchRef = useRef<number>(0)
   const channelRef = useRef<any>(null)
-
-  // Caché local de tags por conversation_id para optimizar DELETE events
   const tagsCache = useRef<Map<string, ConversationTag[]>>(new Map())
 
   const fetchConversations = useCallback(
     async (skipLoading = false) => {
       const now = Date.now()
-      if (now - lastFetchRef.current < 500) {
-        return
-      }
+      if (now - lastFetchRef.current < 500) return
       lastFetchRef.current = now
 
       try {
-        if (!skipLoading) {
-          setLoading(true)
-        }
+        if (!skipLoading) setLoading(true)
 
         if (!organizationId) {
           if (isMounted.current) {
@@ -76,21 +68,12 @@ export function useConversations(
         if (viewMode === "assigned" && currentUserId) {
           const { data: assignedData, error: assignedError } = await supabase
             .from("users_conversations")
-            .select(`
-            conversation_id,
-            conversations!inner(
-              id,
-              organization_id
-            )
-          `)
+            .select("conversation_id")
             .eq("user_id", currentUserId)
-            .eq("conversations.organization_id", orgIdNumber)
 
           if (assignedError) {
             console.error("❌ Error fetching assigned conversations:", assignedError)
-            if (isMounted.current) {
-              setError(assignedError.message)
-            }
+            if (isMounted.current) setError(assignedError.message)
             return
           }
 
@@ -107,9 +90,7 @@ export function useConversations(
 
           if (tagError) {
             console.error("❌ Error fetching tagged conversations:", tagError)
-            if (isMounted.current) {
-              setError(tagError.message)
-            }
+            if (isMounted.current) setError(tagError.message)
             return
           }
 
@@ -122,24 +103,9 @@ export function useConversations(
           }
         }
 
-        let query = supabase
-          .from("conversations")
-          .select(`
-          *,
-          client:clients(*),
-          canales_organization:canales_organizations(
-            id,
-            canal:canales(
-              id,
-              nombre,
-              descripcion,
-              imagen
-            )
-          )
-        `)
-          .eq("organization_id", orgIdNumber)
-
-        if (viewMode === "assigned" || selectedTags.length > 0) {
+        // 🔹 Query principal
+        let query
+        if (viewMode === "assigned" && currentUserId) {
           if (conversationIds.length === 0) {
             if (isMounted.current) {
               setConversations([])
@@ -148,24 +114,69 @@ export function useConversations(
             }
             return
           }
-          query = query.in("id", conversationIds)
-        }
 
-        const { data: conversationsData, error: conversationsError } = await query.order("last_message_at", {
-          ascending: false,
-          nullsFirst: false,
-        })
+          query = supabase
+            .from("conversations")
+            .select(`
+              *,
+              client:clients(*),
+              canales_organization:canales_organizations(
+                id,
+                canal:canales(
+                  id,
+                  nombre,
+                  descripcion,
+                  imagen
+                )
+              ),
+              users_conversations!inner(
+                user_id,
+                unread_count
+              )
+            `)
+            .eq("organization_id", orgIdNumber)
+            .eq("users_conversations.user_id", currentUserId)
+            .in("id", conversationIds)
+            .order("last_message_at", { ascending: false, nullsFirst: false })
+          } else {
+            query = supabase
+              .from("conversations")
+              .select(`
+                *,
+                client:clients(*),
+                canales_organization:canales_organizations(
+                  id,
+                  canal:canales(
+                    id,
+                    nombre,
+                    descripcion,
+                    imagen
+                  )
+                ),
+                users_conversations!inner(
+                  user_id,
+                  unread_count
+                )
+              `)
+              .eq("organization_id", orgIdNumber)
+              .eq("users_conversations.user_id", currentUserId)
+          
+            if (conversationIds.length > 0) {
+              query = query.in("id", conversationIds)
+            }
+          
+            query = query.order("last_message_at", { ascending: false, nullsFirst: false })
+          }
+          
 
+        const { data: conversationsData, error: conversationsError } = await query
         if (conversationsError) {
           console.error("❌ Error fetching conversations:", conversationsError)
-          if (isMounted.current) {
-            setError(conversationsError.message)
-          }
+          if (isMounted.current) setError(conversationsError.message)
           return
         }
 
-        const finalConversationIds = (conversationsData || []).map((conv) => conv.id)
-
+        const finalConversationIds = (conversationsData || []).map((conv: any) => conv.id)
         if (finalConversationIds.length === 0) {
           if (isMounted.current) {
             setConversations([])
@@ -175,26 +186,24 @@ export function useConversations(
           return
         }
 
-        // Fetch tags
         const { data: tagsData } = await supabase
           .from("conversation_tags")
           .select(`
-          id,
-          conversation_id,
-          created_at,
-          created_by,
-          tag_id,
-          organization_tags!tag_id(
             id,
-            tag_name,
-            color
-          )
-        `)
+            conversation_id,
+            created_at,
+            created_by,
+            tag_id,
+            organization_tags!tag_id(
+              id,
+              tag_name,
+              color
+            )
+          `)
           .in("conversation_id", finalConversationIds)
           .not("conversation_id", "is", null)
           .order("created_at", { ascending: true })
 
-        // Fetch last messages
         const { data: lastMessages } = await supabase
           .from("messages")
           .select("*")
@@ -210,17 +219,13 @@ export function useConversations(
           }
         }
 
-        // ✅ Procesamiento corregido de tags con type guards
         const tagsMap = new Map<string, ConversationTag[]>()
         if (tagsData && Array.isArray(tagsData)) {
           for (const rawTagData of tagsData) {
             const tagData = rawTagData as unknown as SupabaseTagData
-            const conversationId = tagData.conversation_id
-
-            if (!tagsMap.has(conversationId)) {
-              tagsMap.set(conversationId, [])
+            if (!tagsMap.has(tagData.conversation_id)) {
+              tagsMap.set(tagData.conversation_id, [])
             }
-
             if (isValidOrganizationTag(tagData.organization_tags)) {
               const tag: ConversationTag = {
                 id: tagData.id,
@@ -230,18 +235,26 @@ export function useConversations(
                 created_at: tagData.created_at,
                 color: tagData.organization_tags.color || "#8B5CF6",
               }
-              tagsMap.get(conversationId)!.push(tag)
+              tagsMap.get(tagData.conversation_id)!.push(tag)
             }
           }
         }
 
-        const conversationsWithMessages = (conversationsData || []).map((conversation) => {
-          const conversationTags = tagsMap.get(conversation.id) || []
-          tagsCache.current.set(conversation.id, conversationTags)
+        // 🔹 Unificación de formato
+        const conversationsWithMessages = (conversationsData || []).map((conv: any) => {
+          let unreadCount = 0
+          if (Array.isArray(conv.users_conversations) && conv.users_conversations.length > 0) {
+            unreadCount = conv.users_conversations[0].unread_count || 0
+          }
+          
+
+          const conversationTags = tagsMap.get(conv.id) || []
+          tagsCache.current.set(conv.id, conversationTags)
 
           return {
-            ...conversation,
-            last_message: lastMessageMap.get(conversation.id) || null,
+            ...conv,
+            unread_count: unreadCount,
+            last_message: lastMessageMap.get(conv.id) || null,
             conversation_tags: conversationTags,
           }
         })
@@ -252,13 +265,9 @@ export function useConversations(
         }
       } catch (err) {
         console.error("💥 Unexpected error fetching conversations:", err)
-        if (isMounted.current) {
-          setError("Error inesperado al cargar conversaciones")
-        }
+        if (isMounted.current) setError("Error inesperado al cargar conversaciones")
       } finally {
-        if (isMounted.current) {
-          setLoading(false)
-        }
+        if (isMounted.current) setLoading(false)
       }
     },
     [organizationId, viewMode, currentUserId, selectedTags],
@@ -354,6 +363,38 @@ export function useConversations(
       })
     }
   }, [])
+
+  const markAsRead = useCallback(
+    async (conversationId: string) => {
+      if (!currentUserId) return
+
+      try {
+        const { error } = await supabase
+          .from("users_conversations")
+          .update({
+            unread_count: 0,
+            last_read_at: new Date().toISOString(),
+          })
+          .eq("conversation_id", conversationId)
+          .eq("user_id", currentUserId)
+
+        if (error) {
+          console.error("Error marking conversation as read:", error)
+          return
+        }
+
+        // Actualizar el estado local inmediatamente
+        if (isMounted.current) {
+          setConversations((prev) => {
+            return prev.map((conv) => (conv.id === conversationId ? { ...conv, unread_count: 0 } : conv))
+          })
+        }
+      } catch (err) {
+        console.error("Error marking conversation as read:", err)
+      }
+    },
+    [currentUserId],
+  )
 
   const handleTagDelete = useCallback(
     (tagId: string) => {
@@ -515,9 +556,13 @@ export function useConversations(
               event: "*",
               schema: "public",
               table: "users_conversations",
+              filter: currentUserId ? `user_id=eq.${currentUserId}` : undefined,
             },
             (payload) => {
-              fetchConversations(true)
+              const userData = (payload.new as any) || (payload.old as any)
+              if (userData && userData.user_id === currentUserId) {
+                fetchConversations(true)
+              }
             },
           )
           .subscribe((status) => {
@@ -557,5 +602,6 @@ export function useConversations(
     updateConversationTags,
     addTagToConversation,
     removeTagFromConversation,
+    markAsRead, // Exportar la función markAsRead
   }
 }
