@@ -1243,6 +1243,8 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
       viewMode,
       userProfile?.id,
       selectedTags, // Pasar las etiquetas seleccionadas
+      selectedChatId || undefined // 👈 Evita el error de tipo
+
     )
 
   // Hook para conteo total de mensajes no leídos
@@ -1476,40 +1478,40 @@ const assignedUnreadCount = useMemo(() => {
       {/* Filtro de etiquetas */}
       <TagFilter organizationId={organizationIdNumber} selectedTags={selectedTags} onTagsChange={setSelectedTags} />
 
-      {/* Lista de chats */}
-      <div className="flex-1 overflow-y-auto">
-        {filteredConversations.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-32 text-gray-500 p-4">
-            <p className="text-center mb-2">
-              {selectedTags.length > 0 || searchQuery
-                ? "No hay conversaciones que coincidan con los filtros"
-                : "No hay conversaciones"}
-            </p>
-            <p className="text-sm text-center">
-              {selectedTags.length > 0 || searchQuery
-                ? "Intenta cambiar los filtros de búsqueda"
-                : "Haz clic en el botón de mensaje para iniciar una nueva conversación"}
-            </p>
-          </div>
-        ) : (
-          filteredConversations.map((conversation: ConversationWithLastMessage) => (
-            <div
-              key={conversation.id}
-              onClick={() => {
-                onChatSelect(conversation.id)
-                if (conversation.unread_count > 0) {
-                  markAsRead(conversation.id)
-                }
-              }}
-              
-              className={`flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 transition-colors ${
-                selectedChatId === conversation.id
-                  ? "bg-blue-50"
-                  : conversation.unread_count > 0
-                    ? "bg-green-50 hover:bg-green-100 border-l-4 border-l-green-500"
-                    : ""
-              }`}
-            >
+     {/* Lista de chats */}
+<div className="flex-1 overflow-y-auto">
+  {filteredConversations.length === 0 ? (
+    <div className="flex flex-col items-center justify-center h-32 text-gray-500 p-4">
+      <p className="text-center mb-2">
+        {selectedTags.length > 0 || searchQuery
+          ? "No hay conversaciones que coincidan con los filtros"
+          : "No hay conversaciones"}
+      </p>
+      <p className="text-sm text-center">
+        {selectedTags.length > 0 || searchQuery
+          ? "Intenta cambiar los filtros de búsqueda"
+          : "Haz clic en el botón de mensaje para iniciar una nueva conversación"}
+      </p>
+    </div>
+  ) : (
+    filteredConversations.map((conversation: ConversationWithLastMessage) => (
+      <div
+        key={conversation.id}
+        onClick={() => {
+          onChatSelect(conversation.id);
+          if (conversation.unread_count > 0) {
+            markAsRead(conversation.id);
+          }
+        }}
+        className={`flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 transition-colors ${
+          selectedChatId === conversation.id
+            ? "bg-blue-50"
+            : conversation.unread_count > 0
+              ? "bg-green-50 hover:bg-green-100 border-l-4 border-l-green-500"
+              : ""
+        }`}
+      >
+
               {/* Avatar sin imagen - solo iniciales */}
               <div className="relative">
                 <Avatar className="h-12 w-12">

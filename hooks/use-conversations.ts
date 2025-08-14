@@ -28,6 +28,8 @@ export function useConversations(
   viewMode: "all" | "assigned" = "all",
   currentUserId?: string,
   selectedTags: string[] = [],
+  selectedChatId?: string | null // 👈 añadido
+
 ) {
   const [conversations, setConversations] = useState<ConversationWithLastMessage[]>([])
   const [loading, setLoading] = useState(true)
@@ -36,6 +38,8 @@ export function useConversations(
   const lastFetchRef = useRef<number>(0)
   const channelRef = useRef<any>(null)
   const tagsCache = useRef<Map<string, ConversationTag[]>>(new Map())
+  const selectedChatIdRef = useRef<string | null | undefined>(selectedChatId)
+
 
   const fetchConversations = useCallback(
     async (skipLoading = false) => {
@@ -419,7 +423,10 @@ export function useConversations(
     },
     [updateConversationTags, fetchConversations, removeTagFromConversation],
   )
-
+  useEffect(() => {
+    selectedChatIdRef.current = selectedChatId
+  }, [selectedChatId])
+  
   // 🔥 CLAVE: Mejorar el manejo de realtime para actualizar cuando llegan mensajes
   useEffect(() => {
     isMounted.current = true
@@ -494,7 +501,13 @@ export function useConversations(
                           last_message_at: messageData.created_at,
                           // Incrementar unread_count si el mensaje no es del usuario actual
                           unread_count:
-                            messageData.sender_type !== "user" ? (conv.unread_count || 0) + 1 : conv.unread_count || 0,
+  messageData.sender_type !== "user" &&
+  messageData.conversation_id !== selectedChatIdRef.current
+    ? (conv.unread_count || 0) + 1
+    : conv.unread_count || 0,
+
+
+
                         }
                       }
                       return conv
@@ -510,6 +523,15 @@ export function useConversations(
 
                   return currentConversations
                 })
+
+                if (
+                  selectedChatIdRef.current &&
+                  messageData.conversation_id === selectedChatIdRef.current
+                ) {
+                  markAsRead(selectedChatIdRef.current)
+                }
+                
+                
 
                 // También hacer un fetch completo después de un tiempo para asegurar consistencia
                 setTimeout(() => fetchConversations(true), 2000)
