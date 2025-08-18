@@ -97,8 +97,9 @@ const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("yearly
       // 2. Crear suscripción en Stripe
       const planConfig = Object.values(STRIPE_PLANS).find((plan) => plan.id === selectedPlan)
       if (!planConfig) throw new Error(`Plan no válido: ${selectedPlan}`)
-
-      const priceId = planConfig.prices[billingPeriod]
+      
+      const priceId = planConfig.prices[billingPeriod].priceId // 👈 ahora solo el string correcto
+      
 
       console.log("📝 Creando suscripción en Stripe con:", { planId: selectedPlan, billingPeriod, priceId })
       const subResponse = await fetch("/api/create-subscription", {

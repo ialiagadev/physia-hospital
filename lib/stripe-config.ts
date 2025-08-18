@@ -2,7 +2,6 @@ export const STRIPE_PLANS = {
     INICIAL: {
       id: "inicial",
       name: "Plan Inicial",
-     
       prices: {
         monthly: {
           priceId: "price_1RurRVDXuo6lFrulIR8O4OrT",
@@ -19,7 +18,6 @@ export const STRIPE_PLANS = {
     AVANZADO: {
       id: "avanzado",
       name: "Plan Avanzado",
-      
       prices: {
         monthly: {
           priceId: "price_1RurSLDXuo6lFrulQDohkIKD",
@@ -36,7 +34,6 @@ export const STRIPE_PLANS = {
     PREMIUM: {
       id: "premium",
       name: "Plan Premium",
-    
       prices: {
         monthly: {
           priceId: "price_1RurSLDXuo6lFrulPG0Ui7aF",
@@ -46,6 +43,22 @@ export const STRIPE_PLANS = {
         yearly: {
           priceId: "price_1RurSLDXuo6lFruly6THZJs0",
           amount: 192000, // 💰 1920 €
+          currency: "EUR",
+        },
+      },
+    },
+    TEST: {
+      id: "test",
+      name: "Plan Test (0,01€)",
+      prices: {
+        monthly: {
+          priceId: "price_1RxVVVDXuo6lFrulecOoZdib", // 👈 tu precio de prueba
+          amount: 1, // 💰 0,01 € en céntimos
+          currency: "EUR",
+        },
+        yearly: {
+          priceId: "price_1RxVVVDXuo6lFrulecOoZdib", // 👈 duplicamos para evitar errores
+          amount: 1,
           currency: "EUR",
         },
       },

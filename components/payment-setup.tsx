@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { loadStripe } from "@stripe/stripe-js"
 import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js"
@@ -26,6 +25,7 @@ function PaymentForm({ clientSecret, onSuccess, onError, isLoading, setIsLoading
     event.preventDefault()
 
     if (!stripe || !elements) {
+      console.error("❌ Stripe o Elements no están listos todavía")
       return
     }
 
@@ -40,23 +40,35 @@ function PaymentForm({ clientSecret, onSuccess, onError, isLoading, setIsLoading
       return
     }
 
+    if (!clientSecret) {
+      console.error("❌ No se recibió clientSecret en el frontend")
+      onError("No se pudo generar el clientSecret de Stripe")
+      setIsLoading(false)
+      return
+    }
+
+    console.log("🔑 ClientSecret recibido en el frontend:", clientSecret)
+
     try {
-      const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
+      // ⚡ ahora usamos SetupIntent en vez de PaymentIntent
+      const { error, setupIntent } = await stripe.confirmCardSetup(clientSecret, {
         payment_method: {
           card: cardElement,
         },
       })
 
       if (error) {
-        console.error("Payment error:", error)
-        onError(error.message || "Error procesando el pago")
-      } else if (paymentIntent && paymentIntent.status === "succeeded") {
-        console.log("Payment succeeded:", paymentIntent.id)
+        console.error("❌ Setup error:", error)
+        onError(error.message || "Error guardando método de pago")
+      } else if (setupIntent && setupIntent.status === "succeeded") {
+        console.log("✅ Método de pago guardado:", setupIntent.payment_method)
         onSuccess()
+      } else {
+        console.warn("⚠️ Estado inesperado del SetupIntent:", setupIntent?.status)
       }
     } catch (err: any) {
-      console.error("Payment confirmation error:", err)
-      onError("Error inesperado al procesar el pago")
+      console.error("❌ Setup confirmation error:", err)
+      onError("Error inesperado al guardar el método de pago")
     } finally {
       setIsLoading(false)
     }
@@ -96,10 +108,10 @@ function PaymentForm({ clientSecret, onSuccess, onError, isLoading, setIsLoading
         {isLoading ? (
           <div className="flex items-center">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Procesando pago...
+            Guardando método de pago...
           </div>
         ) : (
-          "Confirmar suscripción"
+          "Añadir método de pago"
         )}
       </Button>
     </form>
@@ -116,6 +128,8 @@ interface PaymentSetupProps {
 
 export function PaymentSetup({ clientSecret, onSuccess, onError, planName, planPrice }: PaymentSetupProps) {
   const [isLoading, setIsLoading] = useState(false)
+
+  console.log("📦 PaymentSetup recibió clientSecret:", clientSecret)
 
   return (
     <div className="space-y-6">
@@ -137,8 +151,7 @@ export function PaymentSetup({ clientSecret, onSuccess, onError, planName, planP
       </Elements>
 
       <div className="text-xs text-gray-500 text-center">
-        Tu información de pago está protegida por Stripe. No se realizará ningún cargo hasta que confirmes la
-        suscripción.
+        Tu información de pago está protegida por Stripe. No se realizará ningún cargo hasta la primera factura.
       </div>
     </div>
   )

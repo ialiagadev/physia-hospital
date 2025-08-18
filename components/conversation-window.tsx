@@ -1112,26 +1112,41 @@ export default function ConversationWindowSimple({
                 return (
                   <div
                     key={msg.id}
-                    className={`flex ${msg.sender_type === "agent" ? "justify-end" : "justify-start"} ${
+                    className={`flex ${msg.user?.type === 2 ? "justify-end" : "justify-start"} ${
                       isFirst ? "mt-2" : "mt-1"
                     }`}
                   >
-                    <div className="flex items-start gap-2">
-                      {isFirst && msg.sender_type === "agent" && msg.user?.type !== 2 && (
+                    <div
+                      className={`flex items-start gap-2 ${
+                        msg.user?.type === 2 || msg.sender_type === "agent"
+                          ? "flex-row-reverse max-w-[85%] ml-auto"
+                          : "max-w-[85%]"
+                      }`}
+                    >
+                      {/* Avatar solo para agentes y en primera aparición */}
+                      {isFirst && msg.sender_type === "agent" && (
                         <div className="flex-shrink-0">
-                          <Avatar className="h-8 w-8">
-                            <AvatarImage src={msg.user?.avatar_url || undefined} alt={msg.user?.name || "U"} />
-                            <AvatarFallback>{msg.user?.name?.charAt(0).toUpperCase() || "U"}</AvatarFallback>
-                          </Avatar>
+                          {msg.user?.type === 2 ? (
+                            <Avatar className="h-8 w-8">
+                              <AvatarImage src="/images/IA.jpeg" alt="IA" />
+                              <AvatarFallback className="bg-purple-100 text-purple-600">IA</AvatarFallback>
+                            </Avatar>
+                          ) : (
+                            <Avatar className="h-8 w-8">
+                              <AvatarImage src={msg.user?.avatar_url || undefined} alt={msg.user?.name || "U"} />
+                              <AvatarFallback>{msg.user?.name?.charAt(0).toUpperCase() || "U"}</AvatarFallback>
+                            </Avatar>
+                          )}
                         </div>
                       )}
+
                       <div
-                        className={`relative px-2 py-1 max-w-[85%] ${
-                          msg.sender_type === "agent"
-                            ? msg.user?.type === 2
-                              ? "bg-[#F3E8FF] rounded-lg rounded-br-none" // 💜 Lila suave para IA
-                              : "bg-[#d9fdd2] rounded-lg rounded-br-none" // Verde para agente humano
-                            : "bg-white rounded-lg rounded-bl-none shadow-sm"
+                        className={`relative px-2 py-1 ${
+                          msg.user?.type === 2
+                            ? "bg-[#F3E8FF] rounded-lg rounded-br-none" // 💜 Lila suave para IA
+                            : msg.sender_type === "agent"
+                              ? "bg-[#d9fdd2] rounded-lg rounded-br-none" // Verde para agente humano
+                              : "bg-white rounded-lg rounded-bl-none shadow-sm" // Blanco para contactos
                         }`}
                       >
                         {/* Contenedor flexible para texto y metadata */}
@@ -1145,7 +1160,7 @@ export default function ConversationWindowSimple({
                             </span>
 
                             {/* Doble checkmark solo para mensajes enviados */}
-                            {msg.sender_type === "agent" && (
+                            {(msg.sender_type === "agent" || msg.user?.type === 2) && (
                               <div className="flex items-center ml-1">
                                 <svg className="w-4 h-4 text-gray-400" viewBox="0 0 16 15" fill="none">
                                   <path
@@ -1159,28 +1174,20 @@ export default function ConversationWindowSimple({
                         </div>
                         <div
                           className={`absolute bottom-0 w-2 h-2 ${
-                            msg.sender_type === "agent"
-                              ? msg.user?.type === 2
-                                ? "right-[-2px] bg-[#F3E8FF]" // Cola lila para IA
-                                : "right-[-2px] bg-[#d9fdd2]" // Cola verde para agente humano
-                              : "left-[-2px] bg-white"
+                            msg.user?.type === 2
+                              ? "right-[-2px] bg-[#F3E8FF]" // Cola lila para IA a la derecha
+                              : msg.sender_type === "agent"
+                                ? "right-[-2px] bg-[#d9fdd2]" // Cola verde para agente humano a la derecha
+                                : "left-[-2px] bg-white" // Cola blanca para contactos a la izquierda
                           }`}
                           style={{
                             clipPath:
-                              msg.sender_type === "agent"
+                              msg.user?.type === 2 || msg.sender_type === "agent"
                                 ? "polygon(0 0, 0 100%, 100% 100%)"
                                 : "polygon(100% 0, 0 100%, 100% 100%)",
                           }}
                         />
                       </div>
-                      {isFirst && msg.sender_type === "agent" && msg.user?.type === 2 && (
-                        <div className="flex-shrink-0">
-                          <Avatar className="h-8 w-8">
-                            <AvatarImage src="/images/IA.jpeg" alt="IA" />
-                            <AvatarFallback className="bg-purple-100 text-purple-600">IA</AvatarFallback>
-                          </Avatar>
-                        </div>
-                      )}
                     </div>
                   </div>
                 )

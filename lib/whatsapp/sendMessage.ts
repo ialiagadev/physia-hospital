@@ -27,54 +27,32 @@ export async function sendWhatsAppMessage({
     // Configurar el contenido según el tipo de mensaje
     switch (messageType) {
       case "text":
-        payload.text = {
-          body: message,
-        }
+        payload.text = { body: message }
         break
 
       case "image":
         if (!mediaUrl) throw new Error("Media URL is required for image messages")
-        payload.image = {
-          link: mediaUrl,
-          caption: message || "",
-        }
+        payload.image = { link: mediaUrl, caption: message || "" }
         break
 
       case "document":
         if (!mediaUrl) throw new Error("Media URL is required for document messages")
-        payload.document = {
-          link: mediaUrl,
-          caption: message || "",
-        }
+        payload.document = { link: mediaUrl, caption: message || "" }
         break
 
       case "audio":
         if (!mediaUrl) throw new Error("Media URL is required for audio messages")
-        payload.audio = {
-          link: mediaUrl,
-        }
+        payload.audio = { link: mediaUrl }
         break
 
       case "video":
         if (!mediaUrl) throw new Error("Media URL is required for video messages")
-        payload.video = {
-          link: mediaUrl,
-          caption: message || "",
-        }
+        payload.video = { link: mediaUrl, caption: message || "" }
         break
 
       default:
-        payload.text = {
-          body: message,
-        }
+        payload.text = { body: message }
     }
-
-    console.log("🚀 Enviando mensaje de WhatsApp:", {
-      to: cleanPhone,
-      type: messageType,
-      hasMedia: !!mediaUrl,
-      payload: JSON.stringify(payload, null, 2),
-    })
 
     const response = await fetch("https://backend.aisensy.com/direct-apis/t1/messages", {
       method: "POST",
@@ -87,34 +65,20 @@ export async function sendWhatsAppMessage({
     })
 
     const responseText = await response.text()
-    console.log("📱 Respuesta de WhatsApp API:", {
-      status: response.status,
-      statusText: response.statusText,
-      headers: Object.fromEntries(response.headers.entries()),
-      body: responseText,
-    })
 
     if (!response.ok) {
-      console.error("❌ Error response from WhatsApp API:", {
-        status: response.status,
-        statusText: response.statusText,
-        body: responseText,
-      })
       throw new Error(`WhatsApp API error: ${response.status} - ${responseText}`)
     }
 
     let result
     try {
       result = JSON.parse(responseText)
-    } catch (parseError) {
-      console.warn("⚠️ No se pudo parsear respuesta como JSON:", responseText)
+    } catch {
       result = { raw_response: responseText }
     }
 
-    console.log("✅ Mensaje de WhatsApp enviado exitosamente:", result)
     return result
   } catch (error) {
-    console.error("💥 Error enviando mensaje de WhatsApp:", error)
     throw error
   }
 }

@@ -12,41 +12,58 @@ export function useMessages(conversationId: string | null) {
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
   const { userProfile } = useAuth()
+
   const processedMessageIds = useRef<Set<string>>(new Set())
-  const channelRef = useRef<any>(null)
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
   const isSubscribedRef = useRef(false)
   const processedEvents = useRef<Set<string>>(new Set())
   const oldestMessageDate = useRef<string | null>(null)
 
   const MESSAGES_PER_PAGE = 50
 
-  // Función para generar un ID único para eventos
-  const getEventId = (payload: any) => {
-    return `${payload.eventType}-${payload.table}-${payload.new?.id || payload.old?.id}-${payload.commit_timestamp}`
-  }
+  /** Generar un ID único para eventos */
+  const getEventId = (payload: any) =>
+    `${payload.eventType}-${payload.table}-${payload.new?.id || payload.old?.id}-${payload.commit_timestamp}`
 
+  /** Filtrar mensajes de sistema */
+  const filterMessages = (msgs: Message[]) =>
+    msgs.filter((msg) => {
+      if (msg.message_type === "system" && msg.metadata?.system_message) {
+        return msg.metadata.visible_to_user === userProfile?.id
+      }
+      return true
+    })
+
+  /** Cargar más mensajes (paginación hacia atrás) */
   const loadMoreMessages = async () => {
     if (!conversationId || loadingMore || !hasMore) return
-
     setLoadingMore(true)
     try {
       let query = supabase
         .from("messages")
-        .select("*")
+        .select(
+          `
+          *,
+          user:users!messages_user_id_fkey (
+            id,
+            name,
+            avatar_url,
+            type
+          )
+        `
+        )
         .eq("conversation_id", conversationId)
         .order("created_at", { ascending: false })
         .limit(MESSAGES_PER_PAGE)
 
-      // Si ya tenemos mensajes, cargar los anteriores al más antiguo
       if (oldestMessageDate.current) {
         query = query.lt("created_at", oldestMessageDate.current)
       }
 
       const { data, error } = await query
-
       if (error) {
-        console.error("❌ Error loading more messages:", error)
         toast({
           title: "Error",
           description: "No se pudieron cargar más mensajes",
@@ -55,42 +72,27 @@ export function useMessages(conversationId: string | null) {
         return
       }
 
-      if (data && data.length > 0) {
-        // Filtrar mensajes de sistema
-        const filteredMessages = data.filter((msg) => {
-          if (msg.message_type === "system" && msg.metadata?.system_message) {
-            return msg.metadata.visible_to_user === userProfile?.id
-          }
-          return true
-        })
+      if (data?.length) {
+        const filtered = filterMessages(data)
 
-        // Actualizar la fecha del mensaje más antiguo
-        if (filteredMessages.length > 0) {
-          oldestMessageDate.current = filteredMessages[filteredMessages.length - 1].created_at
+        if (filtered.length > 0) {
+          oldestMessageDate.current = filtered[filtered.length - 1].created_at
         }
 
-        // Agregar IDs procesados
-        filteredMessages.forEach((msg) => processedMessageIds.current.add(msg.id))
+        filtered.forEach((msg) => processedMessageIds.current.add(msg.id))
 
         setMessages((prev) => {
-          // Revertir el orden porque vienen en orden descendente
-          const newMessages = filteredMessages.reverse()
-
-          // Filtrar duplicados basado en ID
-          const existingIds = new Set(prev.map((msg) => msg.id))
-          const uniqueNewMessages = newMessages.filter((msg) => !existingIds.has(msg.id))
-
-          const result = [...uniqueNewMessages, ...prev]
-          return result
+          const newMessages = filtered.reverse()
+          const existingIds = new Set(prev.map((m) => m.id))
+          const uniqueNew = newMessages.filter((m) => !existingIds.has(m.id))
+          return [...uniqueNew, ...prev]
         })
 
-        // Si recibimos menos mensajes de los solicitados, no hay más
         setHasMore(data.length === MESSAGES_PER_PAGE)
       } else {
         setHasMore(false)
       }
-    } catch (err) {
-      console.error("💥 Error loading more messages:", err)
+    } catch {
       toast({
         title: "Error",
         description: "Error inesperado al cargar mensajes",
@@ -101,6 +103,7 @@ export function useMessages(conversationId: string | null) {
     }
   }
 
+  /** Efecto principal */
   useEffect(() => {
     if (!conversationId) {
       setMessages([])
@@ -114,7 +117,8 @@ export function useMessages(conversationId: string | null) {
       try {
         const { data, error } = await supabase
           .from("messages")
-          .select(`
+          .select(
+            `
             *,
             user:users!messages_user_id_fkey (
               id,
@@ -122,41 +126,33 @@ export function useMessages(conversationId: string | null) {
               avatar_url,
               type
             )
-          `)
+          `
+          )
           .eq("conversation_id", conversationId)
           .order("created_at", { ascending: false })
           .limit(MESSAGES_PER_PAGE)
 
         if (error) {
-          console.error("❌ Error fetching messages:", error)
           setError(error.message)
-        } else {
-          // Filtrar mensajes de sistema que solo debe ver el usuario actual
-          const filteredMessages =
-            data?.filter((msg) => {
-              if (msg.message_type === "system" && msg.metadata?.system_message) {
-                return msg.metadata.visible_to_user === userProfile?.id
-              }
-              return true
-            }) || []
-
-          const orderedMessages = filteredMessages.reverse()
-          if (orderedMessages.length > 0) {
-            oldestMessageDate.current = orderedMessages[0].created_at
-            setHasMore(data.length === MESSAGES_PER_PAGE)
-          } else {
-            setHasMore(false)
-          }
-
-          // Limpiar y repoblar los IDs procesados
-          processedMessageIds.current.clear()
-          orderedMessages.forEach((msg) => processedMessageIds.current.add(msg.id))
-
-          setMessages(orderedMessages)
-          setError(null)
+          return
         }
-      } catch (err) {
-        console.error("💥 Unexpected error:", err)
+
+        const filtered = filterMessages(data || [])
+        const ordered = filtered.reverse()
+
+        if (ordered.length > 0) {
+          oldestMessageDate.current = ordered[0].created_at
+          setHasMore(data!.length === MESSAGES_PER_PAGE)
+        } else {
+          setHasMore(false)
+        }
+
+        processedMessageIds.current.clear()
+        ordered.forEach((m) => processedMessageIds.current.add(m.id))
+
+        setMessages(ordered)
+        setError(null)
+      } catch {
         setError("Error inesperado al cargar mensajes")
       } finally {
         setLoading(false)
@@ -165,13 +161,13 @@ export function useMessages(conversationId: string | null) {
 
     fetchMessages()
 
-    // Limpiar canal anterior si existe
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current)
     }
 
     const channel = supabase
-      .channel(`messages-${conversationId}-${Date.now()}`) // Nombre único
+      .channel(`messages-${conversationId}-${Date.now()}`)
+      /** INSERT con user expandido */
       .on(
         "postgres_changes",
         {
@@ -180,83 +176,46 @@ export function useMessages(conversationId: string | null) {
           table: "messages",
           filter: `conversation_id=eq.${conversationId}`,
         },
-        (payload) => {
-          const newMessage = payload.new as Message
-
-          console.log("[v0] Nuevo mensaje en useMessages:", {
-            id: newMessage.id,
-            conversation_id: newMessage.conversation_id,
-            sender_type: newMessage.sender_type,
-            user_id: newMessage.user_id,
-            message_type: newMessage.message_type,
-            content: newMessage.content?.substring(0, 50) + "...",
-            created_at: newMessage.created_at,
-          })
-
-          // Filtrar mensajes de sistema en tiempo real
-          if (newMessage.message_type === "system" && newMessage.metadata?.system_message) {
-            if (newMessage.metadata.visible_to_user !== userProfile?.id) {
-              console.log("[v0] Mensaje de sistema filtrado - no visible para este usuario")
-              return // No mostrar este mensaje
-            }
-          }
-
+        async (payload) => {
           const eventId = getEventId(payload)
-
-          // Evitar procesar eventos duplicados
-          if (processedEvents.current.has(eventId)) {
-            console.log("[v0] Evento duplicado ignorado:", eventId)
-            return
-          }
-
+          if (processedEvents.current.has(eventId)) return
           processedEvents.current.add(eventId)
+
+          const { data: enriched } = await supabase
+            .from("messages")
+            .select(
+              `
+              *,
+              user:users!messages_user_id_fkey (
+                id,
+                name,
+                avatar_url,
+                type
+              )
+            `
+            )
+            .eq("id", (payload.new as Message).id)
+            .single()
+
+          const newMessage = enriched as Message
+          if (!newMessage) return
+
+          if (newMessage.message_type === "system" && newMessage.metadata?.system_message) {
+            if (newMessage.metadata.visible_to_user !== userProfile?.id) return
+          }
 
           if (!processedMessageIds.current.has(newMessage.id)) {
             processedMessageIds.current.add(newMessage.id)
-
-            console.log("[v0] Agregando mensaje a la lista:", newMessage.id)
-
-            const loadUserInfo = async () => {
-              if (newMessage.user_id) {
-                try {
-                  const { data: userData, error: userError } = await supabase
-                    .from("users")
-                    .select("id, name, avatar_url, type")
-                    .eq("id", newMessage.user_id)
-                    .single()
-
-                  if (!userError && userData) {
-                    newMessage.user = userData
-                    console.log("[v0] Información de usuario cargada:", userData)
-                  }
-                } catch (error) {
-                  console.error("[v0] Error cargando información de usuario:", error)
-                }
-              }
-
-              setMessages((prev) => {
-                // Verificar duplicados una vez más
-                const exists = prev.some((msg) => msg.id === newMessage.id)
-                if (exists) {
-                  console.log("[v0] Mensaje ya existe en la lista:", newMessage.id)
-                  return prev
-                }
-
-                const newMessages = [...prev, newMessage].sort(
-                  (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-                )
-
-                console.log("[v0] Lista de mensajes actualizada. Total:", newMessages.length)
-                return newMessages
-              })
-            }
-
-            loadUserInfo()
-          } else {
-            console.log("[v0] Mensaje ya procesado:", newMessage.id)
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === newMessage.id)) return prev
+              return [...prev, newMessage].sort(
+                (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+              )
+            })
           }
-        },
+        }
       )
+      /** UPDATE */
       .on(
         "postgres_changes",
         {
@@ -266,27 +225,19 @@ export function useMessages(conversationId: string | null) {
           filter: `conversation_id=eq.${conversationId}`,
         },
         (payload) => {
-          const updatedMessage = payload.new as Message
-
+          const updated = payload.new as Message
           const eventId = getEventId(payload)
-
-          // Evitar procesar eventos duplicados
-          if (processedEvents.current.has(eventId)) {
-            return
-          }
-
+          if (processedEvents.current.has(eventId)) return
           processedEvents.current.add(eventId)
 
-          // Aplicar el mismo filtro para mensajes actualizados
-          if (updatedMessage.message_type === "system" && updatedMessage.metadata?.system_message) {
-            if (updatedMessage.metadata.visible_to_user !== userProfile?.id) {
-              return
-            }
+          if (updated.message_type === "system" && updated.metadata?.system_message) {
+            if (updated.metadata.visible_to_user !== userProfile?.id) return
           }
 
-          setMessages((prev) => prev.map((msg) => (msg.id === updatedMessage.id ? updatedMessage : msg)))
-        },
+          setMessages((prev) => prev.map((m) => (m.id === updated.id ? updated : m)))
+        }
       )
+      /** DELETE */
       .on(
         "postgres_changes",
         {
@@ -297,39 +248,15 @@ export function useMessages(conversationId: string | null) {
         },
         (payload) => {
           const eventId = getEventId(payload)
-
-          if (processedEvents.current.has(eventId)) {
-            return
-          }
-
+          if (processedEvents.current.has(eventId)) return
           processedEvents.current.add(eventId)
 
-          const deletedMessage = payload.old as Message
-
-          // Remover de IDs procesados
-          processedMessageIds.current.delete(deletedMessage.id)
-
-          setMessages((prevMessages) => prevMessages.filter((msg) => msg.id !== deletedMessage.id))
-        },
-      )
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          isSubscribedRef.current = true
-        } else if (status === "CHANNEL_ERROR") {
-          console.error("❌ Messages realtime channel error")
-          isSubscribedRef.current = false
-          toast({
-            title: "Error de conexión",
-            description: "Problemas con las actualizaciones de mensajes en tiempo real",
-            variant: "destructive",
-          })
-        } else if (status === "TIMED_OUT") {
-          console.error("⏰ Messages realtime connection timed out")
-          isSubscribedRef.current = false
-        } else if (status === "CLOSED") {
-          isSubscribedRef.current = false
+          const deleted = payload.old as Message
+          processedMessageIds.current.delete(deleted.id)
+          setMessages((prev) => prev.filter((m) => m.id !== deleted.id))
         }
-      })
+      )
+      .subscribe()
 
     channelRef.current = channel
 
@@ -343,12 +270,5 @@ export function useMessages(conversationId: string | null) {
     }
   }, [conversationId, userProfile?.id])
 
-  return {
-    messages,
-    loading,
-    loadingMore,
-    hasMore,
-    error,
-    loadMoreMessages,
-  }
+  return { messages, loading, loadingMore, hasMore, error, loadMoreMessages }
 }

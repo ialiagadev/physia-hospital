@@ -141,7 +141,7 @@ export function PlanSelector({
       {/* Info adicional */}
       <div className="text-center text-sm text-slate-600 space-y-1">
         <p>🎉 <span className="font-semibold">7 días de prueba gratis</span></p>
-        <p>💳 NO hace falta tarjeta</p>
+        <p>💳 Tarjeta no hace falta</p>
         <p>
           <Link
             href="https://physia.healthmate.tech/precios"

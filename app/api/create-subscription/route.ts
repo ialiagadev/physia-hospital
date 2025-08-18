@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
-import type Stripe from "stripe"
 import { stripe } from "@/lib/stripe"
 import { STRIPE_PLANS } from "@/lib/stripe-config"
+import type Stripe from "stripe"
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,9 +14,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Buscar plan por su `id` (ej: "inicial", "avanzado", "premium")
+    // Buscar plan
     const plan = Object.values(STRIPE_PLANS).find((p) => p.id === planId)
-
     if (!plan) {
       return NextResponse.json(
         { success: false, error: "Plan no válido" },
@@ -24,7 +23,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Verificar que el periodo sea válido y obtener el priceId
+    // Verificar periodo
     const priceConfig = plan.prices[billingPeriod as "monthly" | "yearly"]
     if (!priceConfig) {
       return NextResponse.json(
@@ -35,14 +34,24 @@ export async function POST(request: NextRequest) {
 
     const { priceId } = priceConfig
 
-    // Crear suscripción con 7 días de prueba
+    // 1️⃣ Crear SetupIntent para que el cliente añada la tarjeta
+    const setupIntent = await stripe.setupIntents.create({
+      customer: customerId,
+      payment_method_types: ["card"],
+    })
+
+    console.log("✅ SetupIntent creado:", setupIntent.id)
+
+    // 2️⃣ Crear suscripción con 7 días de prueba
     const subscription = await stripe.subscriptions.create({
       customer: customerId,
-      items: [{ price: priceId }], // ✅ ahora usa el string correcto
-      trial_period_days: 7, // 🔹 Añadido: 14 días de prueba
+      items: [{ price: priceId }],
+      trial_period_days: 7, // 👈 todos los planes con 7 días de prueba
       payment_behavior: "default_incomplete",
-      payment_settings: { save_default_payment_method: "on_subscription" },
-      expand: ["latest_invoice.payment_intent"],
+      payment_settings: {
+        save_default_payment_method: "on_subscription",
+      },
+      expand: ["latest_invoice"],
       metadata: {
         plan_id: plan.id,
         billing_period: billingPeriod,
@@ -50,24 +59,16 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    const invoice = subscription.latest_invoice as Stripe.Invoice & {
-      payment_intent?: Stripe.PaymentIntent | string | null
-    }
-
-    const paymentIntent =
-      typeof invoice?.payment_intent === "object"
-        ? (invoice.payment_intent as Stripe.PaymentIntent)
-        : null
+    console.log("✅ Suscripción creada:", subscription.id, "estado:", subscription.status)
 
     return NextResponse.json({
       success: true,
       subscriptionId: subscription.id,
-      clientSecret: paymentIntent?.client_secret ?? null,
+      clientSecret: setupIntent.client_secret, // se confirma en el frontend con confirmCardSetup
       status: subscription.status,
-      trialEnd: subscription.trial_end, // 🔹 Devolvemos también cuándo acaba la prueba
     })
   } catch (error: any) {
-    console.error("❌ Error creando suscripción:", error)
+    console.error("❌ Error creando SetupIntent + Suscripción:", error)
     return NextResponse.json(
       {
         success: false,
