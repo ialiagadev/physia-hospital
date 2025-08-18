@@ -76,7 +76,6 @@ export default function AuthCallback() {
           }
 
           if (retryUser.organization_id) {
-            // Actualizar teléfono del usuario existente
             setMessage("Actualizando información...")
             await supabase.from("users").update({ phone: userPhone }).eq("id", user.id)
 
@@ -90,7 +89,6 @@ export default function AuthCallback() {
           }
         } else {
           if (existingUser.organization_id) {
-            // Actualizar teléfono del usuario existente
             setMessage("Actualizando información...")
             await supabase.from("users").update({ phone: userPhone }).eq("id", user.id)
 
@@ -122,6 +120,7 @@ export default function AuthCallback() {
         const userName = userMetadata.name || existingUser?.name || user.email?.split("@")[0] || "Usuario"
         const userPhone = userMetadata.phone || null
 
+        // 1️⃣ Crear organización con RPC
         const { data: orgResult, error: orgError } = await supabase.rpc("create_organization_during_registration", {
           p_name: organizationName,
           p_email: user.email,
@@ -148,7 +147,27 @@ export default function AuthCallback() {
           return
         }
 
-        // Actualizar usuario
+        // 2️⃣ Actualizar Stripe en la organización
+        const stripeCustomerId = userMetadata.stripe_customer_id || null
+        const stripeSubscriptionId = userMetadata.stripe_subscription_id || null
+        const selectedPlan = userMetadata.selected_plan || null
+        const billingPeriod = userMetadata.billing_period || "monthly"
+        const trialEnd = userMetadata.trial_end || null
+
+        if (stripeCustomerId || stripeSubscriptionId) {
+          await supabase
+            .from("organizations")
+            .update({
+              stripe_customer_id: stripeCustomerId,
+              stripe_subscription_id: stripeSubscriptionId,
+              plan: selectedPlan,
+              billing_period: billingPeriod,
+              trial_end: trialEnd,
+            })
+            .eq("id", organizationId)
+        }
+
+        // 3️⃣ Actualizar usuario
         setMessage("Finalizando configuración...")
 
         const { data: updateResult, error: userUpdateError } = await supabase
@@ -176,10 +195,9 @@ export default function AuthCallback() {
           return
         }
 
-        // Verificar el estado final
         await new Promise((resolve) => setTimeout(resolve, 1000))
 
-        const { data: finalUser, error: finalError } = await supabase
+        const { data: finalUser } = await supabase
           .from("users")
           .select("id, organization_id, name, email, role")
           .eq("id", user.id)

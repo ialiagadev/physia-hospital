@@ -28,6 +28,7 @@ const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("yearly
   const [subscriptionData, setSubscriptionData] = useState<{
     subscriptionId: string
     clientSecret: string
+    trialEnd?: string | null   // 👈 añadimos trialEnd
     customerId: string
   } | null>(null)
   const router = useRouter()
@@ -133,7 +134,9 @@ const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("yearly
         subscriptionId: subData.subscriptionId,
         clientSecret: subData.clientSecret,
         customerId: stripeData.customerId,
+        trialEnd: subData.trialEnd,   // 👈 guardar aquí lo que devuelve la API
       })
+      
 
       setStep(3) // Move to payment step
     } catch (err: any) {
@@ -165,9 +168,11 @@ const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("yearly
             stripe_subscription_id: subscriptionData.subscriptionId,
             selected_plan: selectedPlan,
             billing_period: billingPeriod,
+            trial_end: subscriptionData.trialEnd,  // 👈 guardas la fecha aquí
           },
         },
       })
+      
 
       if (authError) {
         console.error("❌ Error en signUp:", authError)

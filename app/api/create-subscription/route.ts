@@ -1,19 +1,12 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { stripe } from "@/lib/stripe"
 import { STRIPE_PLANS } from "@/lib/stripe-config"
-import type Stripe from "stripe"
-import { createClient } from "@supabase/supabase-js"
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY! // ⚠️ ojo, SERVICE ROLE, no el anon
-)
 
 export async function POST(request: NextRequest) {
   try {
-    const { customerId, planId, billingPeriod, organizationId } = await request.json()
+    const { customerId, planId, billingPeriod } = await request.json()
 
-    if (!customerId || !planId || !billingPeriod || !organizationId) {
+    if (!customerId || !planId || !billingPeriod) {
       return NextResponse.json(
         { success: false, error: "Faltan parámetros obligatorios" },
         { status: 400 }
@@ -65,33 +58,17 @@ export async function POST(request: NextRequest) {
 
     console.log("✅ Suscripción creada:", subscription.id, "estado:", subscription.status)
 
-    // 3️⃣ Guardar en la tabla organizations
-    const { error: dbError } = await supabase
-      .from("organizations")
-      .update({
-        stripe_customer_id: customerId,
-        stripe_subscription_id: subscription.id,
-        subscription_tier: plan.id, // puedes mapearlo a "basic", "pro", etc.
-        subscription_status: subscription.status, // trialing, active, incomplete...
-        subscription_expires: subscription.trial_end
-          ? new Date(subscription.trial_end * 1000).toISOString()
-          : null,
-      })
-      .eq("id", organizationId)
-
-    if (dbError) {
-      console.error("❌ Error actualizando organizations:", dbError)
-      return NextResponse.json(
-        { success: false, error: "Error guardando datos en la base de datos" },
-        { status: 500 }
-      )
-    }
+    // 👇 en esta fase NO actualizamos la tabla organizations
+    // Guardamos la info en user_metadata al hacer signUp
 
     return NextResponse.json({
       success: true,
       subscriptionId: subscription.id,
       clientSecret: setupIntent.client_secret,
       status: subscription.status,
+      trialEnd: subscription.trial_end
+        ? new Date(subscription.trial_end * 1000).toISOString()
+        : null,
     })
   } catch (error: any) {
     console.error("❌ Error creando SetupIntent + Suscripción:", error)
