@@ -530,18 +530,32 @@ export default function ConversationWindowSimple({
     if (dateStr === yesterday) return "Ayer"
     return dateStr
   }
+// Check if message is first in a group
+const isFirstInGroup = (index: number, messages: Message[]) => {
+  if (index === 0) return true
+  const current = messages[index]
+  const prev = messages[index - 1]
 
-  // Check if message is first in a group
-  const isFirstInGroup = (index: number, messages: Message[]) => {
-    if (index === 0) return true
-    return messages[index].sender_type !== messages[index - 1].sender_type
-  }
+  // Nuevo: si cambia el tipo de emisor o cambia el usuario (ej: otro agente)
+  return (
+    current.sender_type !== prev.sender_type ||
+    current.user?.id !== prev.user?.id
+  )
+}
 
-  // Check if message is last in a group
-  const isLastInGroup = (index: number, messages: Message[]) => {
-    if (index === messages.length - 1) return true
-    return messages[index].sender_type !== messages[index + 1].sender_type
-  }
+// Check if message is last in a group
+const isLastInGroup = (index: number, messages: Message[]) => {
+  if (index === messages.length - 1) return true
+  const current = messages[index]
+  const next = messages[index + 1]
+
+  // Nuevo: si cambia el tipo de emisor o cambia el usuario
+  return (
+    current.sender_type !== next.sender_type ||
+    current.user?.id !== next.user?.id
+  )
+}
+
 
   // Handle assignment change callback
   const handleAssignmentChange = () => {
@@ -1123,22 +1137,34 @@ export default function ConversationWindowSimple({
                           : "max-w-[85%]"
                       }`}
                     >
-                      {/* Avatar solo para agentes y en primera aparición */}
-                      {isFirst && msg.sender_type === "agent" && (
-                        <div className="flex-shrink-0">
-                          {msg.user?.type === 2 ? (
-                            <Avatar className="h-8 w-8">
-                              <AvatarImage src="/images/IA.jpeg" alt="IA" />
-                              <AvatarFallback className="bg-purple-100 text-purple-600">IA</AvatarFallback>
-                            </Avatar>
-                          ) : (
-                            <Avatar className="h-8 w-8">
-                              <AvatarImage src={msg.user?.avatar_url || undefined} alt={msg.user?.name || "U"} />
-                              <AvatarFallback>{msg.user?.name?.charAt(0).toUpperCase() || "U"}</AvatarFallback>
-                            </Avatar>
-                          )}
-                        </div>
-                      )}
+                    {/* Avatar: 
+  - Siempre para IA (user?.type === 2) 
+  - Para agentes humanos solo si es el primero del grupo (isFirst) */}
+{(msg.user?.type === 2 || (msg.sender_type === "agent" && isFirst)) && (
+  <div className="flex-shrink-0">
+    {msg.user?.type === 2 ? (
+      // IA
+      <Avatar className="h-8 w-8">
+        <AvatarImage src="/images/IA.jpeg" alt="IA" />
+        <AvatarFallback className="bg-purple-100 text-purple-600">
+          IA
+        </AvatarFallback>
+      </Avatar>
+    ) : (
+      // Agente humano
+      <Avatar className="h-8 w-8">
+        <AvatarImage
+          src={msg.user?.avatar_url || undefined}
+          alt={msg.user?.name || "U"}
+        />
+        <AvatarFallback>
+          {msg.user?.name?.charAt(0).toUpperCase() || "U"}
+        </AvatarFallback>
+      </Avatar>
+    )}
+  </div>
+)}
+
 
                       <div
                         className={`relative px-2 py-1 ${
