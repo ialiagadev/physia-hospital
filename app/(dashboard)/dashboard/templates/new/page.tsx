@@ -11,12 +11,13 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ArrowLeft, Eye, AlertCircle, CheckCircle, Loader2, Plus, ImageIcon, Play, FileText, X } from "lucide-react"
+import { ArrowLeft, Eye, AlertCircle, CheckCircle, Loader2, Plus, X } from 'lucide-react'
 import Link from "next/link"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAuth } from "@/app/contexts/auth-context"
 import { supabase } from "@/lib/supabase/client"
 import { toast } from "@/hooks/use-toast"
+import { formatButtonsForAisensy } from "@/app/api/templates/route"
 
 const LANGUAGES = [
   { code: "es", name: "Español" },
@@ -50,6 +51,7 @@ interface TemplateForm {
   category: string
   body: string
   footer: string
+  // <CHANGE> Removed headerType and media-related fields
 }
 
 interface ValidationError {
@@ -65,11 +67,13 @@ interface WabaConfig {
 
 interface TemplateComponent {
   type: string
-  text?: string // Made text optional since BUTTONS components don't need it
+  text?: string
   example?: {
     body_text: string[][]
+    header_handle?: string[]
   }
   buttons?: any[]
+  format?: string
 }
 
 interface CreateTemplateData {
@@ -102,12 +106,15 @@ export default function NewTemplatePage() {
     category: "UTILITY",
     body: "",
     footer: "",
+    // <CHANGE> Removed media-related form fields
   })
   const [errors, setErrors] = useState<ValidationError[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [actionType, setActionType] = useState<"none" | "cta" | "quick_replies">("none")
   const [quickReplies, setQuickReplies] = useState<QuickReply[]>([])
   const [callToAction, setCallToAction] = useState<CallToAction>({ type: "url", text: "", url: "" })
+
+  // ... existing code ...
 
   const fetchWabaConfig = async (organizationId: number) => {
     try {
@@ -364,6 +371,8 @@ export default function NewTemplatePage() {
     setQuickReplies(quickReplies.map((reply) => (reply.id === id ? { ...reply, text } : reply)))
   }
 
+  // <CHANGE> Removed all media upload related functions
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -383,6 +392,8 @@ export default function NewTemplatePage() {
 
     try {
       const components: TemplateComponent[] = []
+
+      // <CHANGE> Removed header component logic for media
 
       const bodyComponent: TemplateComponent = {
         type: "BODY",
@@ -406,31 +417,8 @@ export default function NewTemplatePage() {
         })
       }
 
-      if (actionType === "quick_replies" && quickReplies.length > 0) {
-        components.push({
-          type: "BUTTONS",
-          buttons: quickReplies.map((reply) => ({
-            type: "QUICK_REPLY",
-            text: reply.text,
-          })),
-        })
-      } else if (actionType === "cta" && callToAction.text) {
-        const button: any = {
-          type: callToAction.type === "url" ? "URL" : "PHONE_NUMBER",
-          text: callToAction.text,
-        }
-
-        if (callToAction.type === "url" && callToAction.url) {
-          button.url = callToAction.url
-        } else if (callToAction.type === "phone" && callToAction.phone) {
-          button.phone_number = callToAction.phone
-        }
-
-        components.push({
-          type: "BUTTONS",
-          buttons: [button],
-        })
-      }
+      const buttonComponents = formatButtonsForAisensy(actionType, quickReplies, callToAction)
+      components.push(...buttonComponents)
 
       const templateData: CreateTemplateData = {
         name: form.name.trim(),
@@ -438,6 +426,8 @@ export default function NewTemplatePage() {
         language: form.language,
         components: components,
       }
+
+      console.log("📋 Datos de plantilla a enviar:", JSON.stringify(templateData, null, 2))
 
       await createTemplate(templateData)
 
@@ -452,6 +442,8 @@ export default function NewTemplatePage() {
       if (error instanceof Error) {
         errorMessage = error.message
       }
+
+      console.error("❌ Error completo:", error)
 
       toast({
         title: "Error al crear plantilla",
@@ -484,15 +476,7 @@ export default function NewTemplatePage() {
         </div>
       </div>
 
-      <Card>
-        <CardContent className="flex items-center justify-between py-4">
-          <div>
-            <p className="text-sm font-medium">Proyecto: {wabaConfig.nombre}</p>
-            <p className="text-xs text-muted-foreground">Organización: {userProfile.name}</p>
-          </div>
-          <Badge variant="outline">Configurado</Badge>
-        </CardContent>
-      </Card>
+      {/* <CHANGE> Removed the Card showing project and organization info */}
 
       <Alert>
         <AlertCircle className="h-4 w-4" />
@@ -572,47 +556,18 @@ export default function NewTemplatePage() {
                   <span className="text-xs text-muted-foreground ml-2">({form.body.length}/1024)</span>
                 </Label>
 
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center space-x-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-10 w-10 p-0 bg-orange-100 hover:bg-orange-200 border-orange-300"
-                      title="Añadir imagen"
-                    >
-                      <ImageIcon className="h-5 w-5 text-orange-600" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-10 w-10 p-0 bg-blue-100 hover:bg-blue-200 border-blue-300"
-                      title="Añadir video"
-                    >
-                      <Play className="h-5 w-5 text-blue-600" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-10 w-10 p-0 bg-pink-100 hover:bg-pink-200 border-pink-300"
-                      title="Añadir documento"
-                    >
-                      <FileText className="h-5 w-5 text-pink-600" />
-                    </Button>
-                  </div>
+                {/* <CHANGE> Removed media upload buttons section */}
+                <div className="flex items-center justify-end mb-2">
+                <Button
+  type="button"
+  size="sm"
+  onClick={addVariable}
+  className="bg-purple-600 text-white hover:bg-green-600"
+>
+  <Plus className="h-4 w-4 mr-1" />
+  Añadir variable
+</Button>
 
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={addVariable}
-                    className="text-sm bg-transparent"
-                  >
-                    <Plus className="h-4 w-4 mr-1" />
-                    Añadir variable
-                  </Button>
                 </div>
 
                 <Textarea
@@ -798,6 +753,8 @@ export default function NewTemplatePage() {
 
               <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                 <div className="bg-white rounded-lg p-3 shadow-sm">
+                  {/* <CHANGE> Removed media preview section */}
+
                   {form.body ? (
                     <p className="text-sm whitespace-pre-wrap">
                       {form.body.replace(/\{\{(\d+)\}\}/g, (match, num) => `[Ejemplo${num}]`)}

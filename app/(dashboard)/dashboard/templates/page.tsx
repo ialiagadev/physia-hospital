@@ -23,6 +23,10 @@ interface Template {
   components?: Array<{
     text?: string
     type?: string
+    buttons?: Array<{
+      type: string
+      text: string
+    }>
   }>
 }
 
@@ -427,15 +431,72 @@ export default function AiSensyTemplatesPage() {
                 </div>
               </CardHeader>
               <CardContent>
-                {template.components?.[0]?.text && (
+                {template.components && template.components.length > 0 && (
                   <div className="space-y-3">
-                    <div className="bg-gray-50 p-3 rounded-lg">
-                      <p className="text-sm text-gray-700 line-clamp-3">{template.components[0].text}</p>
-                    </div>
+                    {template.components.map((component, idx) => {
+                      if (component.type === "BODY" && component.text) {
+                        return (
+                          <div key={idx} className="bg-gray-50 p-3 rounded-lg">
+                            <p className="text-sm text-gray-700 line-clamp-3">{component.text}</p>
+                          </div>
+                        )
+                      }
 
-                    {/* Mostrar variables si las hay */}
+                      if (component.type === "FOOTER" && component.text) {
+                        return (
+                          <div key={idx} className="bg-gray-100 p-2 rounded text-xs text-gray-600 italic">
+                            {component.text}
+                          </div>
+                        )
+                      }
+
+                      if (component.type === "BUTTONS" && (component as any).buttons) {
+                        const buttons = (component as any).buttons
+                        return (
+                          <div key={idx} className="space-y-2">
+                            <p className="text-xs font-medium text-gray-600">Botones:</p>
+                            <div className="flex flex-wrap gap-2">
+                              {buttons.map((button: any, buttonIdx: number) => (
+                                <div key={buttonIdx} className="flex items-center gap-1">
+                                  {button.type === "URL" && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-xs bg-blue-50 text-blue-700 border-blue-200"
+                                    >
+                                      🔗 {button.text}
+                                    </Badge>
+                                  )}
+                                  {button.type === "PHONE_NUMBER" && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-xs bg-green-50 text-green-700 border-green-200"
+                                    >
+                                      📞 {button.text}
+                                    </Badge>
+                                  )}
+                                  {button.type === "QUICK_REPLY" && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-xs bg-gray-50 text-gray-700 border-gray-200"
+                                    >
+                                      💬 {button.text}
+                                    </Badge>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      }
+
+                      return null
+                    })}
+
                     {(() => {
-                      const variables = template.components[0].text.match(/\{\{\d+\}\}/g) || []
+                      const bodyComponent = template.components.find((c) => c.type === "BODY")
+                      if (!bodyComponent?.text) return null
+
+                      const variables = bodyComponent.text.match(/\{\{\d+\}\}/g) || []
                       const uniqueVariables = [...new Set(variables)].sort()
 
                       return (
