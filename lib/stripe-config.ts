@@ -1,17 +1,54 @@
 export const STRIPE_PLANS = {
-    BASIC: {
-      id: "basic",
-      name: "Plan Básico",
-      description: "Perfecto para clínicas pequeñas",
-      price: "1€/mes",
-      features: [
-        "Hasta 100 pacientes",
-        "Gestión de citas básica",
-        "Soporte por email",
-      ],
-      stripePriceId: "price_1RxOKwDXuo6lFruINzMRxuTR", // 👈 este es el bueno
+    INICIAL: {
+      id: "inicial",
+      name: "Plan Inicial",
+     
+      prices: {
+        monthly: {
+          priceId: "price_1RurRVDXuo6lFrulIR8O4OrT",
+          amount: 10000, // 💰 100 € en céntimos
+          currency: "EUR",
+        },
+        yearly: {
+          priceId: "price_1RurSMDXuo6lFrul0gfsVgjv",
+          amount: 96000, // 💰 960 € en céntimos
+          currency: "EUR",
+        },
+      },
     },
-  } as const;
-  
-  export const STRIPE_PUBLIC_KEY = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+    AVANZADO: {
+      id: "avanzado",
+      name: "Plan Avanzado",
+      
+      prices: {
+        monthly: {
+          priceId: "price_1RurSLDXuo6lFrulQDohkIKD",
+          amount: 15000, // 💰 150 €
+          currency: "EUR",
+        },
+        yearly: {
+          priceId: "price_1RurSLDXuo6lFrulJ5HgOEKW",
+          amount: 144000, // 💰 1440 €
+          currency: "EUR",
+        },
+      },
+    },
+    PREMIUM: {
+      id: "premium",
+      name: "Plan Premium",
+    
+      prices: {
+        monthly: {
+          priceId: "price_1RurSLDXuo6lFrulPG0Ui7aF",
+          amount: 20000, // 💰 200 €
+          currency: "EUR",
+        },
+        yearly: {
+          priceId: "price_1RurSLDXuo6lFruly6THZJs0",
+          amount: 192000, // 💰 1920 €
+          currency: "EUR",
+        },
+      },
+    },
+  } as const
   

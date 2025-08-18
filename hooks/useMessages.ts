@@ -113,21 +113,19 @@ export function useMessages(conversationId: string | null) {
     const fetchMessages = async () => {
       try {
         const { data, error } = await supabase
-  .from("messages")
-  .select(`
-    *,
-    user:users!messages_user_id_fkey (
-      id,
-      name,
-      avatar_url,
-      type
-    )
-  `)
-  
-  .eq("conversation_id", conversationId)
-  .order("created_at", { ascending: false })
-  .limit(MESSAGES_PER_PAGE)
-
+          .from("messages")
+          .select(`
+            *,
+            user:users!messages_user_id_fkey (
+              id,
+              name,
+              avatar_url,
+              type
+            )
+          `)
+          .eq("conversation_id", conversationId)
+          .order("created_at", { ascending: false })
+          .limit(MESSAGES_PER_PAGE)
 
         if (error) {
           console.error("❌ Error fetching messages:", error)
@@ -185,9 +183,20 @@ export function useMessages(conversationId: string | null) {
         (payload) => {
           const newMessage = payload.new as Message
 
+          console.log("[v0] Nuevo mensaje en useMessages:", {
+            id: newMessage.id,
+            conversation_id: newMessage.conversation_id,
+            sender_type: newMessage.sender_type,
+            user_id: newMessage.user_id,
+            message_type: newMessage.message_type,
+            content: newMessage.content?.substring(0, 50) + "...",
+            created_at: newMessage.created_at,
+          })
+
           // Filtrar mensajes de sistema en tiempo real
           if (newMessage.message_type === "system" && newMessage.metadata?.system_message) {
             if (newMessage.metadata.visible_to_user !== userProfile?.id) {
+              console.log("[v0] Mensaje de sistema filtrado - no visible para este usuario")
               return // No mostrar este mensaje
             }
           }
@@ -196,6 +205,7 @@ export function useMessages(conversationId: string | null) {
 
           // Evitar procesar eventos duplicados
           if (processedEvents.current.has(eventId)) {
+            console.log("[v0] Evento duplicado ignorado:", eventId)
             return
           }
 
@@ -203,20 +213,47 @@ export function useMessages(conversationId: string | null) {
 
           if (!processedMessageIds.current.has(newMessage.id)) {
             processedMessageIds.current.add(newMessage.id)
-            setMessages((prev) => {
-              // Verificar duplicados una vez más
-              const exists = prev.some((msg) => msg.id === newMessage.id)
-              if (exists) {
-                return prev
+
+            console.log("[v0] Agregando mensaje a la lista:", newMessage.id)
+
+            const loadUserInfo = async () => {
+              if (newMessage.user_id) {
+                try {
+                  const { data: userData, error: userError } = await supabase
+                    .from("users")
+                    .select("id, name, avatar_url, type")
+                    .eq("id", newMessage.user_id)
+                    .single()
+
+                  if (!userError && userData) {
+                    newMessage.user = userData
+                    console.log("[v0] Información de usuario cargada:", userData)
+                  }
+                } catch (error) {
+                  console.error("[v0] Error cargando información de usuario:", error)
+                }
               }
 
-              // Agregar el mensaje y mantener orden cronológico
-              const newMessages = [...prev, newMessage].sort(
-                (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-              )
+              setMessages((prev) => {
+                // Verificar duplicados una vez más
+                const exists = prev.some((msg) => msg.id === newMessage.id)
+                if (exists) {
+                  console.log("[v0] Mensaje ya existe en la lista:", newMessage.id)
+                  return prev
+                }
 
-              return newMessages
-            })
+                const newMessages = [...prev, newMessage].sort(
+                  (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+                )
+
+                console.log("[v0] Lista de mensajes actualizada. Total:", newMessages.length)
+                return newMessages
+              })
+            }
+
+            loadUserInfo()
+          } else {
+            console.log("[v0] Mensaje ya procesado:", newMessage.id)
           }
         },
       )

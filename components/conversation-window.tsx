@@ -91,6 +91,7 @@ export default function ConversationWindowSimple({
   const [filePreview, setFilePreview] = useState<FilePreview | null>(null)
   const [uploading, setUploading] = useState(false)
   const [showSummaryModal, setShowSummaryModal] = useState(false)
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
 
   const [voiceRecording, setVoiceRecording] = useState<VoiceRecording>({
     isRecording: false,
@@ -100,8 +101,6 @@ export default function ConversationWindowSimple({
     mimeType: "audio/webm;codecs=opus",
     fileExtension: "webm",
   })
-
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
 
   // Referencias
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -768,25 +767,24 @@ export default function ConversationWindowSimple({
     return client?.name || conversation?.title || "unknown"
   }
 
-// Check if conversation is closed (more than 24 hours since last contact message)
-const isConversationClosed = () => {
-  if (!messages || messages.length === 0) return false
+  // Check if conversation is closed (more than 24 hours since last contact message)
+  const isConversationClosed = () => {
+    if (!messages || messages.length === 0) return false
 
-  const lastContactMessage = [...messages]
-    .filter((m) => m.sender_type === "contact")
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+    const lastContactMessage = [...messages]
+      .filter((m) => m.sender_type === "contact")
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
 
-  if (!lastContactMessage) return false
+    if (!lastContactMessage) return false
 
-  const lastMessageTime = new Date(lastContactMessage.created_at).getTime()
-  const now = new Date().getTime()
-  const hoursDiff = (now - lastMessageTime) / (1000 * 60 * 60)
+    const lastMessageTime = new Date(lastContactMessage.created_at).getTime()
+    const now = new Date().getTime()
+    const hoursDiff = (now - lastMessageTime) / (1000 * 60 * 60)
 
-  return hoursDiff > 24
-}
+    return hoursDiff > 24
+  }
 
-const conversationClosed = isConversationClosed()
-
+  const conversationClosed = isConversationClosed()
 
   const startVoiceRecording = async () => {
     try {
@@ -1118,77 +1116,71 @@ const conversationClosed = isConversationClosed()
                       isFirst ? "mt-2" : "mt-1"
                     }`}
                   >
-
-
-                        {/* Burbuja del mensaje */}
-
-                    
-                        <div
-  className={`relative px-2 py-1 max-w-[85%] ${
-    msg.sender_type === "agent"
-      ? msg.user?.type === 2
-        ? "bg-[#F3E8FF] rounded-lg rounded-br-none" // 💜 Lila suave para IA
-        : "bg-[#d9fdd2] rounded-lg rounded-br-none" // Verde para agente humano
-      : "bg-white rounded-lg rounded-bl-none shadow-sm"
-  }`}
->
-
-                      {/* Contenedor flexible para texto y metadata */}
-                      <div className="flex items-end gap-1">
-                        {renderMessageContent(msg)}
-
-                        {/* Hora y checkmarks */}
-                        <div className="flex items-center gap-1 flex-shrink-0 ml-2 pb-[1px]">
-                          <span className="text-[11px] text-gray-500 font-normal whitespace-nowrap">
-                            {formatTime(msg.created_at)}
-                          </span>
-                             {/* Avatar solo si es enviado por el agente y es el primero del grupo */}
-    {isFirst && msg.sender_type === "agent" && (
-      <div className="mt-1">
-        <Avatar className="h-6 w-6">
-          {msg.user?.type === 2 ? (
-            <>
-              <AvatarImage src="/images/IA.jpeg" alt="IA" />
-              <AvatarFallback>IA</AvatarFallback>
-            </>
-          ) : (
-            <>
-              <AvatarImage src={msg.user?.avatar_url || undefined} alt={msg.user?.name || "U"} />
-              <AvatarFallback>
-                {msg.user?.name?.charAt(0).toUpperCase() || "U"}
-              </AvatarFallback>
-            </>
-          )}
-        </Avatar>
-      </div>
-      )}
-
-                          {/* Doble checkmark solo para mensajes enviados */}
-                          {msg.sender_type === "agent" && (
-                            <div className="flex items-center ml-1">
-                              <svg className="w-4 h-4 text-gray-400" viewBox="0 0 16 15" fill="none">
-                                <path
-                                  d="M15.01 3.316l-.478-.372a.365.365 0 0 0-.51.063L8.666 9.879a.32.32 0 0 1-.484.033l-.358-.325a.319.319 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.063-.51zm-4.1 0l-.478-.372a.365.365 0 0 0-.51.063L4.566 9.879a.32.32 0 0 1-.484.033l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.063-.51z"
-                                  fill="currentColor"
-                                />
-                              </svg>
-                            </div>
-                          )}
+                    <div className="flex items-start gap-2">
+                      {isFirst && msg.sender_type === "agent" && msg.user?.type !== 2 && (
+                        <div className="flex-shrink-0">
+                          <Avatar className="h-8 w-8">
+                            <AvatarImage src={msg.user?.avatar_url || undefined} alt={msg.user?.name || "U"} />
+                            <AvatarFallback>{msg.user?.name?.charAt(0).toUpperCase() || "U"}</AvatarFallback>
+                          </Avatar>
                         </div>
-                      </div>
-
-                      {/* Cola del mensaje estilo WhatsApp */}
+                      )}
                       <div
-                        className={`absolute bottom-0 w-2 h-2 ${
-                          msg.sender_type === "agent" ? "right-[-2px] bg-[#d9fdd2]" : "left-[-2px] bg-white"
+                        className={`relative px-2 py-1 max-w-[85%] ${
+                          msg.sender_type === "agent"
+                            ? msg.user?.type === 2
+                              ? "bg-[#F3E8FF] rounded-lg rounded-br-none" // 💜 Lila suave para IA
+                              : "bg-[#d9fdd2] rounded-lg rounded-br-none" // Verde para agente humano
+                            : "bg-white rounded-lg rounded-bl-none shadow-sm"
                         }`}
-                        style={{
-                          clipPath:
+                      >
+                        {/* Contenedor flexible para texto y metadata */}
+                        <div className="flex items-end gap-1">
+                          {renderMessageContent(msg)}
+
+                          {/* Hora y checkmarks */}
+                          <div className="flex items-center gap-1 flex-shrink-0 ml-2 pb-[1px]">
+                            <span className="text-[11px] text-gray-500 font-normal whitespace-nowrap">
+                              {formatTime(msg.created_at)}
+                            </span>
+
+                            {/* Doble checkmark solo para mensajes enviados */}
+                            {msg.sender_type === "agent" && (
+                              <div className="flex items-center ml-1">
+                                <svg className="w-4 h-4 text-gray-400" viewBox="0 0 16 15" fill="none">
+                                  <path
+                                    d="M15.01 3.316l-.478-.372a.365.365 0 0 0-.51.063L8.666 9.879a.32.32 0 0 1-.484.033l-.358-.325a.319.319 0 0 0-.484.032l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.063-.51zm-4.1 0l-.478-.372a.365.365 0 0 0-.51.063L4.566 9.879a.32.32 0 0 1-.484.033l-.378.483a.418.418 0 0 0 .036.541l1.32 1.266c.143.14.361.125.484-.033l6.272-8.048a.366.366 0 0 0-.063-.51z"
+                                    fill="currentColor"
+                                  />
+                                </svg>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div
+                          className={`absolute bottom-0 w-2 h-2 ${
                             msg.sender_type === "agent"
-                              ? "polygon(0 0, 0 100%, 100% 100%)"
-                              : "polygon(100% 0, 0 100%, 100% 100%)",
-                        }}
-                      />
+                              ? msg.user?.type === 2
+                                ? "right-[-2px] bg-[#F3E8FF]" // Cola lila para IA
+                                : "right-[-2px] bg-[#d9fdd2]" // Cola verde para agente humano
+                              : "left-[-2px] bg-white"
+                          }`}
+                          style={{
+                            clipPath:
+                              msg.sender_type === "agent"
+                                ? "polygon(0 0, 0 100%, 100% 100%)"
+                                : "polygon(100% 0, 0 100%, 100% 100%)",
+                          }}
+                        />
+                      </div>
+                      {isFirst && msg.sender_type === "agent" && msg.user?.type === 2 && (
+                        <div className="flex-shrink-0">
+                          <Avatar className="h-8 w-8">
+                            <AvatarImage src="/images/IA.jpeg" alt="IA" />
+                            <AvatarFallback className="bg-purple-100 text-purple-600">IA</AvatarFallback>
+                          </Avatar>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )
@@ -1196,7 +1188,6 @@ const conversationClosed = isConversationClosed()
             </div>
           ))
         )}
-        {/* Mensaje del sistema si la conversación está cerrada */}
         {conversationClosed && (
           <div className="flex justify-center my-4">
             <div className="bg-gradient-to-r from-amber-50 to-orange-50 text-amber-700 px-6 py-3 rounded-lg text-sm font-medium shadow-sm border border-amber-200 backdrop-blur-sm max-w-md text-center">

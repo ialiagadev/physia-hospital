@@ -9,20 +9,27 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { modernSupabase } from "@/lib/supabase/modern-client"
 import { PlanSelector } from "@/components/plan-selector"
-import { Loader2, CheckCircle, ArrowLeft } from "lucide-react"
+import { Loader2, CheckCircle } from "lucide-react"
 import { STRIPE_PLANS } from "@/lib/stripe-config"
+import { PaymentSetup } from "@/components/payment-setup"
 
 export default function RegisterPage() {
-  const [step, setStep] = useState(1) // 1: form, 2: plan selection
+  const [step, setStep] = useState(1) // 1: form, 2: plan selection, 3: payment
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [name, setName] = useState("")
   const [phone, setPhone] = useState("")
   const [organizationName, setOrganizationName] = useState("")
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null)
+const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("yearly")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState(false)
+  const [subscriptionData, setSubscriptionData] = useState<{
+    subscriptionId: string
+    clientSecret: string
+    customerId: string
+  } | null>(null)
   const router = useRouter()
 
   const handleFormSubmit = async (e: React.FormEvent) => {
@@ -74,18 +81,13 @@ export default function RegisterPage() {
         const errorText = await stripeResponse.text()
         console.error("❌ Stripe customer API error:", errorText)
         throw new Error(
-          `Error del servidor (${stripeResponse.status}): ${errorText.includes("<!DOCTYPE") ? "API endpoint no encontrado" : errorText}`,
+          `Error del servidor (${stripeResponse.status}): ${
+            errorText.includes("<!DOCTYPE") ? "API endpoint no encontrado" : errorText
+          }`,
         )
       }
 
-      let stripeData
-      try {
-        stripeData = await stripeResponse.json()
-      } catch (parseError) {
-        console.error("❌ Error parsing Stripe response:", parseError)
-        throw new Error("El servidor devolvió una respuesta inválida. Verifica que la API esté funcionando.")
-      }
-
+      const stripeData = await stripeResponse.json()
       if (!stripeData.success) {
         throw new Error(stripeData.error || "Error creando cliente en Stripe")
       }
@@ -96,14 +98,16 @@ export default function RegisterPage() {
       const planConfig = Object.values(STRIPE_PLANS).find((plan) => plan.id === selectedPlan)
       if (!planConfig) throw new Error(`Plan no válido: ${selectedPlan}`)
 
-      console.log("📝 Creando suscripción en Stripe...")
-      const subResponse = await fetch("/api/create-suscription", {
+      const priceId = planConfig.prices[billingPeriod]
+
+      console.log("📝 Creando suscripción en Stripe con:", { planId: selectedPlan, billingPeriod, priceId })
+      const subResponse = await fetch("/api/create-subscription", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customerId: stripeData.customerId,
-          priceId: planConfig.stripePriceId,
           planId: selectedPlan,
+          billingPeriod,
         }),
       })
 
@@ -111,25 +115,41 @@ export default function RegisterPage() {
         const errorText = await subResponse.text()
         console.error("❌ Subscription API error:", errorText)
         throw new Error(
-          `Error del servidor (${subResponse.status}): ${errorText.includes("<!DOCTYPE") ? "API endpoint no encontrado" : errorText}`,
+          `Error del servidor (${subResponse.status}): ${
+            errorText.includes("<!DOCTYPE") ? "API endpoint no encontrado" : errorText
+          }`,
         )
       }
 
-      let subData
-      try {
-        subData = await subResponse.json()
-      } catch (parseError) {
-        console.error("❌ Error parsing subscription response:", parseError)
-        throw new Error("El servidor devolvió una respuesta inválida. Verifica que la API esté funcionando.")
-      }
-
+      const subData = await subResponse.json()
       if (!subData.success) {
         throw new Error(subData.error || "Error creando suscripción")
       }
 
       console.log("✅ Suscripción Stripe creada:", subData.subscriptionId)
 
-      // 3. Crear usuario en Supabase
+      setSubscriptionData({
+        subscriptionId: subData.subscriptionId,
+        clientSecret: subData.clientSecret,
+        customerId: stripeData.customerId,
+      })
+
+      setStep(3) // Move to payment step
+    } catch (err: any) {
+      console.error("💥 Registration error:", err)
+      setError("Error inesperado durante el registro: " + (err.message || "Inténtalo de nuevo"))
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handlePaymentSuccess = async () => {
+    if (!subscriptionData) return
+
+    setIsLoading(true)
+    setError("")
+
+    try {
       console.log("👤 Creando usuario en Supabase...")
       const { data: authData, error: authError } = await modernSupabase.auth.signUp({
         email: email.trim(),
@@ -140,36 +160,27 @@ export default function RegisterPage() {
             name: name.trim(),
             phone: phone.trim(),
             organization_name: organizationName.trim(),
-            stripe_customer_id: stripeData.customerId,
-            stripe_subscription_id: subData.subscriptionId,
+            stripe_customer_id: subscriptionData.customerId,
+            stripe_subscription_id: subscriptionData.subscriptionId,
             selected_plan: selectedPlan,
+            billing_period: billingPeriod,
           },
         },
       })
 
       if (authError) {
         console.error("❌ Error en signUp:", authError)
-        if (authError.message.includes("already registered")) {
-          setError("Este email ya está registrado. ¿Quieres iniciar sesión?")
-        } else if (authError.message.includes("invalid email")) {
-          setError("El formato del email no es válido")
-        } else if (authError.message.includes("weak password")) {
-          setError("La contraseña es muy débil. Debe tener al menos 6 caracteres")
-        } else {
-          setError(authError.message)
-        }
+        setError(authError.message)
         return
       }
 
       if (authData.user) {
         console.log("✅ Usuario creado:", authData.user.email)
-        console.log("📧 Necesita confirmación:", !authData.session)
-
         setSuccess(true)
       }
     } catch (err: any) {
-      console.error("💥 Registration error:", err)
-      setError("Error inesperado durante el registro: " + (err.message || "Inténtalo de nuevo"))
+      console.error("💥 User creation error:", err)
+      setError("Error creando usuario: " + (err.message || "Inténtalo de nuevo"))
     } finally {
       setIsLoading(false)
     }
@@ -182,37 +193,16 @@ export default function RegisterPage() {
           <div className="w-32 h-32 bg-green-100 rounded-full flex items-center justify-center mx-auto">
             <CheckCircle className="w-16 h-16 text-green-600" />
           </div>
-          <div className="space-y-4">
-            <h1 className="text-2xl font-semibold text-gray-900">¡Cuenta creada!</h1>
-            <p className="text-gray-600">
-              Revisa tu email <span className="font-medium text-gray-900">{email}</span> para confirmar tu cuenta. Una
-              vez confirmada, podrás configurar tu método de pago y activar tu suscripción.
-            </p>
-          </div>
-          <div className="space-y-3">
-            <Link
-              href="/login"
-              className="block w-full py-3 px-4 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-all duration-200 font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-            >
-              Ir al login
-            </Link>
-            <button
-              onClick={() => {
-                setSuccess(false)
-                setStep(1)
-                setEmail("")
-                setPassword("")
-                setName("")
-                setPhone("")
-                setOrganizationName("")
-                setSelectedPlan(null)
-                setError("")
-              }}
-              className="block w-full py-3 px-4 text-gray-600 hover:text-gray-900 transition-colors"
-            >
-              Registrar otra cuenta
-            </button>
-          </div>
+          <h1 className="text-2xl font-semibold text-gray-900">¡Cuenta creada!</h1>
+          <p className="text-gray-600">
+            Revisa tu email <span className="font-medium text-gray-900">{email}</span> para confirmar tu cuenta.
+          </p>
+          <Link
+            href="/login"
+            className="block w-full py-3 px-4 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-all duration-200 font-medium shadow-lg hover:shadow-xl"
+          >
+            Ir al login
+          </Link>
         </div>
       </div>
     )
@@ -226,64 +216,54 @@ export default function RegisterPage() {
         </h1>
       </div>
 
+      <div className="flex justify-center px-4 pb-8">
+        <div className="flex items-center space-x-4">
+          <div className="flex items-center">
+            <div
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                step >= 1 ? "bg-purple-600 text-white" : "bg-gray-200 text-gray-500"
+              }`}
+            >
+              1
+            </div>
+            <span className={`ml-2 text-sm font-medium ${step >= 1 ? "text-purple-600" : "text-gray-500"}`}>Datos</span>
+          </div>
+          <div className={`w-8 h-0.5 ${step >= 2 ? "bg-purple-600" : "bg-gray-200"}`} />
+          <div className="flex items-center">
+            <div
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                step >= 2 ? "bg-purple-600 text-white" : "bg-gray-200 text-gray-500"
+              }`}
+            >
+              2
+            </div>
+            <span className={`ml-2 text-sm font-medium ${step >= 2 ? "text-purple-600" : "text-gray-500"}`}>Plan</span>
+          </div>
+          <div className={`w-8 h-0.5 ${step >= 3 ? "bg-purple-600" : "bg-gray-200"}`} />
+          <div className="flex items-center">
+            <div
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                step >= 3 ? "bg-purple-600 text-white" : "bg-gray-200 text-gray-500"
+              }`}
+            >
+              3
+            </div>
+            <span className={`ml-2 text-sm font-medium ${step >= 3 ? "text-purple-600" : "text-gray-500"}`}>Pago</span>
+          </div>
+        </div>
+      </div>
+
       <div className="flex items-center justify-center px-4 pb-12">
         <div className="w-full max-w-6xl grid lg:grid-cols-2 gap-20 items-center">
           {/* Imagen */}
           <div className="flex justify-center lg:justify-end order-2 lg:order-1">
-            <div className="w-full max-w-lg">
-              <img src="/images/physia-mascot.png" alt="Physia" className="w-full h-auto" />
-            </div>
+            <img src="/images/physia-mascot.png" alt="Physia" className="w-full max-w-lg" />
           </div>
 
-          {/* Formulario / Plan Selector */}
+          {/* Formulario / Plan Selector / Payment Setup */}
           <div className="flex justify-center lg:justify-start order-1 lg:order-2">
             <div className="w-full max-w-sm">
-              {step === 2 && (
-                <div className="mb-6">
-                  <button
-                    onClick={() => setStep(1)}
-                    className="flex items-center gap-2 text-purple-600 hover:text-purple-700 transition-colors mb-4"
-                    disabled={isLoading}
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                    Volver a los datos
-                  </button>
-                  <div className="flex items-center gap-2 text-sm text-gray-500">
-                    <div className="w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-xs font-medium">
-                      ✓
-                    </div>
-                    <span>Datos personales</span>
-                    <div className="flex-1 h-px bg-gray-200"></div>
-                    <div className="w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-xs font-medium">
-                      2
-                    </div>
-                    <span>Plan</span>
-                  </div>
-                </div>
-              )}
-
               {step === 1 && (
-                <div className="mb-8">
-                  <h2 className="text-2xl font-semibold text-gray-900 mb-2">Crear cuenta</h2>
-                  <div className="flex items-center gap-2 text-sm text-gray-500">
-                    <div className="w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-xs font-medium">
-                      1
-                    </div>
-                    <span>Datos personales</span>
-                    <div className="flex-1 h-px bg-gray-200"></div>
-                    <div className="w-6 h-6 bg-gray-200 text-gray-500 rounded-full flex items-center justify-center text-xs font-medium">
-                      2
-                    </div>
-                    <span>Plan</span>
-                  </div>
-                </div>
-              )}
-
-              {error && (
-                <div className="mb-6 p-4 text-sm text-red-600 bg-red-50 rounded-xl border border-red-100">{error}</div>
-              )}
-
-              {step === 1 ? (
                 <form onSubmit={handleFormSubmit} className="space-y-6">
                   <div className="space-y-2">
                     <Label htmlFor="name">Nombre completo</Label>
@@ -322,20 +302,44 @@ export default function RegisterPage() {
                     Continuar al plan
                   </Button>
                 </form>
-              ) : (
+              )}
+
+              {step === 2 && (
                 <div className="space-y-6">
-                  <PlanSelector selectedPlan={selectedPlan} onPlanSelect={setSelectedPlan} disabled={isLoading} />
+                  <div className="w-full">
+                    <PlanSelector
+                      selectedPlan={selectedPlan}
+                      onPlanSelect={setSelectedPlan}
+                      billingPeriod={billingPeriod}
+                      onBillingPeriodChange={setBillingPeriod}
+                      disabled={isLoading}
+                    />
+                  </div>
                   <Button onClick={handleCompleteRegistration} className="w-full" disabled={isLoading || !selectedPlan}>
                     {isLoading ? (
                       <div className="flex items-center">
-                        <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Creando cuenta...
+                        <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Preparando pago...
                       </div>
                     ) : (
-                      "Crear cuenta"
+                      "Continuar al pago"
                     )}
                   </Button>
                 </div>
               )}
+
+              {step === 3 && subscriptionData && (
+                <PaymentSetup
+                  clientSecret={subscriptionData.clientSecret}
+                  onSuccess={handlePaymentSuccess}
+                  onError={setError}
+                  planName={Object.values(STRIPE_PLANS).find((p) => p.id === selectedPlan)?.name || ""}
+                  planPrice={
+                    Object.values(STRIPE_PLANS).find((p) => p.id === selectedPlan)?.prices[billingPeriod].priceId || ""
+                  }
+                />
+              )}
+
+              {error && <div className="mt-4 p-4 text-sm text-red-600 bg-red-50 rounded-xl">{error}</div>}
 
               <div className="mt-8 text-center">
                 <p className="text-sm text-gray-500">
