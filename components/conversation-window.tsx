@@ -768,18 +768,25 @@ export default function ConversationWindowSimple({
     return client?.name || conversation?.title || "unknown"
   }
 
-  // Check if conversation is closed (more than 24 hours since last message)
-  const isConversationClosed = () => {
-    if (!conversation?.last_message_at) return false
+// Check if conversation is closed (more than 24 hours since last contact message)
+const isConversationClosed = () => {
+  if (!messages || messages.length === 0) return false
 
-    const lastMessageTime = new Date(conversation.last_message_at).getTime()
-    const now = new Date().getTime()
-    const hoursDiff = (now - lastMessageTime) / (1000 * 60 * 60)
+  const lastContactMessage = [...messages]
+    .filter((m) => m.sender_type === "contact")
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
 
-    return hoursDiff > 24
-  }
+  if (!lastContactMessage) return false
 
-  const conversationClosed = isConversationClosed()
+  const lastMessageTime = new Date(lastContactMessage.created_at).getTime()
+  const now = new Date().getTime()
+  const hoursDiff = (now - lastMessageTime) / (1000 * 60 * 60)
+
+  return hoursDiff > 24
+}
+
+const conversationClosed = isConversationClosed()
+
 
   const startVoiceRecording = async () => {
     try {
