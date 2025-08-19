@@ -140,6 +140,7 @@ export default function AuthCallback() {
         const organizationName = userMetadata.organization_name || "Mi Organización"
         const userName = userMetadata.name || existingUser?.name || user.email?.split("@")[0] || "Usuario"
         const userPhone = userMetadata.phone || null
+        const taxId = userMetadata.tax_id || "PENDIENTE"   // 👈 CIF/NIF real del registro
 
         // Stripe & plan metadata
         const stripeCustomerId = userMetadata.stripe_customer_id || null
@@ -150,6 +151,7 @@ export default function AuthCallback() {
         console.log("📦 Payload RPC:", {
           organizationName,
           email: user.email,
+          taxId,
           stripeCustomerId,
           stripeSubscriptionId,
           selectedPlan,
@@ -160,7 +162,7 @@ export default function AuthCallback() {
         const { data: orgResult, error: orgError } = await supabase.rpc("create_organization_during_registration", {
           p_name: organizationName,
           p_email: user.email,
-          p_tax_id: "12345678A",
+          p_tax_id: taxId,  // 👈 ahora coge el real del metadata
           p_address: "Dirección temporal",
           p_postal_code: "28001",
           p_city: "Madrid",

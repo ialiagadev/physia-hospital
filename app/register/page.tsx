@@ -20,15 +20,16 @@ export default function RegisterPage() {
   const [name, setName] = useState("")
   const [phone, setPhone] = useState("")
   const [organizationName, setOrganizationName] = useState("")
+  const [taxId, setTaxId] = useState("") // 👈 nuevo campo para CIF/NIF
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null)
-const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("yearly")
+  const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("yearly")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState(false)
   const [subscriptionData, setSubscriptionData] = useState<{
     subscriptionId: string
     clientSecret: string
-    trialEnd?: string | null   // 👈 añadimos trialEnd
+    trialEnd?: string | null
     customerId: string
   } | null>(null)
   const router = useRouter()
@@ -37,7 +38,7 @@ const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("yearly
     e.preventDefault()
     setError("")
 
-    if (!email || !password || !name || !phone || !organizationName) {
+    if (!email || !password || !name || !phone || !organizationName || !taxId) {
       setError("Todos los campos son obligatorios")
       return
     }
@@ -75,6 +76,7 @@ const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("yearly
           name: name.trim(),
           phone: phone.trim(),
           organizationName: organizationName.trim(),
+          taxId: taxId.trim(), // 👈 lo pasamos también por si lo quieres usar en Stripe
         }),
       })
 
@@ -99,8 +101,7 @@ const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("yearly
       const planConfig = Object.values(STRIPE_PLANS).find((plan) => plan.id === selectedPlan)
       if (!planConfig) throw new Error(`Plan no válido: ${selectedPlan}`)
       
-      const priceId = planConfig.prices[billingPeriod].priceId // 👈 ahora solo el string correcto
-      
+      const priceId = planConfig.prices[billingPeriod].priceId
 
       console.log("📝 Creando suscripción en Stripe con:", { planId: selectedPlan, billingPeriod, priceId })
       const subResponse = await fetch("/api/create-subscription", {
@@ -135,17 +136,10 @@ const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("yearly
         subscriptionId: subData.subscriptionId,
         clientSecret: subData.clientSecret,
         customerId: stripeData.customerId,
-        trialEnd: subData.trialEnd, // 👈 debería venir de Stripe en segundos -> tú lo pasas a ISO
-      })
-      console.log("📝 SubscriptionData almacenado en estado:", {
-        subscriptionId: subData.subscriptionId,
-        clientSecret: subData.clientSecret,
-        customerId: stripeData.customerId,
         trialEnd: subData.trialEnd,
       })
-      
 
-      setStep(3) // Move to payment step
+      setStep(3) // Paso a pago
     } catch (err: any) {
       console.error("💥 Registration error:", err)
       setError("Error inesperado durante el registro: " + (err.message || "Inténtalo de nuevo"))
@@ -169,6 +163,7 @@ const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("yearly
         name: name.trim(),
         phone: phone.trim(),
         organization_name: organizationName.trim(),
+        tax_id: taxId.trim(), // 👈 se guarda en user_metadata
         stripe_customer_id: subscriptionData.customerId,
         stripe_subscription_id: subscriptionData.subscriptionId,
         selected_plan: selectedPlan,
@@ -180,11 +175,12 @@ const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("yearly
         email: email.trim(),
         password,
         options: {
-          emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
+          emailRedirectTo: `http://localhost:3000/auth/callback`,
           data: {
             name: name.trim(),
             phone: phone.trim(),
             organization_name: organizationName.trim(),
+            tax_id: taxId.trim(), // 👈 nuevo campo
             stripe_customer_id: subscriptionData.customerId,
             stripe_subscription_id: subscriptionData.subscriptionId,
             selected_plan: selectedPlan,
@@ -323,6 +319,16 @@ const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("yearly
                       type="text"
                       value={organizationName}
                       onChange={(e) => setOrganizationName(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="taxId">CIF / NIF (se usará para facturación)</Label>
+                    <Input
+                      id="taxId"
+                      type="text"
+                      value={taxId}
+                      onChange={(e) => setTaxId(e.target.value)}
                       required
                     />
                   </div>
