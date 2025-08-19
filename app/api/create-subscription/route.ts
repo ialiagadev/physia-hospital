@@ -5,8 +5,10 @@ import { STRIPE_PLANS } from "@/lib/stripe-config"
 export async function POST(request: NextRequest) {
   try {
     const { customerId, planId, billingPeriod } = await request.json()
+    console.log("📥 Request recibido:", { customerId, planId, billingPeriod })
 
     if (!customerId || !planId || !billingPeriod) {
+      console.warn("⚠️ Faltan parámetros obligatorios")
       return NextResponse.json(
         { success: false, error: "Faltan parámetros obligatorios" },
         { status: 400 }
@@ -15,7 +17,10 @@ export async function POST(request: NextRequest) {
 
     // Buscar plan
     const plan = Object.values(STRIPE_PLANS).find((p) => p.id === planId)
+    console.log("🔍 Plan encontrado:", plan)
+
     if (!plan) {
+      console.error("❌ Plan no válido:", planId)
       return NextResponse.json(
         { success: false, error: "Plan no válido" },
         { status: 400 }
@@ -24,7 +29,10 @@ export async function POST(request: NextRequest) {
 
     // Verificar periodo
     const priceConfig = plan.prices[billingPeriod as "monthly" | "yearly"]
+    console.log("📅 Configuración de precio:", priceConfig)
+
     if (!priceConfig) {
+      console.error("❌ Periodo de facturación no válido:", billingPeriod)
       return NextResponse.json(
         { success: false, error: "Periodo de facturación no válido" },
         { status: 400 }
@@ -32,6 +40,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { priceId } = priceConfig
+    console.log("💰 priceId seleccionado:", priceId)
 
     // 1️⃣ Crear SetupIntent para guardar tarjeta
     const setupIntent = await stripe.setupIntents.create({
@@ -57,6 +66,18 @@ export async function POST(request: NextRequest) {
     })
 
     console.log("✅ Suscripción creada:", subscription.id, "estado:", subscription.status)
+    console.log("📦 Suscripción completa:", JSON.stringify(subscription, null, 2))
+
+    // 👇 Verificar valores críticos
+    console.log("📊 Datos clave:", {
+      subscriptionId: subscription.id,
+      trial_end_raw: subscription.trial_end,
+      trial_end_iso: subscription.trial_end
+        ? new Date(subscription.trial_end * 1000).toISOString()
+        : null,
+      customerId: subscription.customer,
+      latestInvoice: subscription.latest_invoice,
+    })
 
     // 👇 en esta fase NO actualizamos la tabla organizations
     // Guardamos la info en user_metadata al hacer signUp
@@ -69,6 +90,7 @@ export async function POST(request: NextRequest) {
       trialEnd: subscription.trial_end
         ? new Date(subscription.trial_end * 1000).toISOString()
         : null,
+      customerId: subscription.customer,
     })
   } catch (error: any) {
     console.error("❌ Error creando SetupIntent + Suscripción:", error)
