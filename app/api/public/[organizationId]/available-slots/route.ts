@@ -1,18 +1,14 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js" 
+import { createClient } from "@supabase/supabase-js"
 import { format, parseISO, isToday } from "date-fns"
 
 // Cliente admin que bypassa RLS
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
+const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
   },
-)
+})
 
 // Tipos para los descansos
 interface ScheduleBreak {
@@ -48,14 +44,14 @@ function hasSlotPassed(slotStartTime: string, targetDate: Date): boolean {
   if (!isToday(targetDate)) {
     return false
   }
-  
+
   const currentTimeMinutes = getCurrentTimeInMinutes()
   const slotStartMinutes = timeToMinutes(slotStartTime)
-  
+
   // Buffer de 5 minutos para evitar mostrar slots muy próximos
   const bufferMinutes = 5
   const cutoffTime = currentTimeMinutes + bufferMinutes
-  
+
   return slotStartMinutes <= cutoffTime
 }
 
@@ -65,7 +61,7 @@ function timesOverlap(start1: string, end1: string, start2: string, end2: string
   const end1Minutes = timeToMinutes(end1)
   const start2Minutes = timeToMinutes(start2)
   const end2Minutes = timeToMinutes(end2)
-  
+
   return start1Minutes < end2Minutes && start2Minutes < end1Minutes
 }
 
@@ -75,7 +71,7 @@ async function getSlotsForProfessional(
   organizationId: number,
   serviceDuration: number,
   targetDate: Date,
-  formattedDate: string
+  formattedDate: string,
 ) {
   const dayOfWeek = targetDate.getDay()
 
@@ -214,21 +210,28 @@ async function getSlotsForProfessional(
     const startMinutes = timeToMinutes(workStart)
     const endMinutes = timeToMinutes(workEnd)
 
-    // Generar slots usando la duración del servicio como intervalo
-    for (let minutes = startMinutes; minutes + serviceDuration <= endMinutes; minutes += serviceDuration) {
-      const slotStart = minutesToTime(minutes)
-      const slotEnd = minutesToTime(minutes + serviceDuration)
+    let currentMinutes = startMinutes
+
+    while (currentMinutes + serviceDuration <= endMinutes) {
+      const slotStart = minutesToTime(currentMinutes)
+      const slotEnd = minutesToTime(currentMinutes + serviceDuration)
 
       // Verificar si el slot ya ha pasado
       if (hasSlotPassed(slotStart, targetDate)) {
+        currentMinutes += serviceDuration
         continue
       }
 
       // Verificar conflicto con descanso principal
       let hasBreakConflict = false
+      let nextAvailableTime = currentMinutes + serviceDuration
+
       if (schedule.break_start && schedule.break_end) {
         if (timesOverlap(slotStart, slotEnd, schedule.break_start, schedule.break_end)) {
           hasBreakConflict = true
+          // Ajustar el próximo tiempo disponible al final del descanso
+          const breakEndMinutes = timeToMinutes(schedule.break_end)
+          nextAvailableTime = Math.max(nextAvailableTime, breakEndMinutes)
         }
       }
 
@@ -237,12 +240,17 @@ async function getSlotsForProfessional(
         for (const breakItem of scheduleBreaks) {
           if (timesOverlap(slotStart, slotEnd, breakItem.start_time, breakItem.end_time)) {
             hasBreakConflict = true
+            // Ajustar el próximo tiempo disponible al final del descanso
+            const breakEndMinutes = timeToMinutes(breakItem.end_time)
+            nextAvailableTime = Math.max(nextAvailableTime, breakEndMinutes)
             break
           }
         }
       }
 
       if (hasBreakConflict) {
+        // Saltar al final del descanso en lugar de solo incrementar por la duración del servicio
+        currentMinutes = nextAvailableTime
         continue
       }
 
@@ -258,6 +266,7 @@ async function getSlotsForProfessional(
       }
 
       if (hasAppointmentConflict) {
+        currentMinutes += serviceDuration
         continue
       }
 
@@ -273,6 +282,7 @@ async function getSlotsForProfessional(
       }
 
       if (hasGroupConflict) {
+        currentMinutes += serviceDuration
         continue
       }
 
@@ -282,6 +292,8 @@ async function getSlotsForProfessional(
         end_time: slotEnd,
         available: true,
       })
+
+      currentMinutes += serviceDuration
     }
   }
 
@@ -384,23 +396,26 @@ export async function GET(request: NextRequest, { params }: { params: { organiza
         }
 
         // Convertir formato para compatibilidad
-        validProfessionals = allProfessionals.map(prof => ({ users: prof }))
+        validProfessionals = allProfessionals.map((prof) => ({ users: prof }))
       } else {
         validProfessionals = professionalServices
       }
 
       // Crear un mapa de todos los slots posibles con profesional asignado
-      const allSlotsMap = new Map<string, {
-        start_time: string
-        end_time: string
-        professional_id: string
-        professional_name: string
-      }>()
+      const allSlotsMap = new Map<
+        string,
+        {
+          start_time: string
+          end_time: string
+          professional_id: string
+          professional_name: string
+        }
+      >()
 
       // Para cada profesional, obtener sus slots disponibles
       for (const profService of validProfessionals) {
         const professional = profService.users
-        const professionalName = professional.name || 'Profesional'
+        const professionalName = professional.name || "Profesional"
 
         try {
           const professionalSlots = await getSlotsForProfessional(
@@ -408,7 +423,7 @@ export async function GET(request: NextRequest, { params }: { params: { organiza
             organizationId,
             serviceDuration,
             targetDate,
-            formattedDate
+            formattedDate,
           )
 
           // Agregar slots al mapa (usando tiempo como key para evitar duplicados)
@@ -433,7 +448,7 @@ export async function GET(request: NextRequest, { params }: { params: { organiza
       // Convertir mapa a array y ordenar por hora
       const finalSlots = Array.from(allSlotsMap.values())
         .sort((a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time))
-        .map(slot => ({
+        .map((slot) => ({
           start_time: slot.start_time,
           end_time: slot.end_time,
           available: true,
@@ -453,7 +468,7 @@ export async function GET(request: NextRequest, { params }: { params: { organiza
         .single()
 
       // Si no existe en user_services, permitir de todas formas (fallback)
-      if (serviceCheckError && serviceCheckError.code !== 'PGRST116') {
+      if (serviceCheckError && serviceCheckError.code !== "PGRST116") {
         console.error("❌ Error checking service permission:", serviceCheckError)
         return NextResponse.json({ error: "Error al verificar permisos del profesional" }, { status: 500 })
       }
@@ -463,7 +478,7 @@ export async function GET(request: NextRequest, { params }: { params: { organiza
         organizationId,
         serviceDuration,
         targetDate,
-        formattedDate
+        formattedDate,
       )
 
       return NextResponse.json({ slots })

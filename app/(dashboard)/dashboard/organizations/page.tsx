@@ -6,7 +6,10 @@ import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { CheckCircle, AlertTriangle, Info, Edit, LinkIcon } from "lucide-react"
+import { CheckCircle, AlertTriangle, Info, Edit, LinkIcon, CreditCard } from "lucide-react"
+
+const VERIFACTU_API_URL = "https://app.verifactuapi.es/api"
+const DEFAULT_TAX_ID = "12345678A"
 
 export default function OrganizationsPage() {
   const [organizations, setOrganizations] = useState<any[]>([])
@@ -20,31 +23,41 @@ export default function OrganizationsPage() {
   } | null>(null)
   const [configuringOrg, setConfiguringOrg] = useState<string | null>(null)
 
-  const VERIFACTU_API_URL = "https://app.verifactuapi.es/api"
-  const DEFAULT_TAX_ID = "12345678A"
-
   const showNotification = (type: "success" | "error" | "warning" | "info", message: string) => {
     setNotification({ type, message })
     setTimeout(() => setNotification(null), 5000)
   }
 
-  const getAdminToken = async (): Promise<string> => {
-    const res = await fetch("/api/verifactu/token", {
-      method: "POST",
-    })
-    const data = await res.json()
-    if (!res.ok || !data.token) {
-      throw new Error("Error obteniendo token")
+  const handleCancelSubscription = async (org: any) => {
+    if (!org.stripe_subscription_id) {
+      showNotification("warning", "Esta organización no tiene suscripción activa")
+      return
     }
-    return data.token
-  }
 
-  const isDefaultConfiguration = (org: any): boolean => {
-    return org.tax_id === DEFAULT_TAX_ID
-  }
+    if (!confirm(`¿Estás seguro de que quieres cancelar la suscripción de ${org.name}?`)) {
+      return
+    }
 
-  const hasUnconfiguredOrganizations = (): boolean => {
-    return organizations.some((org) => !org.verifactu_configured)
+    try {
+      const response = await fetch("/api/cancel-subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Error cancelando suscripción")
+      }
+
+      setOrganizations((prev) => prev.map((o) => (o.id === org.id ? { ...o, subscription_status: "canceled" } : o)))
+
+      showNotification("success", `Suscripción de ${org.name} cancelada correctamente`)
+    } catch (err: any) {
+      console.error("Error cancelando suscripción:", err)
+      showNotification("error", err.message || "Error cancelando la suscripción")
+    }
   }
 
   const handleConfigureVerifactu = async (org: any, event: React.MouseEvent) => {
@@ -53,7 +66,7 @@ export default function OrganizationsPage() {
       showNotification("info", `${org.name} ya está configurado para Verifactu`)
       return
     }
-    if (isDefaultConfiguration(org)) {
+    if (org.tax_id === DEFAULT_TAX_ID) {
       showNotification("warning", "Debes cambiar el CIF/NIF antes de configurar Verifactu.")
       return
     }
@@ -61,7 +74,16 @@ export default function OrganizationsPage() {
     setConfiguringOrg(org.id)
 
     try {
-      const token = await getAdminToken()
+      const token = await fetch("/api/verifactu/token", {
+        method: "POST",
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (!data.token) {
+            throw new Error("Error obteniendo token")
+          }
+          return data.token
+        })
 
       const emisorRes = await fetch(`${VERIFACTU_API_URL}/emisor`, {
         method: "POST",
@@ -127,7 +149,7 @@ export default function OrganizationsPage() {
   }
 
   const isButtonDisabled = (org: any): boolean => {
-    return configuringOrg === org.id || isDefaultConfiguration(org)
+    return configuringOrg === org.id || org.tax_id === DEFAULT_TAX_ID
   }
 
   const shouldShowButton = (org: any): boolean => {
@@ -138,6 +160,11 @@ export default function OrganizationsPage() {
     const publicUrl = `${window.location.origin}/booking/${orgId}`
     navigator.clipboard.writeText(publicUrl)
     showNotification("success", "Enlace copiado al portapapeles")
+  }
+
+  const formatDate = (dateString: string) => {
+    if (!dateString) return "No disponible"
+    return dateString
   }
 
   useEffect(() => {
@@ -161,7 +188,7 @@ export default function OrganizationsPage() {
 
         const { data: orgs, error: orgsError } = await supabase
           .from("organizations")
-          .select("*")
+          .select("*, stripe_customer_id, stripe_subscription_id, subscription_status")
           .order("created_at", { ascending: false })
 
         if (orgsError) {
@@ -193,7 +220,7 @@ export default function OrganizationsPage() {
         </div>
       </div>
 
-      {hasUnconfiguredOrganizations() && (
+      {organizations.some((org) => !org.verifactu_configured) && (
         <Alert className="border-blue-500 bg-blue-50">
           <Info className="h-4 w-4 text-blue-600" />
           <AlertDescription className="text-blue-800">
@@ -209,10 +236,10 @@ export default function OrganizationsPage() {
             notification.type === "success"
               ? "border-green-500 bg-green-50"
               : notification.type === "error"
-              ? "border-red-500 bg-red-50"
-              : notification.type === "warning"
-              ? "border-yellow-500 bg-yellow-50"
-              : "border-blue-500 bg-blue-50"
+                ? "border-red-500 bg-red-50"
+                : notification.type === "warning"
+                  ? "border-yellow-500 bg-yellow-50"
+                  : "border-blue-500 bg-blue-50"
           }`}
         >
           {notification.type === "success" && <CheckCircle className="h-4 w-4 text-green-600" />}
@@ -224,10 +251,10 @@ export default function OrganizationsPage() {
               notification.type === "success"
                 ? "text-green-800"
                 : notification.type === "error"
-                ? "text-red-800"
-                : notification.type === "warning"
-                ? "text-yellow-800"
-                : "text-blue-800"
+                  ? "text-red-800"
+                  : notification.type === "warning"
+                    ? "text-yellow-800"
+                    : "text-blue-800"
             }`}
           >
             {notification.message}
@@ -243,6 +270,7 @@ export default function OrganizationsPage() {
               <TableHead>CIF/NIF</TableHead>
               <TableHead>Ciudad</TableHead>
               <TableHead>Email</TableHead>
+              <TableHead>Suscripción</TableHead>
               <TableHead>Estado Verifactu</TableHead>
               <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
@@ -275,12 +303,28 @@ export default function OrganizationsPage() {
                 <TableCell>{org.city || "-"}</TableCell>
                 <TableCell>{org.email || "-"}</TableCell>
                 <TableCell>
+                  {org.stripe_subscription_id && (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        window.location.href = "/dashboard/subscriptions"
+                      }}
+                      aria-label="Gestionar suscripción"
+                    >
+                      <CreditCard className="h-4 w-4 mr-1" />
+                      Suscripción
+                    </Button>
+                  )}
+                </TableCell>
+                <TableCell>
                   {org.verifactu_configured ? (
                     <span className="inline-flex items-center gap-1 text-green-600 text-sm">
                       <CheckCircle className="h-4 w-4" />
                       Configurado
                     </span>
-                  ) : isDefaultConfiguration(org) ? (
+                  ) : org.tax_id === DEFAULT_TAX_ID ? (
                     <span className="inline-flex items-center gap-1 text-orange-600 text-sm">
                       <AlertTriangle className="h-4 w-4" />
                       Configurar datos primero
