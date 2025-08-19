@@ -21,15 +21,18 @@ export default function AuthCallback() {
     const handleCallback = async () => {
       try {
         setMessage("Confirmando email...")
+        console.log("📩 Iniciando callback...")
 
         // Obtener tokens del hash
         const hashParams = new URLSearchParams(window.location.hash.substring(1))
         const accessToken = hashParams.get("access_token")
         const refreshToken = hashParams.get("refresh_token")
+        console.log("🔑 Tokens obtenidos:", { accessToken, refreshToken })
 
         if (!accessToken) {
           setStatus("error")
           setMessage("Enlace de confirmación inválido")
+          console.error("❌ No se encontró access_token en la URL")
           return
         }
 
@@ -39,27 +42,37 @@ export default function AuthCallback() {
           refresh_token: refreshToken || "",
         })
 
+        console.log("📡 Resultado setSession:", { sessionData, sessionError })
+
         if (sessionError || !sessionData.user) {
-          console.error("Error estableciendo sesión:", sessionError)
+          console.error("❌ Error estableciendo sesión:", sessionError)
           setStatus("error")
           setMessage("Error al procesar la confirmación")
           return
         }
 
         const user = sessionData.user
+        console.log("👤 Usuario de Supabase:", user)
+
         const userMetadata = user.user_metadata || {}
+        console.log("📎 Metadata del usuario:", userMetadata)
+
         const userPhone = userMetadata.phone || null
 
         // Verificar cuenta en DB
         setMessage("Verificando cuenta...")
+        console.log("🔍 Buscando usuario en tabla users con id:", user.id)
+
         const { data: existingUser, error: userError } = await supabase
           .from("users")
           .select("id, organization_id, name, email")
           .eq("id", user.id)
           .single()
 
+        console.log("📄 Resultado búsqueda usuario:", { existingUser, userError })
+
         if (userError) {
-          // Esperar a que el trigger cree el usuario
+          console.warn("⚠️ Usuario no encontrado, reintentando en 3s...")
           await new Promise((resolve) => setTimeout(resolve, 3000))
 
           const { data: retryUser, error: retryError } = await supabase
@@ -68,14 +81,17 @@ export default function AuthCallback() {
             .eq("id", user.id)
             .single()
 
+          console.log("🔄 Resultado reintento usuario:", { retryUser, retryError })
+
           if (retryError) {
-            console.error("Usuario no encontrado:", retryError.message)
+            console.error("❌ Usuario no encontrado tras reintento:", retryError.message)
             setStatus("error")
             setMessage("Error: Usuario no encontrado")
             return
           }
 
           if (retryUser.organization_id) {
+            console.log("✅ Usuario ya tenía organización asignada:", retryUser.organization_id)
             setMessage("Actualizando información...")
             await supabase.from("users").update({ phone: userPhone }).eq("id", user.id)
 
@@ -89,6 +105,7 @@ export default function AuthCallback() {
           }
         } else {
           if (existingUser.organization_id) {
+            console.log("✅ Usuario ya tenía organización asignada:", existingUser.organization_id)
             setMessage("Actualizando información...")
             await supabase.from("users").update({ phone: userPhone }).eq("id", user.id)
 
@@ -103,9 +120,10 @@ export default function AuthCallback() {
         }
 
         // Crear organización si no existe
+        console.log("🏗️ Usuario sin organización → creando organización...")
         await createOrganization(user, existingUser)
       } catch (error) {
-        console.error("Error:", error)
+        console.error("💥 Error general en handleCallback:", error)
         setStatus("error")
         setMessage("Error al procesar la confirmación")
       }
@@ -114,13 +132,29 @@ export default function AuthCallback() {
     const createOrganization = async (user: any, existingUser: any) => {
       try {
         setMessage("Creando organización...")
+        console.log("🏗️ Iniciando creación de organización...")
 
         const userMetadata = user.user_metadata || {}
         const organizationName = userMetadata.organization_name || "Mi Organización"
         const userName = userMetadata.name || existingUser?.name || user.email?.split("@")[0] || "Usuario"
         const userPhone = userMetadata.phone || null
 
-        // 1️⃣ Crear organización con RPC
+        // Stripe & plan metadata
+        const stripeCustomerId = userMetadata.stripe_customer_id || null
+        const stripeSubscriptionId = userMetadata.stripe_subscription_id || null
+        const selectedPlan = userMetadata.selected_plan || "free"
+        const trialEnd = userMetadata.trial_end || null
+
+        console.log("📦 Datos que se enviarán a RPC:", {
+          organizationName,
+          email: user.email,
+          stripeCustomerId,
+          stripeSubscriptionId,
+          selectedPlan,
+          trialEnd,
+        })
+
+        // 1️⃣ Crear organización con RPC incluyendo Stripe
         const { data: orgResult, error: orgError } = await supabase.rpc("create_organization_during_registration", {
           p_name: organizationName,
           p_email: user.email,
@@ -130,45 +164,35 @@ export default function AuthCallback() {
           p_city: "Madrid",
           p_province: "Madrid",
           p_country: "España",
+          p_stripe_customer_id: stripeCustomerId,
+          p_stripe_subscription_id: stripeSubscriptionId,
+          p_subscription_tier: selectedPlan,
+          p_subscription_expires: trialEnd,
+          p_subscription_status: trialEnd ? "trialing" : "active",
         })
 
+        console.log("📡 Resultado RPC:", { orgResult, orgError })
+
         if (orgError) {
-          console.error("Error creating organization:", orgError)
+          console.error("❌ Error creando organización:", orgError)
           setStatus("error")
           setMessage("Error al crear la organización")
           return
         }
 
         const organizationId = orgResult[0]?.id
+        console.log("🏢 Organización creada con id:", organizationId)
 
         if (!organizationId) {
+          console.error("❌ No se obtuvo id de la organización")
           setStatus("error")
           setMessage("Error: No se pudo crear la organización")
           return
         }
 
-        // 2️⃣ Actualizar Stripe en la organización
-        const stripeCustomerId = userMetadata.stripe_customer_id || null
-        const stripeSubscriptionId = userMetadata.stripe_subscription_id || null
-        const selectedPlan = userMetadata.selected_plan || null
-        const billingPeriod = userMetadata.billing_period || "monthly"
-        const trialEnd = userMetadata.trial_end || null
-
-        if (stripeCustomerId || stripeSubscriptionId) {
-          await supabase
-            .from("organizations")
-            .update({
-              stripe_customer_id: stripeCustomerId,
-              stripe_subscription_id: stripeSubscriptionId,
-              plan: selectedPlan,
-              billing_period: billingPeriod,
-              trial_end: trialEnd,
-            })
-            .eq("id", organizationId)
-        }
-
-        // 3️⃣ Actualizar usuario
+        // 2️⃣ Actualizar usuario
         setMessage("Finalizando configuración...")
+        console.log("✏️ Actualizando usuario con organization_id:", organizationId)
 
         const { data: updateResult, error: userUpdateError } = await supabase
           .from("users")
@@ -181,15 +205,17 @@ export default function AuthCallback() {
           .eq("id", user.id)
           .select()
 
+        console.log("📡 Resultado update usuario:", { updateResult, userUpdateError })
+
         if (userUpdateError) {
-          console.error("Error updating user:", userUpdateError)
+          console.error("❌ Error actualizando usuario:", userUpdateError)
           setStatus("error")
           setMessage("Error al actualizar el usuario: " + userUpdateError.message)
           return
         }
 
         if (!updateResult || updateResult.length === 0) {
-          console.error("No se actualizó ningún registro")
+          console.error("❌ No se actualizó ningún registro de usuario")
           setStatus("error")
           setMessage("Error: No se pudo actualizar el usuario")
           return
@@ -203,8 +229,10 @@ export default function AuthCallback() {
           .eq("id", user.id)
           .single()
 
+        console.log("✅ Usuario final tras update:", finalUser)
+
         if (!finalUser?.organization_id) {
-          console.error("El usuario aún no tiene organization_id")
+          console.error("❌ El usuario aún no tiene organization_id")
           setStatus("error")
           setMessage("Error: La organización no se asignó correctamente al usuario")
           return
@@ -217,7 +245,7 @@ export default function AuthCallback() {
           router.push("/login")
         }, 2000)
       } catch (error) {
-        console.error("Error creando organización:", error)
+        console.error("💥 Error creando organización:", error)
         setStatus("error")
         setMessage("Error al crear la organización")
       }
