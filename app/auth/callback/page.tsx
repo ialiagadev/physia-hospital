@@ -52,11 +52,11 @@ export default function AuthCallback() {
         }
 
         const user = sessionData.user
-        console.log("👤 Usuario de Supabase:", user)
+        console.log("👤 Usuario de Supabase (objeto crudo):", user)
+        console.log("👤 Usuario de Supabase (JSON):", JSON.stringify(user, null, 2))
+        console.log("📎 Metadata del usuario (JSON):", JSON.stringify(user.user_metadata, null, 2))
 
         const userMetadata = user.user_metadata || {}
-        console.log("📎 Metadata del usuario:", userMetadata)
-
         const userPhone = userMetadata.phone || null
 
         // Verificar cuenta en DB
@@ -135,6 +135,8 @@ export default function AuthCallback() {
         console.log("🏗️ Iniciando creación de organización...")
 
         const userMetadata = user.user_metadata || {}
+        console.log("📎 Metadata completa antes de RPC:", JSON.stringify(userMetadata, null, 2))
+
         const organizationName = userMetadata.organization_name || "Mi Organización"
         const userName = userMetadata.name || existingUser?.name || user.email?.split("@")[0] || "Usuario"
         const userPhone = userMetadata.phone || null
@@ -145,7 +147,7 @@ export default function AuthCallback() {
         const selectedPlan = userMetadata.selected_plan || "free"
         const trialEnd = userMetadata.trial_end || null
 
-        console.log("📦 Datos que se enviarán a RPC:", {
+        console.log("📦 Payload RPC:", {
           organizationName,
           email: user.email,
           stripeCustomerId,
