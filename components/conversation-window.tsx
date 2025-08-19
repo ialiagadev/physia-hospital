@@ -1514,7 +1514,7 @@ const isLastInGroup = (index: number, messages: Message[]) => {
         )}
 
         {showEmojiPicker && (
-          <div className="absolute bottom-20 right-4 z-50">
+          <div className="absolute bottom-20 center-4 z-50">
             <EmojiPicker
               onEmojiClick={onEmojiClick}
               width={350}

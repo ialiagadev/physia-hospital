@@ -129,12 +129,19 @@ const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("yearly
       }
 
       console.log("✅ Suscripción Stripe creada:", subData.subscriptionId)
-
+      console.log("📦 Datos completos de la suscripción recibidos:", subData)
+      
       setSubscriptionData({
         subscriptionId: subData.subscriptionId,
         clientSecret: subData.clientSecret,
         customerId: stripeData.customerId,
-        trialEnd: subData.trialEnd,   // 👈 guardar aquí lo que devuelve la API
+        trialEnd: subData.trialEnd, // 👈 debería venir de Stripe en segundos -> tú lo pasas a ISO
+      })
+      console.log("📝 SubscriptionData almacenado en estado:", {
+        subscriptionId: subData.subscriptionId,
+        clientSecret: subData.clientSecret,
+        customerId: stripeData.customerId,
+        trialEnd: subData.trialEnd,
       })
       
 
