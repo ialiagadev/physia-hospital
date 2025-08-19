@@ -148,13 +148,27 @@ const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("yearly
   }
 
   const handlePaymentSuccess = async () => {
-    if (!subscriptionData) return
-
+    if (!subscriptionData) {
+      console.warn("⚠️ No hay subscriptionData en handlePaymentSuccess")
+      return
+    }
+  
     setIsLoading(true)
     setError("")
-
+  
     try {
-      console.log("👤 Creando usuario en Supabase...")
+      console.log("👤 Creando usuario en Supabase con metadata...")
+      console.log("📦 Metadata que voy a guardar:", {
+        name: name.trim(),
+        phone: phone.trim(),
+        organization_name: organizationName.trim(),
+        stripe_customer_id: subscriptionData.customerId,
+        stripe_subscription_id: subscriptionData.subscriptionId,
+        selected_plan: selectedPlan,
+        billing_period: billingPeriod,
+        trial_end: subscriptionData.trialEnd,
+      })
+  
       const { data: authData, error: authError } = await modernSupabase.auth.signUp({
         email: email.trim(),
         password,
@@ -168,20 +182,20 @@ const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("yearly
             stripe_subscription_id: subscriptionData.subscriptionId,
             selected_plan: selectedPlan,
             billing_period: billingPeriod,
-            trial_end: subscriptionData.trialEnd,  // 👈 guardas la fecha aquí
+            trial_end: subscriptionData.trialEnd,
           },
         },
       })
-      
-
+  
       if (authError) {
         console.error("❌ Error en signUp:", authError)
         setError(authError.message)
         return
       }
-
+  
       if (authData.user) {
-        console.log("✅ Usuario creado:", authData.user.email)
+        console.log("✅ Usuario creado en Supabase:", authData.user.email)
+        console.log("🔎 user_metadata guardado:", authData.user.user_metadata)
         setSuccess(true)
       }
     } catch (err: any) {
@@ -191,6 +205,7 @@ const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("yearly
       setIsLoading(false)
     }
   }
+  
 
   if (success) {
     return (
