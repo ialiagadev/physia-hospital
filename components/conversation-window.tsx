@@ -436,7 +436,6 @@ export default function ConversationWindowSimple({
     }
   }
 
-  // Handle template sent - Updated to show template with variables replaced
   const handleTemplateSent = async (template: TemplateWithVariables) => {
     try {
       // Use the final content if available, otherwise build it
@@ -468,17 +467,50 @@ export default function ConversationWindowSimple({
         }
       }
 
-      // Add the template content as a message in the chat
-      await sendMessage({
-        conversationId: chatId,
-        content: templateContent,
-        userId: currentUser.id,
-        messageType: "text",
-      })
+      // Extract buttons from template components
+      const buttonsComponent = template.components?.find((c) => c.type === "BUTTONS")
+      const buttons = (buttonsComponent as any)?.buttons || []
+
+      // The template was already sent via WhatsApp API, we just need to record it locally
+      const { data: messageData, error: messageError } = await supabase
+        .from("messages")
+        .insert({
+          conversation_id: chatId,
+          sender_type: "agent",
+          user_id: currentUser.id,
+          content: templateContent,
+          message_type: "text",
+          is_read: false,
+          metadata: {
+            is_template: true,
+            template_name: template.name,
+            template_id: template.id,
+            template_components: template.components, // Save complete template structure
+            template_buttons: buttons, // Save buttons separately for easy access
+            whatsapp_sent: true, // Mark as already sent via WhatsApp
+            whatsapp_sent_at: new Date().toISOString(),
+          },
+        })
+        .select()
+        .single()
+
+      if (messageError) {
+        throw messageError
+      }
+
+      // Update conversation timestamp
+      await supabase
+        .from("conversations")
+        .update({
+          last_message_at: new Date().toISOString(),
+          unread_count: 0,
+        })
+        .eq("id", chatId)
 
       // Refrescar la conversación para actualizar last_message_at
       refetchConversation?.()
     } catch (error) {
+      console.error("❌ Error saving template message:", error)
       toast({
         title: "Error",
         description: "La plantilla se envió pero no se pudo mostrar en el chat",
@@ -530,32 +562,25 @@ export default function ConversationWindowSimple({
     if (dateStr === yesterday) return "Ayer"
     return dateStr
   }
-// Check if message is first in a group
-const isFirstInGroup = (index: number, messages: Message[]) => {
-  if (index === 0) return true
-  const current = messages[index]
-  const prev = messages[index - 1]
+  // Check if message is first in a group
+  const isFirstInGroup = (index: number, messages: Message[]) => {
+    if (index === 0) return true
+    const current = messages[index]
+    const prev = messages[index - 1]
 
-  // Nuevo: si cambia el tipo de emisor o cambia el usuario (ej: otro agente)
-  return (
-    current.sender_type !== prev.sender_type ||
-    current.user?.id !== prev.user?.id
-  )
-}
+    // Nuevo: si cambia el tipo de emisor o cambia el usuario (ej: otro agente)
+    return current.sender_type !== prev.sender_type || current.user?.id !== prev.user?.id
+  }
 
-// Check if message is last in a group
-const isLastInGroup = (index: number, messages: Message[]) => {
-  if (index === messages.length - 1) return true
-  const current = messages[index]
-  const next = messages[index + 1]
+  // Check if message is last in a group
+  const isLastInGroup = (index: number, messages: Message[]) => {
+    if (index === messages.length - 1) return true
+    const current = messages[index]
+    const next = messages[index + 1]
 
-  // Nuevo: si cambia el tipo de emisor o cambia el usuario
-  return (
-    current.sender_type !== next.sender_type ||
-    current.user?.id !== next.user?.id
-  )
-}
-
+    // Nuevo: si cambia el tipo de emisor o cambia el usuario
+    return current.sender_type !== next.sender_type || current.user?.id !== next.user?.id
+  }
 
   // Handle assignment change callback
   const handleAssignmentChange = () => {
@@ -638,6 +663,135 @@ const isLastInGroup = (index: number, messages: Message[]) => {
     }
   }, [voiceRecording.audioUrl])
 
+  const TemplateMessage = ({ msg }: { msg: any }) => {
+    const isSent = msg.sender_type === "agent"
+    const buttons = msg.metadata?.template_buttons || []
+
+    const handleButtonClick = (button: any) => {
+      switch (button.type) {
+        case "URL":
+          if (button.url) {
+            window.open(button.url, "_blank", "noopener,noreferrer")
+          }
+          break
+        case "PHONE_NUMBER":
+          if (button.phone_number) {
+            window.open(`tel:${button.phone_number}`, "_self")
+          }
+          break
+        case "QUICK_REPLY":
+          // For quick reply buttons, we could potentially send a response
+          console.log("Quick reply clicked:", button.text)
+          break
+        default:
+          console.log("Button clicked:", button)
+      }
+    }
+
+    return (
+      <div className="space-y-3">
+        {/* Template content */}
+        <div className="whitespace-pre-wrap break-words">{msg.content}</div>
+
+        {/* Action buttons */}
+        {buttons.length > 0 && (
+          <div className="space-y-2 mt-3">
+            {buttons.map((button: any, index: number) => {
+              let buttonStyle =
+                "w-full justify-center text-sm font-medium transition-colors border rounded-lg py-2 px-4"
+              const buttonContent = button.text
+              let icon = null
+
+              switch (button.type) {
+                case "URL":
+                  buttonStyle += " bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
+                  icon = "🔗"
+                  break
+                case "PHONE_NUMBER":
+                  buttonStyle += " bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
+                  icon = "📞"
+                  break
+                case "QUICK_REPLY":
+                  buttonStyle += " bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100"
+                  icon = "💬"
+                  break
+                default:
+                  buttonStyle += " bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100"
+              }
+
+              return (
+                <button key={index} onClick={() => handleButtonClick(button)} className={buttonStyle} type="button">
+                  <span className="flex items-center justify-center gap-2">
+                    {icon && <span>{icon}</span>}
+                    {buttonContent}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const renderMessageContent = (msg: any) => {
+    // Check if this is a template message with buttons
+    if (msg.metadata?.is_template && msg.metadata?.template_buttons?.length > 0) {
+      return <TemplateMessage msg={msg} />
+    }
+
+    switch (msg.message_type) {
+      case "text":
+        return <div className="whitespace-pre-wrap break-words">{msg.content}</div>
+      case "image":
+        return (
+          <div className="max-w-xs">
+            <img src={msg.media_url || "/placeholder.svg"} alt="Imagen" className="rounded-lg max-w-full h-auto" />
+          </div>
+        )
+      case "video":
+        return (
+          <div className="max-w-xs">
+            <video src={msg.media_url} controls className="rounded-lg max-w-full h-auto" preload="metadata">
+              Tu navegador no soporta el elemento video.
+            </video>
+          </div>
+        )
+      case "document":
+        if (isVoiceNote(msg)) {
+          return <VoiceNoteMessage msg={msg} />
+        }
+        // Renderizar como documento normal
+        return (
+          <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg max-w-xs">
+            <FileText className="h-8 w-8 text-blue-500 flex-shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium">Documento</div>
+              {msg.media_url && (
+                <a
+                  href={msg.media_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-blue-600 hover:underline"
+                >
+                  Descargar archivo
+                </a>
+              )}
+            </div>
+          </div>
+        )
+      case "audio":
+        return <VoiceNoteMessage msg={msg} />
+
+      default:
+        return (
+          <div className="whitespace-pre-wrap break-words text-[14px] leading-[1.3] text-gray-900 min-w-0 flex-1">
+            {msg.content}
+          </div>
+        )
+    }
+  }
+
   const VoiceNoteMessage = ({ msg }: { msg: any }) => {
     const [isPlaying, setIsPlaying] = useState(false)
     const audioRef = useRef<HTMLAudioElement>(null)
@@ -692,59 +846,6 @@ const isLastInGroup = (index: number, messages: Message[]) => {
         <audio ref={audioRef} src={msg.media_url} onEnded={() => setIsPlaying(false)} className="hidden" />
       </div>
     )
-  }
-
-  const renderMessageContent = (msg: any) => {
-    switch (msg.message_type) {
-      case "text":
-        return <div className="whitespace-pre-wrap break-words">{msg.content}</div>
-      case "image":
-        return (
-          <div className="max-w-xs">
-            <img src={msg.media_url || "/placeholder.svg"} alt="Imagen" className="rounded-lg max-w-full h-auto" />
-          </div>
-        )
-      case "video":
-        return (
-          <div className="max-w-xs">
-            <video src={msg.media_url} controls className="rounded-lg max-w-full h-auto" preload="metadata">
-              Tu navegador no soporta el elemento video.
-            </video>
-          </div>
-        )
-      case "document":
-        if (isVoiceNote(msg)) {
-          return <VoiceNoteMessage msg={msg} />
-        }
-        // Renderizar como documento normal
-        return (
-          <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg max-w-xs">
-            <FileText className="h-8 w-8 text-blue-500 flex-shrink-0" />
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-medium">Documento</div>
-              {msg.media_url && (
-                <a
-                  href={msg.media_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-blue-600 hover:underline"
-                >
-                  Descargar archivo
-                </a>
-              )}
-            </div>
-          </div>
-        )
-      case "audio":
-        return <VoiceNoteMessage msg={msg} />
-
-      default:
-        return (
-          <div className="whitespace-pre-wrap break-words text-[14px] leading-[1.3] text-gray-900 min-w-0 flex-1">
-            {msg.content}
-          </div>
-        )
-    }
   }
 
   const isVoiceNote = (msg: any) => {
@@ -1137,34 +1238,26 @@ const isLastInGroup = (index: number, messages: Message[]) => {
                           : "max-w-[85%]"
                       }`}
                     >
-                    {/* Avatar: 
+                      {/* Avatar: 
   - Siempre para IA (user?.type === 2) 
   - Para agentes humanos solo si es el primero del grupo (isFirst) */}
-{(msg.user?.type === 2 || (msg.sender_type === "agent" && isFirst)) && (
-  <div className="flex-shrink-0">
-    {msg.user?.type === 2 ? (
-      // IA
-      <Avatar className="h-8 w-8">
-        <AvatarImage src="/images/IA.jpeg" alt="IA" />
-        <AvatarFallback className="bg-purple-100 text-purple-600">
-          IA
-        </AvatarFallback>
-      </Avatar>
-    ) : (
-      // Agente humano
-      <Avatar className="h-8 w-8">
-        <AvatarImage
-          src={msg.user?.avatar_url || undefined}
-          alt={msg.user?.name || "U"}
-        />
-        <AvatarFallback>
-          {msg.user?.name?.charAt(0).toUpperCase() || "U"}
-        </AvatarFallback>
-      </Avatar>
-    )}
-  </div>
-)}
-
+                      {(msg.user?.type === 2 || (msg.sender_type === "agent" && isFirst)) && (
+                        <div className="flex-shrink-0">
+                          {msg.user?.type === 2 ? (
+                            // IA
+                            <Avatar className="h-8 w-8">
+                              <AvatarImage src="/images/IA.jpeg" alt="IA" />
+                              <AvatarFallback className="bg-purple-100 text-purple-600">IA</AvatarFallback>
+                            </Avatar>
+                          ) : (
+                            // Agente humano
+                            <Avatar className="h-8 w-8">
+                              <AvatarImage src={msg.user?.avatar_url || undefined} alt={msg.user?.name || "U"} />
+                              <AvatarFallback>{msg.user?.name?.charAt(0).toUpperCase() || "U"}</AvatarFallback>
+                            </Avatar>
+                          )}
+                        </div>
+                      )}
 
                       <div
                         className={`relative px-2 py-1 ${
@@ -1340,21 +1433,19 @@ const isLastInGroup = (index: number, messages: Message[]) => {
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <div>
-                    <TemplateSelectorDialog
-                      recipientPhone={getRecipientPhone()}
-                      onTemplateSent={handleTemplateSent}
-                      disabled={sending}
-                      trigger={
-                        <Button
-                          size="icon"
-                          className="rounded-full bg-green-500 hover:bg-green-600 text-white shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 border-2 border-green-400"
-                        >
-                          <FileText className="h-4 w-4" />
-                        </Button>
-                      }
-                    />
-                  </div>
+                  <TemplateSelectorDialog
+                    recipientPhone={getRecipientPhone()}
+                    onTemplateSent={handleTemplateSent}
+                    disabled={sending}
+                    trigger={
+                      <Button
+                        size="icon"
+                        className="rounded-full bg-green-500 hover:bg-green-600 text-white shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 border-2 border-green-400"
+                      >
+                        <FileText className="h-4 w-4" />
+                      </Button>
+                    }
+                  />
                 </TooltipTrigger>
                 <TooltipContent>Enviar plantilla para reanudar conversación</TooltipContent>
               </Tooltip>
@@ -1413,13 +1504,21 @@ const isLastInGroup = (index: number, messages: Message[]) => {
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <div>
-                        <TemplateSelectorDialog
-                          recipientPhone={getRecipientPhone()}
-                          onTemplateSent={handleTemplateSent}
-                          disabled={sending}
-                        />
-                      </div>
+                      <TemplateSelectorDialog
+                        recipientPhone={getRecipientPhone()}
+                        onTemplateSent={handleTemplateSent}
+                        disabled={sending}
+                        trigger={
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="rounded-full text-gray-500 hover:bg-gray-50"
+                            disabled={sending}
+                          >
+                            <FileText className="h-4 w-4" />
+                          </Button>
+                        }
+                      />
                     </TooltipTrigger>
                     <TooltipContent>Enviar plantilla</TooltipContent>
                   </Tooltip>
