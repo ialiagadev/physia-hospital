@@ -100,7 +100,7 @@ export default function RegisterPage() {
       // 2. Crear suscripción en Stripe
       const planConfig = Object.values(STRIPE_PLANS).find((plan) => plan.id === selectedPlan)
       if (!planConfig) throw new Error(`Plan no válido: ${selectedPlan}`)
-      
+
       const priceId = planConfig.prices[billingPeriod].priceId
 
       console.log("📝 Creando suscripción en Stripe con:", { planId: selectedPlan, billingPeriod, priceId })
@@ -131,8 +131,17 @@ export default function RegisterPage() {
 
       console.log("✅ Suscripción Stripe creada:", subData.subscriptionId)
       console.log("📦 Datos completos de la suscripción recibidos:", subData)
-      
+      console.log("[v0] DEBUG - subData.subscriptionId:", subData.subscriptionId)
+      console.log("[v0] DEBUG - typeof subData.subscriptionId:", typeof subData.subscriptionId)
+
       setSubscriptionData({
+        subscriptionId: subData.subscriptionId,
+        clientSecret: subData.clientSecret,
+        customerId: stripeData.customerId,
+        trialEnd: subData.trialEnd,
+      })
+
+      console.log("[v0] DEBUG - subscriptionData que se va a guardar:", {
         subscriptionId: subData.subscriptionId,
         clientSecret: subData.clientSecret,
         customerId: stripeData.customerId,
@@ -153,24 +162,24 @@ export default function RegisterPage() {
       console.warn("⚠️ No hay subscriptionData en handlePaymentSuccess")
       return
     }
-  
+
     setIsLoading(true)
     setError("")
-  
+
     try {
       console.log("👤 Creando usuario en Supabase con metadata...")
       console.log("📦 Metadata que voy a guardar:", {
         name: name.trim(),
         phone: phone.trim(),
         organization_name: organizationName.trim(),
-        tax_id: taxId.trim(), // 👈 se guarda en user_metadata
+        tax_id: taxId.trim(), // 👈 nuevo campo
         stripe_customer_id: subscriptionData.customerId,
         stripe_subscription_id: subscriptionData.subscriptionId,
         selected_plan: selectedPlan,
         billing_period: billingPeriod,
         trial_end: subscriptionData.trialEnd,
       })
-  
+
       const { data: authData, error: authError } = await modernSupabase.auth.signUp({
         email: email.trim(),
         password,
@@ -189,13 +198,13 @@ export default function RegisterPage() {
           },
         },
       })
-  
+
       if (authError) {
         console.error("❌ Error en signUp:", authError)
         setError(authError.message)
         return
       }
-  
+
       if (authData.user) {
         console.log("✅ Usuario creado en Supabase:", authData.user.email)
         console.log("🔎 user_metadata guardado:", authData.user.user_metadata)
@@ -208,7 +217,6 @@ export default function RegisterPage() {
       setIsLoading(false)
     }
   }
-  
 
   if (success) {
     return (
@@ -324,13 +332,7 @@ export default function RegisterPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="taxId">CIF / NIF (se usará para facturación)</Label>
-                    <Input
-                      id="taxId"
-                      type="text"
-                      value={taxId}
-                      onChange={(e) => setTaxId(e.target.value)}
-                      required
-                    />
+                    <Input id="taxId" type="text" value={taxId} onChange={(e) => setTaxId(e.target.value)} required />
                   </div>
                   <Button type="submit" className="w-full mt-8">
                     Continuar al plan
@@ -364,6 +366,7 @@ export default function RegisterPage() {
               {step === 3 && subscriptionData && (
                 <PaymentSetup
                   clientSecret={subscriptionData.clientSecret}
+                  subscriptionId={subscriptionData.subscriptionId} // Confirmando que subscriptionId se pasa correctamente
                   onSuccess={handlePaymentSuccess}
                   onError={setError}
                   planName={Object.values(STRIPE_PLANS).find((p) => p.id === selectedPlan)?.name || ""}

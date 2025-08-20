@@ -9,10 +9,7 @@ export async function POST(request: NextRequest) {
 
     if (!customerId || !planId || !billingPeriod) {
       console.warn("⚠️ Faltan parámetros obligatorios")
-      return NextResponse.json(
-        { success: false, error: "Faltan parámetros obligatorios" },
-        { status: 400 }
-      )
+      return NextResponse.json({ success: false, error: "Faltan parámetros obligatorios" }, { status: 400 })
     }
 
     // Buscar plan
@@ -21,10 +18,7 @@ export async function POST(request: NextRequest) {
 
     if (!plan) {
       console.error("❌ Plan no válido:", planId)
-      return NextResponse.json(
-        { success: false, error: "Plan no válido" },
-        { status: 400 }
-      )
+      return NextResponse.json({ success: false, error: "Plan no válido" }, { status: 400 })
     }
 
     // Verificar periodo
@@ -33,10 +27,7 @@ export async function POST(request: NextRequest) {
 
     if (!priceConfig) {
       console.error("❌ Periodo de facturación no válido:", billingPeriod)
-      return NextResponse.json(
-        { success: false, error: "Periodo de facturación no válido" },
-        { status: 400 }
-      )
+      return NextResponse.json({ success: false, error: "Periodo de facturación no válido" }, { status: 400 })
     }
 
     const { priceId } = priceConfig
@@ -50,11 +41,11 @@ export async function POST(request: NextRequest) {
 
     console.log("✅ SetupIntent creado:", setupIntent.id)
 
-    // 2️⃣ Crear suscripción con 7 días de prueba
+    // 2️⃣ Crear suscripción con 0 días de prueba
     const subscription = await stripe.subscriptions.create({
       customer: customerId,
       items: [{ price: priceId }],
-      trial_period_days: 7,
+      trial_period_days: 1,
       payment_behavior: "default_incomplete",
       payment_settings: { save_default_payment_method: "on_subscription" },
       expand: ["latest_invoice"],
@@ -66,37 +57,20 @@ export async function POST(request: NextRequest) {
     })
 
     console.log("✅ Suscripción creada:", subscription.id, "estado:", subscription.status)
-    console.log("📦 Suscripción completa:", JSON.stringify(subscription, null, 2))
-
-    // 👇 Verificar valores críticos
-    console.log("📊 Datos clave:", {
-      subscriptionId: subscription.id,
-      trial_end_raw: subscription.trial_end,
-      trial_end_iso: subscription.trial_end
-        ? new Date(subscription.trial_end * 1000).toISOString()
-        : null,
-      customerId: subscription.customer,
-      latestInvoice: subscription.latest_invoice,
-    })
-
-    // 👇 en esta fase NO actualizamos la tabla organizations
-    // Guardamos la info en user_metadata al hacer signUp
 
     return NextResponse.json({
       success: true,
       subscriptionId: subscription.id,
       clientSecret: setupIntent.client_secret,
       status: subscription.status,
-      trialEnd: subscription.trial_end
-        ? new Date(subscription.trial_end * 1000).toISOString()
-        : null,
+      trialEnd: subscription.trial_end ? new Date(subscription.trial_end * 1000).toISOString() : null,
       customerId: subscription.customer,
     })
   } catch (error: any) {
     console.error("❌ Error creando SetupIntent + Suscripción:", error)
     return NextResponse.json(
       { success: false, error: error.message || "Error creando la suscripción" },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }

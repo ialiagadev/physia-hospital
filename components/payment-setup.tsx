@@ -11,13 +11,14 @@ const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
 
 interface PaymentFormProps {
   clientSecret: string
+  subscriptionId: string
   onSuccess: () => void
   onError: (error: string) => void
   isLoading: boolean
   setIsLoading: (loading: boolean) => void
 }
 
-function PaymentForm({ clientSecret, onSuccess, onError, isLoading, setIsLoading }: PaymentFormProps) {
+function PaymentForm({ clientSecret, subscriptionId, onSuccess, onError, isLoading, setIsLoading }: PaymentFormProps) {
   const stripe = useStripe()
   const elements = useElements()
 
@@ -50,7 +51,7 @@ function PaymentForm({ clientSecret, onSuccess, onError, isLoading, setIsLoading
     console.log("🔑 ClientSecret recibido en el frontend:", clientSecret)
 
     try {
-      // ⚡ ahora usamos SetupIntent en vez de PaymentIntent
+      // 1️⃣ Confirmar el SetupIntent
       const { error, setupIntent } = await stripe.confirmCardSetup(clientSecret, {
         payment_method: {
           card: cardElement,
@@ -60,11 +61,34 @@ function PaymentForm({ clientSecret, onSuccess, onError, isLoading, setIsLoading
       if (error) {
         console.error("❌ Setup error:", error)
         onError(error.message || "Error guardando método de pago")
-      } else if (setupIntent && setupIntent.status === "succeeded") {
+        return
+      }
+
+      if (setupIntent && setupIntent.status === "succeeded") {
         console.log("✅ Método de pago guardado:", setupIntent.payment_method)
-        onSuccess()
+
+        // 2️⃣ Actualizar la suscripción con el método de pago
+        const updateResponse = await fetch("/api/update-subscription-payment", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            subscriptionId: subscriptionId,
+            paymentMethodId: setupIntent.payment_method,
+          }),
+        })
+
+        const updateResult = await updateResponse.json()
+
+        if (updateResult.success) {
+          console.log("✅ Suscripción actualizada correctamente:", updateResult.subscription)
+          onSuccess()
+        } else {
+          console.error("❌ Error actualizando suscripción:", updateResult.error)
+          onError(updateResult.error || "Error actualizando la suscripción")
+        }
       } else {
         console.warn("⚠️ Estado inesperado del SetupIntent:", setupIntent?.status)
+        onError("Estado inesperado del método de pago")
       }
     } catch (err: any) {
       console.error("❌ Setup confirmation error:", err)
@@ -120,16 +144,24 @@ function PaymentForm({ clientSecret, onSuccess, onError, isLoading, setIsLoading
 
 interface PaymentSetupProps {
   clientSecret: string
+  subscriptionId: string
   onSuccess: () => void
   onError: (error: string) => void
   planName: string
   planPrice: string
 }
 
-export function PaymentSetup({ clientSecret, onSuccess, onError, planName, planPrice }: PaymentSetupProps) {
+export function PaymentSetup({
+  clientSecret,
+  subscriptionId,
+  onSuccess,
+  onError,
+  planName,
+  planPrice,
+}: PaymentSetupProps) {
   const [isLoading, setIsLoading] = useState(false)
 
-  console.log("📦 PaymentSetup recibió clientSecret:", clientSecret)
+  console.log("📦 PaymentSetup recibió:", { clientSecret, subscriptionId })
 
   return (
     <div className="space-y-6">
@@ -143,6 +175,7 @@ export function PaymentSetup({ clientSecret, onSuccess, onError, planName, planP
       <Elements stripe={stripePromise}>
         <PaymentForm
           clientSecret={clientSecret}
+          subscriptionId={subscriptionId}
           onSuccess={onSuccess}
           onError={onError}
           isLoading={isLoading}

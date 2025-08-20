@@ -3,16 +3,32 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { Plus, Bot, Edit, Trash2, MessageSquare, AlertTriangle, Loader2 } from "lucide-react"
+import { Plus, Bot, Edit, Trash2, MessageSquare, AlertTriangle, Loader2, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Checkbox } from "@/components/ui/checkbox"
 import { LiquidGlass } from "@/components/liquid-glass"
 import { useAgents } from "@/hooks/use-agents"
 import { useAuth } from "@/app/contexts/auth-context"
+import { supabase } from "@/lib/supabase/client"
 import type { User } from "@/types/chat"
+
+interface AIFunction {
+  id: string
+  name: string
+  description: string | null
+  http_method: string
+  url_template: string
+  run_on_load: boolean
+  is_active: boolean
+  base_price: number | null
+  usage_price: number | null
+  created_at: string
+  updated_at: string
+}
 
 function AgentDialog({
   agent,
@@ -30,8 +46,89 @@ function AgentDialog({
     prompt: "",
   })
   const [saving, setSaving] = useState(false)
+  const [aiFunctions, setAiFunctions] = useState<AIFunction[]>([])
+  const [selectedFunctions, setSelectedFunctions] = useState<string[]>([])
+  const [loadingFunctions, setLoadingFunctions] = useState(true)
 
-  // Actualizar el formulario cuando cambia el agente o se abre el diálogo
+  const loadAIFunctions = async () => {
+    try {
+      setLoadingFunctions(true)
+      const { data, error } = await supabase
+        .from("ai_functions")
+        .select("*")
+        .eq("is_active", true)
+        .order("name", { ascending: true })
+
+      if (error) {
+        console.error("Error loading AI functions:", error)
+      } else {
+        setAiFunctions(data || [])
+      }
+    } catch (err) {
+      console.error("Error loading AI functions:", err)
+    } finally {
+      setLoadingFunctions(false)
+    }
+  }
+
+  const loadAgentFunctions = async (agentId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("ai_functions_users")
+        .select("function_id")
+        .eq("user_id", agentId)
+        .eq("enabled", true)
+
+      if (error) {
+        console.error("Error loading agent functions:", error)
+      } else {
+        const functionIds = data?.map((item) => item.function_id) || []
+        setSelectedFunctions(functionIds)
+      }
+    } catch (err) {
+      console.error("Error loading agent functions:", err)
+    }
+  }
+
+  const saveAgentFunctions = async (agentId: string, functionIds: string[]) => {
+    try {
+      // Primero eliminar todas las relaciones existentes
+      const { error: deleteError } = await supabase.from("ai_functions_users").delete().eq("user_id", agentId)
+
+      if (deleteError) {
+        console.error("Error deleting existing agent functions:", deleteError)
+        throw deleteError
+      }
+
+      // Luego insertar las nuevas relaciones
+      if (functionIds.length > 0) {
+        const relations = functionIds.map((functionId) => ({
+          user_id: agentId,
+          function_id: functionId,
+          enabled: true,
+        }))
+
+        const { error: insertError } = await supabase.from("ai_functions_users").insert(relations)
+
+        if (insertError) {
+          console.error("Error inserting agent functions:", insertError)
+          throw insertError
+        }
+      }
+    } catch (err) {
+      console.error("Error saving agent functions:", err)
+      throw err
+    }
+  }
+
+  const handleFunctionToggle = (functionId: string, checked: boolean) => {
+    if (checked) {
+      setSelectedFunctions((prev) => [...prev, functionId])
+    } else {
+      setSelectedFunctions((prev) => prev.filter((id) => id !== functionId))
+    }
+  }
+
   useEffect(() => {
     if (open && agent) {
       console.log("Loading agent data for editing:", agent)
@@ -39,19 +136,23 @@ function AgentDialog({
         name: agent.name || "",
         prompt: agent.prompt || "",
       })
+      loadAgentFunctions(agent.id)
     } else if (open && !agent) {
-      // Resetear el formulario cuando se abre para crear un nuevo agente
       setFormData({
         name: "",
         prompt: "",
       })
+      setSelectedFunctions([])
+    }
+
+    if (open) {
+      loadAIFunctions()
     }
   }, [agent, open])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    // Validar que los campos no estén vacíos
     if (!formData.name.trim() || !formData.prompt.trim()) {
       alert("Por favor, completa todos los campos")
       return
@@ -60,7 +161,15 @@ function AgentDialog({
     setSaving(true)
     try {
       console.log("Submitting form data:", formData)
-      await onSave(formData)
+      const savedAgent = await onSave({ ...formData, selectedFunctions })
+
+      // Si es un agente existente o si onSave devuelve el ID del agente creado
+      const agentId = agent?.id || (savedAgent as any)?.id
+      if (agent?.id) {
+        await saveAgentFunctions(agent.id, selectedFunctions)
+      }
+      
+
       onOpenChange(false)
     } catch (error) {
       console.error("Error saving agent:", error)
@@ -72,36 +181,114 @@ function AgentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-full">
+      <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{agent ? "Editar Agente IA" : "Crear Agente IA"}</DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="name">Nombre del agente</Label>
-            <Input
-              id="name"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              placeholder="Ej: Asistente de Ventas"
-              required
-            />
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="name">Nombre del agente</Label>
+                <Input
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="Ej: Asistente de Ventas"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="prompt">Prompt del agente</Label>
+                <Textarea
+                  id="prompt"
+                  value={formData.prompt}
+                  onChange={(e) => setFormData({ ...formData, prompt: e.target.value })}
+                  placeholder="Eres un asistente de ventas especializado en..."
+                  rows={20}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 mb-4">
+                <Settings className="h-5 w-5 text-blue-600" />
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800">Funciones AI</h3>
+                  <p className="text-sm text-gray-600">Selecciona las funciones disponibles para este agente</p>
+                </div>
+              </div>
+
+              {loadingFunctions ? (
+                <div className="flex items-center justify-center p-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-blue-600 mr-2" />
+                  <span className="text-gray-600">Cargando funciones...</span>
+                </div>
+              ) : aiFunctions.length === 0 ? (
+                <div className="text-center p-8 text-gray-500">
+                  <Settings className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                  <p className="text-sm">No hay funciones AI disponibles</p>
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {aiFunctions.map((func) => (
+                    <LiquidGlass
+                      key={func.id}
+                      variant="card"
+                      intensity="subtle"
+                      className="p-3 hover:shadow-sm transition-all duration-200"
+                      style={{
+                        background: "rgba(255, 255, 255, 0.6)",
+                        backdropFilter: "blur(10px)",
+                        border: "1px solid rgba(0, 0, 0, 0.05)",
+                      }}
+                    >
+                      <div className="flex items-start space-x-3">
+                        <Checkbox
+                          id={func.id}
+                          checked={selectedFunctions.includes(func.id)}
+                          onCheckedChange={(checked) => handleFunctionToggle(func.id, checked as boolean)}
+                          className="mt-1"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <label htmlFor={func.id} className="cursor-pointer">
+                            <div className="flex items-center gap-2 mb-1">
+                              <h4 className="font-medium text-gray-800 text-sm">{func.name}</h4>
+                              <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full">
+                                {func.http_method}
+                              </span>
+                            </div>
+                            {func.description && (
+                              <p className="text-xs text-gray-600 mb-2 line-clamp-2">{func.description}</p>
+                            )}
+                            <div className="flex items-center gap-4 text-xs text-gray-500">
+                              {func.base_price && <span>Base: €{func.base_price}</span>}
+                              {func.usage_price && <span>Uso: €{func.usage_price}</span>}
+                              {func.run_on_load && <span className="text-green-600">Auto-ejecuta</span>}
+                            </div>
+                          </label>
+                        </div>
+                      </div>
+                    </LiquidGlass>
+                  ))}
+                </div>
+              )}
+
+              {selectedFunctions.length > 0 && (
+                <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <p className="text-sm text-blue-800">
+                    <strong>{selectedFunctions.length}</strong> función{selectedFunctions.length !== 1 ? "es" : ""}{" "}
+                    seleccionada{selectedFunctions.length !== 1 ? "s" : ""}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="prompt">Prompt del agente</Label>
-            <Textarea
-              id="prompt"
-              value={formData.prompt}
-              onChange={(e) => setFormData({ ...formData, prompt: e.target.value })}
-              placeholder="Eres un asistente de ventas especializado en..."
-              rows={25}
-              required
-            />
-          </div>
-
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 pt-4 border-t">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
               Cancelar
             </Button>
@@ -139,7 +326,6 @@ function AgentCard({ agent, onEdit, onDelete }: { agent: User; onEdit: () => voi
       rippleEffect={true}
       flowOnHover={true}
     >
-      {/* Header */}
       <div className="flex items-center justify-between p-6 pb-3">
         <div className="flex items-center space-x-3">
           <LiquidGlass
@@ -185,7 +371,6 @@ function AgentCard({ agent, onEdit, onDelete }: { agent: User; onEdit: () => voi
         </div>
       </div>
 
-      {/* Content */}
       <div className="px-6 pb-6 flex-1">
         <div className="space-y-2">
           <p className="text-sm font-medium text-gray-700">Prompt:</p>
@@ -212,8 +397,10 @@ export default function AgentsPage() {
   const [editingAgent, setEditingAgent] = useState<User | null>(null)
   const { userProfile } = useAuth()
 
-  const { agents, loading, error, createAgent, updateAgent, deleteAgent } = useAgents(userProfile?.organization_id)
-
+  const { agents, loading, error, createAgent, updateAgent, deleteAgent } = useAgents(
+    userProfile?.organization_id ? String(userProfile.organization_id) : undefined
+  )
+  
   const handleCreateAgent = async (data: any) => {
     console.log("Creating agent with data:", data)
     await createAgent(data)
@@ -232,7 +419,7 @@ export default function AgentsPage() {
       console.log("Agent updated successfully, closing dialog")
     } catch (error) {
       console.error("Error in handleUpdateAgent:", error)
-      throw error // Re-throw para que el diálogo maneje el error
+      throw error
     }
   }
 
@@ -254,7 +441,6 @@ export default function AgentsPage() {
 
   return (
     <div className="min-h-screen p-6 bg-gradient-to-br from-slate-50 via-gray-50 to-slate-100">
-      {/* Efectos de fondo sutiles */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-200/20 rounded-full blur-3xl" />
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-200/20 rounded-full blur-3xl" />
@@ -262,7 +448,6 @@ export default function AgentsPage() {
       </div>
 
       <div className="container mx-auto max-w-7xl relative z-10">
-        {/* Header */}
         <LiquidGlass
           variant="card"
           intensity="medium"
@@ -306,7 +491,6 @@ export default function AgentsPage() {
           </div>
         </LiquidGlass>
 
-        {/* Error State */}
         {error && (
           <LiquidGlass
             variant="card"
@@ -326,7 +510,6 @@ export default function AgentsPage() {
           </LiquidGlass>
         )}
 
-        {/* Content */}
         {loading ? (
           <LiquidGlass
             variant="card"
@@ -403,7 +586,6 @@ export default function AgentsPage() {
           </div>
         )}
 
-        {/* Diálogo de edición */}
         <AgentDialog
           agent={editingAgent || undefined}
           open={!!editingAgent}

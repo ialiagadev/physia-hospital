@@ -43,19 +43,41 @@ export async function POST(request: NextRequest) {
     }
 
     switch (action) {
-      case "reactivate":
+      // 🔄 Reactivar suscripción
+      case "reactivate": {
         if (!planId || !billingPeriod) {
           return NextResponse.json({ success: false, error: "Plan ID and billing period required" }, { status: 400 })
         }
 
-        const plan = STRIPE_PLANS[planId as keyof typeof STRIPE_PLANS]
+        const plan = STRIPE_PLANS[planId.toUpperCase() as keyof typeof STRIPE_PLANS]
         if (!plan) {
           return NextResponse.json({ success: false, error: "Plan not found" }, { status: 400 })
         }
 
         const priceId = billingPeriod === "yearly" ? plan.prices.yearly.priceId : plan.prices.monthly.priceId
 
-        // Create new subscription
+        if (subscriptionId) {
+          const sub = await stripe.subscriptions.retrieve(subscriptionId)
+
+          if (sub.cancel_at_period_end && sub.status === "active") {
+            const resumed = await stripe.subscriptions.update(subscriptionId, { cancel_at_period_end: false })
+
+            await supabase
+              .from("organizations")
+              .update({
+                subscription_status: resumed.status,
+              })
+              .eq("id", organization.id)
+
+            return NextResponse.json({
+              success: true,
+              subscriptionId: resumed.id,
+              status: resumed.status,
+              requiresPayment: false,
+            })
+          }
+        }
+
         const newSubscription = await stripe.subscriptions.create({
           customer: customerId || organization.stripe_customer_id,
           items: [{ price: priceId }],
@@ -64,7 +86,6 @@ export async function POST(request: NextRequest) {
           expand: ["latest_invoice.payment_intent"],
         })
 
-        // Update organization with new subscription
         await supabase
           .from("organizations")
           .update({
@@ -79,11 +100,14 @@ export async function POST(request: NextRequest) {
           success: true,
           subscriptionId: newSubscription.id,
           status: newSubscription.status,
-          requiresPayment: paymentIntent?.status === "requires_payment_method",
-          clientSecret: paymentIntent?.client_secret,
+          requiresPayment:
+            paymentIntent?.status === "requires_action" || paymentIntent?.status === "requires_payment_method",
+          clientSecret: paymentIntent?.client_secret ?? null,
         })
+      }
 
-      case "update":
+      // 🔧 Update (cambio de plan)
+      case "update": {
         if (!subscriptionId || !planId || !billingPeriod) {
           return NextResponse.json(
             { success: false, error: "Subscription ID, plan ID and billing period required" },
@@ -91,7 +115,7 @@ export async function POST(request: NextRequest) {
           )
         }
 
-        const updatePlan = STRIPE_PLANS[planId as keyof typeof STRIPE_PLANS]
+        const updatePlan = STRIPE_PLANS[planId.toUpperCase() as keyof typeof STRIPE_PLANS]
         if (!updatePlan) {
           return NextResponse.json({ success: false, error: "Plan not found" }, { status: 400 })
         }
@@ -99,20 +123,36 @@ export async function POST(request: NextRequest) {
         const updatePriceId =
           billingPeriod === "yearly" ? updatePlan.prices.yearly.priceId : updatePlan.prices.monthly.priceId
 
-        // Get current subscription
         const currentSubscription = await stripe.subscriptions.retrieve(subscriptionId)
         const currentPriceId = (currentSubscription as any).items.data[0].price.id
 
         if (currentPriceId === updatePriceId) {
+          if ((currentSubscription as any).cancel_at_period_end) {
+            const resumed = await stripe.subscriptions.update(subscriptionId, { cancel_at_period_end: false })
+
+            await supabase
+              .from("organizations")
+              .update({
+                subscription_status: resumed.status,
+              })
+              .eq("id", organization.id)
+
+            return NextResponse.json({
+              success: true,
+              subscriptionId: resumed.id,
+              status: resumed.status,
+              requiresPayment: false,
+            })
+          }
+
           return NextResponse.json({ success: false, error: "Ya tienes este plan activo" }, { status: 400 })
         }
 
-        // Calculate if it's an upgrade or downgrade
         const currentPrice = (currentSubscription as any).items.data[0].price.unit_amount || 0
         const newPrice = (await stripe.prices.retrieve(updatePriceId)).unit_amount || 0
         const isUpgrade = newPrice > currentPrice
 
-        // Update subscription
+        // 🔹 Actualizamos suscripción
         const updatedSubscription = await stripe.subscriptions.update(subscriptionId, {
           items: [
             {
@@ -121,9 +161,29 @@ export async function POST(request: NextRequest) {
             },
           ],
           proration_behavior: isUpgrade ? "create_prorations" : "none",
+          billing_cycle_anchor: "now",
+          expand: ["latest_invoice.payment_intent"],
         })
 
-        // Update organization status
+        // 🔹 Si es upgrade → generar y cobrar factura inmediata
+        let latestInvoice = updatedSubscription.latest_invoice as any
+        let paymentIntent = latestInvoice?.payment_intent as any
+
+        if (isUpgrade) {
+            const invoice = await stripe.invoices.create({
+              customer: updatedSubscription.customer as string,
+              subscription: updatedSubscription.id,
+              auto_advance: true,
+            })
+          
+            // 🔹 forzar TS a saber que existe
+            const paidInvoice = await stripe.invoices.pay(invoice.id!)
+          
+            latestInvoice = paidInvoice
+            paymentIntent = (paidInvoice as any).payment_intent
+          }
+          
+
         await supabase
           .from("organizations")
           .update({
@@ -135,15 +195,19 @@ export async function POST(request: NextRequest) {
           success: true,
           subscriptionId: updatedSubscription.id,
           status: updatedSubscription.status,
-          requiresPayment: false,
+          requiresPayment:
+            paymentIntent?.status === "requires_action" || paymentIntent?.status === "requires_payment_method",
+          clientSecret: paymentIntent?.client_secret ?? null,
         })
+      }
 
-      case "preview":
+      // 🔍 Preview del cambio
+      case "preview": {
         if (!subscriptionId || !planId || !billingPeriod) {
           return NextResponse.json({ success: false, error: "Missing required parameters" }, { status: 400 })
         }
 
-        const previewPlan = STRIPE_PLANS[planId as keyof typeof STRIPE_PLANS]
+        const previewPlan = STRIPE_PLANS[planId.toUpperCase() as keyof typeof STRIPE_PLANS]
         if (!previewPlan) {
           return NextResponse.json({ success: false, error: "Plan not found" }, { status: 400 })
         }
@@ -151,8 +215,10 @@ export async function POST(request: NextRequest) {
         const previewPriceId =
           billingPeriod === "yearly" ? previewPlan.prices.yearly.priceId : previewPlan.prices.monthly.priceId
 
-        // Get current subscription for preview
         const subscription = (await stripe.subscriptions.retrieve(subscriptionId)) as any
+        const currentPrice = subscription.items.data[0].price.unit_amount || 0
+        const newPrice = (await stripe.prices.retrieve(previewPriceId)).unit_amount || 0
+        const isUpgrade = newPrice > currentPrice
 
         const upcomingInvoice = await (stripe.invoices as any).retrieveUpcoming({
           customer: subscription.customer as string,
@@ -163,7 +229,7 @@ export async function POST(request: NextRequest) {
               price: previewPriceId,
             },
           ],
-          subscription_proration_behavior: "create_prorations",
+          subscription_proration_behavior: isUpgrade ? "create_prorations" : "none",
         })
 
         const immediateCharge = upcomingInvoice.amount_due / 100
@@ -177,10 +243,11 @@ export async function POST(request: NextRequest) {
             nextBillingDate: nextBillingDate.toISOString(),
             description:
               immediateCharge > 0
-                ? `Upgrade to ${previewPlan.name} - You'll be charged the prorated difference immediately`
-                : `Downgrade to ${previewPlan.name} - Change will take effect at the end of your current billing period`,
+                ? `Upgrade a ${previewPlan.name} - Se cobrará la diferencia prorrateada ahora`
+                : `Downgrade a ${previewPlan.name} - El cambio se aplicará al final del periodo actual`,
           },
         })
+      }
 
       default:
         return NextResponse.json({ success: false, error: "Invalid action" }, { status: 400 })

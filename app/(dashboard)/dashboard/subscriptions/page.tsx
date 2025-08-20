@@ -326,11 +326,17 @@ export default function SubscriptionsPage() {
         <Alert className="border-green-500 bg-green-50">
           <CheckCircle className="h-4 w-4 text-green-600" />
           <AlertDescription className="text-green-800">
-            <strong>Suscripción activa:</strong> Tu próximo pago será el {formatDate(details.current_period_end)}.
+            <strong>Suscripción activa:</strong> Estás en el plan{" "}
+            <span className="font-semibold">{details.plan}</span>{" "}
+            {(details.amount && details.interval) &&
+              `(${(details.amount / 100).toFixed(2)} €/ ${details.interval})`}{" "}
+            hasta el <strong>{formatDate(details.current_period_end)}</strong>.  
+            Tu suscripción se renovará automáticamente en esa fecha.
           </AlertDescription>
         </Alert>
       )
     }
+    
 
     if (details.status === "trialing" && details.trial_end) {
       return (
@@ -477,8 +483,7 @@ export default function SubscriptionsPage() {
                 onSuccess={handlePaymentSetupSuccess}
                 onError={handlePaymentSetupError}
                 planName={selectedPlan}
-                planPrice={`${billingPeriod === "monthly" ? "Mensual" : "Anual"}`}
-              />
+                planPrice={`${billingPeriod === "monthly" ? "Mensual" : "Anual"}`} subscriptionId={""}              />
             </div>
           ) : showPlanSelector ? (
             <div className="bg-white border rounded-lg p-6">

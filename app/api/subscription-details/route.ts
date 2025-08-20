@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs"
 import { cookies } from "next/headers"
 import { stripe } from "@/lib/stripe"
+import Stripe from "stripe"
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,10 +13,8 @@ export async function GET(request: NextRequest) {
     let organizationId: string | null = null
 
     if (orgId) {
-      // ✅ Caso 1: el cliente pasó orgId explícito
       organizationId = orgId
     } else {
-      // ✅ Caso 2: usar sesión del usuario
       const {
         data: { user },
         error: authError,
@@ -66,17 +65,20 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // 🟢 Obtener detalles de Stripe con expand para traer método de pago y producto
+    // 🟢 Obtener detalles de Stripe con expand
     const subscription = await stripe.subscriptions.retrieve(
       organization.stripe_subscription_id,
       {
         expand: [
           "default_payment_method",
           "customer",
+          "customer.invoice_settings.default_payment_method",
           "items.data.price.product",
         ],
       }
     )
+
+    console.log("🔍 Stripe subscription raw:", JSON.stringify(subscription, null, 2))
 
     const toHuman = (ts?: number | null) => {
       if (!ts || ts <= 0) return null
@@ -100,10 +102,23 @@ export async function GET(request: NextRequest) {
       toHuman((subscription as any).current_period_end) ||
       toHuman(item?.current_period_end)
 
-    // 💳 Procesar método de pago si existe
+    // 💳 Buscar método de pago
     let paymentMethod = null
+    let pm: any = null
+
     if (subscription.default_payment_method && typeof subscription.default_payment_method === "object") {
-      const pm: any = subscription.default_payment_method
+      pm = subscription.default_payment_method
+    } else if (
+      subscription.customer &&
+      typeof subscription.customer === "object" &&
+      "invoice_settings" in subscription.customer && // 👈 evita DeletedCustomer
+      subscription.customer.invoice_settings?.default_payment_method &&
+      typeof subscription.customer.invoice_settings.default_payment_method === "object"
+    ) {
+      pm = subscription.customer.invoice_settings.default_payment_method
+    }
+
+    if (pm) {
       if (pm.type === "card" && pm.card) {
         paymentMethod = {
           id: pm.id,
@@ -113,7 +128,6 @@ export async function GET(request: NextRequest) {
           exp_year: pm.card.exp_year,
         }
       } else {
-        // Para otros tipos de método de pago (sepa_debit, etc.)
         paymentMethod = {
           id: pm.id,
           type: pm.type,
@@ -143,7 +157,7 @@ export async function GET(request: NextRequest) {
         amount,
         interval,
 
-        // 💳 Nuevo campo
+        // 💳 Ahora siempre devuelve el método de pago
         payment_method: paymentMethod,
 
         // 🧑 Datos básicos del customer
