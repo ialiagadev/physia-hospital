@@ -71,6 +71,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ services: formattedServices })
   } catch (error) {
     console.error("API Error:", error)
-    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
+    return NextResponse.json({ error: String(error) }, { status: 500 })
   }
+  
 }
