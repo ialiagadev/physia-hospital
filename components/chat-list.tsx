@@ -35,35 +35,37 @@ import { useTotalUnreadMessages } from "@/hooks/use-unread-messages"
 import { supabase } from "@/lib/supabase/client"
 import { generateTagStyle } from "@/lib/dynamic-tag-colors"
 import { toast } from "@/hooks/use-toast"
+import { FaWhatsapp, FaFacebookF, FaInstagram, FaTelegramPlane } from "react-icons/fa"
+import { MdEmail, MdSms, MdChat } from "react-icons/md"
 
-// Componente para mostrar el icono del canal con letra
 function ChannelIcon({ channelName }: { channelName?: string }) {
   const getChannelConfig = (name: string) => {
     switch (name?.toLowerCase()) {
       case "whatsapp":
-        return { letter: "W", bgColor: "bg-green-500", textColor: "text-white" }
+        return { icon: FaWhatsapp, bgColor: "bg-green-500", textColor: "text-white" }
       case "email":
-        return { letter: "E", bgColor: "bg-blue-500", textColor: "text-white" }
+        return { icon: MdEmail, bgColor: "bg-blue-500", textColor: "text-white" }
       case "sms":
-        return { letter: "S", bgColor: "bg-orange-500", textColor: "text-white" }
+        return { icon: MdSms, bgColor: "bg-orange-500", textColor: "text-white" }
       case "webchat":
-        return { letter: "C", bgColor: "bg-purple-500", textColor: "text-white" }
+        return { icon: MdChat, bgColor: "bg-purple-500", textColor: "text-white" }
       case "facebook":
-        return { letter: "F", bgColor: "bg-blue-600", textColor: "text-white" }
+        return { icon: FaFacebookF, bgColor: "bg-blue-600", textColor: "text-white" }
       case "instagram":
-        return { letter: "I", bgColor: "bg-pink-500", textColor: "text-white" }
+        return { icon: FaInstagram, bgColor: "bg-pink-500", textColor: "text-white" }
       case "telegram":
-        return { letter: "T", bgColor: "bg-sky-500", textColor: "text-white" }
+        return { icon: FaTelegramPlane, bgColor: "bg-sky-500", textColor: "text-white" }
       default:
-        return { letter: "?", bgColor: "bg-gray-500", textColor: "text-white" }
+        return { icon: MdChat, bgColor: "bg-gray-500", textColor: "text-white" }
     }
   }
 
   const config = getChannelConfig(channelName || "")
+  const IconComponent = config.icon
 
   return (
     <div className={`w-5 h-5 rounded-full ${config.bgColor} flex items-center justify-center`}>
-      <span className={`text-xs font-bold ${config.textColor}`}>{config.letter}</span>
+      <IconComponent className={`w-3 h-3 ${config.textColor}`} />
     </div>
   )
 }
@@ -1243,8 +1245,7 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
       viewMode,
       userProfile?.id,
       selectedTags, // Pasar las etiquetas seleccionadas
-      selectedChatId || undefined // 👈 Evita el error de tipo
-
+      selectedChatId || undefined, // 👈 Evita el error de tipo
     )
 
   // Hook para conteo total de mensajes no leídos
@@ -1370,10 +1371,9 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
   }
 
   // Calcular siempre los no leídos
-const assignedUnreadCount = useMemo(() => {
-  return conversations.reduce((total, conv) => total + (conv.unread_count || 0), 0)
-}, [conversations])
-
+  const assignedUnreadCount = useMemo(() => {
+    return conversations.reduce((total, conv) => total + (conv.unread_count || 0), 0)
+  }, [conversations])
 
   if (loading) {
     return (
@@ -1407,9 +1407,7 @@ const assignedUnreadCount = useMemo(() => {
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center justify-between p-4 bg-gray-50 border-b border-gray-200">
-        <h1 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
-          Chats
-        </h1>
+        <h1 className="text-xl font-semibold text-gray-800 flex items-center gap-2">Chats</h1>
         <div className="flex items-center gap-2">
           <UnifiedNewConversationModal onConversationCreated={refetch} />
           <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
@@ -1420,7 +1418,7 @@ const assignedUnreadCount = useMemo(() => {
           </Button>
         </div>
       </div>
-  
+
       {/* Filtros principales */}
       <div className="bg-white border-b border-gray-200">
         {/* Asignados */}
@@ -1434,14 +1432,13 @@ const assignedUnreadCount = useMemo(() => {
             <MessageCircle className="h-4 w-4 text-green-600" />
           </div>
           <div className="flex-1 flex items-center gap-2">
-          <div>
+            <div>
               <span className="font-medium text-gray-900">Asignados</span>
               <span className="ml-2 text-gray-500">({assignedCount})</span>
             </div>
-           
           </div>
         </div>
-  
+
         {/* Todos */}
         <div
           className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-50 ${
@@ -1455,13 +1452,10 @@ const assignedUnreadCount = useMemo(() => {
           <div className="flex-1 flex items-center gap-2">
             <span className="font-medium text-gray-900">Todos</span>
             <span className="text-gray-500">({totalConversationsCount})</span>
-           
           </div>
         </div>
       </div>
-  
 
-  
       {/* Barra de búsqueda */}
       <div className="p-3 bg-white border-b border-gray-200">
         <div className="relative">
@@ -1478,40 +1472,39 @@ const assignedUnreadCount = useMemo(() => {
       {/* Filtro de etiquetas */}
       <TagFilter organizationId={organizationIdNumber} selectedTags={selectedTags} onTagsChange={setSelectedTags} />
 
-     {/* Lista de chats */}
-<div className="flex-1 overflow-y-auto">
-  {filteredConversations.length === 0 ? (
-    <div className="flex flex-col items-center justify-center h-32 text-gray-500 p-4">
-      <p className="text-center mb-2">
-        {selectedTags.length > 0 || searchQuery
-          ? "No hay conversaciones que coincidan con los filtros"
-          : "No hay conversaciones"}
-      </p>
-      <p className="text-sm text-center">
-        {selectedTags.length > 0 || searchQuery
-          ? "Intenta cambiar los filtros de búsqueda"
-          : "Haz clic en el botón de mensaje para iniciar una nueva conversación"}
-      </p>
-    </div>
-  ) : (
-    filteredConversations.map((conversation: ConversationWithLastMessage) => (
-      <div
-        key={conversation.id}
-        onClick={() => {
-          onChatSelect(conversation.id);
-          if (conversation.unread_count > 0) {
-            markAsRead(conversation.id);
-          }
-        }}
-        className={`flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 transition-colors ${
-          selectedChatId === conversation.id
-            ? "bg-blue-50"
-            : conversation.unread_count > 0
-              ? "bg-green-50 hover:bg-green-100 border-l-4 border-l-green-500"
-              : ""
-        }`}
-      >
-
+      {/* Lista de chats */}
+      <div className="flex-1 overflow-y-auto">
+        {filteredConversations.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-32 text-gray-500 p-4">
+            <p className="text-center mb-2">
+              {selectedTags.length > 0 || searchQuery
+                ? "No hay conversaciones que coincidan con los filtros"
+                : "No hay conversaciones"}
+            </p>
+            <p className="text-sm text-center">
+              {selectedTags.length > 0 || searchQuery
+                ? "Intenta cambiar los filtros de búsqueda"
+                : "Haz clic en el botón de mensaje para iniciar una nueva conversación"}
+            </p>
+          </div>
+        ) : (
+          filteredConversations.map((conversation: ConversationWithLastMessage) => (
+            <div
+              key={conversation.id}
+              onClick={() => {
+                onChatSelect(conversation.id)
+                if (conversation.unread_count > 0) {
+                  markAsRead(conversation.id)
+                }
+              }}
+              className={`flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 transition-colors ${
+                selectedChatId === conversation.id
+                  ? "bg-blue-50"
+                  : conversation.unread_count > 0
+                    ? "bg-green-50 hover:bg-green-100 border-l-4 border-l-green-500"
+                    : ""
+              }`}
+            >
               {/* Avatar sin imagen - solo iniciales */}
               <div className="relative">
                 <Avatar className="h-12 w-12">
