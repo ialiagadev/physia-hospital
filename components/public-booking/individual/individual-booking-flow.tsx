@@ -12,6 +12,7 @@ import { BookingConfirmation } from "../shared/booking-confirmation"
 interface IndividualBookingFlowProps {
   organizationId: string
   onBack: () => void
+  onComplete?: (result: any) => void   // 👈 añadida
 }
 
 type Step = "service" | "professional" | "slots" | "client-data" | "confirmation"
@@ -19,7 +20,7 @@ type Step = "service" | "professional" | "slots" | "client-data" | "confirmation
 interface BookingData {
   serviceId: number
   professionalId: string
-  assignedProfessionalId?: string // Para cuando se selecciona "any"
+  assignedProfessionalId?: string
   date: string
   startTime: string
   endTime: string
@@ -31,7 +32,7 @@ interface BookingData {
   }
 }
 
-export function IndividualBookingFlow({ organizationId, onBack }: IndividualBookingFlowProps) {
+export function IndividualBookingFlow({ organizationId, onBack, onComplete }: IndividualBookingFlowProps) {
   const [currentStep, setCurrentStep] = useState<Step>("service")
   const [bookingData, setBookingData] = useState<Partial<BookingData>>({})
   const [loading, setLoading] = useState(false)
@@ -40,10 +41,8 @@ export function IndividualBookingFlow({ organizationId, onBack }: IndividualBook
   // Configuración especial para organización 68
   useEffect(() => {
     if (organizationId === "68") {
-      // Auto-configurar para organización 68
       const fetchServiceAndSetup = async () => {
         try {
-          // Obtener el primer servicio disponible
           const response = await fetch(`/api/public/${organizationId}/services`)
           const data = await response.json()
           
@@ -52,28 +51,24 @@ export function IndividualBookingFlow({ organizationId, onBack }: IndividualBook
             setBookingData({
               serviceId: firstService.id,
               duration: firstService.duration,
-              professionalId: "any" // Cualquier profesional
+              professionalId: "any"
             })
-            setCurrentStep("slots") // Ir directamente a slots
+            setCurrentStep("slots")
           }
         } catch (error) {
           console.error("Error fetching service for org 68:", error)
-          // Si hay error, usar flujo normal
         }
       }
-      
       fetchServiceAndSetup()
     }
   }, [organizationId])
 
   const handleServiceSelect = (serviceId: number, duration: number) => {
-    console.log("🛎️ Servicio seleccionado:", { serviceId, duration })
     setBookingData((prev) => ({ ...prev, serviceId, duration }))
     setCurrentStep("professional")
   }
 
   const handleProfessionalSelect = (professionalId: string) => {
-    console.log("👨‍⚕️ Profesional seleccionado:", professionalId)
     setBookingData((prev) => ({ ...prev, professionalId }))
     setCurrentStep("slots")
   }
@@ -84,13 +79,12 @@ export function IndividualBookingFlow({ organizationId, onBack }: IndividualBook
     endTime: string,
     assignedProfessionalId?: string
   ) => {
-    console.log("🕐 Slot seleccionado:", { date, startTime, endTime, assignedProfessionalId })
     setBookingData((prev) => ({
       ...prev,
       date,
       startTime,
       endTime,
-      assignedProfessionalId, // Guardar el profesional asignado si existe
+      assignedProfessionalId,
     }))
     setCurrentStep("client-data")
   }
@@ -98,24 +92,11 @@ export function IndividualBookingFlow({ organizationId, onBack }: IndividualBook
   const handleClientDataSubmit = async (clientData: { name: string; phone: string; email?: string }) => {
     setLoading(true)
     try {
-      // Usar el profesional asignado si existe, sino el seleccionado originalmente
       const finalProfessionalId = bookingData.assignedProfessionalId || bookingData.professionalId
-      console.log("📝 Enviando datos de booking:", {
-        serviceId: bookingData.serviceId,
-        professionalId: finalProfessionalId, // Nunca debe ser "any"
-        originalProfessionalId: bookingData.professionalId,
-        assignedProfessionalId: bookingData.assignedProfessionalId,
-        date: bookingData.date,
-        startTime: bookingData.startTime,
-        endTime: bookingData.endTime,
-        clientData,
-      })
 
       const response = await fetch(`/api/public/${organizationId}/booking/individual`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           serviceId: bookingData.serviceId,
           professionalId: finalProfessionalId,
@@ -129,20 +110,27 @@ export function IndividualBookingFlow({ organizationId, onBack }: IndividualBook
       const result = await response.json()
       setBookingResult(result)
       setCurrentStep("confirmation")
+
+      // 👇 avisar al padre si existe callback
+      if (onComplete) onComplete(result)
+
     } catch (error) {
       console.error("Error:", error)
-      setBookingResult({
+      const failResult = {
         success: false,
         message: error instanceof Error ? error.message : "Error desconocido",
-      })
+      }
+      setBookingResult(failResult)
       setCurrentStep("confirmation")
+
+      if (onComplete) onComplete(failResult)
+
     } finally {
       setLoading(false)
     }
   }
 
   const handleBack = () => {
-    // Para organización 68, el primer paso es slots
     if (organizationId === "68") {
       switch (currentStep) {
         case "slots":
@@ -156,7 +144,6 @@ export function IndividualBookingFlow({ organizationId, onBack }: IndividualBook
           break
       }
     } else {
-      // Flujo normal para otras organizaciones
       switch (currentStep) {
         case "service":
           onBack()
@@ -182,9 +169,7 @@ export function IndividualBookingFlow({ organizationId, onBack }: IndividualBook
     setBookingResult(null)
     
     if (organizationId === "68") {
-      // Para org 68, reiniciar en slots
       setCurrentStep("slots")
-      // Re-configurar datos
       const fetchServiceAndSetup = async () => {
         try {
           const response = await fetch(`/api/public/${organizationId}/services`)
@@ -208,10 +193,8 @@ export function IndividualBookingFlow({ organizationId, onBack }: IndividualBook
     }
   }
 
-  // Calcular el paso actual para la UI
   const getCurrentStepNumber = () => {
     if (organizationId === "68") {
-      // Para org 68: slots=1, client-data=2, confirmation=3
       switch (currentStep) {
         case "slots": return 1
         case "client-data": return 2
@@ -219,7 +202,6 @@ export function IndividualBookingFlow({ organizationId, onBack }: IndividualBook
         default: return 1
       }
     } else {
-      // Flujo normal: service=1, professional=2, slots=3, client-data=4, confirmation=5
       switch (currentStep) {
         case "service": return 1
         case "professional": return 2
@@ -249,7 +231,6 @@ export function IndividualBookingFlow({ organizationId, onBack }: IndividualBook
         </div>
       </div>
 
-      {/* Solo mostrar estos pasos si NO es organización 68 */}
       {organizationId !== "68" && currentStep === "service" && (
         <ServiceSelector organizationId={organizationId} onSelect={handleServiceSelect} />
       )}
@@ -262,7 +243,6 @@ export function IndividualBookingFlow({ organizationId, onBack }: IndividualBook
         />
       )}
 
-      {/* Available Slots - se muestra para todas las organizaciones */}
       {currentStep === "slots" &&
         bookingData.serviceId &&
         bookingData.professionalId &&

@@ -36,10 +36,16 @@ export function PublicBookingPage({ organizationId }: PublicBookingPageProps) {
   }, [organizationId])
 
   useEffect(() => {
-    // Auto-configuración para organización 68
+    // Auto-configuración + mensaje al padre solo para org 68
     if (organizationId === "68") {
       setBookingType("individual")
       setCurrentStep("booking")
+
+      // avisar al padre que el iframe está cargado
+      window.parent.postMessage(
+        { type: "booking_iframe_loaded" },
+        "https://nora.healthmate.tech"
+      )
     }
   }, [organizationId])
 
@@ -62,11 +68,31 @@ export function PublicBookingPage({ organizationId }: PublicBookingPageProps) {
   const handleBookingTypeSelect = (type: BookingType) => {
     setBookingType(type)
     setCurrentStep("booking")
+
+    if (organizationId === "68") {
+      window.parent.postMessage(
+        { type: "booking_submit", payload: { slotId: "manual", dateISO: new Date().toISOString() } },
+        "https://nora.healthmate.tech"
+      )
+    }
   }
 
   const handleBookingComplete = (result: BookingResult) => {
     setBookingResult(result)
     setCurrentStep("confirmation")
+
+    if (organizationId === "68") {
+      window.parent.postMessage(
+        {
+          type: "booking_confirmed",
+          payload: {
+            bookingId: result?.appointment?.id,
+            dateISO: result?.appointment?.date,
+          },
+        },
+        "https://nora.healthmate.tech"
+      )
+    }
   }
 
   const handleStartOver = () => {
@@ -74,7 +100,6 @@ export function PublicBookingPage({ organizationId }: PublicBookingPageProps) {
     setCurrentStep("type")
     setBookingResult(null)
     
-    // Para org 68, volver a configurar automáticamente
     if (organizationId === "68") {
       setTimeout(() => {
         setBookingType("individual")
@@ -84,9 +109,7 @@ export function PublicBookingPage({ organizationId }: PublicBookingPageProps) {
   }
 
   const handleReset = () => {
-    // Para org 68, no permitir volver al selector de tipo
     if (organizationId === "68") {
-      // Simplemente recargar la página o mantener en booking
       window.location.reload()
     } else {
       setBookingType(null)
@@ -130,7 +153,7 @@ export function PublicBookingPage({ organizationId }: PublicBookingPageProps) {
         <Card className="shadow-xl">
           <CardHeader className="text-center">
             <CardTitle className="text-3xl font-bold text-gray-800">
-              {organizationId === "68" ? "Reservar Cita" : "Reservar Cita"}
+              Reservar Cita
             </CardTitle>
             <p className="text-gray-600 mt-2">
               {organizationId === "68" 
@@ -140,7 +163,6 @@ export function PublicBookingPage({ organizationId }: PublicBookingPageProps) {
             </p>
           </CardHeader>
           <CardContent>
-            {/* Solo mostrar selector de tipo si NO es org 68 */}
             {currentStep === "type" && !bookingType && organizationId !== "68" ? (
               <BookingTypeSelector onSelect={handleBookingTypeSelect} />
             ) : currentStep === "booking" && bookingType === "individual" ? (
