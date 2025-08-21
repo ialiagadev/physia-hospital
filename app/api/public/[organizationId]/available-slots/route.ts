@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { format, parseISO, isToday } from "date-fns"
+import { toZonedTime } from "date-fns-tz"   // 👈 añadido
 
 // Cliente admin que bypassa RLS
 const supabaseAdmin = createClient(
@@ -36,10 +37,15 @@ function minutesToTime(minutes: number): string {
   return `${hours.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}`
 }
 
-// Hora actual en minutos (del servidor)
+// Hora actual en minutos (con zona horaria Madrid)
 function getCurrentTimeInMinutes(): number {
   const now = new Date()
-  return now.getHours() * 60 + now.getMinutes()
+  const zoned = toZonedTime(now, "Europe/Madrid")
+  console.log("[v0] Current time check:", {
+    utc: now.toISOString(),
+    madrid: zoned.toLocaleString("es-ES", { timeZone: "Europe/Madrid" }),
+  })
+  return zoned.getHours() * 60 + zoned.getMinutes()
 }
 
 // ¿El slot ya ha pasado? (solo aplica a hoy)
@@ -249,11 +255,10 @@ async function getSlotsForProfessional(
       slotCount++
       console.log("[v0] --- Checking slot", slotCount, ":", slotStart, "to", slotEnd)
 
-      // 1) DESCANSOS: si pisa, saltar al final del descanso
+      // 1) DESCANSOS
       let hasBreakConflict = false
       let nextAvailableTime = currentMinutes + serviceDuration
 
-      // Descanso principal del horario (si existe)
       if (schedule.break_start && schedule.break_end) {
         if (timesOverlap(slotStart, slotEnd, schedule.break_start, schedule.break_end)) {
           hasBreakConflict = true
@@ -263,7 +268,6 @@ async function getSlotsForProfessional(
         }
       }
 
-      // Descansos adicionales (work_schedule_breaks)
       if (!hasBreakConflict) {
         for (const breakItem of scheduleBreaks) {
           if (timesOverlap(slotStart, slotEnd, breakItem.start_time, breakItem.end_time)) {
@@ -325,7 +329,7 @@ async function getSlotsForProfessional(
         continue
       }
 
-      // 4) ¿EL SLOT YA HA PASADO? (solo hoy, después de gestionar descansos/conflictos)
+      // 4) ¿EL SLOT YA HA PASADO? (solo hoy)
       if (hasSlotPassed(slotStart, targetDate)) {
         console.log("[v0] Slot has passed, skipping")
         currentMinutes += serviceDuration
@@ -402,7 +406,7 @@ export async function GET(request: NextRequest, { params }: { params: { organiza
     const targetDate = parseISO(date)
     const formattedDate = format(targetDate, "yyyy-MM-dd")
 
-    // professionalId === "any" → slots de cualquiera que pueda hacer el servicio
+    // professionalId === "any"
     if (professionalId === "any") {
       const { data: professionalServices, error: profServicesError } = await supabaseAdmin
         .from("user_services")
@@ -426,7 +430,6 @@ export async function GET(request: NextRequest, { params }: { params: { organiza
       }
 
       if (!professionalServices || professionalServices.length === 0) {
-        // Fallback: todos los usuarios activos de la org
         const { data: allProfessionals, error: allProfError } = await supabaseAdmin
           .from("users")
           .select("id, name, is_active, organization_id")
@@ -447,7 +450,6 @@ export async function GET(request: NextRequest, { params }: { params: { organiza
         validProfessionals = professionalServices
       }
 
-      // Mapa para evitar duplicados por hora
       const allSlotsMap = new Map<
         string,
         {
@@ -500,7 +502,7 @@ export async function GET(request: NextRequest, { params }: { params: { organiza
       return NextResponse.json({ slots: finalSlots })
     }
 
-    // Profesional específico: comprobar permiso (user_services). Si no está, permitir igualmente (fallback).
+    // Profesional específico
     const { error: serviceCheckError } = await supabaseAdmin
       .from("user_services")
       .select("id")
