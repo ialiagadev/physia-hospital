@@ -46,9 +46,13 @@ export async function POST(request: NextRequest) {
       customer: customerId,
       items: [{ price: priceId }],
       trial_period_days: 1,
-      payment_behavior: "default_incomplete",
-      payment_settings: { save_default_payment_method: "on_subscription" },
-      expand: ["latest_invoice"],
+      payment_behavior: "allow_incomplete", // Cambio clave: permite que la suscripción se active incluso sin método de pago inicial
+      payment_settings: {
+        save_default_payment_method: "on_subscription",
+        payment_method_types: ["card"], // Especificar tipos de pago permitidos
+      },
+      expand: ["latest_invoice", "pending_setup_intent"],
+      collection_method: "charge_automatically", // Asegurar cobro automático
       metadata: {
         plan_id: plan.id,
         billing_period: billingPeriod,

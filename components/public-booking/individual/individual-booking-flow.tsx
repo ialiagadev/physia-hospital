@@ -12,7 +12,7 @@ import { BookingConfirmation } from "../shared/booking-confirmation"
 interface IndividualBookingFlowProps {
   organizationId: string
   onBack: () => void
-  onComplete?: (result: any) => void   // 👈 añadida
+  onComplete?: (result: any) => void
 }
 
 type Step = "service" | "professional" | "slots" | "client-data" | "confirmation"
@@ -30,6 +30,14 @@ interface BookingData {
     phone: string
     email?: string
   }
+}
+
+// 🔹 auxiliar: detecta el subdominio actual
+function getSubdomain() {
+  if (typeof window === "undefined") return null
+  const host = window.location.hostname
+  const parts = host.split(".")
+  return parts.length > 2 ? parts[0] : "general"
 }
 
 export function IndividualBookingFlow({ organizationId, onBack, onComplete }: IndividualBookingFlowProps) {
@@ -111,7 +119,19 @@ export function IndividualBookingFlow({ organizationId, onBack, onComplete }: In
       setBookingResult(result)
       setCurrentStep("confirmation")
 
-      // 👇 avisar al padre si existe callback
+      // 🔔 notificar al padre vía postMessage
+      window.parent.postMessage(
+        {
+          type: "booking_confirmed",
+          payload: {
+            bookingId: result?.appointment?.id,
+            dateISO: result?.appointment?.date,
+          },
+          subdomain: getSubdomain(),
+        },
+        "*" // ⚠️ en producción cámbialo a "https://healthmate.tech"
+      )
+
       if (onComplete) onComplete(result)
 
     } catch (error) {
@@ -124,7 +144,6 @@ export function IndividualBookingFlow({ organizationId, onBack, onComplete }: In
       setCurrentStep("confirmation")
 
       if (onComplete) onComplete(failResult)
-
     } finally {
       setLoading(false)
     }

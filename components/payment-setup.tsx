@@ -81,6 +81,9 @@ function PaymentForm({ clientSecret, subscriptionId, onSuccess, onError, isLoadi
 
         if (updateResult.success) {
           console.log("✅ Suscripción actualizada correctamente:", updateResult.subscription)
+          if (updateResult.subscription.status === "trialing") {
+            console.log("🎯 Suscripción configurada para cobro automático al finalizar el trial")
+          }
           onSuccess()
         } else {
           console.error("❌ Error actualizando suscripción:", updateResult.error)

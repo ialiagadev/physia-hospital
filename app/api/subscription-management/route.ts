@@ -184,10 +184,12 @@ export async function POST(request: NextRequest) {
           }
           
 
-        await supabase
+          await supabase
           .from("organizations")
           .update({
-            subscription_status: updatedSubscription.status,
+            subscription_tier: planId,          // 🔹 guardas el plan
+            subscription_billing_period: billingPeriod, // 🔹 guardas mensual/anual
+            stripe_subscription_id: updatedSubscription.id, // opcional para asegurar consistencia
           })
           .eq("id", organization.id)
 
