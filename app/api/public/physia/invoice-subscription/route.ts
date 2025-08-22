@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js"
 import { STRIPE_PLANS } from "@/lib/stripe-config"
 import { Resend } from "resend"
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib"
+import { addMonths, addYears } from "date-fns"
 
 const supabaseServer = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -37,7 +38,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Plan no válido" }, { status: 400 })
     }
 
-    const period: "monthly" | "yearly" = "monthly"
+    // ⚡ Usamos el periodo de facturación de la organización
+    const period = (org.subscription_billing_period || "monthly") as "monthly" | "yearly"
     const priceInfo = plan.prices[period]
 
     // 3. Cliente
@@ -74,7 +76,7 @@ export async function POST(req: Request) {
     const { data: invoice, error: invoiceError } = await supabaseServer
       .from("invoices")
       .insert({
-        organization_id: 61,
+        organization_id: org.id,
         client_id: clientId,
         status: "issued",
         issue_date: new Date().toISOString().split("T")[0],
@@ -102,13 +104,25 @@ export async function POST(req: Request) {
       line_amount: baseAmount,
     })
 
-    // 5. PDF con estilo
+    // 5. Actualizar fecha de expiración
+    let newExpiration: Date
+    if (period === "monthly") {
+      newExpiration = addMonths(new Date(), 1)
+    } else {
+      newExpiration = addYears(new Date(), 1)
+    }
+
+    await supabaseServer
+      .from("organizations")
+      .update({ subscription_expires: newExpiration.toISOString() })
+      .eq("id", org.id)
+
+    // 6. PDF con estilo
     const pdfDoc = await PDFDocument.create()
     const page = pdfDoc.addPage([600, 500])
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
 
-    // Fondo lila en cabecera
     page.drawRectangle({
       x: 0,
       y: 450,
@@ -119,19 +133,14 @@ export async function POST(req: Request) {
     page.drawText("Factura de Suscripción", { x: 180, y: 465, size: 18, font: fontBold, color: rgb(0.3, 0.2, 0.5) })
 
     page.drawText(`Cliente: ${org.name}`, { x: 50, y: 420, size: 12, font })
-
-    page.drawText("Concepto:", { x: 50, y: 380, size: 12,  })
+    page.drawText("Concepto:", { x: 50, y: 380, size: 12 })
     page.drawText(`${plan.name} - ${period === "monthly" ? "Mensual" : "Anual"}`, { x: 150, y: 380, size: 12, font })
-
     page.drawText("Base imponible:", { x: 50, y: 350, size: 12, font })
     page.drawText(`${baseAmount.toFixed(2)} €`, { x: 200, y: 350, size: 12, font })
-
     page.drawText("IVA (21%):", { x: 50, y: 330, size: 12, font })
     page.drawText(`${vatAmount.toFixed(2)} €`, { x: 200, y: 330, size: 12, font })
-
-    page.drawText("TOTAL:", { x: 50, y: 310, size: 14,  })
+    page.drawText("TOTAL:", { x: 50, y: 310, size: 14 })
     page.drawText(`${totalAmount.toFixed(2)} €`, { x: 200, y: 310, size: 14, color: rgb(0.6, 0.1, 0.6) })
-
     page.drawText("¡Gracias por confiar en Healthmate y suscribirte a nuestro servicio!", {
       x: 50,
       y: 270,
@@ -143,7 +152,7 @@ export async function POST(req: Request) {
     const pdfBytes = await pdfDoc.save()
     const pdfBase64 = Buffer.from(pdfBytes).toString("base64")
 
-    // 6. Email amigable y con fondo lila
+    // 7. Email amigable
     if (org.email) {
       const html = `
         <div style="font-family: Arial, sans-serif; background:#f5f0ff; padding:40px;">
