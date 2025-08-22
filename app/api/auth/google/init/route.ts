@@ -21,9 +21,7 @@ export async function POST(request: NextRequest) {
 
     // 🆕 SCOPES MÁS ESPECÍFICOS Y COMPLETOS
     const scopes = [
-      "https://www.googleapis.com/auth/calendar",
       "https://www.googleapis.com/auth/calendar.events",
-      "https://www.googleapis.com/auth/calendar.events.owned",
     ]
 
     const authUrl = oauth2Client.generateAuthUrl({
