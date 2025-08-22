@@ -469,9 +469,7 @@ export default function SubscriptionsPage() {
               <div>
                 <strong>Nombre:</strong> {organization.name}
               </div>
-              <div>
-                <strong>Estado:</strong> {getSubscriptionStatus(organization)}
-              </div>
+             
             </div>
           </div>
 
@@ -578,9 +576,7 @@ export default function SubscriptionsPage() {
               <div className="bg-white border rounded-lg p-6">
                 <h3 className="text-lg font-semibold mb-4">Detalles de Suscripción</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <strong>Estado:</strong> {getSubscriptionStatus(organization)}
-                  </div>
+                 
                   {subscriptionDetails.plan && (
                     <div>
                       <strong>Plan:</strong> {subscriptionDetails.plan}
