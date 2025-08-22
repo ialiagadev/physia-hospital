@@ -8,7 +8,32 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useVacationRequests } from "@/hooks/use-vacation-requests"
 import { useAuth } from "@/app/contexts/auth-context"
-import { LayoutDashboard, FileText, MessageSquare, BarChart2, User, PanelLeft, CheckSquare, Bot, Radio, Clock, Users, Package, UserCog, Brain, LogOut, HelpCircle, FileIcon as FileTemplate, CreditCard, FileCheck, Megaphone, Warehouse, Calendar, Tag } from 'lucide-react'
+import {
+  LayoutDashboard,
+  FileText,
+  MessageSquare,
+  BarChart2,
+  User,
+  PanelLeft,
+  CheckSquare,
+  Bot,
+  Radio,
+  Clock,
+  Users,
+  Package,
+  UserCog,
+  Brain,
+  LogOut,
+  HelpCircle,
+  BookTemplate as FileTemplate,
+  CreditCard,
+  FileCheck,
+  Megaphone,
+  Warehouse,
+  Calendar,
+  Tag,
+  MessageCircle,
+} from "lucide-react"
 
 interface MenuItem {
   id: string
@@ -138,6 +163,13 @@ export function MainSidebar() {
       isActive: isInSection("fichaje"),
       // Agregar badge para solicitudes pendientes
       badge: pendingRequestsCount > 0 ? pendingRequestsCount : null,
+    },
+    {
+      id: "feedback",
+      label: "Feedback",
+      href: "/dashboard/feedback",
+      icon: MessageCircle,
+      isActive: isInSection("feedback"),
     },
   ]
 
@@ -269,8 +301,8 @@ export function MainSidebar() {
           <PanelLeft className="h-4 w-4" />
         </Button>
 
-        <div className="w-10 h-10 bg-purple-500 rounded-xl flex items-center justify-center mb-6">
-          <span className="text-white font-bold text-lg">P</span>
+        <div className="w-12 h-12 bg-purple-500 rounded-xl flex items-center justify-center mb-6">
+          <span className="text-white font-bold text-xl">P</span>
         </div>
 
         {/* Iconos colapsados */}
