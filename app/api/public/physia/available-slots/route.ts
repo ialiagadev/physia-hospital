@@ -171,7 +171,6 @@ async function getSlotsForProfessional(
 
   console.log("[v0] Work schedules found:", workSchedules.length)
 
-
   // Descansos asociados al horario (tabla work_schedule_breaks)
   let scheduleBreaks: ScheduleBreak[] = []
   if (currentScheduleId) {
@@ -242,12 +241,8 @@ async function getSlotsForProfessional(
       const bufferMinutes = 5
       const cutoff = getCurrentTimeInMinutes() + bufferMinutes
       if (cutoff > currentMinutes) {
-        const steps = Math.ceil((cutoff - startMinutes) / serviceDuration)
-        const fastForward = startMinutes + steps * serviceDuration
-        if (fastForward < endMinutes) {
-          currentMinutes = fastForward
-          console.log("[v0] Fast-forward to", minutesToTime(currentMinutes), "due to 'today'")
-        }
+        currentMinutes = cutoff
+        console.log("[v0] Fast-forward to", minutesToTime(currentMinutes), "due to 'today'")
       }
     }
 
@@ -259,14 +254,14 @@ async function getSlotsForProfessional(
 
       // 1) DESCANSOS: si pisa, saltar al final del descanso
       let hasBreakConflict = false
-      let nextAvailableTime = currentMinutes + serviceDuration
+      let nextAvailableTime = currentMinutes
 
       // Descanso principal del horario (si existe)
       if (schedule.break_start && schedule.break_end) {
         if (timesOverlap(slotStart, slotEnd, schedule.break_start, schedule.break_end)) {
           hasBreakConflict = true
           const breakEndMinutes = timeToMinutes(schedule.break_end)
-          nextAvailableTime = Math.max(nextAvailableTime, breakEndMinutes)
+          nextAvailableTime = breakEndMinutes
           console.log("[v0] Main break conflict! Next available time:", minutesToTime(nextAvailableTime))
         }
       }
@@ -301,42 +296,58 @@ async function getSlotsForProfessional(
 
       // 2) CITAS EXISTENTES
       let hasAppointmentConflict = false
+      let latestAppointmentEnd = currentMinutes
+
       if (existingAppointments) {
         for (const appointment of existingAppointments) {
           if (timesOverlap(slotStart, slotEnd, appointment.start_time, appointment.end_time)) {
             hasAppointmentConflict = true
+            const appointmentEndMinutes = timeToMinutes(appointment.end_time)
+            latestAppointmentEnd = Math.max(latestAppointmentEnd, appointmentEndMinutes)
             console.log("[v0] Appointment conflict with:", appointment.start_time, "to", appointment.end_time)
-            break
           }
         }
       }
+
       if (hasAppointmentConflict) {
-        console.log("[v0] Skipping due to appointment conflict")
-        currentMinutes += serviceDuration
+        console.log("[v0] Jumping from", minutesToTime(currentMinutes), "to", minutesToTime(latestAppointmentEnd))
+        currentMinutes = latestAppointmentEnd
+        if (currentMinutes + serviceDuration > endMinutes) {
+          console.log("[v0] No more time after appointment, ending loop")
+          break
+        }
         continue
       }
 
       // 3) ACTIVIDADES GRUPALES
       let hasGroupConflict = false
+      let latestGroupActivityEnd = currentMinutes
+
       if (groupActivities) {
         for (const activity of groupActivities) {
           if (timesOverlap(slotStart, slotEnd, activity.start_time, activity.end_time)) {
             hasGroupConflict = true
+            const activityEndMinutes = timeToMinutes(activity.end_time)
+            latestGroupActivityEnd = Math.max(latestGroupActivityEnd, activityEndMinutes)
             console.log("[v0] Group activity conflict with:", activity.start_time, "to", activity.end_time)
-            break
           }
         }
       }
+
       if (hasGroupConflict) {
-        console.log("[v0] Skipping due to group activity conflict")
-        currentMinutes += serviceDuration
+        console.log("[v0] Jumping from", minutesToTime(currentMinutes), "to", minutesToTime(latestGroupActivityEnd))
+        currentMinutes = latestGroupActivityEnd
+        if (currentMinutes + serviceDuration > endMinutes) {
+          console.log("[v0] No more time after group activity, ending loop")
+          break
+        }
         continue
       }
 
       // 4) ¿EL SLOT YA HA PASADO? (solo hoy, después de gestionar descansos/conflictos)
       if (hasSlotPassed(slotStart, targetDate)) {
         console.log("[v0] Slot has passed, skipping")
-        currentMinutes += serviceDuration
+        currentMinutes += 1
         continue
       }
 
