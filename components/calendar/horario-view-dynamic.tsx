@@ -130,12 +130,16 @@ const generateDefaultTimeSlots = (intervaloTiempo: IntervaloTiempo): string[] =>
   const slots: string[] = []
   const startHour = 8 // 8:00 AM
   const endHour = 18 // 6:00 PM
-  for (let hour = startHour; hour < endHour; hour++) {
-    for (let minute = 0; minute < 60; minute += intervaloTiempo) {
-      const timeString = `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`
-      slots.push(timeString)
-    }
+
+  let currentMinutes = startHour * 60
+  const endMinutes = endHour * 60
+
+  while (currentMinutes < endMinutes) {
+    const timeString = minutesToTime(currentMinutes)
+    slots.push(timeString)
+    currentMinutes += intervaloTiempo
   }
+
   return slots
 }
 
@@ -507,23 +511,40 @@ export function HorarioViewDynamic({
 
       // Generar slots dentro de cada segmento
       for (const segmento of segmentos) {
-        for (let minutos = segmento.start; minutos < segmento.end; minutos += intervaloTiempo) {
-          const finSlot = Math.min(minutos + intervaloTiempo, segmento.end)
+        let currentMinutes = segmento.start
+        const slotsSet = new Set<string>()
+
+        while (currentMinutes < segmento.end) {
+          const finSlot = Math.min(currentMinutes + intervaloTiempo, segmento.end)
 
           // Solo crear slot si tiene la duración mínima
-          if (finSlot - minutos >= intervaloTiempo) {
-            const horaInicio = minutesToTime(minutos)
+          if (finSlot - currentMinutes >= intervaloTiempo) {
+            const horaInicio = minutesToTime(currentMinutes)
             const horaFin = minutesToTime(finSlot)
 
             // Verificar si hay cita en este slot
-            const ocupado = citasProfesional.some((cita) => {
+            const citaConflicto = citasProfesional.find((cita) => {
               const normalizedStartTime = normalizeTimeFormat(cita.hora)
-              const horaInicioCita = timeToMinutes(normalizedStartTime)
-              const horaFinCita = horaInicioCita + cita.duracion
-              return horaInicioCita < finSlot && horaFinCita > minutos
+              const citaStart = timeToMinutes(normalizedStartTime)
+              const citaEnd = citaStart + (cita.duracion || 60)
+
+              return (
+                (currentMinutes >= citaStart && currentMinutes < citaEnd) ||
+                (finSlot > citaStart && finSlot <= citaEnd) ||
+                (currentMinutes <= citaStart && finSlot >= citaEnd)
+              )
             })
 
-            if (!ocupado) {
+            if (citaConflicto) {
+              const normalizedStartTime = normalizeTimeFormat(citaConflicto.hora)
+              const citaStart = timeToMinutes(normalizedStartTime)
+              const citaEnd = citaStart + (citaConflicto.duracion || 60)
+              currentMinutes = citaEnd
+              continue
+            }
+
+            // Si no hay conflicto, agregar el slot
+            if (!slotsSet.has(horaInicio)) {
               huecos.push(
                 <div
                   key={`hueco-${horaInicio}-${profesionalId}`}
@@ -533,7 +554,7 @@ export function HorarioViewDynamic({
                     left: 0,
                     right: 0,
                     width: "100%",
-                    height: `${calcularAlturaCita(finSlot - minutos)}%`,
+                    height: `${calcularAlturaCita(finSlot - currentMinutes)}%`,
                     backgroundImage: "radial-gradient(circle, #e5e7eb 1px, transparent 1px)",
                     backgroundSize: "8px 8px",
                     zIndex: 5,
@@ -568,8 +589,11 @@ export function HorarioViewDynamic({
                   </div>
                 </div>,
               )
+              slotsSet.add(horaInicio)
             }
           }
+
+          currentMinutes += intervaloTiempo
         }
       }
     }
@@ -688,11 +712,7 @@ export function HorarioViewDynamic({
       <div className="h-full flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
         <div className="text-center">
           <div className="relative mb-6">
-            <img
-              src="/images/logo.jpeg"
-              alt="Physia Logo"
-              className="w-20 h-20 mx-auto animate-float opacity-80"
-            />
+            <img src="/images/logo.jpeg" alt="Physia Logo" className="w-20 h-20 mx-auto animate-float opacity-80" />
             <div className="absolute inset-0 w-20 h-20 mx-auto rounded-full bg-blue-200 animate-ping opacity-20"></div>
           </div>
           <h3 className="text-xl font-semibold mb-3 text-gray-800">Cargando horarios...</h3>
@@ -808,62 +828,72 @@ export function HorarioViewDynamic({
                       />
                     ))}
 
-                 {/* 🚀 NUEVO: Overlay de instrucciones SOBRE el grid cuando no hay horarios */}
-{!hasSchedules && !isOnVacation && (
-  <div className="absolute inset-0 bg-white bg-opacity-95 flex items-center justify-center z-20">
-    <div className="text-center max-w-sm p-6">
-      <div className="text-4xl mb-4">⚙️</div>
-      <div className="text-lg font-semibold mb-4 text-gray-800">
-        Configura tu agenda
-      </div>
-      
-      {/* Instrucciones paso a paso */}
-      <div className="space-y-3 text-sm text-gray-600 mb-4">
-        <div className="flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
-          <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
-            1
-          </div>
-          <span>Ve a la pestaña <strong>Usuarios</strong></span>
-        </div>
-        
-        <div className="flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
-          <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
-            2
-          </div>
-          <span>Haz clic en el icono del <strong>reloj ⏰</strong></span>
-        </div>
-        
-        <div className="flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
-          <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
-            3
-          </div>
-          <span>Configura los horarios y <strong>acepta</strong></span>
-        </div>
-        
-        <div className="flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
-          <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
-            4
-          </div>
-          <span><strong>Recarga</strong> esta página</span>
-        </div>
-      </div>
+                    {/* 🚀 NUEVO: Overlay de instrucciones SOBRE el grid cuando no hay horarios */}
+                    {!hasSchedules && !isOnVacation && (
+                      <div className="absolute inset-0 bg-white bg-opacity-95 flex items-center justify-center z-20">
+                        <div className="text-center max-w-sm p-6">
+                          <div className="text-4xl mb-4">⚙️</div>
+                          <div className="text-lg font-semibold mb-4 text-gray-800">Configura tu agenda</div>
 
-      {/* Recordatorio sobre servicios */}
-      <div className="text-xs text-gray-600 bg-orange-50 p-3 rounded-lg border border-orange-200 mb-4">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-orange-500">🔧</span>
-          <strong className="text-orange-700">¡No olvides!</strong>
-        </div>
-        <span>Recuerda crear al menos un <strong>servicio</strong> en la pestaña Servicios para poder agendar citas.</span>
-      </div>
+                          {/* Instrucciones paso a paso */}
+                          <div className="space-y-3 text-sm text-gray-600 mb-4">
+                            <div className="flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
+                              <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                                1
+                              </div>
+                              <span>
+                                Ve a la pestaña <strong>Usuarios</strong>
+                              </span>
+                            </div>
 
-      {/* Tip final */}
-      <div className="text-xs text-gray-500 bg-yellow-50 p-3 rounded-lg border border-yellow-200">
-        💡 <strong>Tip:</strong> Una vez configurados los horarios y servicios, podrás crear citas arrastrando y haciendo clic en los espacios libres.
-      </div>
-    </div>
-  </div>
-)}
+                            <div className="flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
+                              <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                                2
+                              </div>
+                              <span>
+                                Haz clic en el icono del <strong>reloj ⏰</strong>
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
+                              <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                                3
+                              </div>
+                              <span>
+                                Configura los horarios y <strong>acepta</strong>
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-3 p-2 bg-blue-50 rounded-lg">
+                              <div className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                                4
+                              </div>
+                              <span>
+                                <strong>Recarga</strong> esta página
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Recordatorio sobre servicios */}
+                          <div className="text-xs text-gray-600 bg-orange-50 p-3 rounded-lg border border-orange-200 mb-4">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-orange-500">🔧</span>
+                              <strong className="text-orange-700">¡No olvides!</strong>
+                            </div>
+                            <span>
+                              Recuerda crear al menos un <strong>servicio</strong> en la pestaña Servicios para poder
+                              agendar citas.
+                            </span>
+                          </div>
+
+                          {/* Tip final */}
+                          <div className="text-xs text-gray-500 bg-yellow-50 p-3 rounded-lg border border-yellow-200">
+                            💡 <strong>Tip:</strong> Una vez configurados los horarios y servicios, podrás crear citas
+                            arrastrando y haciendo clic en los espacios libres.
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {!isWorkingToday && !isOnVacation && hasSchedules ? (
                       // Día libre (tiene horarios pero no trabaja hoy) - SOBRE el grid
