@@ -1,6 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { format, parseISO, isToday } from "date-fns"
+import { format, parseISO } from "date-fns"
+import { toZonedTime } from "date-fns-tz"
+import { isSameDay } from "date-fns"
+
+const TIMEZONE = "Europe/Madrid"
 
 // Cliente admin que bypassa RLS
 const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
@@ -32,23 +36,30 @@ function minutesToTime(minutes: number): string {
   return `${hours.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}`
 }
 
-// Hora actual en minutos (del servidor)
+// Hora actual en minutos (forzada a zona horaria local)
 function getCurrentTimeInMinutes(): number {
-  const now = new Date()
+  const nowUtc = new Date()
+  const now = toZonedTime(nowUtc, TIMEZONE)
   return now.getHours() * 60 + now.getMinutes()
 }
 
-// ¿El slot ya ha pasado? (solo aplica a hoy)
+// Helper: ¿es “hoy” en la zona horaria indicada?
+function isTodayInTimezone(date: Date, timezone: string): boolean {
+  const now = toZonedTime(new Date(), timezone)
+  const zonedDate = toZonedTime(date, timezone)
+  return isSameDay(now, zonedDate)
+}
+
+// ¿El slot ya ha pasado? (solo aplica a hoy en la zona horaria local)
 function hasSlotPassed(slotStartTime: string, targetDate: Date): boolean {
-  if (!isToday(targetDate)) {
-    // No es hoy → no filtrar por hora actual
+  if (!isTodayInTimezone(targetDate, TIMEZONE)) {
     return false
   }
 
   const currentTimeMinutes = getCurrentTimeInMinutes()
   const slotStartMinutes = timeToMinutes(slotStartTime)
 
-  // Buffer de 5 minutos para evitar slots "inminentes"
+  // Buffer de 5 minutos para evitar slots “inminentes”
   const bufferMinutes = 5
   const cutoffTime = currentTimeMinutes + bufferMinutes
 
@@ -160,6 +171,7 @@ async function getSlotsForProfessional(
 
   console.log("[v0] Work schedules found:", workSchedules.length)
 
+
   // Descansos asociados al horario (tabla work_schedule_breaks)
   let scheduleBreaks: ScheduleBreak[] = []
   if (currentScheduleId) {
@@ -226,7 +238,7 @@ async function getSlotsForProfessional(
     let slotCount = 0
 
     // Fast-forward (solo si es hoy): saltar directamente al primer slot >= ahora+buffer
-    if (isToday(targetDate)) {
+    if (isTodayInTimezone(targetDate, TIMEZONE)) {
       const bufferMinutes = 5
       const cutoff = getCurrentTimeInMinutes() + bufferMinutes
       if (cutoff > currentMinutes) {

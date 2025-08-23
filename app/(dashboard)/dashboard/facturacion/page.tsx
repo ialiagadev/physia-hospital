@@ -17,6 +17,8 @@ interface DashboardStats {
   averageTicket: number
   totalExpenses: number
   averageExpense: number
+  profitMargin: number
+  monthlyGrowthRate: number
 }
 
 interface PeriodStats {
@@ -36,6 +38,7 @@ interface TrendData {
   totalExpenses: number
   averageExpense: number
   periodExpenses: number
+  profitMargin: number
 }
 
 interface RecentInvoice {
@@ -73,6 +76,13 @@ interface ExpenseData {
   amount: number | null
 }
 
+interface TopClient {
+  id: string
+  name: string
+  totalRevenue: number
+  invoiceCount: number
+}
+
 export default function DashboardPage() {
   const { userProfile } = useAuth()
   const [stats, setStats] = useState<DashboardStats>({
@@ -82,6 +92,8 @@ export default function DashboardPage() {
     averageTicket: 0,
     totalExpenses: 0,
     averageExpense: 0,
+    profitMargin: 0,
+    monthlyGrowthRate: 0,
   })
   const [periodRevenue, setPeriodRevenue] = useState(0)
   const [periodExpenses, setPeriodExpenses] = useState(0)
@@ -96,10 +108,12 @@ export default function DashboardPage() {
     totalExpenses: 0,
     averageExpense: 0,
     periodExpenses: 0,
+    profitMargin: 0,
   })
   const [recentInvoices, setRecentInvoices] = useState<RecentInvoice[]>([])
   const [recentClients, setRecentClients] = useState<RecentClient[]>([])
   const [recentExpenses, setRecentExpenses] = useState<RecentExpense[]>([])
+  const [topClients, setTopClients] = useState<TopClient[]>([])
   const [loading, setLoading] = useState(true)
   const { toast } = useToast()
 
@@ -134,6 +148,13 @@ export default function DashboardPage() {
   const animatedExpensesValue = useCountAnimation(stats.totalExpenses, 800, 500, formatCurrency)
   const animatedAverageExpenseValue = useCountAnimation(stats.averageExpense, 800, 600, formatCurrency)
   const animatedPeriodExpensesValue = useCountAnimation(periodExpenses, 800, 700, formatCurrency)
+  const animatedProfitMarginValue = useCountAnimation(stats.profitMargin, 800, 800, formatCurrency)
+  const animatedGrowthRateValue = useCountAnimation(
+    stats.monthlyGrowthRate,
+    600,
+    900,
+    (value) => `${value.toFixed(1)}%`,
+  )
 
   // Decidir si usar valores animados o estáticos
   const clientsValue = showAnimations ? animatedClientsValue : stats.clients
@@ -144,6 +165,8 @@ export default function DashboardPage() {
   const expensesValue = showAnimations ? animatedExpensesValue : formatCurrency(stats.totalExpenses)
   const averageExpenseValue = showAnimations ? animatedAverageExpenseValue : formatCurrency(stats.averageExpense)
   const periodExpensesValue = showAnimations ? animatedPeriodExpensesValue : formatCurrency(periodExpenses)
+  const profitMarginValue = showAnimations ? animatedProfitMarginValue : formatCurrency(stats.profitMargin)
+  const growthRateValue = showAnimations ? animatedGrowthRateValue : `${stats.monthlyGrowthRate.toFixed(1)}%`
 
   // Función para calcular el rango de fechas según el período seleccionado
   const getDateRange = (period: string) => {
@@ -218,7 +241,7 @@ export default function DashboardPage() {
         .select("total_amount, client_id")
         .gte("issue_date", startDate.toISOString().split("T")[0])
         .lte("issue_date", endDate.toISOString().split("T")[0])
-        .in("status", ["sent", "paid"]) // Solo facturas válidas
+        .in("status", ["issued"]) // Solo facturas válidas
 
       // Construir query base para gastos
       let expensesQuery = supabase
@@ -338,7 +361,7 @@ export default function DashboardPage() {
         }
 
         const getInvoicesData = async () => {
-          let invoicesQuery = supabase.from("invoices").select("total_amount, client_id").in("status", ["sent", "paid"])
+          let invoicesQuery = supabase.from("invoices").select("total_amount, client_id").in("status", ["issued"])
           if (userProfile?.organization_id) {
             invoicesQuery = invoicesQuery.eq("organization_id", userProfile.organization_id)
           }
@@ -399,6 +422,22 @@ export default function DashboardPage() {
           return await recentExpensesQuery
         }
 
+        const getTopClients = async () => {
+          let topClientsQuery = supabase
+            .from("invoices")
+            .select(`
+              client_id,
+              total_amount,
+              clients (id, name)
+            `)
+            .in("status", ["issued"])
+
+          if (userProfile?.organization_id) {
+            topClientsQuery = topClientsQuery.eq("organization_id", userProfile.organization_id)
+          }
+          return await topClientsQuery
+        }
+
         // Calcular fechas para estadísticas
         const currentMonth = new Date()
         const currentMonthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1)
@@ -419,6 +458,7 @@ export default function DashboardPage() {
           recentInvoicesResult,
           recentClientsResult,
           recentExpensesResult,
+          topClientsResult,
         ] = await Promise.all([
           getClientsCount(),
           getInvoicesData(),
@@ -428,6 +468,7 @@ export default function DashboardPage() {
           getRecentInvoices(),
           getRecentClients(),
           getRecentExpenses(),
+          getTopClients(),
         ])
 
         // Procesar resultados
@@ -448,6 +489,39 @@ export default function DashboardPage() {
         const expensesCount = expensesData.length
         const averageExpense = expensesCount > 0 ? totalExpenses / expensesCount : 0
 
+        // Procesar top clients data
+        const topClientsData = topClientsResult?.data || []
+        const clientsMap = new Map<string, { name: string; totalRevenue: number; invoiceCount: number }>()
+
+        topClientsData.forEach((invoice: any) => {
+          if (invoice.clients && invoice.client_id) {
+            const clientId = invoice.client_id
+            const clientName = invoice.clients.name
+            const amount = invoice.total_amount || 0
+
+            if (clientsMap.has(clientId)) {
+              const existing = clientsMap.get(clientId)!
+              existing.totalRevenue += amount
+              existing.invoiceCount += 1
+            } else {
+              clientsMap.set(clientId, {
+                name: clientName,
+                totalRevenue: amount,
+                invoiceCount: 1,
+              })
+            }
+          }
+        })
+
+        const topClientsArray = Array.from(clientsMap.entries())
+          .map(([id, data]) => ({ id, ...data }))
+          .sort((a, b) => b.totalRevenue - a.totalRevenue)
+          .slice(0, 5)
+
+        // Calcular new KPIs
+        const profitMargin = totalRevenue - totalExpenses
+        const monthlyGrowthRate = calculateTrend(currentMonthStats.revenue, previousMonthStats.revenue)
+
         // Actualizar estadísticas
         setStats({
           clients: clientsCount,
@@ -456,6 +530,8 @@ export default function DashboardPage() {
           averageTicket,
           totalExpenses,
           averageExpense,
+          profitMargin,
+          monthlyGrowthRate,
         })
 
         // Calcular tendencias reales usando los datos ya obtenidos
@@ -474,12 +550,14 @@ export default function DashboardPage() {
           ),
           periodRevenue: 0, // Se calculará en el otro useEffect
           periodExpenses: 0, // Se calculará en el otro useEffect
+          profitMargin: calculateTrend(profitMargin, previousMonthStats.revenue - previousMonthStats.expenses),
         })
 
         // Actualizar datos recientes
         setRecentInvoices(recentInvoicesData)
         setRecentClients(recentClientsData)
         setRecentExpenses(recentExpensesData)
+        setTopClients(topClientsArray)
 
         setLoading(false)
       } catch (error) {
@@ -697,12 +775,76 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Cuarta fila: Facturas recientes, Clientes recientes, Gastos recientes */}
+      {/* Nueva fila: Margen de Beneficio y Crecimiento Mensual */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Card className="border-t-4 border-t-emerald-500">
+        <Card className="border-l-4 border-l-purple-500">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Margen de Beneficio</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-baseline justify-between">
+              <div className={`text-2xl font-bold ${stats.profitMargin >= 0 ? "text-green-600" : "text-red-600"}`}>
+                {profitMarginValue}
+              </div>
+              <TrendIndicator value={trends.profitMargin} />
+            </div>
+            <p className="text-xs text-muted-foreground">Ingresos menos gastos</p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-l-4 border-l-yellow-500">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Crecimiento Mensual</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-baseline justify-between">
+              <div className={`text-2xl font-bold ${stats.monthlyGrowthRate >= 0 ? "text-green-600" : "text-red-600"}`}>
+                {growthRateValue}
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">Crecimiento de ingresos vs mes anterior</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Cuarta fila: Top Clientes, Facturas recientes, Gastos recientes */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <Card className="border-t-4 border-t-blue-500">
+          <CardHeader>
+            <CardTitle>Top Clientes</CardTitle>
+            <CardDescription>Clientes con mayor facturación</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {topClients && topClients.length > 0 ? (
+              <div className="space-y-2">
+                {topClients.map((client, index) => (
+                  <div
+                    key={client.id}
+                    className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-xs font-medium text-blue-600">
+                        {index + 1}
+                      </div>
+                      <div>
+                        <p className="font-medium">{client.name}</p>
+                        <p className="text-sm text-muted-foreground">{client.invoiceCount} facturas</p>
+                      </div>
+                    </div>
+                    <div className="font-medium text-blue-600">{formatCurrency(client.totalRevenue)}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-muted-foreground">No hay datos de clientes</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-t-4 border-t-green-500">
           <CardHeader>
             <CardTitle>Facturas recientes</CardTitle>
-            <CardDescription>Últimas facturas generadas</CardDescription>
+            <CardDescription>Últimas facturas emitidas</CardDescription>
           </CardHeader>
           <CardContent>
             {recentInvoices && recentInvoices.length > 0 ? (
@@ -713,46 +855,17 @@ export default function DashboardPage() {
                     className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 transition-colors"
                   >
                     <div>
-                      <p className="font-medium">{invoice.invoice_number}</p>
+                      <p className="font-medium">#{invoice.invoice_number}</p>
                       <p className="text-sm text-muted-foreground">
-                        {new Date(invoice.issue_date).toLocaleDateString()} - {getClientName(invoice)}
+                        {getClientName(invoice)} - {new Date(invoice.issue_date).toLocaleDateString()}
                       </p>
                     </div>
-                    <div className="font-medium">{formatCurrency(invoice.total_amount || 0)}</div>
+                    <div className="font-medium text-green-600">{formatCurrency(invoice.total_amount || 0)}</div>
                   </div>
                 ))}
               </div>
             ) : (
               <p className="text-muted-foreground">No hay facturas recientes</p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-t-4 border-t-indigo-500">
-          <CardHeader>
-            <CardTitle>Clientes recientes</CardTitle>
-            <CardDescription>Últimos clientes añadidos</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {recentClients && recentClients.length > 0 ? (
-              <div className="space-y-2">
-                {recentClients.map((client) => (
-                  <div
-                    key={client.id}
-                    className="flex items-center justify-between p-2 rounded-md hover:bg-muted/50 transition-colors"
-                  >
-                    <div>
-                      <p className="font-medium">{client.name}</p>
-                      <p className="text-sm text-muted-foreground">{client.tax_id}</p>
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      {client.client_type === "public" ? "Público" : "Privado"}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-muted-foreground">No hay clientes recientes</p>
             )}
           </CardContent>
         </Card>
