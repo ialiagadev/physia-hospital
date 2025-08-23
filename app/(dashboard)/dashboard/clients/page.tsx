@@ -5,13 +5,12 @@ import Link from "next/link"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Plus, Upload, Search, X, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react'
+import { Plus, Upload, Search, X, ChevronLeft, ChevronRight, Trash2, Mic } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { OrganizationSelector } from "@/components/organization-selector"
 import { ImportClientsDialog } from "@/components/import-clients-dialog"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/app/contexts/auth-context"
-import { Loader2 } from 'lucide-react'
 import Loading from "@/components/loading"
 import {
   AlertDialog,
@@ -102,25 +101,24 @@ export default function ClientsPage() {
   }
 
   // Cargar clientes con paginación y búsqueda del servidor
-  const loadClients = useCallback(async (page = 1, search = "") => {
-    if (authLoading) return
-    if (!user) {
-      console.warn("⚠️ No estás autenticado")
-      toast({
-        title: "No autenticado",
-        description: "Debes iniciar sesión para ver los clientes.",
-        variant: "destructive",
-      })
-      setLoading(false)
-      return
-    }
+  const loadClients = useCallback(
+    async (page = 1, search = "") => {
+      if (authLoading) return
+      if (!user) {
+        console.warn("⚠️ No estás autenticado")
+        toast({
+          title: "No autenticado",
+          description: "Debes iniciar sesión para ver los clientes.",
+          variant: "destructive",
+        })
+        setLoading(false)
+        return
+      }
 
-    setLoading(true)
-    try {
-      // Construir la consulta base - incluir phone_prefix y full_phone
-      let query = supabase
-        .from("clients")
-        .select(
+      setLoading(true)
+      try {
+        // Construir la consulta base - incluir phone_prefix y full_phone
+        let query = supabase.from("clients").select(
           `
           *,
           phone_prefix,
@@ -130,74 +128,77 @@ export default function ClientsPage() {
           { count: "exact" },
         )
 
-      // Aplicar filtros de organización
-      if (!userProfile?.is_physia_admin) {
-        if (userProfile?.organization_id) {
-          query = query.eq("organization_id", userProfile.organization_id)
+        // Aplicar filtros de organización
+        if (!userProfile?.is_physia_admin) {
+          if (userProfile?.organization_id) {
+            query = query.eq("organization_id", userProfile.organization_id)
+          }
+        } else if (selectedOrgId !== "all") {
+          const orgIdNumber = Number.parseInt(selectedOrgId)
+          if (!isNaN(orgIdNumber)) {
+            query = query.eq("organization_id", orgIdNumber)
+          }
         }
-      } else if (selectedOrgId !== "all") {
-        const orgIdNumber = Number.parseInt(selectedOrgId)
-        if (!isNaN(orgIdNumber)) {
-          query = query.eq("organization_id", orgIdNumber)
+
+        // Aplicar búsqueda del servidor - incluir full_phone en la búsqueda
+        if (search.trim()) {
+          const searchLower = search.toLowerCase().trim()
+          query = query.or(
+            `name.ilike.%${searchLower}%,tax_id.ilike.%${searchLower}%,phone.ilike.%${searchLower}%,full_phone.ilike.%${searchLower}%,email.ilike.%${searchLower}%,city.ilike.%${searchLower}%`,
+          )
         }
-      }
 
-      // Aplicar búsqueda del servidor - incluir full_phone en la búsqueda
-      if (search.trim()) {
-        const searchLower = search.toLowerCase().trim()
-        query = query.or(
-          `name.ilike.%${searchLower}%,tax_id.ilike.%${searchLower}%,phone.ilike.%${searchLower}%,full_phone.ilike.%${searchLower}%,email.ilike.%${searchLower}%,city.ilike.%${searchLower}%`,
-        )
-      }
+        // Aplicar paginación
+        const from = (page - 1) * pagination.pageSize
+        const to = from + pagination.pageSize - 1
+        query = query.order("created_at", { ascending: false }).range(from, to)
 
-      // Aplicar paginación
-      const from = (page - 1) * pagination.pageSize
-      const to = from + pagination.pageSize - 1
-      query = query.order("created_at", { ascending: false }).range(from, to)
+        const { data, error, count } = await query
 
-      const { data, error, count } = await query
+        if (error) {
+          console.error("Error al cargar clientes:", error)
+          throw error
+        }
 
-      if (error) {
+        const clientsData = data || []
+        const totalCount = count || 0
+        const totalPages = Math.ceil(totalCount / pagination.pageSize)
+
+        console.log(`✅ Clientes cargados: ${clientsData.length} de ${totalCount}`)
+
+        setClients(clientsData)
+        setPagination((prev) => ({
+          ...prev,
+          currentPage: page,
+          totalPages,
+          totalCount,
+        }))
+      } catch (error) {
         console.error("Error al cargar clientes:", error)
-        throw error
+        toast({
+          title: "Error",
+          description: "No se pudieron cargar los clientes",
+          variant: "destructive",
+        })
+        setClients([])
+        setPagination((prev) => ({ ...prev, totalCount: 0, totalPages: 1 }))
+      } finally {
+        setLoading(false)
       }
-
-      const clientsData = data || []
-      const totalCount = count || 0
-      const totalPages = Math.ceil(totalCount / pagination.pageSize)
-
-      console.log(`✅ Clientes cargados: ${clientsData.length} de ${totalCount}`)
-
-      setClients(clientsData)
-      setPagination((prev) => ({
-        ...prev,
-        currentPage: page,
-        totalPages,
-        totalCount,
-      }))
-    } catch (error) {
-      console.error("Error al cargar clientes:", error)
-      toast({
-        title: "Error",
-        description: "No se pudieron cargar los clientes",
-        variant: "destructive",
-      })
-      setClients([])
-      setPagination((prev) => ({ ...prev, totalCount: 0, totalPages: 1 }))
-    } finally {
-      setLoading(false)
-    }
-  },
-  [selectedOrgId, user, userProfile, authLoading, pagination.pageSize, toast],
+    },
+    [selectedOrgId, user, userProfile, authLoading, pagination.pageSize, toast],
   )
 
   // ✅ EFECTO UNIFICADO - Evita la doble carga
   useEffect(() => {
     if (authLoading || !user) return
 
-    const timer = setTimeout(() => {
-      loadClients(1, searchTerm)
-    }, searchTerm ? 500 : 0) // Sin delay para carga inicial, con delay para búsqueda
+    const timer = setTimeout(
+      () => {
+        loadClients(1, searchTerm)
+      },
+      searchTerm ? 500 : 0,
+    ) // Sin delay para carga inicial, con delay para búsqueda
 
     return () => clearTimeout(timer)
   }, [selectedOrgId, searchTerm, user, userProfile, authLoading, loadClients])
@@ -336,6 +337,21 @@ export default function ClientsPage() {
 
   return (
     <div className="space-y-6">
+      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+        <div className="flex items-center gap-3">
+          <div className="flex-shrink-0">
+            <Mic className="h-5 w-5 text-green-600" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-medium text-green-800">¡Nuevo! Seguimiento por voz disponible</p>
+            <p className="text-sm text-green-700 mt-1">
+              Ahora puedes crear seguimientos por voz desde la sección de seguimiento o haciendo click en las citas del
+              calendario.
+            </p>
+          </div>
+        </div>
+      </div>
+
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Clientes</h1>
@@ -614,7 +630,7 @@ export default function ClientsPage() {
             <AlertDialogAction onClick={confirmDeleteClient} className="bg-red-600 hover:bg-red-700 focus:ring-red-600">
               Eliminar
             </AlertDialogAction>
-            </AlertDialogFooter>
+          </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>
