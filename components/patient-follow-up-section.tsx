@@ -20,7 +20,9 @@ import {
   Clock,
   User,
   FileText,
-  Megaphone,
+  Mic,
+  Square,
+  Sparkles,
 } from "lucide-react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
@@ -49,6 +51,11 @@ export function PatientFollowUpSection({ clientId, clientName }: PatientFollowUp
   const [editingId, setEditingId] = useState<number | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<number | null>(null)
+  const [isRecording, setIsRecording] = useState(false)
+  const [isTranscribing, setIsTranscribing] = useState(false)
+  const [isImprovingText, setIsImprovingText] = useState(false) // Added state for AI text improvement
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null)
+  const [audioChunks, setAudioChunks] = useState<Blob[]>([])
   const { toast } = useToast()
   const { userProfile } = useAuth()
 
@@ -268,6 +275,138 @@ export function PatientFollowUpSection({ clientId, clientName }: PatientFollowUp
     }
   }
 
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const recorder = new MediaRecorder(stream)
+      const chunks: Blob[] = []
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          chunks.push(event.data)
+        }
+      }
+
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(chunks, { type: "audio/webm" })
+        await transcribeAudio(audioBlob)
+        stream.getTracks().forEach((track) => track.stop())
+      }
+
+      recorder.start()
+      setMediaRecorder(recorder)
+      setAudioChunks(chunks)
+      setIsRecording(true)
+
+      toast({
+        title: "Grabación iniciada",
+        description: "Habla ahora para dictar el seguimiento",
+      })
+    } catch (error) {
+      console.error("Error accessing microphone:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo acceder al micrófono",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const stopRecording = () => {
+    if (mediaRecorder && mediaRecorder.state === "recording") {
+      mediaRecorder.stop()
+      setIsRecording(false)
+    }
+  }
+
+  const transcribeAudio = async (audioBlob: Blob) => {
+    setIsTranscribing(true)
+    try {
+      const formData = new FormData()
+      formData.append("audio", audioBlob, "recording.webm")
+
+      const response = await fetch("/api/transcribe", {
+        method: "POST",
+        body: formData,
+      })
+
+      if (!response.ok) {
+        throw new Error("Error en la transcripción")
+      }
+
+      const { text } = await response.json()
+
+      setFormData((prev) => ({
+        ...prev,
+        description: prev.description ? `${prev.description}\n\n${text}` : text,
+      }))
+
+      toast({
+        title: "Transcripción completada",
+        description: "El texto se ha añadido a la descripción",
+      })
+    } catch (error) {
+      console.error("Error transcribing audio:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo transcribir el audio",
+        variant: "destructive",
+      })
+    } finally {
+      setIsTranscribing(false)
+    }
+  }
+
+  const improveTextWithAI = async () => {
+    if (!formData.description.trim()) {
+      toast({
+        title: "No hay texto",
+        description: "Escribe o dicta una descripción primero",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsImprovingText(true)
+    try {
+      const response = await fetch("/api/improve-text", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text: formData.description,
+          context: "medical_followup",
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Error mejorando el texto")
+      }
+
+      const { improvedText } = await response.json()
+
+      setFormData((prev) => ({
+        ...prev,
+        description: improvedText,
+      }))
+
+      toast({
+        title: "Texto mejorado",
+        description: "El texto ha sido mejorado con IA",
+      })
+    } catch (error) {
+      console.error("Error improving text:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo mejorar el texto",
+        variant: "destructive",
+      })
+    } finally {
+      setIsImprovingText(false)
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -289,19 +428,18 @@ export function PatientFollowUpSection({ clientId, clientName }: PatientFollowUp
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Seguimiento del Paciente</h2>
           <p className="text-gray-500 mt-1">{clientName}</p>
-          {/* Aviso sobre seguimiento por voz */}
-          <div className="mt-2 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg">
+          <div className="mt-2 p-3 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg">
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1">
-                <Megaphone className="w-4 h-4 text-blue-600" />
-                <span className="text-sm font-medium text-blue-800">SEGUIMIENTO POR VOZ</span>
-                <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs font-medium rounded-full">
-                  Próximamente
+                <Mic className="w-4 h-4 text-green-600" />
+                <span className="text-sm font-medium text-green-800">SEGUIMIENTO POR VOZ</span>
+                <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-medium rounded-full">
+                  Disponible
                 </span>
               </div>
             </div>
-            <p className="text-xs text-blue-600 mt-1">
-              Ya disponible desde el calendario: haz click en cualquier cita → "Nuevo seguimiento"
+            <p className="text-xs text-green-600 mt-1">
+              Usa el botón de micrófono para dictar tus seguimientos directamente
             </p>
           </div>
         </div>
@@ -426,9 +564,46 @@ export function PatientFollowUpSection({ clientId, clientName }: PatientFollowUp
               <label htmlFor="new-descripcion" className="block text-sm font-medium text-gray-700 mb-1">
                 Descripción / Evolución <span className="text-red-500">*</span>
               </label>
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  {!isRecording ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={startRecording}
+                      disabled={isTranscribing}
+                      className="bg-green-600 hover:bg-green-700 text-white"
+                    >
+                      <Mic className="w-4 h-4 mr-1" />
+                      Dictar
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={stopRecording}
+                      className="bg-red-600 hover:bg-red-700 text-white animate-pulse"
+                    >
+                      <Square className="w-4 h-4 mr-1" />
+                      Detener
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={improveTextWithAI}
+                    disabled={isImprovingText || isRecording || !formData.description.trim()}
+                    className="bg-purple-600 hover:bg-purple-700 text-white"
+                  >
+                    <Sparkles className="w-4 h-4 mr-1" />
+                    {isImprovingText ? "Mejorando..." : "Mejorar con IA"}
+                  </Button>
+                </div>
+                {isTranscribing && <span className="text-sm text-blue-600">Transcribiendo...</span>}
+              </div>
               <Textarea
                 id="new-descripcion"
-                placeholder="Descripción detallada de la evolución del paciente..."
+                placeholder="Descripción detallada de la evolución del paciente... (o usa el botón de micrófono para dictar)"
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 rows={4}
@@ -461,7 +636,11 @@ export function PatientFollowUpSection({ clientId, clientName }: PatientFollowUp
             </div>
 
             <div className="flex justify-end">
-              <Button onClick={handleCreateFollowUp} disabled={isSaving} className="bg-teal-600 hover:bg-teal-700">
+              <Button
+                onClick={handleCreateFollowUp}
+                disabled={isSaving || isRecording}
+                className="bg-teal-600 hover:bg-teal-700"
+              >
                 <Save className="w-4 h-4 mr-2" />
                 {isSaving ? "Guardando..." : "Guardar Seguimiento"}
               </Button>
