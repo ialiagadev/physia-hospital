@@ -1,19 +1,15 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { format, parseISO, isToday } from "date-fns"
-import { toZonedTime } from "date-fns-tz"   // 👈 añadido
+import { toZonedTime } from "date-fns-tz" // 👈 añadido
 
 // Cliente admin que bypassa RLS
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
+const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
   },
-)
+})
 
 // Tipos para los descansos
 interface ScheduleBreak {
@@ -240,12 +236,8 @@ async function getSlotsForProfessional(
       const bufferMinutes = 5
       const cutoff = getCurrentTimeInMinutes() + bufferMinutes
       if (cutoff > currentMinutes) {
-        const steps = Math.ceil((cutoff - startMinutes) / serviceDuration)
-        const fastForward = startMinutes + steps * serviceDuration
-        if (fastForward < endMinutes) {
-          currentMinutes = fastForward
-          console.log("[v0] Fast-forward to", minutesToTime(currentMinutes), "due to 'today'")
-        }
+        currentMinutes = Math.max(currentMinutes, cutoff)
+        console.log("[v0] Fast-forward to", minutesToTime(currentMinutes), "due to 'today'")
       }
     }
 
@@ -297,42 +289,46 @@ async function getSlotsForProfessional(
 
       // 2) CITAS EXISTENTES
       let hasAppointmentConflict = false
+      let appointmentEndTime = currentMinutes + serviceDuration
       if (existingAppointments) {
         for (const appointment of existingAppointments) {
           if (timesOverlap(slotStart, slotEnd, appointment.start_time, appointment.end_time)) {
             hasAppointmentConflict = true
+            appointmentEndTime = Math.max(appointmentEndTime, timeToMinutes(appointment.end_time))
             console.log("[v0] Appointment conflict with:", appointment.start_time, "to", appointment.end_time)
             break
           }
         }
       }
       if (hasAppointmentConflict) {
-        console.log("[v0] Skipping due to appointment conflict")
-        currentMinutes += serviceDuration
+        console.log("[v0] Skipping due to appointment conflict, jumping to:", minutesToTime(appointmentEndTime))
+        currentMinutes = appointmentEndTime
         continue
       }
 
       // 3) ACTIVIDADES GRUPALES
       let hasGroupConflict = false
+      let groupActivityEndTime = currentMinutes + serviceDuration
       if (groupActivities) {
         for (const activity of groupActivities) {
           if (timesOverlap(slotStart, slotEnd, activity.start_time, activity.end_time)) {
             hasGroupConflict = true
+            groupActivityEndTime = Math.max(groupActivityEndTime, timeToMinutes(activity.end_time))
             console.log("[v0] Group activity conflict with:", activity.start_time, "to", activity.end_time)
             break
           }
         }
       }
       if (hasGroupConflict) {
-        console.log("[v0] Skipping due to group activity conflict")
-        currentMinutes += serviceDuration
+        console.log("[v0] Skipping due to group activity conflict, jumping to:", minutesToTime(groupActivityEndTime))
+        currentMinutes = groupActivityEndTime
         continue
       }
 
       // 4) ¿EL SLOT YA HA PASADO? (solo hoy)
       if (hasSlotPassed(slotStart, targetDate)) {
         console.log("[v0] Slot has passed, skipping")
-        currentMinutes += serviceDuration
+        currentMinutes += 1
         continue
       }
 
