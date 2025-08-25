@@ -1,18 +1,17 @@
 "use client"
-export const dynamic = "force-dynamic"
 
 import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Plus, Upload, Search, X, ChevronLeft, ChevronRight, Trash2, Eye } from "lucide-react"
+import { Plus, Upload, Search, X, ChevronLeft, ChevronRight, Trash2, Mic } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { OrganizationSelector } from "@/components/organization-selector"
 import { ImportClientsDialog } from "@/components/import-clients-dialog"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/app/contexts/auth-context"
-import { Loader2 } from "lucide-react"
+import Loading from "@/components/loading"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,14 +22,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { useGuidedTour } from "@/hooks/useGuidedTour"
-import InteractiveTourOverlay from "@/components/tour/InteractiveTourOverlay"
 
 interface Client {
   id: string
   name: string
   tax_id: string
   phone?: string
+  phone_prefix?: string
+  full_phone?: string
   client_type: "public" | "private"
   city: string
   email?: string
@@ -48,12 +47,11 @@ interface PaginationInfo {
   pageSize: number
 }
 
-export default function ClientsPageContent() {
+export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedOrgId, setSelectedOrgId] = useState("all")
   const [searchTerm, setSearchTerm] = useState("")
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("")
   const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [pagination, setPagination] = useState<PaginationInfo>({
     currentPage: 1,
@@ -73,22 +71,19 @@ export default function ClientsPageContent() {
     clientName: "",
   })
 
-  // Hook del tour guiado
-  const tour = useGuidedTour()
-
-  // Debounce para la búsqueda
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm)
-    }, 500)
-
-    return () => clearTimeout(timer)
-  }, [searchTerm])
-
-  // Reset página cuando cambia la búsqueda
-  useEffect(() => {
-    setPagination((prev) => ({ ...prev, currentPage: 1 }))
-  }, [debouncedSearchTerm, selectedOrgId])
+  // Función para obtener el teléfono a mostrar (prioriza full_phone)
+  const getDisplayPhone = (client: Client): string => {
+    if (client.full_phone) {
+      return client.full_phone
+    }
+    if (client.phone && client.phone_prefix) {
+      return `${client.phone_prefix}${client.phone}`
+    }
+    if (client.phone) {
+      return client.phone
+    }
+    return "-"
+  }
 
   // Función para resaltar texto en búsquedas
   const highlightText = (text: string | null | undefined, search: string): string => {
@@ -105,11 +100,10 @@ export default function ClientsPageContent() {
     }
   }
 
-  // Cargar clientes con paginación y búsqueda del servidor - FIXED: Removed pagination.pageSize from deps
+  // Cargar clientes con paginación y búsqueda del servidor
   const loadClients = useCallback(
-    async (page = 1) => {
+    async (page = 1, search = "") => {
       if (authLoading) return
-
       if (!user) {
         console.warn("⚠️ No estás autenticado")
         toast({
@@ -123,10 +117,12 @@ export default function ClientsPageContent() {
 
       setLoading(true)
       try {
-        // Construir la consulta base
+        // Construir la consulta base - incluir phone_prefix y full_phone
         let query = supabase.from("clients").select(
           `
           *,
+          phone_prefix,
+          full_phone,
           organizations (name)
         `,
           { count: "exact" },
@@ -144,19 +140,17 @@ export default function ClientsPageContent() {
           }
         }
 
-        // Aplicar búsqueda del servidor
-        if (debouncedSearchTerm.trim()) {
-          const searchLower = debouncedSearchTerm.toLowerCase().trim()
+        // Aplicar búsqueda del servidor - incluir full_phone en la búsqueda
+        if (search.trim()) {
+          const searchLower = search.toLowerCase().trim()
           query = query.or(
-            `name.ilike.%${searchLower}%,tax_id.ilike.%${searchLower}%,phone.ilike.%${searchLower}%,email.ilike.%${searchLower}%,city.ilike.%${searchLower}%`,
+            `name.ilike.%${searchLower}%,tax_id.ilike.%${searchLower}%,phone.ilike.%${searchLower}%,full_phone.ilike.%${searchLower}%,email.ilike.%${searchLower}%,city.ilike.%${searchLower}%`,
           )
         }
 
-        // Aplicar paginación - usando valor fijo para evitar bucles
-        const pageSize = 20
-        const from = (page - 1) * pageSize
-        const to = from + pageSize - 1
-
+        // Aplicar paginación
+        const from = (page - 1) * pagination.pageSize
+        const to = from + pagination.pageSize - 1
         query = query.order("created_at", { ascending: false }).range(from, to)
 
         const { data, error, count } = await query
@@ -168,7 +162,7 @@ export default function ClientsPageContent() {
 
         const clientsData = data || []
         const totalCount = count || 0
-        const totalPages = Math.ceil(totalCount / pageSize)
+        const totalPages = Math.ceil(totalCount / pagination.pageSize)
 
         console.log(`✅ Clientes cargados: ${clientsData.length} de ${totalCount}`)
 
@@ -178,7 +172,6 @@ export default function ClientsPageContent() {
           currentPage: page,
           totalPages,
           totalCount,
-          pageSize,
         }))
       } catch (error) {
         console.error("Error al cargar clientes:", error)
@@ -193,20 +186,27 @@ export default function ClientsPageContent() {
         setLoading(false)
       }
     },
-    [selectedOrgId, debouncedSearchTerm, user, userProfile, authLoading, toast],
+    [selectedOrgId, user, userProfile, authLoading, pagination.pageSize, toast],
   )
 
-  // Efecto para cargar clientes - FIXED: Removed loadClients from deps to avoid infinite loop
+  // ✅ EFECTO UNIFICADO - Evita la doble carga
   useEffect(() => {
-    if (!authLoading && user) {
-      loadClients(pagination.currentPage)
-    }
-  }, [selectedOrgId, debouncedSearchTerm, user, userProfile, authLoading])
+    if (authLoading || !user) return
+
+    const timer = setTimeout(
+      () => {
+        loadClients(1, searchTerm)
+      },
+      searchTerm ? 500 : 0,
+    ) // Sin delay para carga inicial, con delay para búsqueda
+
+    return () => clearTimeout(timer)
+  }, [selectedOrgId, searchTerm, user, userProfile, authLoading, loadClients])
 
   // Funciones de paginación
   const goToPage = (page: number) => {
     if (page >= 1 && page <= pagination.totalPages) {
-      loadClients(page)
+      loadClients(page, searchTerm)
     }
   }
 
@@ -223,7 +223,7 @@ export default function ClientsPageContent() {
   }
 
   const handleImportComplete = () => {
-    loadClients(1) // Recargar desde la primera página
+    loadClients(1, searchTerm) // Recargar desde la primera página
     setImportDialogOpen(false)
   }
 
@@ -247,7 +247,6 @@ export default function ClientsPageContent() {
   // Función para confirmar la eliminación
   const confirmDeleteClient = async () => {
     const { clientId, clientName } = deleteDialog
-
     try {
       const { error } = await supabase.from("clients").delete().eq("id", clientId)
 
@@ -267,7 +266,7 @@ export default function ClientsPageContent() {
       })
 
       // Recargar la lista de clientes
-      loadClients(pagination.currentPage)
+      loadClients(pagination.currentPage, searchTerm)
     } catch (error) {
       console.error("Error al eliminar cliente:", error)
       toast({
@@ -294,6 +293,30 @@ export default function ClientsPageContent() {
     })
   }
 
+  // Mostrar loading mientras se autentica
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loading size="md" text="Verificando autenticación..." />
+      </div>
+    )
+  }
+
+  // Redirigir si no está autenticado
+  if (!user) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold mb-4">Acceso denegado</h2>
+          <p className="text-muted-foreground mb-4">Debes iniciar sesión para acceder a esta página.</p>
+          <Button asChild>
+            <Link href="/login">Iniciar Sesión</Link>
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   // Obtener organization_id para la importación
   const getOrganizationIdForImport = (): number => {
     if (userProfile?.is_physia_admin && selectedOrgId !== "all") {
@@ -313,117 +336,136 @@ export default function ClientsPageContent() {
   const organizationIdForImport = getOrganizationIdForImport()
 
   return (
-    <>
-      <div className="space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Clientes</h1>
-            <p className="text-muted-foreground">
-              Gestiona tus clientes para la facturación
-              {userProfile?.is_physia_admin ? " (Vista de administrador)" : ""}
+    <div className="space-y-6">
+      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+        <div className="flex items-center gap-3">
+          <div className="flex-shrink-0">
+            <Mic className="h-5 w-5 text-green-600" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-medium text-green-800">¡Nuevo! Seguimiento por voz disponible</p>
+            <p className="text-sm text-green-700 mt-1">
+              Ahora puedes crear seguimientos por voz desde la sección de seguimiento o haciendo click en las citas del
+              calendario.
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setImportDialogOpen(true)} data-tour="import-clients-btn">
-              <Upload className="mr-2 h-4 w-4" />
-              Importar Clientes
-            </Button>
-            <Button data-tour="new-client-btn">
-              <Link href="/dashboard/clients/new">
-                <Plus className="mr-2 h-4 w-4" />
-                Nuevo Cliente
-              </Link>
-            </Button>
-          </div>
         </div>
+      </div>
 
-        {/* Solo mostrar selector si es admin de Physia */}
-        {userProfile?.is_physia_admin && (
-          <OrganizationSelector
-            selectedOrgId={selectedOrgId}
-            onSelectOrganization={setSelectedOrgId}
-            className="mb-6"
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Clientes</h1>
+          <p className="text-muted-foreground">
+            Gestiona tus clientes para la facturación
+            {userProfile?.is_physia_admin ? " (Vista de administrador)" : ""}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
+            <Upload className="mr-2 h-4 w-4" />
+            Importar Clientes
+          </Button>
+          <Button asChild>
+            <Link href="/dashboard/clients/new">
+              <Plus className="mr-2 h-4 w-4" />
+              Nuevo Cliente
+            </Link>
+          </Button>
+        </div>
+      </div>
+
+      {/* Solo mostrar selector si es admin de Physia */}
+      {userProfile?.is_physia_admin && (
+        <OrganizationSelector selectedOrgId={selectedOrgId} onSelectOrganization={setSelectedOrgId} className="mb-6" />
+      )}
+
+      {/* Barra de búsqueda */}
+      <div className="flex items-center justify-between">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+          <Input
+            placeholder="Buscar por nombre, teléfono completo, NIF, email o ciudad..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10 pr-10"
           />
-        )}
-
-        {/* Barra de búsqueda */}
-        <div className="flex items-center justify-between">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-            <Input
-              data-tour="clients-search-input"
-              placeholder="Buscar por nombre, teléfono, NIF, email o ciudad..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 pr-10"
-            />
-            {searchTerm && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={clearSearch}
-                className="absolute right-1 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0 hover:bg-gray-100"
-              >
-                <X className="h-3 w-3" />
-              </Button>
-            )}
-          </div>
-
-          {/* Información de resultados */}
-          <div className="text-sm text-muted-foreground">
-            {loading
-              ? "Buscando..."
-              : `${pagination.totalCount} cliente${pagination.totalCount !== 1 ? "s" : ""} encontrado${pagination.totalCount !== 1 ? "s" : ""}`}
-          </div>
+          {searchTerm && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearSearch}
+              className="absolute right-1 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0 hover:bg-gray-100"
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          )}
         </div>
+        {/* Información de resultados */}
+        <div className="text-sm text-muted-foreground">
+          {loading
+            ? "Buscando..."
+            : `${pagination.totalCount} cliente${pagination.totalCount !== 1 ? "s" : ""} encontrado${
+                pagination.totalCount !== 1 ? "s" : ""
+              }`}
+        </div>
+      </div>
 
-        <div className="rounded-md border" data-tour="clients-table">
-          <Table>
-            <TableHeader>
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Nombre</TableHead>
+              <TableHead>Teléfono</TableHead>
+              <TableHead>CIF/NIF</TableHead>
+              <TableHead>Ciudad</TableHead>
+              <TableHead>Email</TableHead>
+              {userProfile?.is_physia_admin && <TableHead>Organización</TableHead>}
+              <TableHead className="text-right">Acciones</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
               <TableRow>
-                <TableHead className="w-[200px]">Nombre</TableHead>
-                <TableHead className="w-[120px]">CIF/NIF</TableHead>
-                <TableHead className="w-[130px]">Teléfono</TableHead>
-                <TableHead className="w-[200px]">Email</TableHead>
-                <TableHead className="w-[120px]">Ciudad</TableHead>
-                <TableHead className="w-[100px]">Tipo</TableHead>
-                {userProfile?.is_physia_admin && <TableHead className="w-[150px]">Organización</TableHead>}
-                <TableHead className="text-right w-[120px]">Acciones</TableHead>
+                <TableCell colSpan={userProfile?.is_physia_admin ? 7 : 6} className="h-24 text-center">
+                  <Loading size="sm" text="Cargando clientes..." />
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                <TableRow>
-                  <TableCell colSpan={userProfile?.is_physia_admin ? 8 : 7} className="h-24 text-center">
-                    <div className="flex items-center justify-center">
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      Cargando clientes...
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : clients.length > 0 ? (
-                clients.map((client) => (
+            ) : clients.length > 0 ? (
+              clients.map((client) => {
+                const displayPhone = getDisplayPhone(client)
+                return (
                   <TableRow
                     key={client.id}
                     className="cursor-pointer hover:bg-muted/50"
                     onClick={() => handleRowClick(client.id)}
                   >
                     <TableCell className="font-medium">
-                      {debouncedSearchTerm ? (
+                      {searchTerm ? (
                         <span
                           dangerouslySetInnerHTML={{
-                            __html: highlightText(client.name, debouncedSearchTerm),
+                            __html: highlightText(client.name, searchTerm),
                           }}
                         />
                       ) : (
                         client.name || "-"
                       )}
                     </TableCell>
-                    <TableCell className="font-mono text-sm">
-                      {debouncedSearchTerm ? (
+                    <TableCell>
+                      {searchTerm ? (
                         <span
                           dangerouslySetInnerHTML={{
-                            __html: highlightText(client.tax_id, debouncedSearchTerm),
+                            __html: highlightText(displayPhone, searchTerm),
+                          }}
+                        />
+                      ) : (
+                        displayPhone
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {searchTerm ? (
+                        <span
+                          dangerouslySetInnerHTML={{
+                            __html: highlightText(client.tax_id, searchTerm),
                           }}
                         />
                       ) : (
@@ -431,32 +473,10 @@ export default function ClientsPageContent() {
                       )}
                     </TableCell>
                     <TableCell>
-                      {debouncedSearchTerm ? (
+                      {searchTerm ? (
                         <span
                           dangerouslySetInnerHTML={{
-                            __html: highlightText(client.phone, debouncedSearchTerm),
-                          }}
-                        />
-                      ) : (
-                        client.phone || "-"
-                      )}
-                    </TableCell>
-                    <TableCell className="max-w-[200px] truncate">
-                      {debouncedSearchTerm && client.email ? (
-                        <span
-                          dangerouslySetInnerHTML={{
-                            __html: highlightText(client.email, debouncedSearchTerm),
-                          }}
-                        />
-                      ) : (
-                        client.email || "-"
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {debouncedSearchTerm ? (
-                        <span
-                          dangerouslySetInnerHTML={{
-                            __html: highlightText(client.city, debouncedSearchTerm),
+                            __html: highlightText(client.city, searchTerm),
                           }}
                         />
                       ) : (
@@ -464,32 +484,21 @@ export default function ClientsPageContent() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <span
-                        className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          client.client_type === "public"
-                            ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
-                            : "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                        }`}
-                      >
-                        {client.client_type === "public" ? "Público" : "Privado"}
-                      </span>
+                      {searchTerm && client.email ? (
+                        <span
+                          dangerouslySetInnerHTML={{
+                            __html: highlightText(client.email, searchTerm),
+                          }}
+                        />
+                      ) : (
+                        client.email || "-"
+                      )}
                     </TableCell>
-                    {userProfile?.is_physia_admin && (
-                      <TableCell className="max-w-[150px] truncate">{client.organizations?.name || "-"}</TableCell>
-                    )}
+                    {userProfile?.is_physia_admin && <TableCell>{client.organizations?.name || "-"}</TableCell>}
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          asChild
-                          onClick={(e) => e.stopPropagation()}
-                          className="h-8 w-8 p-0"
-                        >
-                          <Link href={`/dashboard/clients/${client.id}`}>
-                            <Eye className="h-4 w-4" />
-                            <span className="sr-only">Ver cliente</span>
-                          </Link>
+                        <Button variant="ghost" size="sm" asChild onClick={(e) => e.stopPropagation()}>
+                          <Link href={`/dashboard/clients/${client.id}`}>Ver</Link>
                         </Button>
                         <Button
                           variant="ghost"
@@ -498,151 +507,132 @@ export default function ClientsPageContent() {
                             e.stopPropagation()
                             openDeleteDialog(client.id, client.name)
                           }}
-                          className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
                         >
                           <Trash2 className="h-4 w-4" />
-                          <span className="sr-only">Eliminar cliente</span>
                         </Button>
                       </div>
                     </TableCell>
                   </TableRow>
-                ))
-              ) : debouncedSearchTerm ? (
-                <TableRow>
-                  <TableCell colSpan={userProfile?.is_physia_admin ? 8 : 7} className="h-24 text-center">
-                    <div className="text-center">
-                      <Search className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-                      <p className="text-muted-foreground mb-2">
-                        No se encontraron clientes que coincidan con "{debouncedSearchTerm}"
-                      </p>
-                      <Button variant="outline" onClick={clearSearch} size="sm">
-                        Limpiar búsqueda
+                )
+              })
+            ) : searchTerm ? (
+              <TableRow>
+                <TableCell colSpan={userProfile?.is_physia_admin ? 7 : 6} className="h-24 text-center">
+                  <div className="text-center">
+                    <Search className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                    <p className="text-muted-foreground mb-2">
+                      No se encontraron clientes que coincidan con "{searchTerm}"
+                    </p>
+                    <Button variant="outline" onClick={clearSearch} size="sm">
+                      Limpiar búsqueda
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : (
+              <TableRow>
+                <TableCell colSpan={userProfile?.is_physia_admin ? 7 : 6} className="h-24 text-center">
+                  <div className="text-center">
+                    <p className="text-muted-foreground mb-4">No hay clientes registrados</p>
+                    <div className="flex justify-center gap-2">
+                      <Button asChild variant="outline">
+                        <Link href="/dashboard/clients/new">
+                          <Plus className="mr-2 h-4 w-4" />
+                          Crear primer cliente
+                        </Link>
+                      </Button>
+                      <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
+                        <Upload className="mr-2 h-4 w-4" />
+                        Importar desde archivo
                       </Button>
                     </div>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={userProfile?.is_physia_admin ? 8 : 7} className="h-24 text-center">
-                    <div className="text-center">
-                      <p className="text-muted-foreground mb-4">No hay clientes registrados</p>
-                      <div className="flex justify-center gap-2">
-                        <Button variant="default">
-                          <Link href="/dashboard/clients/new">
-                            <Plus className="mr-2 h-4 w-4" />
-                            Crear primer cliente
-                          </Link>
-                        </Button>
-                        <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
-                          <Upload className="mr-2 h-4 w-4" />
-                          Importar desde archivo
-                        </Button>
-                      </div>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-
-        {/* Componente de paginación */}
-        {pagination.totalPages > 1 && (
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-muted-foreground">
-              Mostrando {(pagination.currentPage - 1) * pagination.pageSize + 1} a{" "}
-              {Math.min(pagination.currentPage * pagination.pageSize, pagination.totalCount)} de {pagination.totalCount}{" "}
-              clientes
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <Button variant="outline" size="sm" onClick={goToPreviousPage} disabled={pagination.currentPage <= 1}>
-                <ChevronLeft className="h-4 w-4" />
-                Anterior
-              </Button>
-
-              <div className="flex items-center space-x-1">
-                {/* Mostrar páginas */}
-                {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
-                  let pageNumber: number
-
-                  if (pagination.totalPages <= 5) {
-                    pageNumber = i + 1
-                  } else if (pagination.currentPage <= 3) {
-                    pageNumber = i + 1
-                  } else if (pagination.currentPage >= pagination.totalPages - 2) {
-                    pageNumber = pagination.totalPages - 4 + i
-                  } else {
-                    pageNumber = pagination.currentPage - 2 + i
-                  }
-
-                  return (
-                    <Button
-                      key={pageNumber}
-                      variant={pagination.currentPage === pageNumber ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => goToPage(pageNumber)}
-                      className="w-8 h-8 p-0"
-                    >
-                      {pageNumber}
-                    </Button>
-                  )
-                })}
-              </div>
-
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={goToNextPage}
-                disabled={pagination.currentPage >= pagination.totalPages}
-              >
-                Siguiente
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        )}
-
-        <ImportClientsDialog
-          open={importDialogOpen}
-          onOpenChange={setImportDialogOpen}
-          organizationId={organizationIdForImport}
-          onImportComplete={handleImportComplete}
-        />
-
-        {/* Diálogo de confirmación para eliminar cliente */}
-        <AlertDialog open={deleteDialog.open} onOpenChange={(open) => !open && cancelDelete()}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>¿Eliminar cliente?</AlertDialogTitle>
-              <AlertDialogDescription>
-                ¿Estás seguro de que quieres eliminar al cliente "{deleteDialog.clientName}"?
-                <br />
-                <span className="font-medium text-red-600">Esta acción no se puede deshacer.</span>
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={cancelDelete}>Cancelar</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={confirmDeleteClient}
-                className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
-              >
-                Eliminar
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+                  </div>
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
       </div>
 
-      {/* Tour interactivo */}
-      {tour.isActive && (
-        <InteractiveTourOverlay
-          steps={tour.tourSteps}
-          onClose={tour.endTour}
-          onFinish={tour.endTour}
-          isActive={tour.isActive}
-        />
+      {/* Componente de paginación */}
+      {pagination.totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-muted-foreground">
+            Mostrando {(pagination.currentPage - 1) * pagination.pageSize + 1} a{" "}
+            {Math.min(pagination.currentPage * pagination.pageSize, pagination.totalCount)} de {pagination.totalCount}{" "}
+            clientes
+          </div>
+          <div className="flex items-center space-x-2">
+            <Button variant="outline" size="sm" onClick={goToPreviousPage} disabled={pagination.currentPage <= 1}>
+              <ChevronLeft className="h-4 w-4" />
+              Anterior
+            </Button>
+            <div className="flex items-center space-x-1">
+              {/* Mostrar páginas */}
+              {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                let pageNumber: number
+                if (pagination.totalPages <= 5) {
+                  pageNumber = i + 1
+                } else if (pagination.currentPage <= 3) {
+                  pageNumber = i + 1
+                } else if (pagination.currentPage >= pagination.totalPages - 2) {
+                  pageNumber = pagination.totalPages - 4 + i
+                } else {
+                  pageNumber = pagination.currentPage - 2 + i
+                }
+                return (
+                  <Button
+                    key={pageNumber}
+                    variant={pagination.currentPage === pageNumber ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => goToPage(pageNumber)}
+                    className="w-8 h-8 p-0"
+                  >
+                    {pageNumber}
+                  </Button>
+                )
+              })}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={goToNextPage}
+              disabled={pagination.currentPage >= pagination.totalPages}
+            >
+              Siguiente
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
       )}
-    </>
+
+      <ImportClientsDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        organizationId={organizationIdForImport}
+        onImportComplete={handleImportComplete}
+      />
+
+      {/* Diálogo de confirmación para eliminar cliente */}
+      <AlertDialog open={deleteDialog.open} onOpenChange={(open) => !open && cancelDelete()}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar cliente?</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Estás seguro de que quieres eliminar al cliente "{deleteDialog.clientName}"?
+              <br />
+              <span className="font-medium text-red-600">Esta acción no se puede deshacer.</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={cancelDelete}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteClient} className="bg-red-600 hover:bg-red-700 focus:ring-red-600">
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   )
 }
