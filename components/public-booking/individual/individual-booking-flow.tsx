@@ -40,11 +40,41 @@ function getSubdomain() {
   return parts.length > 2 ? parts[0] : "general"
 }
 
+// 🔹 notificar al padre (marketing)
+function notifyParentBookingSuccess(lead: {
+  name: string
+  email: string
+  phone?: string
+  notes?: string
+  value?: number
+  calendarId?: string | number
+}) {
+  const TARGET = "*" // ⚠️ en producción cambia a "https://nora.healthmate.tech", etc.
+
+  window.parent?.postMessage(
+    {
+      source: "hm-booking",
+      event: "booking_success",
+      lead,
+      ts: Date.now(),
+    },
+    TARGET
+  )
+}
+
 export function IndividualBookingFlow({ organizationId, onBack, onComplete }: IndividualBookingFlowProps) {
   const [currentStep, setCurrentStep] = useState<Step>("service")
   const [bookingData, setBookingData] = useState<Partial<BookingData>>({})
   const [loading, setLoading] = useState(false)
   const [bookingResult, setBookingResult] = useState<any>(null)
+
+  // 🔹 Avisar al cargar el iframe (métrica de vistas)
+  useEffect(() => {
+    window.parent?.postMessage(
+      { source: "hm-booking", event: "booking_loaded", ts: Date.now() },
+      "*"
+    )
+  }, [])
 
   // Configuración especial para organización 68
   useEffect(() => {
@@ -119,18 +149,16 @@ export function IndividualBookingFlow({ organizationId, onBack, onComplete }: In
       setBookingResult(result)
       setCurrentStep("confirmation")
 
-      // 🔔 notificar al padre vía postMessage
-      window.parent.postMessage(
-        {
-          type: "booking_confirmed",
-          payload: {
-            bookingId: result?.appointment?.id,
-            dateISO: result?.appointment?.date,
-          },
-          subdomain: getSubdomain(),
-        },
-        "*" // ⚠️ en producción cámbialo a "https://healthmate.tech"
-      )
+      // 🔔 notificar al padre vía postMessage (marketing)
+      notifyParentBookingSuccess({
+        name: clientData.name,
+        email: clientData.email ?? "",
+        phone: clientData.phone ?? "",
+        notes: "Reserva creada desde calendario",
+        value: 0,
+        calendarId: organizationId,
+      })
+      
 
       if (onComplete) onComplete(result)
 

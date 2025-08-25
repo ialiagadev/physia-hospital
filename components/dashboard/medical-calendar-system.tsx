@@ -4,7 +4,7 @@ import type React from "react"
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns"
 import { Button } from "@/components/ui/button"
-import { ChevronLeft, ChevronRight, Plus, Search, Clock, FileText, CalendarIcon } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Search, Clock, FileText, CalendarIcon } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CalendarSearch } from "@/components/calendar/calendar-search"
 import { ProfesionalesLegend } from "@/components/calendar/profesionales-legend"
@@ -416,15 +416,12 @@ const MedicalCalendarSystem: React.FC = () => {
   // ✅ FUNCIÓN ESPECÍFICA PARA CITAS COMPLETADAS (OPCIONAL)
   const hasCompletedAppointmentsToday = useCallback(() => {
     const today = format(currentDate, "yyyy-MM-dd")
-    return appointments.some(
-      (apt) => format(new Date(apt.date), "yyyy-MM-dd") === today && apt.status === "completed"
-    )
+    return appointments.some((apt) => format(new Date(apt.date), "yyyy-MM-dd") === today && apt.status === "completed")
   }, [appointments, currentDate])
 
   // Inicializar con todos los usuarios seleccionados
   useEffect(() => {
     if (users.length > 0 && usuariosSeleccionados.length === 0) {
-      // 🆕 MODIFICAR ESTA LÓGICA - Si es usuario 'user', solo seleccionar a sí mismo
       if (isUserRole && currentUserId) {
         setUsuariosSeleccionados([currentUserId])
       } else {
@@ -804,25 +801,20 @@ const MedicalCalendarSystem: React.FC = () => {
 
   const handleToggleUsuario = useCallback(
     (userId: string) => {
-      // 🆕 AÑADIR ESTA VERIFICACIÓN - No permitir cambios si es usuario 'user'
-      if (isUserRole) return
-
+      // Solo mantener restricción de facturación, no de visualización
       setUsuariosSeleccionados((prev) =>
         prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
       )
     },
-    [isUserRole],
+    [], // Removido isUserRole de las dependencias
   )
 
   const handleToggleAllUsuarios = useCallback(() => {
-    // 🆕 AÑADIR ESTA VERIFICACIÓN - No permitir cambios si es usuario 'user'
-    if (isUserRole) return
-
     setUsuariosSeleccionados((prev) => {
       const todosSeleccionados = prev.length === users.length
       return todosSeleccionados ? [] : users.map((u) => u.id)
     })
-  }, [isUserRole, users])
+  }, [users]) // Removido isUserRole de las dependencias
 
   // 🚀 OPTIMIZADO: Formatear título de fecha
   const getDateTitle = useCallback(() => {
@@ -1142,33 +1134,31 @@ const MedicalCalendarSystem: React.FC = () => {
                           )}
                         </div>
 
-                        {/* Profesionales - SOLO ICONO - 🆕 OCULTAR PARA USUARIOS 'user' */}
-                        {!isUserRole && (
-                          <div className="relative">
-                            <ProfesionalesLegend
-                              profesionales={wrapperLegacyUsers}
-                              profesionalesSeleccionados={usuariosSeleccionados.map((id) => {
+                        {/* Profesionales - Ahora visible para todos los roles */}
+                        <div className="relative">
+                          <ProfesionalesLegend
+                            profesionales={wrapperLegacyUsers}
+                            profesionalesSeleccionados={usuariosSeleccionados.map((id) => {
+                              try {
+                                return Number.parseInt(id.slice(-8), 16)
+                              } catch {
+                                return 0
+                              }
+                            })}
+                            onToggleProfesional={(profesionalId) => {
+                              const userId = users.find((u) => {
                                 try {
-                                  return Number.parseInt(id.slice(-8), 16)
+                                  return Number.parseInt(u.id.slice(-8), 16) === profesionalId
                                 } catch {
-                                  return 0
+                                  return false
                                 }
-                              })}
-                              onToggleProfesional={(profesionalId) => {
-                                const userId = users.find((u) => {
-                                  try {
-                                    return Number.parseInt(u.id.slice(-8), 16) === profesionalId
-                                  } catch {
-                                    return false
-                                  }
-                                })?.id
-                                if (userId) handleToggleUsuario(userId)
-                              }}
-                              onToggleAll={handleToggleAllUsuarios}
-                              iconOnly={true}
-                            />
-                          </div>
-                        )}
+                              })?.id
+                              if (userId) handleToggleUsuario(userId)
+                            }}
+                            onToggleAll={handleToggleAllUsuarios}
+                            iconOnly={true}
+                          />
+                        </div>
 
                         {/* Tiempo - SOLO ICONO */}
                         <Select

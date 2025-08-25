@@ -111,19 +111,34 @@ export function InvoiceStatusSelector({
 
   const updateInvoiceStatus = async (newStatus: InvoiceStatus) => {
     setIsUpdating(true)
+
+    let invoiceNumberFormatted = ""
+    let newInvoiceNumber = 0
+    let fieldName = ""
+    let organizationUpdated = false
+    let invoiceUpdated = false
+
     try {
       const isFromDraftToIssued = currentStatus === "draft" && newStatus === "issued"
 
       if (isFromDraftToIssued) {
         console.log("🔄 Iniciando cambio de draft a issued...")
 
-        // ✅ GENERAR Y ASIGNAR NÚMERO DE FACTURA
-        const { invoiceNumberFormatted, newInvoiceNumber } = await generateUniqueInvoiceNumber(
-          organizationId,
-          invoiceType as any,
-        )
+        try {
+          const healthCheck = await fetch("/api/verifactu/health-check", { method: "HEAD" })
+          if (!healthCheck.ok) {
+            throw new Error("El servicio de VeriFactu no está disponible en este momento")
+          }
+        } catch (healthError) {
+          throw new Error("No se puede conectar con VeriFactu. Inténtalo más tarde.")
+        }
 
-        // ✅ ACTUALIZAR CONTADOR EN ORGANIZACIÓN
+        // GENERAR Y ASIGNAR NÚMERO DE FACTURA
+        const numberResult = await generateUniqueInvoiceNumber(organizationId, invoiceType as any)
+        invoiceNumberFormatted = numberResult.invoiceNumberFormatted
+        newInvoiceNumber = numberResult.newInvoiceNumber
+
+        // ACTUALIZAR CONTADOR EN ORGANIZACIÓN
         const getFieldNameForUpdate = (type: string): string => {
           switch (type) {
             case "rectificativa":
@@ -136,7 +151,7 @@ export function InvoiceStatusSelector({
           }
         }
 
-        const fieldName = getFieldNameForUpdate(invoiceType)
+        fieldName = getFieldNameForUpdate(invoiceType)
         const { error: updateOrgError } = await supabase
           .from("organizations")
           .update({ [fieldName]: newInvoiceNumber })
@@ -146,13 +161,28 @@ export function InvoiceStatusSelector({
           console.error("Error updating organization:", updateOrgError)
           throw new Error("Error al reservar el número de factura")
         }
+        organizationUpdated = true
 
-        // ✅ ACTUALIZAR FACTURA CON NÚMERO Y ESTADO
+        const { data: orgVerification, error: orgVerifyError } = await supabase
+          .from("organizations")
+          .select(fieldName)
+          .eq("id", organizationId)
+          .single()
+
+        if (
+          orgVerifyError ||
+          !orgVerification ||
+          (orgVerification[fieldName as keyof typeof orgVerification] as number) !== newInvoiceNumber
+        ) {
+          throw new Error("Error al verificar la actualización del contador de facturación")
+        }
+
+        // ACTUALIZAR FACTURA CON NÚMERO Y ESTADO
         const { error: dbError } = await supabase
           .from("invoices")
           .update({
             status: newStatus,
-            invoice_number: invoiceNumberFormatted, // ✅ ASIGNAR NÚMERO AQUÍ
+            invoice_number: invoiceNumberFormatted,
             validated_at: new Date().toISOString(),
           })
           .eq("id", invoiceId)
@@ -160,48 +190,103 @@ export function InvoiceStatusSelector({
         if (dbError) {
           throw new Error(`Error al actualizar el estado: ${dbError.message}`)
         }
+        invoiceUpdated = true
 
-        // ✅ ENVIAR A VERIFACTU
+        const { data: invoiceVerification, error: invoiceVerifyError } = await supabase
+          .from("invoices")
+          .select("invoice_number, status")
+          .eq("id", invoiceId)
+          .single()
+
+        if (
+          invoiceVerifyError ||
+          !invoiceVerification ||
+          invoiceVerification.invoice_number !== invoiceNumberFormatted ||
+          invoiceVerification.status !== newStatus
+        ) {
+          throw new Error("Error al verificar la actualización de la factura")
+        }
+
+        console.log(`✅ Factura ${invoiceId} actualizada correctamente con número ${invoiceNumberFormatted}`)
+
+        await new Promise((resolve) => setTimeout(resolve, 200))
+
+        // ENVIAR A VERIFACTU SOLO DESPUÉS DE VERIFICAR QUE TODO ESTÁ CORRECTO
         try {
-          const res = await fetch(`/api/verifactu/send-invoice?invoice_id=${invoiceId}`)
+          console.log(`🔄 Enviando factura ${invoiceNumberFormatted} a VeriFactu...`)
+
+          const res = await fetch(`/api/verifactu/send-invoice?invoice_id=${invoiceId}`, {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          })
+
           const data = await res.json()
 
           if (!res.ok) {
             throw new Error(data?.error || `Error ${res.status}: ${res.statusText}`)
           }
 
+          console.log(`✅ Factura ${invoiceNumberFormatted} enviada a VeriFactu exitosamente`)
+
           toast({
             title: "✅ Factura emitida correctamente",
             description: `La factura ${invoiceNumberFormatted} se ha validado y enviado a VeriFactu exitosamente`,
           })
         } catch (verifactuError) {
-          console.error("❌ Error en Verifactu, haciendo rollback...")
+          console.error("❌ Error en Verifactu, ejecutando rollback completo...")
 
-          // ✅ ROLLBACK COMPLETO
-          await supabase
-            .from("invoices")
-            .update({
-              status: "draft",
-              invoice_number: null, // ✅ QUITAR NÚMERO EN ROLLBACK
-              validated_at: null,
-            })
-            .eq("id", invoiceId)
+          try {
+            // Rollback de la factura
+            const { error: rollbackInvoiceError } = await supabase
+              .from("invoices")
+              .update({
+                status: "draft",
+                invoice_number: null,
+                validated_at: null,
+              })
+              .eq("id", invoiceId)
 
-          // ✅ ROLLBACK DEL CONTADOR
-          await supabase
-            .from("organizations")
-            .update({ [fieldName]: newInvoiceNumber - 1 })
-            .eq("id", organizationId)
+            if (rollbackInvoiceError) {
+              console.error("Error en rollback de factura:", rollbackInvoiceError)
+            }
+
+            // Rollback del contador
+            const { error: rollbackOrgError } = await supabase
+              .from("organizations")
+              .update({ [fieldName]: newInvoiceNumber - 1 })
+              .eq("id", organizationId)
+
+            if (rollbackOrgError) {
+              console.error("Error en rollback de organización:", rollbackOrgError)
+            }
+
+            // Verificar que el rollback se completó
+            const { data: rollbackVerification } = await supabase
+              .from("invoices")
+              .select("status, invoice_number")
+              .eq("id", invoiceId)
+              .single()
+
+            if (rollbackVerification?.status === "draft" && rollbackVerification?.invoice_number === null) {
+              console.log("✅ Rollback completado exitosamente")
+            } else {
+              console.error("⚠️ El rollback puede no haberse completado correctamente")
+            }
+          } catch (rollbackError) {
+            console.error("❌ Error crítico durante el rollback:", rollbackError)
+          }
 
           toast({
-            title: "Error en Verifactu",
+            title: "Error en VeriFactu",
             description: `${verifactuError instanceof Error ? verifactuError.message : "Error desconocido"}. La factura se mantiene en borrador.`,
             variant: "destructive",
           })
           return
         }
       } else {
-        // ✅ OTROS CAMBIOS DE ESTADO (SIN CAMBIAR NÚMERO)
+        // OTROS CAMBIOS DE ESTADO (SIN CAMBIAR NÚMERO)
         const { error: dbError } = await supabase.from("invoices").update({ status: newStatus }).eq("id", invoiceId)
 
         if (dbError) {
@@ -214,12 +299,41 @@ export function InvoiceStatusSelector({
         })
       }
 
-      // ✅ NOTIFICAR CAMBIO
+      // NOTIFICAR CAMBIO
       if (onStatusChange) {
         onStatusChange(newStatus)
       }
     } catch (error) {
       console.error("❌ Error al actualizar estado:", error)
+
+      if (invoiceNumberFormatted && newInvoiceNumber > 0 && fieldName) {
+        console.log("🔄 Ejecutando rollback de emergencia...")
+
+        try {
+          if (invoiceUpdated) {
+            await supabase
+              .from("invoices")
+              .update({
+                status: "draft",
+                invoice_number: null,
+                validated_at: null,
+              })
+              .eq("id", invoiceId)
+          }
+
+          if (organizationUpdated) {
+            await supabase
+              .from("organizations")
+              .update({ [fieldName]: newInvoiceNumber - 1 })
+              .eq("id", organizationId)
+          }
+
+          console.log("✅ Rollback de emergencia completado")
+        } catch (rollbackError) {
+          console.error("❌ Error en rollback de emergencia:", rollbackError)
+        }
+      }
+
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "No se pudo actualizar el estado",
@@ -325,7 +439,8 @@ export function InvoiceStatusSelector({
               <div>
                 <div className="font-medium">📝 Factura en borrador</div>
                 <div className="text-yellow-700 mt-0.5">
-                  Al emitir se asignará número, se validará fiscalmente con VeriFactu y no podrá volver a borrador.
+                  Al emitir se asignará automáticamente el número de factura, se validará fiscalmente con VeriFactu y no
+                  podrá volver a borrador.
                 </div>
               </div>
             </div>
