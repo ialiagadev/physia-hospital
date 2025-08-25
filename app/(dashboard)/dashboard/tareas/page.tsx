@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { Textarea } from "@/components/ui/textarea"
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, Suspense } from "react"
 import {
   DndContext,
   type DragEndEvent,
@@ -519,7 +519,7 @@ function MultiUserSelector({
   )
 }
 
-export default function TareasPage() {
+function TareasPageContent() {
   const router = useRouter()
 
   const tourSteps: TourStep[] = [
@@ -1388,5 +1388,13 @@ export default function TareasPage() {
       {/* Overlay del tour guiado */}
       <InteractiveTourOverlay steps={tourSteps} onClose={endTour} onFinish={endTour} isActive={isActive} />
     </>
+  )
+}
+
+export default function TareasPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64">Cargando...</div>}>
+      <TareasPageContent />
+    </Suspense>
   )
 }

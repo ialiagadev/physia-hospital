@@ -1,13 +1,13 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, Suspense } from "react"
 import { useAuth } from "@/app/contexts/auth-context"
 import { useRouter } from "next/navigation"
 import MedicalCalendarSystem from "@/components/dashboard/medical-calendar-system"
 import { useGuidedTour } from "@/hooks/useGuidedTour"
 import InteractiveTourOverlay from "@/components/tour/InteractiveTourOverlay"
 
-export default function Page() {
+function PageContent() {
   const [mounted, setMounted] = useState(false)
   const { user, userProfile, isLoading } = useAuth()
   const router = useRouter()
@@ -67,8 +67,15 @@ export default function Page() {
   return (
     <>
       <MedicalCalendarSystem />
-
       <InteractiveTourOverlay steps={tourSteps} onClose={endTour} onFinish={endTour} isActive={isActive} />
     </>
+  )
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Cargando página...</div>}>
+      <PageContent />
+    </Suspense>
   )
 }

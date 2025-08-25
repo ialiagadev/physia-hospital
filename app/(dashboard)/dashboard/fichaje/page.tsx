@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -19,19 +19,14 @@ import { Clock, Users, Calendar, Shield, Plane, CalendarDays } from "lucide-reac
 import { format, parseISO } from "date-fns"
 import { es } from "date-fns/locale"
 
-export default function FichajePage() {
+function FichajePageContent() {
   const { userProfile, isAdmin, loading: userLoading, getWorkDays, getOrganizationUsers } = useTimeTracking()
   const { toast } = useToast()
-
-  // Hook para el tour interactivo
   const { isActive, tourSteps, nextStep, previousStep, endTour, skipTour } = useGuidedTour()
 
-  // Hook para obtener solicitudes de vacaciones y calcular badge
   const { requests } = useVacationRequests(
     userProfile?.organization_id ? Number(userProfile.organization_id) : undefined,
   )
-
-  // Calcular solicitudes pendientes para el badge
   const pendingRequestsCount = requests.filter((request) => request.status === "pending").length
 
   const [selectedUser, setSelectedUser] = useState<any>(null)
@@ -43,44 +38,31 @@ export default function FichajePage() {
   const [pageSize, setPageSize] = useState(20)
   const [loading, setLoading] = useState(false)
 
-  // Estados para filtros de fecha
   const [startDate, setStartDate] = useState<string | undefined>()
   const [endDate, setEndDate] = useState<string | undefined>()
-
-  // Añadir un estado simple para controlar la actualización de registros:
   const [refreshKey, setRefreshKey] = useState(0)
 
-  // Crear una función simple para refrescar los datos:
   const refreshWorkSessions = () => {
-    console.log("Refreshing work sessions...")
     setRefreshKey((prev) => prev + 1)
   }
 
-  // Cargar usuarios de la organización si es admin
   useEffect(() => {
     const loadUsers = async () => {
       if (isAdmin && userProfile?.organization_id) {
         const result = await getOrganizationUsers()
-        if (result.users) {
-          setOrganizationUsers(result.users)
-        }
+        if (result.users) setOrganizationUsers(result.users)
       }
     }
     loadUsers()
   }, [isAdmin, userProfile])
 
-  // Auto-seleccionar usuario si no es admin
   useEffect(() => {
-    if (userProfile && !isAdmin) {
-      setSelectedUser(userProfile)
-    }
+    if (userProfile && !isAdmin) setSelectedUser(userProfile)
   }, [userProfile, isAdmin])
 
-  // Cargar jornadas con filtros de fecha
   useEffect(() => {
     const loadWorkSessions = async () => {
       if (!userProfile?.organization_id) return
-
       setLoading(true)
       try {
         const result = await getWorkDays({
@@ -91,7 +73,6 @@ export default function FichajePage() {
           startDate,
           endDate,
         })
-
         if (result.sessions) {
           setWorkSessions(result.sessions)
           setTotalRecords(result.totalRecords)
@@ -103,7 +84,6 @@ export default function FichajePage() {
         setLoading(false)
       }
     }
-
     loadWorkSessions()
   }, [userProfile, currentPage, pageSize, isAdmin, selectedUser, startDate, endDate, refreshKey])
 
@@ -112,14 +92,12 @@ export default function FichajePage() {
     setPageSize(newPageSize)
   }
 
-  // Manejar cambios de filtros
   const handleFiltersChange = (filters: { startDate?: string; endDate?: string }) => {
     setStartDate(filters.startDate)
     setEndDate(filters.endDate)
-    setCurrentPage(1) // Resetear a la primera página cuando se aplican filtros
+    setCurrentPage(1)
   }
 
-  // Limpiar filtros
   const handleClearFilters = () => {
     setStartDate(undefined)
     setEndDate(undefined)
@@ -137,20 +115,14 @@ export default function FichajePage() {
     if (!timeString) return ""
     try {
       return format(parseISO(timeString), "HH:mm")
-    } catch (error) {
+    } catch {
       return ""
     }
   }
 
   const calculateNetTime = (session: any) => {
-    if (!session.clock_in_time || !session.clock_out_time) {
-      return null
-    }
-
-    if (session.total_minutes) {
-      return session.total_minutes
-    }
-
+    if (!session.clock_in_time || !session.clock_out_time) return null
+    if (session.total_minutes) return session.total_minutes
     try {
       const startTime = new Date(session.clock_in_time)
       const endTime = new Date(session.clock_out_time)
@@ -164,28 +136,21 @@ export default function FichajePage() {
 
   const handleExportData = async () => {
     if (!userProfile?.organization_id) return
-
     try {
-      // Cargar TODOS los registros para exportar (sin paginación)
       const result = await getWorkDays({
         userId: isAdmin ? selectedUser?.id : userProfile.id,
         organizationId: userProfile.organization_id,
         page: 1,
-        pageSize: 10000, // Cargar todos
+        pageSize: 10000,
         startDate,
         endDate,
       })
 
       if (!result.sessions || result.sessions.length === 0) {
-        toast({
-          title: "Sin datos",
-          description: "No hay registros para exportar",
-          variant: "destructive",
-        })
+        toast({ title: "Sin datos", description: "No hay registros para exportar", variant: "destructive" })
         return
       }
 
-      // Definir columnas del CSV
       const headers = [
         "Fecha",
         ...(isAdmin ? ["Usuario", "Email"] : []),
@@ -200,7 +165,6 @@ export default function FichajePage() {
         "Última Actualización",
       ]
 
-      // Convertir datos a filas CSV
       const rows = result.sessions.map((session: any) => {
         const netTime = calculateNetTime(session)
         return [
@@ -224,12 +188,11 @@ export default function FichajePage() {
         ]
       })
 
-      // Crear contenido CSV
       const csvContent = [
         [`# Reporte de Jornadas Laborales`],
         [`# Generado el: ${format(new Date(), "dd/MM/yyyy HH:mm", { locale: es })}`],
         [`# Total de registros: ${result.sessions.length}`],
-        [], // Línea vacía
+        [],
         headers,
         ...rows,
       ]
@@ -237,7 +200,6 @@ export default function FichajePage() {
         .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
         .join("\n")
 
-      // Crear y descargar archivo
       const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" })
       const url = URL.createObjectURL(blob)
       const link = document.createElement("a")
@@ -248,17 +210,10 @@ export default function FichajePage() {
       link.click()
       document.body.removeChild(link)
 
-      toast({
-        title: "Exportación completada",
-        description: `Se han exportado ${result.sessions.length} registros correctamente`,
-      })
+      toast({ title: "Exportación completada", description: `Se han exportado ${result.sessions.length} registros` })
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Error al exportar datos"
-      toast({
-        title: "Error",
-        description: errorMessage,
-        variant: "destructive",
-      })
+      toast({ title: "Error", description: errorMessage, variant: "destructive" })
     }
   }
 
@@ -327,7 +282,6 @@ export default function FichajePage() {
 
         <TabsContent value="fichaje" className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Selector de usuario (solo para admins) */}
             {isAdmin && (
               <Card className="border-0 shadow-sm" data-tour="user-selector">
                 <CardHeader className="pb-4">
@@ -347,7 +301,6 @@ export default function FichajePage() {
               </Card>
             )}
 
-            {/* Reloj de fichaje */}
             <div className={isAdmin ? "lg:col-span-2" : "lg:col-span-3"} data-tour="time-clock">
               <TimeClockContainer selectedUser={selectedUser} onClockSuccess={refreshWorkSessions} />
             </div>
@@ -355,7 +308,6 @@ export default function FichajePage() {
         </TabsContent>
 
         <TabsContent value="registros">
-          {/* Mostrar información sobre qué registros se están viendo */}
           {isAdmin && (
             <div className="mb-4">
               <Badge variant="outline" className="text-sm">
@@ -366,7 +318,6 @@ export default function FichajePage() {
             </div>
           )}
 
-          {/* Componente de filtros */}
           <div data-tour="date-filters">
             <WorkSessionsFilters
               startDate={startDate}
@@ -376,7 +327,6 @@ export default function FichajePage() {
             />
           </div>
 
-          {/* Componente de acciones de tabla */}
           <div data-tour="work-sessions-table">
             <div data-tour="table-actions">
               <WorkSessionsTable
@@ -413,8 +363,15 @@ export default function FichajePage() {
         </TabsContent>
       </Tabs>
 
-      {/* Tour Overlay */}
       <InteractiveTourOverlay steps={tourSteps} onClose={endTour} onFinish={endTour} isActive={isActive} />
     </div>
+  )
+}
+
+export default function FichajePage() {
+  return (
+    <Suspense fallback={<div className="flex justify-center items-center min-h-screen">Cargando fichaje…</div>}>
+      <FichajePageContent />
+    </Suspense>
   )
 }
