@@ -45,7 +45,11 @@ const ALLOWED_PARENTS = new Set([
   "https://nora.healthmate.tech",
   "https://leo.healthmate.tech",
   "https://physia.healthmate.tech",
+  // Opcional para pruebas:
+  // "http://localhost:3000",
+  // "https://<tu-preview>.vercel.app",
 ])
+
 const parentOrigin = (() => {
   try {
     const o = new URL(rawParent).origin

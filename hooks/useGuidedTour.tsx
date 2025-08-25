@@ -13,6 +13,11 @@ export function useGuidedTour() {
   const [currentStep, setCurrentStep] = useState(0)
   const [currentGuide, setCurrentGuide] = useState<TaskGuide | null>(null)
   const [tourSteps, setTourSteps] = useState<TourStep[]>([])
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   // Generador de pasos del tour
   const generateTourSteps = useCallback((guideId: string): TourStep[] => {
@@ -55,6 +60,8 @@ export function useGuidedTour() {
 
   // Detectar guía desde query param
   useEffect(() => {
+    if (!mounted) return
+
     const guideId = searchParams.get("tour")
 
     if (guideId) {
@@ -75,7 +82,7 @@ export function useGuidedTour() {
         setTourSteps([])
       }
     }
-  }, [searchParams, generateTourSteps])
+  }, [searchParams, generateTourSteps, mounted, currentGuide, isActive])
 
   const nextStep = useCallback(() => {
     setCurrentStep((prevStep) => {
@@ -120,5 +127,6 @@ export function useGuidedTour() {
     endTour,
     skipTour,
     totalSteps: tourSteps.length,
+    mounted,
   }
 }

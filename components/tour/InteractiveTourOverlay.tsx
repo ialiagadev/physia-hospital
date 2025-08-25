@@ -26,7 +26,6 @@ export default function InteractiveTourOverlay({ steps, onClose, onFinish, isAct
   const step = steps[currentStep]
   const progress = ((currentStep + 1) / steps.length) * 100
 
-  // Buscar y resaltar elemento objetivo
   useEffect(() => {
     if (!isActive || !step?.target) return
 
@@ -120,7 +119,7 @@ export default function InteractiveTourOverlay({ steps, onClose, onFinish, isAct
     router.push("/dashboard/help")
   }
 
-  if (!isActive) return null
+  if (!steps || steps.length === 0 || !isActive || !step) return null
 
   return (
     <>
