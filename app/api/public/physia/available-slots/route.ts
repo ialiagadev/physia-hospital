@@ -29,6 +29,10 @@ function timeToMinutes(timeString: string): number {
   const [hours, minutes] = timeString.split(":").map(Number)
   return hours * 60 + minutes
 }
+function roundUpToNextSlot(minutes: number, duration: number): number {
+  return Math.ceil(minutes / duration) * duration
+}
+
 
 function minutesToTime(minutes: number): string {
   const hours = Math.floor(minutes / 60)
@@ -240,11 +244,13 @@ async function getSlotsForProfessional(
     if (isTodayInTimezone(targetDate, TIMEZONE)) {
       const bufferMinutes = 5
       const cutoff = getCurrentTimeInMinutes() + bufferMinutes
-      if (cutoff > currentMinutes) {
-        currentMinutes = cutoff
-        console.log("[v0] Fast-forward to", minutesToTime(currentMinutes), "due to 'today'")
+      const roundedCutoff = roundUpToNextSlot(cutoff, serviceDuration)
+      if (roundedCutoff > currentMinutes) {
+        currentMinutes = roundedCutoff
+        console.log("[v0] Fast-forward rounded to", minutesToTime(currentMinutes), "due to 'today'")
       }
     }
+    
 
     while (currentMinutes + serviceDuration <= endMinutes) {
       const slotStart = minutesToTime(currentMinutes)
