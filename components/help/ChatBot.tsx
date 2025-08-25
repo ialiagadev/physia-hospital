@@ -6,9 +6,9 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { MessageCircle, Send, X, Bot, User } from "lucide-react"
-import { useChat, type Message } from "ai/react"
+import { useChat } from "ai/react"
 import ReactMarkdown from "react-markdown"
-import { UIMessage } from "ai"
+import type { UIMessage } from "ai"
 
 interface ChatBotProps {
   context?: {
@@ -29,8 +29,7 @@ export default function ChatBot({ context }: ChatBotProps) {
       {
         id: "welcome",
         role: "assistant",
-        content:
-          "¡Hola! Soy Physia AI, tu asistente para el sistema médico. ¿En qué puedo ayudarte hoy?",
+        content: "¡Hola! Soy Physia AI, tu asistente para el sistema médico. ¿En qué puedo ayudarte hoy?",
       },
     ],
   })
@@ -54,17 +53,17 @@ export default function ChatBot({ context }: ChatBotProps) {
 
       {/* Ventana de chat */}
       {isOpen && (
-        <Card className="fixed bottom-24 right-6 w-96 h-[500px] shadow-xl z-40 flex flex-col">
-          <CardHeader className="pb-3">
+        <Card className="fixed bottom-24 right-6 w-96 max-w-[calc(100vw-3rem)] h-[500px] max-h-[calc(100vh-8rem)] shadow-xl z-40 flex flex-col">
+          <CardHeader className="pb-3 flex-shrink-0">
             <CardTitle className="flex items-center gap-2 text-lg">
               <Bot className="h-5 w-5 text-blue-600" />
               Physia AI - Asistente de Ayuda
             </CardTitle>
           </CardHeader>
 
-          <CardContent className="flex-1 flex flex-col p-0">
+          <CardContent className="flex-1 flex flex-col p-0 min-h-0">
             {/* Mensajes */}
-            <ScrollArea className="flex-1 px-4 overflow-y-auto">
+            <ScrollArea className="flex-1 px-4 min-h-0">
               <div className="space-y-4 pb-4">
                 {messages
                   .filter((m: UIMessage) => m.role === "user" || m.role === "assistant")
@@ -74,21 +73,51 @@ export default function ChatBot({ context }: ChatBotProps) {
                       className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}
                     >
                       {message.role === "assistant" && (
-                        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-1">
                           <Bot className="h-4 w-4 text-blue-600" />
                         </div>
                       )}
 
                       <div
-                        className={`max-w-[280px] rounded-lg px-3 py-2 text-sm prose prose-sm
-                        break-words [overflow-wrap:anywhere] whitespace-pre-wrap overflow-hidden
-                        ${message.role === "user" ? "bg-blue-600 text-white prose-invert" : "bg-gray-100 text-gray-900"}`}
+                        className={`rounded-lg px-3 py-2 text-sm prose prose-sm max-w-none
+                        word-wrap break-words hyphens-auto overflow-hidden
+                        ${
+                          message.role === "user"
+                            ? "bg-blue-600 text-white prose-invert max-w-[240px]"
+                            : "bg-gray-100 text-gray-900 max-w-[260px]"
+                        }`}
+                        style={{
+                          wordBreak: "break-word",
+                          overflowWrap: "anywhere",
+                          hyphens: "auto",
+                        }}
                       >
-                        <ReactMarkdown>{message.content}</ReactMarkdown>
+                        <div className="prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0">
+                          <ReactMarkdown
+                            components={{
+                              p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+                              ul: ({ children }) => <ul className="mb-2 last:mb-0 pl-4">{children}</ul>,
+                              ol: ({ children }) => <ol className="mb-2 last:mb-0 pl-4">{children}</ol>,
+                              li: ({ children }) => <li className="mb-1 last:mb-0">{children}</li>,
+                              code: ({ children }) => (
+                                <code className="bg-gray-200 dark:bg-gray-700 px-1 py-0.5 rounded text-xs break-all">
+                                  {children}
+                                </code>
+                              ),
+                              pre: ({ children }) => (
+                                <pre className="bg-gray-200 dark:bg-gray-700 p-2 rounded text-xs overflow-x-auto whitespace-pre-wrap break-all">
+                                  {children}
+                                </pre>
+                              ),
+                            }}
+                          >
+                            {message.content}
+                          </ReactMarkdown>
+                        </div>
                       </div>
 
                       {message.role === "user" && (
-                        <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
+                        <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0 mt-1">
                           <User className="h-4 w-4 text-gray-600" />
                         </div>
                       )}
@@ -97,7 +126,7 @@ export default function ChatBot({ context }: ChatBotProps) {
 
                 {isLoading && (
                   <div className="flex gap-3 justify-start">
-                    <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                    <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-1">
                       <Bot className="h-4 w-4 text-blue-600" />
                     </div>
                     <div className="bg-gray-100 rounded-lg px-3 py-2 text-sm">
@@ -122,16 +151,16 @@ export default function ChatBot({ context }: ChatBotProps) {
             </ScrollArea>
 
             {/* Input */}
-            <div className="border-t p-4">
+            <div className="border-t p-4 flex-shrink-0">
               <form onSubmit={handleSubmit} className="flex gap-2">
                 <Input
                   value={input}
                   onChange={handleInputChange}
                   placeholder="Escribe tu pregunta..."
                   disabled={isLoading}
-                  className="flex-1"
+                  className="flex-1 min-w-0"
                 />
-                <Button type="submit" disabled={isLoading} size="icon">
+                <Button type="submit" disabled={isLoading} size="icon" className="flex-shrink-0">
                   <Send className="h-4 w-4" />
                 </Button>
               </form>

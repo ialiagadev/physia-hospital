@@ -6,14 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { X, ChevronLeft, ChevronRight, Check, Target } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import type { GuideStep } from "@/lib/task-guides"
 import { useRouter } from "next/navigation"
-
-interface TourStep extends GuideStep {
-  target?: string // CSS selector del elemento a resaltar
-  position?: "top" | "bottom" | "left" | "right" | "center"
-  offset?: { x: number; y: number }
-}
+import type { TourStep } from "@/types/tour"
 
 interface Props {
   steps: TourStep[]
@@ -32,7 +26,7 @@ export default function InteractiveTourOverlay({ steps, onClose, onFinish, isAct
   const step = steps[currentStep]
   const progress = ((currentStep + 1) / steps.length) * 100
 
-  // Función para encontrar y resaltar el elemento objetivo
+  // Buscar y resaltar elemento objetivo
   useEffect(() => {
     if (!isActive || !step?.target) return
 
@@ -41,19 +35,16 @@ export default function InteractiveTourOverlay({ steps, onClose, onFinish, isAct
       if (element) {
         setTargetElement(element)
 
-        // Scroll al elemento si es necesario
         element.scrollIntoView({
           behavior: "smooth",
           block: "center",
           inline: "center",
         })
 
-        // Calcular posición del popup
         setTimeout(() => {
           calculatePopupPosition(element)
         }, 300)
       } else {
-        // Si no encuentra el elemento, intentar de nuevo en 500ms
         setTimeout(findElement, 500)
       }
     }
@@ -97,7 +88,6 @@ export default function InteractiveTourOverlay({ steps, onClose, onFinish, isAct
         break
     }
 
-    // Ajustar si se sale de la pantalla
     if (left < 10) left = 10
     if (left + popupRect.width > viewportWidth - 10) left = viewportWidth - popupRect.width - 10
     if (top < 10) top = 10
@@ -134,10 +124,8 @@ export default function InteractiveTourOverlay({ steps, onClose, onFinish, isAct
 
   return (
     <>
-      {/* Overlay oscuro */}
       <div className="fixed inset-0 bg-black/50 z-40" />
 
-      {/* Highlight del elemento objetivo */}
       {targetElement && (
         <div
           className="fixed border-4 border-blue-500 rounded-lg shadow-lg z-50 pointer-events-none animate-pulse"
@@ -150,7 +138,6 @@ export default function InteractiveTourOverlay({ steps, onClose, onFinish, isAct
         />
       )}
 
-      {/* Popup del tour */}
       <Card
         ref={popupRef}
         className="fixed z-50 w-80 shadow-2xl border-2 border-blue-200"
@@ -160,7 +147,6 @@ export default function InteractiveTourOverlay({ steps, onClose, onFinish, isAct
         }}
       >
         <CardContent className="p-0">
-          {/* Header */}
           <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-4 rounded-t-lg">
             <div className="flex justify-between items-start mb-2">
               <div className="flex items-center gap-2">
@@ -184,7 +170,6 @@ export default function InteractiveTourOverlay({ steps, onClose, onFinish, isAct
             <Progress value={progress} className="h-1 bg-white/20" />
           </div>
 
-          {/* Content */}
           <div className="p-4">
             <h3 className="font-semibold text-gray-900 mb-2">{step.title}</h3>
             <p className="text-sm text-gray-600 mb-3 leading-relaxed">{step.description}</p>
@@ -204,7 +189,6 @@ export default function InteractiveTourOverlay({ steps, onClose, onFinish, isAct
             )}
           </div>
 
-          {/* Footer */}
           <div className="flex justify-between items-center p-4 border-t bg-gray-50 rounded-b-lg">
             <div className="text-xs text-gray-500">
               Paso {currentStep + 1} de {steps.length}

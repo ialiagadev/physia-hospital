@@ -82,10 +82,9 @@ export default function HelpPage() {
   }
 
   const handleTaskClick = (task: TaskGuide) => {
-    // Check if task has interactive tour - now use SelfOnboardingTour instead of just navigating
-    if (task.action?.type === "interactive-tour" && task.steps) {
-      setOnboardingSteps(task.steps)
-      setShowOnboardingTour(true)
+    // Check if task has interactive tour - navigate to target page first
+    if (task.action?.type === "interactive-tour" && task.action.target) {
+      router.push(task.action.target)
       return
     }
 

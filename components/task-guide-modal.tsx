@@ -1,12 +1,9 @@
 "use client"
 
-import { useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent } from "@/components/ui/card"
-import { ChevronLeft, ChevronRight, CheckCircle, Clock, Lightbulb, ArrowRight, BookOpen } from "lucide-react"
-import Link from "next/link"
+import { CheckCircle2, Clock, ArrowRight, BookOpen } from "lucide-react"
 import type { TaskGuide } from "@/lib/task-guides"
 
 interface TaskGuideModalProps {
@@ -18,144 +15,119 @@ interface TaskGuideModalProps {
 }
 
 export function TaskGuideModal({ task, isOpen, onClose, onComplete, isCompleted }: TaskGuideModalProps) {
-  const [currentStep, setCurrentStep] = useState(0)
-
-  const handleNext = () => {
-    if (currentStep < task.steps.length - 1) {
-      setCurrentStep(currentStep + 1)
+  const getCategoryColor = (category: string) => {
+    switch (category) {
+      case "essential":
+        return "bg-red-100 text-red-800 border-red-200"
+      case "recommended":
+        return "bg-yellow-100 text-yellow-800 border-yellow-200"
+      case "advanced":
+        return "bg-blue-100 text-blue-800 border-blue-200"
+      default:
+        return "bg-gray-100 text-gray-800 border-gray-200"
     }
   }
-
-  const handlePrevious = () => {
-    if (currentStep > 0) {
-      setCurrentStep(currentStep - 1)
-    }
-  }
-
-  const handleClose = () => {
-    setCurrentStep(0)
-    onClose()
-  }
-
-  const progress = ((currentStep + 1) / task.steps.length) * 100
-  const isLastStep = currentStep === task.steps.length - 1
-  const isFirstStep = currentStep === 0
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-        <DialogHeader className="space-y-4 pb-4 border-b">
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <BookOpen className="w-5 h-5 text-blue-600" />
-              </div>
-              <div>
-                <DialogTitle className="text-xl font-bold">{task.title}</DialogTitle>
-                <p className="text-sm text-gray-600 mt-1">{task.description}</p>
-              </div>
-            </div>
-            <Badge variant="secondary" className="gap-1 text-xs">
-              <Clock className="w-3 h-3" />
-              {task.estimatedTime}
-            </Badge>
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <div className="flex items-center gap-3 mb-2">
+            <DialogTitle className="text-xl">{task.title}</DialogTitle>
+            <Badge className={getCategoryColor(task.category)}>{task.category}</Badge>
           </div>
-
-          {/* Progress */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="font-medium">
-                Paso {currentStep + 1} de {task.steps.length}
-              </span>
-              <span className="text-gray-600">{Math.round(progress)}% completado</span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div
-                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
+          <DialogDescription className="text-base">{task.description}</DialogDescription>
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <Clock className="w-4 h-4" />
+            <span>Tiempo estimado: {task.estimatedTime}</span>
           </div>
         </DialogHeader>
 
-        <div className="py-6 space-y-6">
-          {/* Current Step */}
-          <div className="text-center space-y-4">
-            <div className="inline-flex items-center justify-center w-12 h-12 bg-blue-100 rounded-full">
-              <span className="text-lg font-bold text-blue-600">{currentStep + 1}</span>
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold mb-2">{task.steps[currentStep].title}</h3>
-              <p className="text-gray-600">{task.steps[currentStep].description}</p>
+        <div className="space-y-6">
+          {/* Steps */}
+          <div className="space-y-4">
+            <h3 className="font-semibold text-lg flex items-center gap-2">
+              <BookOpen className="w-5 h-5" />
+              Pasos a seguir
+            </h3>
+            <div className="space-y-3">
+              {task.steps.map((step, index) => (
+                <div key={index} className="border rounded-lg p-4 space-y-2">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-sm font-medium">
+                      {index + 1}
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-medium text-gray-900">{step.title}</h4>
+                      <p className="text-sm text-gray-600 mt-1">{step.description}</p>
+                      {step.tips.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs font-medium text-gray-700 mb-1">Consejos:</p>
+                          <ul className="text-xs text-gray-600 space-y-1">
+                            {step.tips.map((tip, tipIndex) => (
+                              <li key={tipIndex} className="flex items-start gap-1">
+                                <span className="text-blue-500 mt-1">•</span>
+                                <span>{tip}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {step.action && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-2 bg-transparent"
+                          onClick={() => window.open(step.action!.href, "_blank")}
+                        >
+                          {step.action.text}
+                          <ArrowRight className="w-3 h-3 ml-1" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
           {/* Tips */}
           {task.tips.length > 0 && (
-            <Card className="bg-blue-50 border-blue-200">
-              <CardContent className="p-4">
-                <div className="flex items-start gap-3">
-                  <Lightbulb className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <h4 className="font-medium text-blue-900 mb-2">💡 Consejos útiles:</h4>
-                    <ul className="space-y-1 text-sm text-blue-800">
-                      {task.tips.map((tip, index) => (
-                        <li key={index} className="flex items-start gap-2">
-                          <span className="text-blue-500 mt-1">•</span>
-                          <span>{tip}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <div className="space-y-3">
+              <h3 className="font-semibold text-lg">Consejos adicionales</h3>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <ul className="space-y-2">
+                  {task.tips.map((tip, index) => (
+                    <li key={index} className="flex items-start gap-2 text-sm text-blue-800">
+                      <span className="text-blue-500 mt-1">💡</span>
+                      <span>{tip}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
           )}
-        </div>
 
-        {/* Navigation */}
-        <div className="border-t pt-4 space-y-4">
-          <div className="flex justify-between items-center">
-            <Button variant="outline" onClick={handlePrevious} disabled={isFirstStep} className="gap-2 bg-transparent">
-              <ChevronLeft className="w-4 h-4" />
-              Anterior
+          {/* Actions */}
+          <div className="flex justify-between items-center pt-4 border-t">
+            <Button variant="outline" onClick={onClose}>
+              Cerrar
             </Button>
-
-            <div className="flex gap-2">
-              {isLastStep ? (
-                <div className="flex gap-2">
-                  {task.action && (
-                    <Link href={task.action.target}>
-                      <Button className="gap-2">
-                        <CheckCircle className="w-4 h-4" />
-                        Completar tarea
-                      </Button>
-                    </Link>
-                  )}
-                  <Button variant="outline" onClick={handleClose}>
-                    Cerrar
-                  </Button>
-                </div>
-              ) : (
-                <Button onClick={handleNext} className="gap-2">
-                  Siguiente
-                  <ChevronRight className="w-4 h-4" />
+            <div className="flex items-center gap-2">
+              {!isCompleted && (
+                <Button onClick={onComplete} className="bg-green-600 hover:bg-green-700">
+                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                  Marcar como completada
                 </Button>
+              )}
+              {isCompleted && (
+                <Badge className="bg-green-100 text-green-800 border-green-200">
+                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                  Completada
+                </Badge>
               )}
             </div>
           </div>
-
-          {/* Quick Action */}
-          {task.action && (
-            <div className="text-center">
-              <Link href={task.action.target}>
-                <Button variant="ghost" size="sm" className="text-gray-600 gap-2">
-                  <ArrowRight className="w-3 h-3" />
-                  Ir directamente a la tarea
-                </Button>
-              </Link>
-            </div>
-          )}
         </div>
       </DialogContent>
     </Dialog>

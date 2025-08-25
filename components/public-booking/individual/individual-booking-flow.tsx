@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft } from "lucide-react"
 import { ServiceSelector } from "./service-selector"
 import { ProfessionalSelector } from "./professional-selector"
 import { AvailableSlots } from "./available-slots"
@@ -32,12 +32,30 @@ interface BookingData {
   }
 }
 
-// 🔹 obtener parámetros pasados al iframe
+// Params del iframe
 const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null
-const parentOrigin = params?.get("parent") || "*" // ⚠️ en prod: el dominio de la landing
+const rawParent = params?.get("parent") || ""
 const origin_site = params?.get("origin_site") || "desconocida"
 
-// 🔹 notificar al padre (marketing) cuando se confirma una reserva
+// Whitelist sencilla de dominios permitidos para el postMessage
+const ALLOWED_PARENTS = new Set([
+  "https://healthmate.tech",
+  "https://www.healthmate.tech",
+  "https://lia.healthmate.tech",
+  "https://nora.healthmate.tech",
+  "https://leo.healthmate.tech",
+  "https://physia.healthmate.tech",
+])
+const parentOrigin = (() => {
+  try {
+    const o = new URL(rawParent).origin
+    return ALLOWED_PARENTS.has(o) ? o : "*"
+  } catch {
+    return "*"
+  }
+})()
+
+// Notificación al padre cuando se confirma una reserva
 function notifyParentBooking(lead: { name: string; email: string; phone?: string }) {
   window.parent?.postMessage(
     {
@@ -55,7 +73,7 @@ export function IndividualBookingFlow({ organizationId, onBack, onComplete }: In
   const [loading, setLoading] = useState(false)
   const [bookingResult, setBookingResult] = useState<any>(null)
 
-  // 🔹 Avisar al cargar el iframe (métrica de vistas)
+  // Métrica de carga del iframe
   useEffect(() => {
     window.parent?.postMessage(
       { type: "healthmate:calendar:booking_loaded", origin_site, ts: Date.now() },
@@ -63,20 +81,19 @@ export function IndividualBookingFlow({ organizationId, onBack, onComplete }: In
     )
   }, [])
 
-  // Configuración especial para organización 68
+  // Config especial para organización 68 (salta selector servicio/profesional)
   useEffect(() => {
     if (organizationId === "68") {
       const fetchServiceAndSetup = async () => {
         try {
           const response = await fetch(`/api/public/${organizationId}/services`)
           const data = await response.json()
-          
           if (data.services && data.services.length > 0) {
             const firstService = data.services[0]
             setBookingData({
               serviceId: firstService.id,
               duration: firstService.duration,
-              professionalId: "any"
+              professionalId: "any",
             })
             setCurrentStep("slots")
           }
@@ -136,15 +153,14 @@ export function IndividualBookingFlow({ organizationId, onBack, onComplete }: In
       setBookingResult(result)
       setCurrentStep("confirmation")
 
-      // 🔔 notificar al padre (seguro con parentOrigin y origin_site)
+      // Notificar al padre (creará el lead en el CRM)
       notifyParentBooking({
         name: clientData.name,
         email: clientData.email ?? "",
         phone: clientData.phone ?? "",
       })
 
-      if (onComplete) onComplete(result)
-
+      onComplete?.(result)
     } catch (error) {
       console.error("Error:", error)
       const failResult = {
@@ -153,8 +169,7 @@ export function IndividualBookingFlow({ organizationId, onBack, onComplete }: In
       }
       setBookingResult(failResult)
       setCurrentStep("confirmation")
-
-      if (onComplete) onComplete(failResult)
+      onComplete?.(failResult)
     } finally {
       setLoading(false)
     }
@@ -163,33 +178,17 @@ export function IndividualBookingFlow({ organizationId, onBack, onComplete }: In
   const handleBack = () => {
     if (organizationId === "68") {
       switch (currentStep) {
-        case "slots":
-          onBack()
-          break
-        case "client-data":
-          setCurrentStep("slots")
-          break
-        case "confirmation":
-          setCurrentStep("client-data")
-          break
+        case "slots": return onBack()
+        case "client-data": return setCurrentStep("slots")
+        case "confirmation": return setCurrentStep("client-data")
       }
     } else {
       switch (currentStep) {
-        case "service":
-          onBack()
-          break
-        case "professional":
-          setCurrentStep("service")
-          break
-        case "slots":
-          setCurrentStep("professional")
-          break
-        case "client-data":
-          setCurrentStep("slots")
-          break
-        case "confirmation":
-          setCurrentStep("client-data")
-          break
+        case "service": return onBack()
+        case "professional": return setCurrentStep("service")
+        case "slots": return setCurrentStep("professional")
+        case "client-data": return setCurrentStep("slots")
+        case "confirmation": return setCurrentStep("client-data")
       }
     }
   }
@@ -197,20 +196,19 @@ export function IndividualBookingFlow({ organizationId, onBack, onComplete }: In
   const handleStartOver = () => {
     setBookingData({})
     setBookingResult(null)
-    
+
     if (organizationId === "68") {
       setCurrentStep("slots")
       const fetchServiceAndSetup = async () => {
         try {
           const response = await fetch(`/api/public/${organizationId}/services`)
           const data = await response.json()
-          
           if (data.services && data.services.length > 0) {
             const firstService = data.services[0]
             setBookingData({
               serviceId: firstService.id,
               duration: firstService.duration,
-              professionalId: "any"
+              professionalId: "any",
             })
           }
         } catch (error) {
@@ -243,9 +241,7 @@ export function IndividualBookingFlow({ organizationId, onBack, onComplete }: In
     }
   }
 
-  const getTotalSteps = () => {
-    return organizationId === "68" ? 3 : 5
-  }
+  const getTotalSteps = () => (organizationId === "68" ? 3 : 5)
 
   return (
     <div className="space-y-6">
@@ -255,9 +251,7 @@ export function IndividualBookingFlow({ organizationId, onBack, onComplete }: In
           Volver
         </Button>
         <div className="flex-1">
-          <div className="text-sm text-gray-500">
-            Paso {getCurrentStepNumber()} de {getTotalSteps()}
-          </div>
+          <div className="text-sm text-gray-500">Paso {getCurrentStepNumber()} de {getTotalSteps()}</div>
         </div>
       </div>
 
@@ -266,10 +260,10 @@ export function IndividualBookingFlow({ organizationId, onBack, onComplete }: In
       )}
 
       {organizationId !== "68" && currentStep === "professional" && bookingData.serviceId && (
-        <ProfessionalSelector 
-          organizationId={organizationId} 
+        <ProfessionalSelector
+          organizationId={organizationId}
           serviceId={bookingData.serviceId.toString()}
-          onSelect={handleProfessionalSelect} 
+          onSelect={handleProfessionalSelect}
         />
       )}
 
@@ -277,13 +271,13 @@ export function IndividualBookingFlow({ organizationId, onBack, onComplete }: In
         bookingData.serviceId &&
         bookingData.professionalId &&
         bookingData.duration !== undefined && (
-        <AvailableSlots
-          organizationId={organizationId}
-          serviceId={bookingData.serviceId}
-          professionalId={bookingData.professionalId}
-          duration={bookingData.duration}
-          onSelect={handleSlotSelect}
-        />
+          <AvailableSlots
+            organizationId={organizationId}
+            serviceId={bookingData.serviceId}
+            professionalId={bookingData.professionalId}
+            duration={bookingData.duration}
+            onSelect={handleSlotSelect}
+          />
       )}
 
       {currentStep === "client-data" && (
