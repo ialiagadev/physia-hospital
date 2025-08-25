@@ -51,8 +51,6 @@ import { useTasks } from "@/hooks/tasks/use-tasks"
 import { useProfessionals } from "@/hooks/tasks/use-professionals"
 import type { PrioridadTarea, EstadoTarea, Tarea, Usuario } from "@/types/tasks"
 import { TaskNotes } from "@/components/tasks/tareas-notes"
-import { useGuidedTour } from "@/hooks/useGuidedTour"
-import InteractiveTourOverlay from "@/components/tour/InteractiveTourOverlay"
 
 // Configuración de estados (sin incluir archivada en el tablero principal)
 const ESTADOS_CONFIG = {
@@ -523,8 +521,6 @@ function MultiUserSelector({
 export default function TareasPage() {
   const router = useRouter()
 
-  const { isActive, tourSteps, nextStep, previousStep, endTour, skipTour } = useGuidedTour()
-
   // Hooks principales
   const {
     tareas,
@@ -828,12 +824,7 @@ export default function TareasPage() {
                 </h1>
               </div>
               {/* Botón nueva tarea - Siempre visible */}
-              <Button
-                onClick={() => setMostrarFormulario(true)}
-                size="sm"
-                className="flex items-center gap-2"
-                data-tour="new-task-btn"
-              >
+              <Button onClick={() => setMostrarFormulario(true)} size="sm" className="flex items-center gap-2">
                 <Plus className="h-4 w-4" />
                 <span className="hidden sm:inline">Nueva Tarea</span>
                 <span className="sm:hidden">Nueva</span>
@@ -850,7 +841,6 @@ export default function TareasPage() {
                   value={busqueda}
                   onChange={(e) => setBusqueda(e.target.value)}
                   className="pl-10"
-                  data-tour="tasks-search-input"
                 />
               </div>
               {/* Botón filtros */}
@@ -859,7 +849,6 @@ export default function TareasPage() {
                 size="sm"
                 onClick={() => setMostrarFiltros(!mostrarFiltros)}
                 className="flex items-center gap-2 whitespace-nowrap"
-                data-tour="filters-btn"
               >
                 <Filter className="h-4 w-4" />
                 Filtros
@@ -869,7 +858,7 @@ export default function TareasPage() {
 
           {/* Panel de filtros */}
           {mostrarFiltros && (
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg border" data-tour="filters-panel">
+            <div className="mt-4 p-4 bg-gray-50 rounded-lg border">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="space-y-2">
                   <Label>Estado</Label>
@@ -944,30 +933,28 @@ export default function TareasPage() {
         <div className="p-3 sm:p-6">
           {filtroEstado === "creadas" ? (
             // Tablero Kanban - Mejorado para móvil
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-[calc(100vh-250px)]" data-tour="kanban-board">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-[calc(100vh-250px)]">
               {(Object.keys(ESTADOS_CONFIG) as (keyof typeof ESTADOS_CONFIG)[]).map((estado) => {
                 const tareasEstado = getTareasPorEstado(estado)
                 return (
-                  <div key={estado} data-tour={`${estado}-column`}>
-                    <TaskColumn estado={estado} tareas={tareasEstado}>
-                      <SortableContext
-                        items={tareasEstado.map((t) => t.id.toString())}
-                        strategy={verticalListSortingStrategy}
-                      >
-                        {tareasEstado.map((tarea) => (
-                          <DraggableTaskCard
-                            key={tarea.id}
-                            tarea={tarea}
-                            onEdit={editarTarea}
-                            onDelete={eliminarTarea}
-                            onArchive={archivarTarea}
-                            usuarios={usuariosTipo1}
-                            getNombreUsuario={getNombreUsuario}
-                          />
-                        ))}
-                      </SortableContext>
-                    </TaskColumn>
-                  </div>
+                  <TaskColumn key={estado} estado={estado} tareas={tareasEstado}>
+                    <SortableContext
+                      items={tareasEstado.map((t) => t.id.toString())}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      {tareasEstado.map((tarea) => (
+                        <DraggableTaskCard
+                          key={tarea.id}
+                          tarea={tarea}
+                          onEdit={editarTarea}
+                          onDelete={eliminarTarea}
+                          onArchive={archivarTarea}
+                          usuarios={usuariosTipo1}
+                          getNombreUsuario={getNombreUsuario}
+                        />
+                      ))}
+                    </SortableContext>
+                  </TaskColumn>
                 )
               })}
             </div>
@@ -1396,8 +1383,6 @@ export default function TareasPage() {
             </Card>
           ) : null}
         </DragOverlay>
-
-        <InteractiveTourOverlay steps={tourSteps} onClose={endTour} onFinish={endTour} isActive={isActive} />
       </div>
     </DndContext>
   )
