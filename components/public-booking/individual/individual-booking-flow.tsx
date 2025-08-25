@@ -32,33 +32,20 @@ interface BookingData {
   }
 }
 
-// 🔹 auxiliar: detecta el subdominio actual
-function getSubdomain() {
-  if (typeof window === "undefined") return null
-  const host = window.location.hostname
-  const parts = host.split(".")
-  return parts.length > 2 ? parts[0] : "general"
-}
+// 🔹 obtener parámetros pasados al iframe
+const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null
+const parentOrigin = params?.get("parent") || "*" // ⚠️ en prod: el dominio de la landing
+const origin_site = params?.get("origin_site") || "desconocida"
 
-// 🔹 notificar al padre (marketing)
-function notifyParentBookingSuccess(lead: {
-  name: string
-  email: string
-  phone?: string
-  notes?: string
-  value?: number
-  calendarId?: string | number
-}) {
-  const TARGET = "*" // ⚠️ en producción cambia a "https://nora.healthmate.tech", etc.
-
+// 🔹 notificar al padre (marketing) cuando se confirma una reserva
+function notifyParentBooking(lead: { name: string; email: string; phone?: string }) {
   window.parent?.postMessage(
     {
-      source: "hm-booking",
-      event: "booking_success",
-      lead,
+      type: "healthmate:calendar:booking_submitted",
+      payload: { ...lead, origin_site },
       ts: Date.now(),
     },
-    TARGET
+    parentOrigin
   )
 }
 
@@ -71,8 +58,8 @@ export function IndividualBookingFlow({ organizationId, onBack, onComplete }: In
   // 🔹 Avisar al cargar el iframe (métrica de vistas)
   useEffect(() => {
     window.parent?.postMessage(
-      { source: "hm-booking", event: "booking_loaded", ts: Date.now() },
-      "*"
+      { type: "healthmate:calendar:booking_loaded", origin_site, ts: Date.now() },
+      parentOrigin
     )
   }, [])
 
@@ -149,16 +136,12 @@ export function IndividualBookingFlow({ organizationId, onBack, onComplete }: In
       setBookingResult(result)
       setCurrentStep("confirmation")
 
-      // 🔔 notificar al padre vía postMessage (marketing)
-      notifyParentBookingSuccess({
+      // 🔔 notificar al padre (seguro con parentOrigin y origin_site)
+      notifyParentBooking({
         name: clientData.name,
         email: clientData.email ?? "",
         phone: clientData.phone ?? "",
-        notes: "Reserva creada desde calendario",
-        value: 0,
-        calendarId: organizationId,
       })
-      
 
       if (onComplete) onComplete(result)
 

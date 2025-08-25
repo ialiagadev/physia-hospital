@@ -23,6 +23,17 @@ interface BookingResult {
   message?: string
 }
 
+// 👇 helper para detectar subdominio
+function getSubdomain() {
+  if (typeof window === "undefined") return "general"
+  const host = window.location.hostname // ej: "nora.healthmate.tech"
+  const parts = host.split(".")
+  if (parts.length > 2) {
+    return parts[0] // "nora", "lia", "physia", "leo"
+  }
+  return "general"
+}
+
 export function PublicBookingPage({ organizationId }: PublicBookingPageProps) {
   const [bookingType, setBookingType] = useState<BookingType>(null)
   const [currentStep, setCurrentStep] = useState<BookingStep>("type")
@@ -36,15 +47,15 @@ export function PublicBookingPage({ organizationId }: PublicBookingPageProps) {
   }, [organizationId])
 
   useEffect(() => {
-    // Auto-configuración + mensaje al padre solo para org 68
+    // Auto-configuración para organización 68
     if (organizationId === "68") {
       setBookingType("individual")
       setCurrentStep("booking")
 
-      // avisar al padre que el iframe está cargado
+      // 👉 Avisar al padre que el iframe está cargado
       window.parent.postMessage(
-        { type: "booking_iframe_loaded" },
-        "https://nora.healthmate.tech"
+        { type: "booking_iframe_loaded", subdomain: getSubdomain() },
+        "*"
       )
     }
   }, [organizationId])
@@ -70,9 +81,10 @@ export function PublicBookingPage({ organizationId }: PublicBookingPageProps) {
     setCurrentStep("booking")
 
     if (organizationId === "68") {
+      // 👉 Avisar al padre que el usuario inicia la reserva
       window.parent.postMessage(
-        { type: "booking_submit", payload: { slotId: "manual", dateISO: new Date().toISOString() } },
-        "https://nora.healthmate.tech"
+        { type: "booking_submit", subdomain: getSubdomain() },
+        "*"
       )
     }
   }
@@ -82,6 +94,7 @@ export function PublicBookingPage({ organizationId }: PublicBookingPageProps) {
     setCurrentStep("confirmation")
 
     if (organizationId === "68") {
+      // 👉 Avisar al padre que se confirmó la reserva
       window.parent.postMessage(
         {
           type: "booking_confirmed",
@@ -89,8 +102,9 @@ export function PublicBookingPage({ organizationId }: PublicBookingPageProps) {
             bookingId: result?.appointment?.id,
             dateISO: result?.appointment?.date,
           },
+          subdomain: getSubdomain(),
         },
-        "https://nora.healthmate.tech"
+        "*"
       )
     }
   }
@@ -100,6 +114,7 @@ export function PublicBookingPage({ organizationId }: PublicBookingPageProps) {
     setCurrentStep("type")
     setBookingResult(null)
     
+    // Para org 68, volver a configurar automáticamente
     if (organizationId === "68") {
       setTimeout(() => {
         setBookingType("individual")
@@ -107,15 +122,17 @@ export function PublicBookingPage({ organizationId }: PublicBookingPageProps) {
       }, 100)
     }
   }
-
   const handleReset = () => {
     if (organizationId === "68") {
-      window.location.reload()
+      // 👇 en lugar de recargar, mantenemos la confirmación visible
+      setBookingType("individual")
+      setCurrentStep("confirmation")
     } else {
       setBookingType(null)
       setCurrentStep("type")
     }
   }
+  
 
   if (loading) {
     return (
@@ -163,10 +180,15 @@ export function PublicBookingPage({ organizationId }: PublicBookingPageProps) {
             </p>
           </CardHeader>
           <CardContent>
+            {/* Solo mostrar selector de tipo si NO es org 68 */}
             {currentStep === "type" && !bookingType && organizationId !== "68" ? (
               <BookingTypeSelector onSelect={handleBookingTypeSelect} />
             ) : currentStep === "booking" && bookingType === "individual" ? (
-              <IndividualBookingFlow organizationId={organizationId} onBack={handleReset} />
+              <IndividualBookingFlow 
+                organizationId={organizationId} 
+                onBack={handleReset} 
+                onComplete={handleBookingComplete} // 👈 añadimos onComplete aquí
+              />
             ) : currentStep === "booking" && bookingType === "group" ? (
               <GroupBookingFlow
                 organizationId={organizationId}
