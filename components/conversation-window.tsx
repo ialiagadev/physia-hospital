@@ -220,6 +220,12 @@ export default function ConversationWindowSimple({
     return () => container.removeEventListener("scroll", handleScroll)
   }, [hasMore, loadingMore, messagesLoading, loadMoreMessages])
 
+  useEffect(() => {
+    if (chatId) {
+      setIsInitialLoad(true)
+    }
+  }, [chatId])
+
   useLayoutEffect(() => {
     if (conversation?.client && isInitialLoad && messagesContainerRef.current) {
       // Scroll inmediato sin setTimeout para evitar pestañeo
@@ -1241,32 +1247,32 @@ export default function ConversationWindowSimple({
                       {/* Avatar: 
   - Siempre para IA (user?.type === 2) 
   - Para agentes humanos solo si es el primero del grupo (isFirst) */}
-                   {(msg.user?.type === 2 || (msg.sender_type === "agent" && isFirst)) && (
-  <div className="flex-shrink-0">
-    {msg.user?.type === 2 ? (
-      // IA
-      <Avatar className="h-8 w-8">
-        <AvatarImage src="/images/IA.jpeg" alt="IA" />
-        <AvatarFallback className="bg-purple-100 text-purple-600">IA</AvatarFallback>
-      </Avatar>
-    ) : (
-      // Agente humano (solo si tiene avatar o nombre)
-      (msg.user?.avatar_url || msg.user?.name) && (
-        <Avatar className="h-8 w-8">
-          {msg.user?.avatar_url && (
-            <AvatarImage src={msg.user.avatar_url} alt={msg.user?.name || "Usuario"} />
-          )}
-          {msg.user?.name && (
-            <AvatarFallback>
-              {msg.user.name.charAt(0).toUpperCase()}
-            </AvatarFallback>
-          )}
-        </Avatar>
-      )
-    )}
-  </div>
-)}
-
+                      {(msg.user?.type === 2 || (msg.sender_type === "agent" && isFirst)) && (
+                        <div className="flex-shrink-0">
+                          {msg.user?.type === 2 ? (
+                            // IA
+                            <Avatar className="h-8 w-8">
+                              <AvatarImage src="/images/IA.jpeg" alt="IA" />
+                              <AvatarFallback className="bg-purple-100 text-purple-600">IA</AvatarFallback>
+                            </Avatar>
+                          ) : (
+                            // Agente humano (solo si tiene avatar o nombre)
+                            (msg.user?.avatar_url || msg.user?.name) && (
+                              <Avatar className="h-8 w-8">
+                                {msg.user?.avatar_url && (
+                                  <AvatarImage
+                                    src={msg.user.avatar_url || "/placeholder.svg"}
+                                    alt={msg.user?.name || "Usuario"}
+                                  />
+                                )}
+                                {msg.user?.name && (
+                                  <AvatarFallback>{msg.user.name.charAt(0).toUpperCase()}</AvatarFallback>
+                                )}
+                              </Avatar>
+                            )
+                          )}
+                        </div>
+                      )}
 
                       <div
                         className={`relative px-2 py-1 ${
