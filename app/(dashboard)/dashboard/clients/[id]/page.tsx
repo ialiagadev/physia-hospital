@@ -22,6 +22,8 @@ import { PatientConsentsSection } from "@/components/consent/patient-consents-se
 import { PatientAppointmentsSection } from "@/components/patient-appointments-section"
 import { CreditCard } from "lucide-react"
 import { LoyaltyCardsSection } from "@/components/loyalty-cards-section"
+import { useGuidedTour } from "@/hooks/useGuidedTour"
+import InteractiveTourOverlay from "@/components/tour/InteractiveTourOverlay"
 import { ClientDocumentsSection } from "@/components/client-documents-section"
 import {
   User,
@@ -564,6 +566,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
       return "No especificada"
     }
   }
+  const { isActive, tourSteps, currentTourStep, nextStep, previousStep, endTour, skipTour } = useGuidedTour()
   // resumen citas
   useEffect(() => {
     const loadClinicalStats = async () => {
@@ -3374,6 +3377,14 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
           error={reportError}
         />
       )}
+      <InteractiveTourOverlay
+        steps={tourSteps}
+        onClose={endTour}
+        onFinish={endTour}
+        isActive={isActive}
+      />
     </div>
+    
   )
+  
 }

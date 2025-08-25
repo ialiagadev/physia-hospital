@@ -1,19 +1,18 @@
-
 "use client"
-export const dynamic = "force-dynamic";
+export const dynamic = "force-dynamic"
 
 import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Plus, Upload, Search, X, ChevronLeft, ChevronRight, Trash2, Eye } from 'lucide-react'
+import { Plus, Upload, Search, X, ChevronLeft, ChevronRight, Trash2, Eye } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { OrganizationSelector } from "@/components/organization-selector"
 import { ImportClientsDialog } from "@/components/import-clients-dialog"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/app/contexts/auth-context"
-import { Loader2 } from 'lucide-react'
+import { Loader2 } from "lucide-react"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -49,7 +48,7 @@ interface PaginationInfo {
   pageSize: number
 }
 
-export default function ClientsPage() {
+export default function ClientsPageContent() {
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedOrgId, setSelectedOrgId] = useState("all")
