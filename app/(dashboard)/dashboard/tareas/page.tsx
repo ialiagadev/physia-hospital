@@ -44,13 +44,14 @@ import {
   Loader2,
   Users,
   X,
-  MessageSquare,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useTasks } from "@/hooks/tasks/use-tasks"
 import { useProfessionals } from "@/hooks/tasks/use-professionals"
 import type { PrioridadTarea, EstadoTarea, Tarea, Usuario } from "@/types/tasks"
-import { TaskNotes } from "@/components/tasks/tareas-notes"
+import { useGuidedTour } from "@/hooks/useGuidedTour"
+import InteractiveTourOverlay from "@/components/tour/InteractiveTourOverlay"
+import type { TourStep } from "@/types/tour"
 
 // Configuración de estados (sin incluir archivada en el tablero principal)
 const ESTADOS_CONFIG = {
@@ -148,6 +149,7 @@ function DraggableTaskCard({
       style={style}
       {...attributes}
       className="bg-white shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing"
+      data-tour="task-card"
     >
       <CardContent className="p-3">
         <div className="space-y-2">
@@ -170,6 +172,7 @@ function DraggableTaskCard({
                   onEdit(tarea)
                 }}
                 title="Editar tarea"
+                data-tour="edit-task-btn"
               >
                 <Edit className="h-3 w-3 text-blue-600" />
               </Button>
@@ -182,6 +185,7 @@ function DraggableTaskCard({
                   onArchive(tarea.id)
                 }}
                 title="Archivar tarea"
+                data-tour="archive-task-btn"
               >
                 <Archive className="h-3 w-3 text-orange-600" />
               </Button>
@@ -194,6 +198,7 @@ function DraggableTaskCard({
                   onDelete(tarea.id)
                 }}
                 title="Eliminar tarea"
+                data-tour="delete-task-btn"
               >
                 <Trash2 className="h-3 w-3 text-red-600" />
               </Button>
@@ -203,16 +208,6 @@ function DraggableTaskCard({
           {/* Descripción */}
           {tarea.descripcion && (
             <p className="text-xs text-gray-600 line-clamp-2 ml-6 break-words">{tarea.descripcion}</p>
-          )}
-
-          {/* Notas - mostrar solo el número */}
-          {tarea.notas && tarea.notas.length > 0 && (
-            <div className="ml-6 flex items-center gap-1 text-xs text-gray-600">
-              <MessageSquare className="h-3 w-3" />
-              <span>
-                {tarea.notas.length} nota{tarea.notas.length !== 1 ? "s" : ""}
-              </span>
-            </div>
           )}
 
           {/* Badges de estado */}
@@ -248,10 +243,6 @@ function DraggableTaskCard({
                 <span>{tarea.fechaVencimiento.toLocaleDateString("es-ES")}</span>
               </div>
             )}
-            <div className="flex items-center gap-1">
-              <User className="h-3 w-3 flex-shrink-0" />
-              <span className="truncate">Creado por: {getNombreUsuario(tarea.creadoPor)}</span>
-            </div>
           </div>
         </div>
       </CardContent>
@@ -272,6 +263,15 @@ function TaskColumn({
   const config = ESTADOS_CONFIG[estado]
   const IconoEstado = config.icono
   const { setNodeRef: setDroppableNodeRef } = useDroppable({ id: estado })
+
+  let dataTour: string | undefined = undefined
+  if (estado === "pendiente") {
+    dataTour = "pending-column"
+  } else if (estado === "en_progreso") {
+    dataTour = "progress-column"
+  } else if (estado === "completada") {
+    dataTour = "completed-column"
+  }
 
   return (
     <div className="flex flex-col h-full min-h-[400px]">
@@ -294,6 +294,7 @@ function TaskColumn({
         id={estado}
         data-column-id={estado}
         className={`${config.color} flex-1 p-3 rounded-b-lg overflow-y-auto space-y-2`}
+        data-tour={dataTour}
       >
         {children}
         {tareas.length === 0 && (
@@ -521,6 +522,58 @@ function MultiUserSelector({
 export default function TareasPage() {
   const router = useRouter()
 
+  const tourSteps: TourStep[] = [
+    {
+      target: "[data-tour='new-task-btn']",
+      title: "Crear Nueva Tarea",
+      description: "Haz clic aquí para crear una nueva tarea.",
+    },
+    {
+      target: "[data-tour='filters-btn']",
+      title: "Filtros de Tareas",
+      description: "Utiliza los filtros para organizar y encontrar tareas específicas.",
+    },
+    {
+      target: "[data-tour='pending-column']",
+      title: "Columna Pendientes",
+      description: "Aquí se muestran las tareas pendientes. Puedes arrastrarlas a otras columnas.",
+    },
+    {
+      target: "[data-tour='progress-column']",
+      title: "Columna En Progreso",
+      description: "Aquí se muestran las tareas en progreso.",
+    },
+    {
+      target: "[data-tour='completed-column']",
+      title: "Columna Completadas",
+      description: "Aquí se muestran las tareas completadas.",
+    },
+    {
+      target: "[data-tour='task-card']",
+      title: "Tarjeta de Tarea",
+      description: "Esta es una tarjeta de tarea. Puedes editarla, archivarla o eliminarla.",
+    },
+    {
+      target: "[data-tour='edit-task-btn']",
+      title: "Editar Tarea",
+      description: "Haz clic aquí para editar los detalles de la tarea.",
+    },
+    {
+      target: "[data-tour='archive-task-btn']",
+      title: "Archivar Tarea",
+      description: "Haz clic aquí para archivar la tarea.",
+    },
+    {
+      target: "[data-tour='delete-task-btn']",
+      title: "Eliminar Tarea",
+      description: "Haz clic aquí para eliminar la tarea.",
+    },
+  ]
+
+  // Hook del tour guiado
+  const { isActive, currentStep, currentTourStep, nextStep, previousStep, endTour, skipTour, totalSteps } =
+    useGuidedTour()
+
   // Hooks principales
   const {
     tareas,
@@ -532,8 +585,6 @@ export default function TareasPage() {
     actualizarTarea,
     reordenarTareas,
     restaurarTarea,
-    añadirNota,
-    eliminarNota,
   } = useTasks()
   const { usuarios, usuariosTipo1, loading: profesionalesLoading, getNombreUsuario } = useProfessionals()
 
@@ -546,13 +597,11 @@ export default function TareasPage() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [activeColumn, setActiveColumn] = useState<keyof typeof ESTADOS_CONFIG | null>(null)
   const [filtroEstado, setFiltroEstado] = useState<"creadas" | "archivadas" | "eliminadas">("creadas")
-  const [tareaEnEdicionId, setTareaEnEdicionId] = useState<number | null>(null)
 
   // Estados para formularios
   const [nuevaTarea, setNuevaTarea] = useState({
     titulo: "",
     descripcion: "",
-    notas: "", // Añadir este campo
     prioridad: "media" as PrioridadTarea,
     asignadosA: [] as string[],
     fechaVencimiento: "",
@@ -570,18 +619,6 @@ export default function TareasPage() {
       },
     }),
   )
-
-  // Sincronizar tarea en edición con datos actualizados
-  useEffect(() => {
-    if (tareaEnEdicionId) {
-      const tareaActualizada = tareas.find((t) => t.id === tareaEnEdicionId)
-      if (tareaActualizada) {
-        setTareaEnEdicion(tareaActualizada)
-      } else {
-        setTareaEnEdicion(null)
-      }
-    }
-  }, [tareas, tareaEnEdicionId])
 
   // Función para encontrar la columna que contiene un elemento
   const findColumnForElement = (element: HTMLElement | null): keyof typeof ESTADOS_CONFIG | null => {
@@ -694,7 +731,6 @@ export default function TareasPage() {
       setNuevaTarea({
         titulo: "",
         descripcion: "",
-        notas: "", // Añadir este campo
         prioridad: "media",
         asignadosA: [],
         fechaVencimiento: "",
@@ -707,16 +743,15 @@ export default function TareasPage() {
   }
 
   const editarTarea = (tarea: Tarea) => {
-    setTareaEnEdicionId(tarea.id)
+    setTareaEnEdicion(tarea)
     setMostrarModalEdicion(true)
   }
 
   const guardarTareaEditada = async (tareaEditada: Tarea) => {
     try {
       await actualizarTarea(tareaEditada)
-      // No cerrar el modal aquí, dejar que el usuario lo cierre manualmente
-      // setMostrarModalEdicion(false)
-      // setTareaEnEdicion(null)
+      setMostrarModalEdicion(false)
+      setTareaEnEdicion(null)
     } catch (error) {
       // Error ya manejado en el hook
     }
@@ -755,7 +790,6 @@ export default function TareasPage() {
       !busqueda ||
       tarea.titulo.toLowerCase().includes(busqueda.toLowerCase()) ||
       tarea.descripcion.toLowerCase().includes(busqueda.toLowerCase()) ||
-      (tarea.notas && tarea.notas.some((nota) => nota.content.toLowerCase().includes(busqueda.toLowerCase()))) ||
       (tarea.asignadosA &&
         tarea.asignadosA.some((id) => getNombreUsuario(id).toLowerCase().includes(busqueda.toLowerCase())))
 
@@ -795,474 +829,355 @@ export default function TareasPage() {
   }
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCorners}
-      onDragStart={handleDragStart}
-      onDragOver={handleDragOver}
-      onDragEnd={handleDragEnd}
-    >
-      <div className="min-h-screen bg-gray-50">
-        {/* Header - Mejorado para móvil */}
-        <div className="bg-white border-b border-gray-200 px-3 sm:px-6 py-3">
-          <div className="flex flex-col gap-3">
-            {/* Primera fila: Título y botón volver */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => router.push("/dashboard")}
-                  className="flex items-center gap-2 p-2"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  <span className="hidden sm:inline">Volver</span>
-                </Button>
-                <h1 className="text-lg sm:text-2xl font-bold text-gray-900">
-                  <span className="hidden sm:inline">Gestión de Tareas</span>
-                  <span className="sm:hidden">Tareas</span>
-                </h1>
-              </div>
-              {/* Botón nueva tarea - Siempre visible */}
-              <Button onClick={() => setMostrarFormulario(true)} size="sm" className="flex items-center gap-2">
-                <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">Nueva Tarea</span>
-                <span className="sm:hidden">Nueva</span>
-              </Button>
-            </div>
-
-            {/* Segunda fila: Búsqueda y filtros */}
-            <div className="flex flex-col sm:flex-row gap-2">
-              {/* Barra de búsqueda */}
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                <Input
-                  placeholder="Buscar tareas..."
-                  value={busqueda}
-                  onChange={(e) => setBusqueda(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              {/* Botón filtros */}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setMostrarFiltros(!mostrarFiltros)}
-                className="flex items-center gap-2 whitespace-nowrap"
-              >
-                <Filter className="h-4 w-4" />
-                Filtros
-              </Button>
-            </div>
-          </div>
-
-          {/* Panel de filtros */}
-          {mostrarFiltros && (
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg border">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="space-y-2">
-                  <Label>Estado</Label>
-                  <Select value={filtroEstado} onValueChange={(value: any) => setFiltroEstado(value)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="creadas">Creadas</SelectItem>
-                      <SelectItem value="archivadas">Archivadas</SelectItem>
-                      <SelectItem value="eliminadas">Eliminadas</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Asignado a</Label>
-                  <Select
-                    value={filtroAsignado.toString()}
-                    onValueChange={(value) => setFiltroAsignado(value === "todos" ? "todos" : value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="todos">Todos</SelectItem>
-                      <SelectItem value="sin_asignar">Sin asignar</SelectItem>
-                      {usuariosTipo1.map((user) => (
-                        <SelectItem key={user.id} value={user.id}>
-                          {user.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Prioridad</Label>
-                  <Select value={filtroPrioridad} onValueChange={(value: any) => setFiltroPrioridad(value)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="todas">Todas</SelectItem>
-                      <SelectItem value="alta">Alta</SelectItem>
-                      <SelectItem value="media">Media</SelectItem>
-                      <SelectItem value="baja">Baja</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="flex items-end">
+    <>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="min-h-screen bg-gray-50">
+          {/* Header - Mejorado para móvil */}
+          <div className="bg-white border-b border-gray-200 px-3 sm:px-6 py-3">
+            <div className="flex flex-col gap-3">
+              {/* Primera fila: Título y botón volver */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
                   <Button
-                    variant="outline"
-                    onClick={() => {
-                      setFiltroEstado("creadas")
-                      setFiltroAsignado("todos")
-                      setFiltroPrioridad("todas")
-                      setBusqueda("")
-                    }}
-                    className="w-full"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => router.push("/dashboard")}
+                    className="flex items-center gap-2 p-2"
                   >
-                    Limpiar
+                    <ArrowLeft className="h-4 w-4" />
+                    <span className="hidden sm:inline">Volver</span>
                   </Button>
+                  <h1 className="text-lg sm:text-2xl font-bold text-gray-900">
+                    <span className="hidden sm:inline">Gestión de Tareas</span>
+                    <span className="sm:hidden">Tareas</span>
+                  </h1>
                 </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Contenido principal */}
-        <div className="p-3 sm:p-6">
-          {filtroEstado === "creadas" ? (
-            // Tablero Kanban - Mejorado para móvil
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-[calc(100vh-250px)]">
-              {(Object.keys(ESTADOS_CONFIG) as (keyof typeof ESTADOS_CONFIG)[]).map((estado) => {
-                const tareasEstado = getTareasPorEstado(estado)
-                return (
-                  <TaskColumn key={estado} estado={estado} tareas={tareasEstado}>
-                    <SortableContext
-                      items={tareasEstado.map((t) => t.id.toString())}
-                      strategy={verticalListSortingStrategy}
-                    >
-                      {tareasEstado.map((tarea) => (
-                        <DraggableTaskCard
-                          key={tarea.id}
-                          tarea={tarea}
-                          onEdit={editarTarea}
-                          onDelete={eliminarTarea}
-                          onArchive={archivarTarea}
-                          usuarios={usuariosTipo1}
-                          getNombreUsuario={getNombreUsuario}
-                        />
-                      ))}
-                    </SortableContext>
-                  </TaskColumn>
-                )
-              })}
-            </div>
-          ) : (
-            // Vista de lista para archivadas/eliminadas
-            <div className="space-y-4">
-              <div className="bg-white rounded-lg border p-4">
-                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                  {filtroEstado === "archivadas" ? (
-                    <>
-                      <Archive className="h-5 w-5 text-orange-600" />
-                      Archivadas ({tareasFiltradas.length})
-                    </>
-                  ) : (
-                    <>
-                      <Trash2 className="h-5 w-5 text-red-600" />
-                      Eliminadas ({tareasFiltradas.length})
-                    </>
-                  )}
-                </h3>
-
-                {tareasFiltradas.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <div className="mb-2">
-                      {filtroEstado === "archivadas" ? (
-                        <Archive className="h-12 w-12 mx-auto opacity-50" />
-                      ) : (
-                        <Trash2 className="h-12 w-12 mx-auto opacity-50" />
-                      )}
-                    </div>
-                    <p>No hay tareas {filtroEstado === "archivadas" ? "archivadas" : "eliminadas"}</p>
-                  </div>
-                ) : (
-                  <div className="grid gap-4">
-                    {tareasFiltradas.map((tarea) => (
-                      <Card key={tarea.id} className="p-4">
-                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                          <div className="flex-1 min-w-0">
-                            <h4 className="font-medium mb-2 break-words">{tarea.titulo}</h4>
-                            {tarea.descripcion && (
-                              <p className="text-sm text-gray-600 mb-3 break-words">{tarea.descripcion}</p>
-                            )}
-                            {tarea.notas && tarea.notas.length > 0 && (
-                              <div className="mb-3 p-2 bg-yellow-50 border-l-2 border-yellow-200 rounded-r">
-                                <div className="flex items-center gap-1 mb-2">
-                                  <MessageSquare className="h-3 w-3 text-gray-600" />
-                                  <span className="text-xs font-medium text-gray-600">
-                                    {tarea.notas.length} nota{tarea.notas.length !== 1 ? "s" : ""}
-                                  </span>
-                                </div>
-                                <div className="space-y-1">
-                                  {tarea.notas.slice(0, 2).map((nota) => (
-                                    <p key={nota.id} className="text-sm text-gray-700 break-words">
-                                      📝 {nota.content}
-                                    </p>
-                                  ))}
-                                  {tarea.notas.length > 2 && (
-                                    <p className="text-xs text-gray-500 italic">
-                                      ... y {tarea.notas.length - 2} nota{tarea.notas.length - 2 !== 1 ? "s" : ""} más
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                            <div className="flex flex-wrap gap-2 mb-3">
-                              <Badge
-                                variant="outline"
-                                className={`text-xs ${PRIORIDADES_CONFIG[tarea.prioridad].color}`}
-                              >
-                                {PRIORIDADES_CONFIG[tarea.prioridad].texto}
-                              </Badge>
-                              {filtroEstado === "archivadas" && (
-                                <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">
-                                  Archivada
-                                </Badge>
-                              )}
-                              {filtroEstado === "eliminadas" && (
-                                <Badge variant="outline" className="text-xs text-red-600 border-red-300">
-                                  Eliminada
-                                </Badge>
-                              )}
-                            </div>
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-xs text-gray-500">
-                              <div className="flex items-center gap-1">
-                                {tarea.asignadosA && tarea.asignadosA.length > 1 ? (
-                                  <Users className="h-3 w-3" />
-                                ) : (
-                                  <User className="h-3 w-3" />
-                                )}
-                                <span>
-                                  {tarea.asignadosA && tarea.asignadosA.length > 0
-                                    ? tarea.asignadosA.length === 1
-                                      ? getNombreUsuario(tarea.asignadosA[0])
-                                      : `${tarea.asignadosA.length} usuarios`
-                                    : "Sin asignar"}
-                                </span>
-                              </div>
-                              {tarea.fechaVencimiento && (
-                                <div className="flex items-center gap-1">
-                                  <Calendar className="h-3 w-3" />
-                                  <span>{tarea.fechaVencimiento.toLocaleDateString("es-ES")}</span>
-                                </div>
-                              )}
-                              <div className="flex items-center gap-1">
-                                <User className="h-3 w-3" />
-                                <span>Creado por: {getNombreUsuario(tarea.creadoPor)}</span>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
-                            <Button variant="ghost" size="sm" onClick={() => editarTarea(tarea)} title="Ver detalles">
-                              <Edit className="h-4 w-4 text-blue-600" />
-                            </Button>
-                            {filtroEstado === "archivadas" && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => restaurarTarea(tarea.id)}
-                                title="Restaurar"
-                              >
-                                <CheckCircle2 className="h-4 w-4 text-green-600" />
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      </Card>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Estadísticas - Mejoradas para móvil */}
-        <div className="px-3 sm:px-6 pb-6">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <Card>
-              <CardContent className="p-3 text-center">
-                <div className="text-xl font-bold text-gray-900">{tareasFiltradas.length}</div>
-                <div className="text-xs text-gray-600">
-                  {filtroEstado === "creadas" ? "Activas" : filtroEstado === "archivadas" ? "Archivadas" : "Eliminadas"}
-                </div>
-              </CardContent>
-            </Card>
-            {filtroEstado === "creadas" && (
-              <>
-                <Card>
-                  <CardContent className="p-3 text-center">
-                    <div className="text-xl font-bold text-blue-600">{getTareasPorEstado("en_progreso").length}</div>
-                    <div className="text-xs text-gray-600">En progreso</div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="p-3 text-center">
-                    <div className="text-xl font-bold text-green-600">{getTareasPorEstado("completada").length}</div>
-                    <div className="text-xs text-gray-600">Completadas</div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="p-3 text-center">
-                    <div className="text-xl font-bold text-gray-600">{getTareasPorEstado("pendiente").length}</div>
-                    <div className="text-xs text-gray-600">Pendientes</div>
-                  </CardContent>
-                </Card>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Modal de nueva tarea */}
-        <Dialog open={mostrarFormulario} onOpenChange={setMostrarFormulario}>
-          <DialogContent className="w-full max-w-7xl mx-auto max-h-[95vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Nueva Tarea</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="titulo">Título *</Label>
-                <Input
-                  id="titulo"
-                  value={nuevaTarea.titulo}
-                  onChange={(e) => setNuevaTarea({ ...nuevaTarea, titulo: e.target.value })}
-                  placeholder="Título de la tarea"
-                />
+                {/* Botón nueva tarea - Siempre visible */}
+                <Button
+                  onClick={() => setMostrarFormulario(true)}
+                  size="sm"
+                  className="flex items-center gap-2"
+                  data-tour="new-task-btn"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span className="hidden sm:inline">Nueva Tarea</span>
+                  <span className="sm:hidden">Nueva</span>
+                </Button>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="descripcion">Descripción</Label>
-                <Textarea
-                  id="descripcion"
-                  value={nuevaTarea.descripcion}
-                  onChange={(e) => setNuevaTarea({ ...nuevaTarea, descripcion: e.target.value })}
-                  placeholder="Descripción detallada"
-                  rows={3}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="notas">Notas</Label>
-                <Textarea
-                  id="notas"
-                  value={nuevaTarea.notas}
-                  onChange={(e) => setNuevaTarea({ ...nuevaTarea, notas: e.target.value })}
-                  placeholder="Notas adicionales o comentarios"
-                  rows={2}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Prioridad</Label>
-                  <Select
-                    value={nuevaTarea.prioridad}
-                    onValueChange={(value: PrioridadTarea) => setNuevaTarea({ ...nuevaTarea, prioridad: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="alta">Alta</SelectItem>
-                      <SelectItem value="media">Media</SelectItem>
-                      <SelectItem value="baja">Baja</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="fechaVencimiento">Fecha de vencimiento</Label>
+              {/* Segunda fila: Búsqueda y filtros */}
+              <div className="flex flex-col sm:flex-row gap-2">
+                {/* Barra de búsqueda */}
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                   <Input
-                    id="fechaVencimiento"
-                    type="date"
-                    value={nuevaTarea.fechaVencimiento}
-                    onChange={(e) => setNuevaTarea({ ...nuevaTarea, fechaVencimiento: e.target.value })}
+                    placeholder="Buscar tareas..."
+                    value={busqueda}
+                    onChange={(e) => setBusqueda(e.target.value)}
+                    className="pl-10"
                   />
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Asignar a</Label>
-                <MultiUserSelector
-                  selectedUsers={nuevaTarea.asignadosA}
-                  onSelectionChange={(users) => setNuevaTarea({ ...nuevaTarea, asignadosA: users })}
-                  usuarios={usuariosTipo1}
-                  placeholder="Seleccionar usuarios"
-                />
-              </div>
-
-              <div className="flex flex-col sm:flex-row justify-end gap-2">
-                <Button variant="outline" onClick={() => setMostrarFormulario(false)} className="w-full sm:w-auto">
-                  Cancelar
-                </Button>
-                <Button onClick={handleCrearTarea} className="w-full sm:w-auto">
-                  Crear Tarea
+                {/* Botón filtros */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setMostrarFiltros(!mostrarFiltros)}
+                  className="flex items-center gap-2 whitespace-nowrap"
+                  data-tour="filters-btn"
+                >
+                  <Filter className="h-4 w-4" />
+                  Filtros
                 </Button>
               </div>
             </div>
-          </DialogContent>
-        </Dialog>
 
-        {/* Modal de edición de tarea */}
-        <Dialog
-          open={mostrarModalEdicion}
-          onOpenChange={() => {
-            setMostrarModalEdicion(false)
-            setTareaEnEdicionId(null)
-          }}
-        >
-          <DialogContent className="max-w-7xl max-h-[95vh] overflow-y-auto mx-4">
-            <DialogHeader>
-              <DialogTitle>Editar Tarea</DialogTitle>
-            </DialogHeader>
-            {tareaEnEdicion && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Panel de filtros */}
+            {mostrarFiltros && (
+              <div className="mt-4 p-4 bg-gray-50 rounded-lg border">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="titulo">Título</Label>
-                    <Input
-                      id="titulo"
-                      value={tareaEnEdicion.titulo}
-                      onChange={(e) => setTareaEnEdicion({ ...tareaEnEdicion, titulo: e.target.value })}
-                    />
+                    <Label>Estado</Label>
+                    <Select value={filtroEstado} onValueChange={(value: any) => setFiltroEstado(value)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="creadas">Creadas</SelectItem>
+                        <SelectItem value="archivadas">Archivadas</SelectItem>
+                        <SelectItem value="eliminadas">Eliminadas</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Estado</Label>
+                    <Label>Asignado a</Label>
                     <Select
-                      value={tareaEnEdicion.estado}
-                      onValueChange={(value) => setTareaEnEdicion({ ...tareaEnEdicion, estado: value as EstadoTarea })}
+                      value={filtroAsignado.toString()}
+                      onValueChange={(value) => setFiltroAsignado(value === "todos" ? "todos" : value)}
                     >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="pendiente">Pendiente</SelectItem>
-                        <SelectItem value="en_progreso">En Progreso</SelectItem>
-                        <SelectItem value="completada">Completada</SelectItem>
+                        <SelectItem value="todos">Todos</SelectItem>
+                        <SelectItem value="sin_asignar">Sin asignar</SelectItem>
+                        {usuariosTipo1.map((user) => (
+                          <SelectItem key={user.id} value={user.id}>
+                            {user.name}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
 
                   <div className="space-y-2">
                     <Label>Prioridad</Label>
+                    <Select value={filtroPrioridad} onValueChange={(value: any) => setFiltroPrioridad(value)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="todas">Todas</SelectItem>
+                        <SelectItem value="alta">Alta</SelectItem>
+                        <SelectItem value="media">Media</SelectItem>
+                        <SelectItem value="baja">Baja</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex items-end">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setFiltroEstado("creadas")
+                        setFiltroAsignado("todos")
+                        setFiltroPrioridad("todas")
+                        setBusqueda("")
+                      }}
+                      className="w-full"
+                    >
+                      Limpiar
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Contenido principal */}
+          <div className="p-3 sm:p-6">
+            {filtroEstado === "creadas" ? (
+              // Tablero Kanban - Mejorado para móvil
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-[calc(100vh-250px)]">
+                {(Object.keys(ESTADOS_CONFIG) as (keyof typeof ESTADOS_CONFIG)[]).map((estado) => {
+                  const tareasEstado = getTareasPorEstado(estado)
+                  return (
+                    <TaskColumn key={estado} estado={estado} tareas={tareasEstado}>
+                      <SortableContext
+                        items={tareasEstado.map((t) => t.id.toString())}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        {tareasEstado.map((tarea) => (
+                          <DraggableTaskCard
+                            key={tarea.id}
+                            tarea={tarea}
+                            onEdit={editarTarea}
+                            onDelete={eliminarTarea}
+                            onArchive={archivarTarea}
+                            usuarios={usuariosTipo1}
+                            getNombreUsuario={getNombreUsuario}
+                          />
+                        ))}
+                      </SortableContext>
+                    </TaskColumn>
+                  )
+                })}
+              </div>
+            ) : (
+              // Vista de lista para archivadas/eliminadas
+              <div className="space-y-4">
+                <div className="bg-white rounded-lg border p-4">
+                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    {filtroEstado === "archivadas" ? (
+                      <>
+                        <Archive className="h-5 w-5 text-orange-600" />
+                        Archivadas ({tareasFiltradas.length})
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="h-5 w-5 text-red-600" />
+                        Eliminadas ({tareasFiltradas.length})
+                      </>
+                    )}
+                  </h3>
+
+                  {tareasFiltradas.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      <div className="mb-2">
+                        {filtroEstado === "archivadas" ? (
+                          <Archive className="h-12 w-12 mx-auto opacity-50" />
+                        ) : (
+                          <Trash2 className="h-12 w-12 mx-auto opacity-50" />
+                        )}
+                      </div>
+                      <p>No hay tareas {filtroEstado === "archivadas" ? "archivadas" : "eliminadas"}</p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-4">
+                      {tareasFiltradas.map((tarea) => (
+                        <Card key={tarea.id} className="p-4">
+                          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <h4 className="font-medium mb-2 break-words">{tarea.titulo}</h4>
+                              {tarea.descripcion && (
+                                <p className="text-sm text-gray-600 mb-3 break-words">{tarea.descripcion}</p>
+                              )}
+                              <div className="flex flex-wrap gap-2 mb-3">
+                                <Badge
+                                  variant="outline"
+                                  className={`text-xs ${PRIORIDADES_CONFIG[tarea.prioridad].color}`}
+                                >
+                                  {PRIORIDADES_CONFIG[tarea.prioridad].texto}
+                                </Badge>
+                                {filtroEstado === "archivadas" && (
+                                  <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">
+                                    Archivada
+                                  </Badge>
+                                )}
+                                {filtroEstado === "eliminadas" && (
+                                  <Badge variant="outline" className="text-xs text-red-600 border-red-300">
+                                    Eliminada
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-xs text-gray-500">
+                                <div className="flex items-center gap-1">
+                                  {tarea.asignadosA && tarea.asignadosA.length > 1 ? (
+                                    <Users className="h-3 w-3" />
+                                  ) : (
+                                    <User className="h-3 w-3" />
+                                  )}
+                                  <span>
+                                    {tarea.asignadosA && tarea.asignadosA.length > 0
+                                      ? tarea.asignadosA.length === 1
+                                        ? getNombreUsuario(tarea.asignadosA[0])
+                                        : `${tarea.asignadosA.length} usuarios`
+                                      : "Sin asignar"}
+                                  </span>
+                                </div>
+                                {tarea.fechaVencimiento && (
+                                  <div className="flex items-center gap-1">
+                                    <Calendar className="h-3 w-3" />
+                                    <span>{tarea.fechaVencimiento.toLocaleDateString("es-ES")}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <Button variant="ghost" size="sm" onClick={() => editarTarea(tarea)} title="Ver detalles">
+                                <Edit className="h-4 w-4 text-blue-600" />
+                              </Button>
+                              {filtroEstado === "archivadas" && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => restaurarTarea(tarea.id)}
+                                  title="Restaurar"
+                                >
+                                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Estadísticas - Mejoradas para móvil */}
+          <div className="px-3 sm:px-6 pb-6">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <div className="text-xl font-bold text-gray-900">{tareasFiltradas.length}</div>
+                  <div className="text-xs text-gray-600">
+                    {filtroEstado === "creadas"
+                      ? "Activas"
+                      : filtroEstado === "archivadas"
+                        ? "Archivadas"
+                        : "Eliminadas"}
+                  </div>
+                </CardContent>
+              </Card>
+              {filtroEstado === "creadas" && (
+                <>
+                  <Card>
+                    <CardContent className="p-3 text-center">
+                      <div className="text-xl font-bold text-blue-600">{getTareasPorEstado("en_progreso").length}</div>
+                      <div className="text-xs text-gray-600">En progreso</div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-3 text-center">
+                      <div className="text-xl font-bold text-green-600">{getTareasPorEstado("completada").length}</div>
+                      <div className="text-xs text-gray-600">Completadas</div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-3 text-center">
+                      <div className="text-xl font-bold text-gray-600">{getTareasPorEstado("pendiente").length}</div>
+                      <div className="text-xs text-gray-600">Pendientes</div>
+                    </CardContent>
+                  </Card>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Modal de nueva tarea */}
+          <Dialog open={mostrarFormulario} onOpenChange={setMostrarFormulario}>
+            <DialogContent className="w-full max-w-7xl mx-auto max-h-[95vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Nueva Tarea</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="titulo">Título *</Label>
+                  <Input
+                    id="titulo"
+                    value={nuevaTarea.titulo}
+                    onChange={(e) => setNuevaTarea({ ...nuevaTarea, titulo: e.target.value })}
+                    placeholder="Título de la tarea"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="descripcion">Descripción</Label>
+                  <Textarea
+                    id="descripcion"
+                    value={nuevaTarea.descripcion}
+                    onChange={(e) => setNuevaTarea({ ...nuevaTarea, descripcion: e.target.value })}
+                    placeholder="Descripción detallada"
+                    rows={3}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Prioridad</Label>
                     <Select
-                      value={tareaEnEdicion.prioridad}
-                      onValueChange={(value: PrioridadTarea) =>
-                        setTareaEnEdicion({ ...tareaEnEdicion, prioridad: value })
-                      }
+                      value={nuevaTarea.prioridad}
+                      onValueChange={(value: PrioridadTarea) => setNuevaTarea({ ...nuevaTarea, prioridad: value })}
                     >
                       <SelectTrigger>
                         <SelectValue />
@@ -1275,18 +1190,13 @@ export default function TareasPage() {
                     </Select>
                   </div>
 
-                  <div className="space-y-2 md:col-span-2">
+                  <div className="space-y-2">
                     <Label htmlFor="fechaVencimiento">Fecha de vencimiento</Label>
                     <Input
                       id="fechaVencimiento"
                       type="date"
-                      value={tareaEnEdicion.fechaVencimiento?.toISOString().split("T")[0] || ""}
-                      onChange={(e) =>
-                        setTareaEnEdicion({
-                          ...tareaEnEdicion,
-                          fechaVencimiento: e.target.value ? new Date(e.target.value) : undefined,
-                        })
-                      }
+                      value={nuevaTarea.fechaVencimiento}
+                      onChange={(e) => setNuevaTarea({ ...nuevaTarea, fechaVencimiento: e.target.value })}
                     />
                   </div>
                 </div>
@@ -1294,96 +1204,189 @@ export default function TareasPage() {
                 <div className="space-y-2">
                   <Label>Asignar a</Label>
                   <MultiUserSelector
-                    selectedUsers={tareaEnEdicion.asignadosA || []}
-                    onSelectionChange={(users) => setTareaEnEdicion({ ...tareaEnEdicion, asignadosA: users })}
+                    selectedUsers={nuevaTarea.asignadosA}
+                    onSelectionChange={(users) => setNuevaTarea({ ...nuevaTarea, asignadosA: users })}
                     usuarios={usuariosTipo1}
                     placeholder="Seleccionar usuarios"
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="descripcion">Descripción</Label>
-                  <Textarea
-                    id="descripcion"
-                    value={tareaEnEdicion.descripcion}
-                    onChange={(e) => setTareaEnEdicion({ ...tareaEnEdicion, descripcion: e.target.value })}
-                    rows={4}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <TaskNotes
-                    notas={tareaEnEdicion.notas}
-                    taskId={tareaEnEdicion.id}
-                    onAddNote={añadirNota}
-                    onDeleteNote={eliminarNota}
-                    getNombreUsuario={getNombreUsuario}
-                    usuarios={usuariosTipo1}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Etiquetas</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {tareaEnEdicion.etiquetas.map((etiqueta, index) => (
-                      <Badge key={index} variant="secondary">
-                        {etiqueta}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
-                  <div className="flex items-center gap-2">
-                    <Calendar className="h-4 w-4" />
-                    <span>Creada: {tareaEnEdicion.fechaCreacion.toLocaleDateString("es-ES")}</span>
-                  </div>
-                  {tareaEnEdicion.fechaCompletada && (
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-4 w-4" />
-                      <span>Completada: {tareaEnEdicion.fechaCompletada.toLocaleDateString("es-ES")}</span>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <User className="h-4 w-4" />
-                    <span>Creada por: {getNombreUsuario(tareaEnEdicion.creadoPor)}</span>
-                  </div>
-                </div>
-
-                <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setMostrarModalEdicion(false)
-                      setTareaEnEdicionId(null)
-                    }}
-                    className="w-full sm:w-auto"
-                  >
+                <div className="flex flex-col sm:flex-row justify-end gap-2">
+                  <Button variant="outline" onClick={() => setMostrarFormulario(false)} className="w-full sm:w-auto">
                     Cancelar
                   </Button>
-                  <Button onClick={() => guardarTareaEditada(tareaEnEdicion)} className="w-full sm:w-auto">
-                    Guardar Cambios
+                  <Button onClick={handleCrearTarea} className="w-full sm:w-auto">
+                    Crear Tarea
                   </Button>
                 </div>
               </div>
-            )}
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
 
-        {/* Overlay para mostrar la tarea siendo arrastrada */}
-        <DragOverlay>
-          {tareaActiva ? (
-            <Card className="bg-white shadow-lg rotate-3 opacity-90">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2">
-                  <GripVertical className="h-4 w-4 text-gray-400" />
-                  <span className="font-medium text-sm">{tareaActiva.titulo}</span>
+          {/* Modal de edición de tarea */}
+          <Dialog
+            open={mostrarModalEdicion}
+            onOpenChange={() => {
+              setMostrarModalEdicion(false)
+              setTareaEnEdicion(null)
+            }}
+          >
+            <DialogContent className="max-w-7xl max-h-[95vh] overflow-y-auto mx-4">
+              <DialogHeader>
+                <DialogTitle>Editar Tarea</DialogTitle>
+              </DialogHeader>
+              {tareaEnEdicion && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="titulo">Título</Label>
+                      <Input
+                        id="titulo"
+                        value={tareaEnEdicion.titulo}
+                        onChange={(e) => setTareaEnEdicion({ ...tareaEnEdicion, titulo: e.target.value })}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Estado</Label>
+                      <Select
+                        value={tareaEnEdicion.estado}
+                        onValueChange={(value) =>
+                          setTareaEnEdicion({ ...tareaEnEdicion, estado: value as EstadoTarea })
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pendiente">Pendiente</SelectItem>
+                          <SelectItem value="en_progreso">En Progreso</SelectItem>
+                          <SelectItem value="completada">Completada</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Prioridad</Label>
+                      <Select
+                        value={tareaEnEdicion.prioridad}
+                        onValueChange={(value: PrioridadTarea) =>
+                          setTareaEnEdicion({ ...tareaEnEdicion, prioridad: value })
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="alta">Alta</SelectItem>
+                          <SelectItem value="media">Media</SelectItem>
+                          <SelectItem value="baja">Baja</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2 md:col-span-2">
+                      <Label htmlFor="fechaVencimiento">Fecha de vencimiento</Label>
+                      <Input
+                        id="fechaVencimiento"
+                        type="date"
+                        value={tareaEnEdicion.fechaVencimiento?.toISOString().split("T")[0] || ""}
+                        onChange={(e) =>
+                          setTareaEnEdicion({
+                            ...tareaEnEdicion,
+                            fechaVencimiento: e.target.value ? new Date(e.target.value) : undefined,
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Asignar a</Label>
+                    <MultiUserSelector
+                      selectedUsers={tareaEnEdicion.asignadosA || []}
+                      onSelectionChange={(users) => setTareaEnEdicion({ ...tareaEnEdicion, asignadosA: users })}
+                      usuarios={usuariosTipo1}
+                      placeholder="Seleccionar usuarios"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="descripcion">Descripción</Label>
+                    <Textarea
+                      id="descripcion"
+                      value={tareaEnEdicion.descripcion}
+                      onChange={(e) => setTareaEnEdicion({ ...tareaEnEdicion, descripcion: e.target.value })}
+                      rows={4}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Etiquetas</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {tareaEnEdicion.etiquetas.map((etiqueta, index) => (
+                        <Badge key={index} variant="secondary">
+                          {etiqueta}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="h-4 w-4" />
+                      <span>Creada: {tareaEnEdicion.fechaCreacion.toLocaleDateString("es-ES")}</span>
+                    </div>
+                    {tareaEnEdicion.fechaCompletada && (
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4" />
+                        <span>Completada: {tareaEnEdicion.fechaCompletada.toLocaleDateString("es-ES")}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <User className="h-4 w-4" />
+                      <span>Creada por: {tareaEnEdicion.creadoPor}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setMostrarModalEdicion(false)
+                        setTareaEnEdicion(null)
+                      }}
+                      className="w-full sm:w-auto"
+                    >
+                      Cancelar
+                    </Button>
+                    <Button onClick={() => guardarTareaEditada(tareaEnEdicion)} className="w-full sm:w-auto">
+                      Guardar Cambios
+                    </Button>
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
-          ) : null}
-        </DragOverlay>
-      </div>
-    </DndContext>
+              )}
+            </DialogContent>
+          </Dialog>
+
+          {/* Overlay para mostrar la tarea siendo arrastrada */}
+          <DragOverlay>
+            {tareaActiva ? (
+              <Card className="bg-white shadow-lg rotate-3 opacity-90">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2">
+                    <GripVertical className="h-4 w-4 text-gray-400" />
+                    <span className="font-medium text-sm">{tareaActiva.titulo}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null}
+          </DragOverlay>
+        </div>
+      </DndContext>
+
+      {/* Overlay del tour guiado */}
+      <InteractiveTourOverlay steps={tourSteps} onClose={endTour} onFinish={endTour} isActive={isActive} />
+    </>
   )
 }

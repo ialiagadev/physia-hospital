@@ -13,6 +13,8 @@ import { VacationCalendarView } from "@/components/time-tracking/vacation-calend
 import { useTimeTracking } from "@/hooks/use-time-tracking"
 import { useVacationRequests } from "@/hooks/use-vacation-requests"
 import { useToast } from "@/hooks/use-toast"
+import { useGuidedTour } from "@/hooks/useGuidedTour"
+import InteractiveTourOverlay from "@/components/tour/InteractiveTourOverlay"
 import { Clock, Users, Calendar, Shield, Plane, CalendarDays } from "lucide-react"
 import { format, parseISO } from "date-fns"
 import { es } from "date-fns/locale"
@@ -20,6 +22,9 @@ import { es } from "date-fns/locale"
 export default function FichajePage() {
   const { userProfile, isAdmin, loading: userLoading, getWorkDays, getOrganizationUsers } = useTimeTracking()
   const { toast } = useToast()
+
+  // Hook para el tour interactivo
+  const { isActive, tourSteps, nextStep, previousStep, endTour, skipTour } = useGuidedTour()
 
   // Hook para obtener solicitudes de vacaciones y calcular badge
   const { requests } = useVacationRequests(
@@ -280,7 +285,7 @@ export default function FichajePage() {
   return (
     <div className="container mx-auto p-6 max-w-6xl">
       {/* Header */}
-      <div className="flex justify-between items-center mb-8">
+      <div className="flex justify-between items-center mb-8" data-tour="time-tracking-header">
         <div>
           <h1 className="text-2xl font-semibold">Control Horario</h1>
           <div className="flex items-center gap-2 mt-1">
@@ -296,7 +301,7 @@ export default function FichajePage() {
       </div>
 
       <Tabs defaultValue="fichaje" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4 h-10">
+        <TabsList className="grid w-full grid-cols-4 h-10" data-tour="time-tracking-tabs">
           <TabsTrigger value="fichaje" className="flex items-center gap-2 text-sm">
             <Clock className="h-4 w-4" />
             Fichar
@@ -324,7 +329,7 @@ export default function FichajePage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Selector de usuario (solo para admins) */}
             {isAdmin && (
-              <Card className="border-0 shadow-sm">
+              <Card className="border-0 shadow-sm" data-tour="user-selector">
                 <CardHeader className="pb-4">
                   <CardTitle className="text-base font-medium flex items-center gap-2">
                     <Users className="h-4 w-4" />
@@ -343,7 +348,7 @@ export default function FichajePage() {
             )}
 
             {/* Reloj de fichaje */}
-            <div className={isAdmin ? "lg:col-span-2" : "lg:col-span-3"}>
+            <div className={isAdmin ? "lg:col-span-2" : "lg:col-span-3"} data-tour="time-clock">
               <TimeClockContainer selectedUser={selectedUser} onClockSuccess={refreshWorkSessions} />
             </div>
           </div>
@@ -362,27 +367,34 @@ export default function FichajePage() {
           )}
 
           {/* Componente de filtros */}
-          <WorkSessionsFilters
-            startDate={startDate}
-            endDate={endDate}
-            onFiltersChange={handleFiltersChange}
-            onClearFilters={handleClearFilters}
-          />
+          <div data-tour="date-filters">
+            <WorkSessionsFilters
+              startDate={startDate}
+              endDate={endDate}
+              onFiltersChange={handleFiltersChange}
+              onClearFilters={handleClearFilters}
+            />
+          </div>
 
-          <WorkSessionsTable
-            sessions={workSessions}
-            loading={loading}
-            totalRecords={totalRecords}
-            currentPage={currentPage}
-            totalPages={totalPages}
-            pageSize={pageSize}
-            onPageChange={handlePageChange}
-            onExport={handleExportData}
-            onRefresh={refreshWorkSessions}
-          />
+          {/* Componente de acciones de tabla */}
+          <div data-tour="work-sessions-table">
+            <div data-tour="table-actions">
+              <WorkSessionsTable
+                sessions={workSessions}
+                loading={loading}
+                totalRecords={totalRecords}
+                currentPage={currentPage}
+                totalPages={totalPages}
+                pageSize={pageSize}
+                onPageChange={handlePageChange}
+                onExport={handleExportData}
+                onRefresh={refreshWorkSessions}
+              />
+            </div>
+          </div>
         </TabsContent>
 
-        <TabsContent value="vacaciones">
+        <TabsContent value="vacaciones" data-tour="vacation-requests">
           <GeneralRequestsSection
             userProfile={userProfile}
             isAdmin={isAdmin}
@@ -391,7 +403,7 @@ export default function FichajePage() {
           />
         </TabsContent>
 
-        <TabsContent value="calendario">
+        <TabsContent value="calendario" data-tour="vacation-calendar">
           <VacationCalendarView
             userProfile={userProfile}
             isAdmin={isAdmin}
@@ -400,6 +412,9 @@ export default function FichajePage() {
           />
         </TabsContent>
       </Tabs>
+
+      {/* Tour Overlay */}
+      <InteractiveTourOverlay steps={tourSteps} onClose={endTour} onFinish={endTour} isActive={isActive} />
     </div>
   )
 }

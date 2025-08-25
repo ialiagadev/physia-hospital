@@ -4,12 +4,15 @@ import { useEffect, useState } from "react"
 import { useAuth } from "@/app/contexts/auth-context"
 import { useRouter } from "next/navigation"
 import MedicalCalendarSystem from "@/components/dashboard/medical-calendar-system"
-import Loading from "@/components/loading"
+import { useGuidedTour } from "@/hooks/useGuidedTour"
+import InteractiveTourOverlay from "@/components/tour/InteractiveTourOverlay"
 
 export default function Page() {
   const [mounted, setMounted] = useState(false)
   const { user, userProfile, isLoading } = useAuth()
   const router = useRouter()
+
+  const { isActive, tourSteps, endTour } = useGuidedTour()
 
   useEffect(() => {
     setMounted(true)
@@ -24,7 +27,11 @@ export default function Page() {
   if (!mounted || isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <Loading size="lg" text="Cargando..." />
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <h2 className="text-xl font-semibold mb-2">Cargando...</h2>
+          <p className="text-gray-600">Configurando tu calendario médico</p>
+        </div>
       </div>
     )
   }
@@ -57,5 +64,11 @@ export default function Page() {
     )
   }
 
-  return <MedicalCalendarSystem />
+  return (
+    <>
+      <MedicalCalendarSystem />
+
+      <InteractiveTourOverlay steps={tourSteps} onClose={endTour} onFinish={endTour} isActive={isActive} />
+    </>
+  )
 }
