@@ -1,24 +1,17 @@
 "use client"
 import { useState, useEffect } from "react"
-import {
-  Plus,
-  Eye,
-  Edit,
-  Trash2,
-  ChevronLeft,
-  ChevronRight,
-  Search,
-  Phone,
-  MessageCircle,
-  Facebook,
-  Users,
-} from "lucide-react"
+import type React from "react"
+
+import { Plus, Trash2, ChevronLeft, ChevronRight, Search, MessageCircle, Facebook, Users } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { supabase } from "@/lib/supabase/client"
 import { useAuth } from "@/app/contexts/auth-context"
 import Link from "next/link"
@@ -222,21 +215,47 @@ function ActionButtons({
   id,
   onRegister,
   onViewAssignments,
+  facebookUrl,
 }: {
   status: number
   id: number
   onRegister: (id: number) => void
   onViewAssignments: (id: number) => void
+  facebookUrl?: string
 }) {
-  if (status === 0) {
-    return (
-      <div className="flex gap-2">
-        <Button size="sm" onClick={() => onRegister(id)} className="bg-blue-600 hover:bg-blue-700 text-white">
-          <Phone className="h-3 w-3 mr-1" />
-          Registrar
-        </Button>
-      </div>
-    )
+  const [isActivating, setIsActivating] = useState(false)
+
+  const handleFacebookClick = () => {
+    if (facebookUrl) {
+      window.open(facebookUrl, "_blank")
+    }
+  }
+
+  const handleActivate = async () => {
+    setIsActivating(true)
+    try {
+      const response = await fetch("/api/aisensy/update-webhook", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ wabaId: id }),
+      })
+
+      const result = await response.json()
+
+      if (response.ok) {
+        console.log("Webhook actualizado exitosamente:", result)
+        // Aquí podrías agregar una notificación de éxito
+      } else {
+        console.error("Error al actualizar webhook:", result.error)
+        // Aquí podrías agregar una notificación de error
+      }
+    } catch (error) {
+      console.error("Error en la llamada API:", error)
+    } finally {
+      setIsActivating(false)
+    }
   }
 
   return (
@@ -249,13 +268,21 @@ function ActionButtons({
       >
         <Users className="h-4 w-4" />
       </Button>
-      <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-blue-50 hover:text-blue-600">
-        <Eye className="h-4 w-4" />
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-8 px-3 hover:bg-green-50 hover:text-green-600 disabled:opacity-50"
+        onClick={handleActivate}
+        disabled={isActivating}
+      >
+        {isActivating ? "Activando..." : "Activar"}
       </Button>
-      <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-amber-50 hover:text-amber-600">
-        <Edit className="h-4 w-4" />
-      </Button>
-      <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-blue-50 hover:text-blue-600">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-8 w-8 p-0 hover:bg-blue-50 hover:text-blue-600"
+        onClick={handleFacebookClick}
+      >
         <Facebook className="h-4 w-4" />
       </Button>
       <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600">
@@ -315,6 +342,7 @@ function TableRowComponent({
           id={item.id}
           onRegister={onRegister}
           onViewAssignments={onViewAssignments}
+          facebookUrl={item.url_register_facebook}
         />
       </td>
     </tr>
@@ -339,33 +367,252 @@ function AddNumberModal({
     prefix: "+34",
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [aisensyStatus, setAisensyStatus] = useState<string>("")
+
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {}
+
+    if (!formData.nombre.trim()) {
+      newErrors.nombre = "El nombre es obligatorio"
+    }
+
+    if (!formData.numero.trim()) {
+      newErrors.numero = "El número es obligatorio"
+    } else if (!/^\d{6,15}$/.test(formData.numero.replace(/\s/g, ""))) {
+      newErrors.numero = "El número debe tener entre 6 y 15 dígitos"
+    }
+
+    if (!formData.descripcion.trim()) {
+      newErrors.descripcion = "La descripción es obligatoria"
+    }
+
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (!validateForm()) {
+      return
+    }
+
+    if (!canalOrganizationId) {
+      console.error("No canal organization ID available")
+      return
+    }
+
+    setIsSubmitting(true)
+    setAisensyStatus("Guardando número...")
+
+    try {
+      const { data, error } = await supabase
+        .from("waba")
+        .insert({
+          nombre: formData.nombre,
+          numero: formData.prefix + formData.numero,
+          descripcion: formData.descripcion,
+          id_canales_organization: canalOrganizationId,
+          estado: 0, // Initially not registered
+          fecha_alta: new Date().toISOString(),
+        })
+        .select()
+        .single()
+
+      if (error) {
+        console.error("Error creating WABA:", error)
+        setAisensyStatus("Error al guardar el número")
+        return
+      }
+
+      setAisensyStatus("Registrando en Aisensy...")
+
+      try {
+        const response = await fetch("/api/aisensy/register-number", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            wabaId: data.id,
+            phoneNumber: formData.prefix + formData.numero,
+            name: formData.nombre,
+            description: formData.descripcion,
+          }),
+        })
+
+        const aisensyResult = await response.json()
+
+        if (response.ok) {
+          setAisensyStatus("¡Número registrado exitosamente!")
+          console.log("Aisensy registration successful:", aisensyResult)
+
+          const updatedData = {
+            ...data,
+            aisensy_status: aisensyResult.status || "registered",
+            facebook_url: aisensyResult.facebook_url || null,
+          }
+
+          onAdd(updatedData)
+        } else {
+          console.error("Aisensy registration failed:", aisensyResult)
+          setAisensyStatus(`Error en Aisensy: ${aisensyResult.error || "Error desconocido"}`)
+
+          onAdd({
+            ...data,
+            aisensy_status: "failed",
+            aisensy_error: aisensyResult.error,
+          })
+        }
+      } catch (aisensyError) {
+        console.error("Error calling Aisensy API:", aisensyError)
+        setAisensyStatus("Error de conexión con Aisensy")
+
+        onAdd({
+          ...data,
+          aisensy_status: "error",
+          aisensy_error: "Error de conexión",
+        })
+      }
+
+      setTimeout(() => {
+        setFormData({
+          nombre: "",
+          numero: "",
+          descripcion: "",
+          prefix: "+34",
+        })
+        setErrors({})
+        setAisensyStatus("")
+        onClose()
+      }, 2000)
+    } catch (err) {
+      console.error("Unexpected error:", err)
+      setAisensyStatus("Error inesperado")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleClose = () => {
+    setFormData({
+      nombre: "",
+      numero: "",
+      descripcion: "",
+      prefix: "+34",
+    })
+    setErrors({})
+    setAisensyStatus("")
+    onClose()
+  }
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Asignar Usuarios</DialogTitle>
-          <p className="text-sm text-muted-foreground">Selecciona los usuarios para: {""}</p>
+          <DialogTitle>Añadir Nuevo Número</DialogTitle>
+          <p className="text-sm text-muted-foreground">Configura un nuevo número de WhatsApp para tu organización</p>
         </DialogHeader>
 
-        <div className="space-y-4">
-          {false ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-4 border-gray-200 border-t-blue-600"></div>
-            </div>
-          ) : (
-            <div className="space-y-2 max-h-60 overflow-y-auto">{[]}</div>
-          )}
-        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="nombre">Nombre identificativo *</Label>
+            <Input
+              id="nombre"
+              placeholder="Ej: Soporte Principal, Ventas, etc."
+              value={formData.nombre}
+              onChange={(e) => setFormData((prev) => ({ ...prev, nombre: e.target.value }))}
+              className={errors.nombre ? "border-red-500" : ""}
+            />
+            {errors.nombre && <p className="text-sm text-red-500">{errors.nombre}</p>}
+          </div>
 
-        <div className="flex gap-2 pt-4">
-          <Button type="button" variant="outline" onClick={onClose} className="flex-1 bg-transparent" disabled={false}>
-            Cancelar
-          </Button>
-          <Button onClick={() => {}} disabled={false || false} className="flex-1">
-            {false ? "Guardando..." : "Guardar"}
-          </Button>
-        </div>
+          <div className="space-y-2">
+            <Label htmlFor="numero">Número de teléfono *</Label>
+            <div className="flex gap-2">
+              <Select
+                value={formData.prefix}
+                onValueChange={(value) => setFormData((prev) => ({ ...prev, prefix: value }))}
+              >
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {countryPrefixes.map((country) => (
+                    <SelectItem key={country.code} value={country.prefix}>
+                      <div className="flex items-center gap-2">
+                        <span>{country.flag}</span>
+                        <span>{country.prefix}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                id="numero"
+                placeholder="123456789"
+                value={formData.numero}
+                onChange={(e) => {
+                  const value = e.target.value.replace(/[^\d\s]/g, "")
+                  setFormData((prev) => ({ ...prev, numero: value }))
+                }}
+                className={`flex-1 ${errors.numero ? "border-red-500" : ""}`}
+              />
+            </div>
+            {errors.numero && <p className="text-sm text-red-500">{errors.numero}</p>}
+            <p className="text-xs text-muted-foreground">Introduce solo el número sin el prefijo del país</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="descripcion">Descripción *</Label>
+            <Textarea
+              id="descripcion"
+              placeholder="Describe el propósito de este número..."
+              value={formData.descripcion}
+              onChange={(e) => setFormData((prev) => ({ ...prev, descripcion: e.target.value }))}
+              className={`resize-none ${errors.descripcion ? "border-red-500" : ""}`}
+              rows={3}
+            />
+            {errors.descripcion && <p className="text-sm text-red-500">{errors.descripcion}</p>}
+          </div>
+
+          {aisensyStatus && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+              <div className="flex items-center gap-2">
+                {isSubmitting && (
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent" />
+                )}
+                <p className="text-sm text-blue-700">{aisensyStatus}</p>
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleClose}
+              className="flex-1 bg-transparent"
+              disabled={isSubmitting}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={isSubmitting} className="flex-1 bg-green-600 hover:bg-green-700">
+              {isSubmitting ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2" />
+                  {aisensyStatus || "Procesando..."}
+                </>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Añadir Número
+                </>
+              )}
+            </Button>
+          </div>
+        </form>
       </DialogContent>
     </Dialog>
   )
@@ -434,7 +681,6 @@ export default function CanalPage({ params }: PageProps) {
           return
         }
 
-        // Obtener información del canal
         const { data: canalData, error: canalError } = await supabase
           .from("canales")
           .select("*")
@@ -448,18 +694,43 @@ export default function CanalPage({ params }: PageProps) {
 
         setCanal(canalData)
 
-        // Obtener el canal_organization_id
         const { data: canalOrgs, error: canalOrgError } = await supabase
           .from("canales_organizations")
           .select("id")
           .eq("id_canal", canalId)
           .eq("id_organization", userProfile.organization_id)
 
-        if (!canalOrgError && canalOrgs && canalOrgs.length > 0) {
+        // Si no existe el canal_organization, crearlo
+        if (!canalOrgError && (!canalOrgs || canalOrgs.length === 0)) {
+          console.log("Creating canal_organization for canal:", canalId, "organization:", userProfile.organization_id)
+
+          const { data: newCanalOrg, error: createError } = await supabase
+            .from("canales_organizations")
+            .insert({
+              id_canal: canalId,
+              id_organization: userProfile.organization_id,
+              estado: true,
+            })
+            .select("id")
+            .single()
+
+          if (!createError && newCanalOrg) {
+            setCanalOrganizationId(newCanalOrg.id)
+            console.log("Canal organization created with ID:", newCanalOrg.id)
+          } else {
+            console.error("Error creating canal_organization:", createError)
+            setError("Error creando relación canal-organización")
+            return
+          }
+        } else if (!canalOrgError && canalOrgs && canalOrgs.length > 0) {
           setCanalOrganizationId(canalOrgs[0].id)
+          console.log("Canal organization found with ID:", canalOrgs[0].id)
+        } else {
+          console.error("Error fetching canal_organizations:", canalOrgError)
+          setError("Error obteniendo relación canal-organización")
+          return
         }
 
-        // Obtener datos específicos del canal
         if (canalData.nombre?.toLowerCase() === "whatsapp") {
           const channelData = await getChannelData(canalId, userProfile.organization_id)
           setData(channelData)
@@ -531,7 +802,6 @@ export default function CanalPage({ params }: PageProps) {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="container mx-auto p-6 space-y-6">
-        {/* Breadcrumb */}
         <nav className="text-sm">
           <div className="flex items-center gap-2 text-gray-500">
             <Link href="/dashboard/canales" className="hover:text-gray-700">
@@ -542,7 +812,6 @@ export default function CanalPage({ params }: PageProps) {
           </div>
         </nav>
 
-        {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
           <div className="flex items-center gap-4">
             <div className={`w-12 h-12 ${config.color} rounded-xl flex items-center justify-center`}>
@@ -559,7 +828,6 @@ export default function CanalPage({ params }: PageProps) {
           </Button>
         </div>
 
-        {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card>
             <CardContent className="p-6">
@@ -604,7 +872,6 @@ export default function CanalPage({ params }: PageProps) {
           </Card>
         </div>
 
-        {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="numbers">Números</TabsTrigger>
@@ -612,7 +879,6 @@ export default function CanalPage({ params }: PageProps) {
           </TabsList>
 
           <TabsContent value="numbers" className="space-y-6">
-            {/* Search */}
             <Card>
               <CardContent className="p-4">
                 <div className="flex items-center gap-4">
@@ -632,7 +898,6 @@ export default function CanalPage({ params }: PageProps) {
               </CardContent>
             </Card>
 
-            {/* Table */}
             <Card>
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -660,7 +925,6 @@ export default function CanalPage({ params }: PageProps) {
               </div>
             </Card>
 
-            {/* Empty State */}
             {filteredData.length === 0 && (
               <Card>
                 <CardContent className="p-12 text-center">
@@ -679,7 +943,6 @@ export default function CanalPage({ params }: PageProps) {
               </Card>
             )}
 
-            {/* Pagination */}
             {filteredData.length > 0 && (
               <Card>
                 <CardContent className="p-4">
@@ -753,14 +1016,12 @@ export default function CanalPage({ params }: PageProps) {
           </TabsContent>
         </Tabs>
 
-        {/* Add Number Modal */}
         <AddNumberModal
           isOpen={isAddModalOpen}
           onClose={() => setIsAddModalOpen(false)}
           onAdd={handleAddNumber}
           canalOrganizationId={canalOrganizationId}
         />
-        {/* Assignments Modal */}
         <Dialog open={isAssignmentsModalOpen} onOpenChange={setIsAssignmentsModalOpen}>
           <DialogContent className="sm:max-w-2xl">
             <DialogHeader>
