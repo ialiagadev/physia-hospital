@@ -216,12 +216,14 @@ function ActionButtons({
   onRegister,
   onViewAssignments,
   facebookUrl,
+  onStatusUpdate, // Added callback to update parent state
 }: {
   status: number
   id: number
   onRegister: (id: number) => void
   onViewAssignments: (id: number) => void
   facebookUrl?: string
+  onStatusUpdate?: (id: number, newStatus: number) => void // Added callback type
 }) {
   const [isActivating, setIsActivating] = useState(false)
 
@@ -246,10 +248,25 @@ function ActionButtons({
 
       if (response.ok) {
         console.log("Webhook actualizado exitosamente:", result)
-        // Aquí podrías agregar una notificación de éxito
+
+        const updateResponse = await fetch("/api/waba/update-status", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ wabaId: id, status: 1 }),
+        })
+
+        if (updateResponse.ok) {
+          console.log("Estado del WABA actualizado a 1")
+          if (onStatusUpdate) {
+            onStatusUpdate(id, 1)
+          }
+        } else {
+          console.error("Error al actualizar estado del WABA")
+        }
       } else {
         console.error("Error al actualizar webhook:", result.error)
-        // Aquí podrías agregar una notificación de error
       }
     } catch (error) {
       console.error("Error en la llamada API:", error)
@@ -277,14 +294,16 @@ function ActionButtons({
       >
         {isActivating ? "Activando..." : "Activar"}
       </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-8 w-8 p-0 hover:bg-blue-50 hover:text-blue-600"
-        onClick={handleFacebookClick}
-      >
-        <Facebook className="h-4 w-4" />
-      </Button>
+      {status === 0 && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0 hover:bg-blue-50 hover:text-blue-600"
+          onClick={handleFacebookClick}
+        >
+          <Facebook className="h-4 w-4" />
+        </Button>
+      )}
       <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600">
         <Trash2 className="h-4 w-4" />
       </Button>
@@ -294,17 +313,17 @@ function ActionButtons({
 
 function TableRowComponent({
   item,
-  config,
   onRegister,
   onViewAssignments,
+  onStatusUpdate, // Added callback prop
 }: {
   item: any
-  config: any
   onRegister: (id: number) => void
   onViewAssignments: (id: number) => void
+  onStatusUpdate?: (id: number, newStatus: number) => void // Added callback type
 }) {
-  const firstColumnValue = item[config.firstColumnKey]
-  const IconComponent = config.icon
+  const firstColumnValue = item.numero
+  const IconComponent = MessageCircle
 
   const formatDate = (dateString: string) => {
     if (!dateString) return "-"
@@ -315,10 +334,10 @@ function TableRowComponent({
     <tr className="hover:bg-gray-50 border-b border-gray-100">
       <td className="p-4">
         <div className="flex items-center gap-3">
-          <div className={`w-1 h-10 ${config.color} rounded-full`}></div>
+          <div className="w-1 h-10 bg-green-600 rounded-full"></div>
           <div className="flex items-center gap-2">
-            <div className={`w-8 h-8 ${config.bgColor} rounded-lg flex items-center justify-center`}>
-              <IconComponent className={`h-4 w-4 ${config.textColor}`} />
+            <div className="w-8 h-8 bg-green-50 rounded-lg flex items-center justify-center">
+              <IconComponent className="h-4 w-4 text-green-700" />
             </div>
             <span className="font-mono text-sm font-medium text-gray-900">{firstColumnValue}</span>
           </div>
@@ -343,6 +362,7 @@ function TableRowComponent({
           onRegister={onRegister}
           onViewAssignments={onViewAssignments}
           facebookUrl={item.url_register_facebook}
+          onStatusUpdate={onStatusUpdate} // Pass callback to ActionButtons
         />
       </td>
     </tr>
@@ -661,6 +681,10 @@ export default function CanalPage({ params }: PageProps) {
     setIsAssignmentsModalOpen(true)
   }
 
+  const handleStatusUpdate = (wabaId: number, newStatus: number) => {
+    setData((prevData) => prevData.map((item) => (item.id === wabaId ? { ...item, estado: newStatus } : item)))
+  }
+
   useEffect(() => {
     const fetchData = async () => {
       if (authLoading) return
@@ -915,9 +939,9 @@ export default function CanalPage({ params }: PageProps) {
                       <TableRowComponent
                         key={item.id}
                         item={item}
-                        config={config}
                         onRegister={handleRegister}
                         onViewAssignments={handleViewAssignments}
+                        onStatusUpdate={handleStatusUpdate} // Pass callback to TableRowComponent
                       />
                     ))}
                   </tbody>
