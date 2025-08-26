@@ -1,6 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { normalizePhoneNumber, isValidPhoneNumber } from "@/utils/phone-utils"
 
 // Cliente admin para saltarse RLS
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
@@ -13,7 +12,7 @@ const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { organizationId, activityId, clientData, notes } = body
+    const { organizationId, activityId, clientId, notes } = body
 
     const orgId = Number.parseInt(organizationId)
 
@@ -22,14 +21,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "ID de organización inválido" }, { status: 400 })
     }
 
-    if (!activityId || !clientData) {
+    if (!activityId || !clientId) {
       return NextResponse.json({ error: "Datos requeridos faltantes" }, { status: 400 })
     }
 
-    // Validar teléfono
-    const normalizedPhone = normalizePhoneNumber(clientData.phone)
-    if (!isValidPhoneNumber(normalizedPhone)) {
-      return NextResponse.json({ error: "Número de teléfono inválido" }, { status: 400 })
+    const { data: client, error: clientError } = await supabase
+      .from("clients")
+      .select("id, name")
+      .eq("id", clientId)
+      .eq("organization_id", orgId)
+      .single()
+
+    if (clientError || !client) {
+      return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 })
     }
 
     // Verificar que la actividad existe y tiene plazas disponibles
@@ -56,48 +60,6 @@ export async function POST(request: NextRequest) {
 
     if (activity.current_participants >= activity.max_participants) {
       return NextResponse.json({ error: "No hay plazas disponibles en esta actividad" }, { status: 409 })
-    }
-
-    // Buscar cliente existente por teléfono
-    let clientId: number
-    const { data: existingClient } = await supabase
-      .from("clients")
-      .select("id")
-      .eq("phone", normalizedPhone)
-      .eq("organization_id", orgId)
-      .single()
-
-    if (existingClient) {
-      clientId = existingClient.id
-
-      // Actualizar datos del cliente si es necesario
-      await supabase
-        .from("clients")
-        .update({
-          name: clientData.name,
-          email: clientData.email,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", clientId)
-    } else {
-      // Crear nuevo cliente
-      const { data: newClient, error: clientError } = await supabase
-        .from("clients")
-        .insert({
-          organization_id: orgId,
-          name: clientData.name,
-          email: clientData.email,
-          phone: normalizedPhone,
-        })
-        .select("id")
-        .single()
-
-      if (clientError || !newClient) {
-        console.error("Error creating client:", clientError)
-        return NextResponse.json({ error: "Error al crear cliente" }, { status: 500 })
-      }
-
-      clientId = newClient.id
     }
 
     // Verificar si el cliente ya está inscrito en esta actividad

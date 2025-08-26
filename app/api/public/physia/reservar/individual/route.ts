@@ -1,6 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { normalizePhoneNumber, isValidPhoneNumber, getPhoneSearchVariations } from "@/utils/phone-utils"
 import { googleTokenManager } from "@/lib/google-token-manager"
 
 // Cliente admin para bypasear RLS
@@ -17,103 +16,37 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     console.log("📝 Request body:", body)
 
-    const {
-      organizationId,
-      professionalId,
-      serviceId,
-      consultationId,
-      date,
-      startTime,
-      endTime,
-      duration,
-      clientData,
-      notes,
-    } = body
+    const { organizationId, professionalId, serviceId, consultationId, date, startTime, endTime, clientId, notes } =
+      body
     const orgId = Number.parseInt(organizationId)
     console.log("🏢 Organization ID:", orgId)
 
-    if (isNaN(orgId) || !professionalId || !date || !startTime || !endTime || !clientData) {
+    if (isNaN(orgId) || !professionalId || !serviceId || !date || !startTime || !endTime || !clientId) {
       console.log("❌ Validation failed: missing required data")
       return NextResponse.json({ error: "Datos requeridos faltantes o inválidos" }, { status: 400 })
     }
 
-    // Validar y normalizar teléfono
-    const normalizedPhone = normalizePhoneNumber(clientData.phone)
-    console.log("📞 Phone normalized:", normalizedPhone)
-
-    if (!isValidPhoneNumber(normalizedPhone)) {
-      console.log("❌ Invalid phone number:", normalizedPhone)
-      return NextResponse.json({ error: "Número de teléfono inválido" }, { status: 400 })
+    const finalClientId = Number.parseInt(clientId)
+    if (isNaN(finalClientId)) {
+      console.log("❌ Invalid client ID:", clientId)
+      return NextResponse.json({ error: "ID de cliente inválido" }, { status: 400 })
     }
 
-    // Buscar cliente existente
-    console.log("🔍 Searching for existing client...")
-    const phoneVariations = getPhoneSearchVariations(normalizedPhone)
-    console.log("📞 Phone variations:", phoneVariations)
+    console.log("🔍 Verifying client exists...")
+    const { data: existingClient, error: clientError } = await supabaseAdmin
+      .from("clients")
+      .select("id, name")
+      .eq("id", finalClientId)
+      .eq("organization_id", orgId)
+      .single()
 
-    let existingClient = null
-    for (const phoneVariation of phoneVariations) {
-      const { data } = await supabaseAdmin
-        .from("clients")
-        .select("id, name, email, phone")
-        .eq("phone", phoneVariation)
-        .eq("organization_id", orgId)
-        .single()
-
-      if (data) {
-        existingClient = data
-        console.log("✅ Found existing client:", existingClient)
-        break
-      }
+    if (clientError || !existingClient) {
+      console.log("❌ Client not found or doesn't belong to organization:", finalClientId)
+      return NextResponse.json({ error: "Cliente no encontrado o no pertenece a la organización" }, { status: 404 })
     }
 
-    let clientId: number
-    if (existingClient) {
-      clientId = existingClient.id
-      console.log("✅ Using existing client:", clientId)
-    } else {
-      console.log("➕ Creating new client...")
-      const { data: newClient, error: clientError } = await supabaseAdmin
-        .from("clients")
-        .insert({
-          organization_id: orgId,
-          name: clientData.name,
-          email: clientData.email || null,
-          phone: normalizedPhone,
-        })
-        .select("id")
-        .single()
+    console.log("✅ Client verified:", existingClient)
 
-      if (clientError) {
-        console.error("❌ Error creating client:", clientError)
-        if (clientError.code === "23505") {
-          console.log("🔄 Duplicate phone detected, searching again...")
-          const { data: duplicateClient } = await supabaseAdmin
-            .from("clients")
-            .select("id")
-            .eq("phone", normalizedPhone)
-            .eq("organization_id", orgId)
-            .single()
-
-          if (duplicateClient) {
-            clientId = duplicateClient.id
-            console.log("✅ Found duplicate client:", clientId)
-          } else {
-            return NextResponse.json({ error: "Error al crear cliente: teléfono duplicado" }, { status: 500 })
-          }
-        } else {
-          return NextResponse.json({ error: "Error al crear cliente" }, { status: 500 })
-        }
-      } else if (!newClient) {
-        console.error("❌ No client data returned")
-        return NextResponse.json({ error: "Error al crear cliente" }, { status: 500 })
-      } else {
-        clientId = newClient.id
-        console.log("✅ Created new client:", clientId)
-      }
-    }
-
-    // Verificar disponibilidad del slot (conflictos con citas)
     console.log("🔍 Checking slot availability...")
     const { data: conflictingAppointments, error: conflictError } = await supabaseAdmin
       .from("appointments")
@@ -134,36 +67,34 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "El horario seleccionado ya no está disponible" }, { status: 409 })
     }
 
-    // Obtener duración del servicio si no se proporciona
-    let finalDuration = duration
-    if (!finalDuration && serviceId) {
-      const { data: service, error: serviceError } = await supabaseAdmin
-        .from("services")
-        .select("duration")
-        .eq("id", serviceId)
-        .single()
+    console.log("🔍 Getting service duration...")
+    const { data: service, error: serviceError } = await supabaseAdmin
+      .from("services")
+      .select("duration")
+      .eq("id", serviceId)
+      .single()
 
-      if (serviceError) {
-        console.error("❌ Error getting service duration:", serviceError)
-        return NextResponse.json({ error: "No se pudo obtener la duración del servicio" }, { status: 500 })
-      }
-      finalDuration = service?.duration || 30
+    if (serviceError || !service) {
+      console.error("❌ Error getting service or service not found:", serviceError)
+      return NextResponse.json({ error: "Servicio no encontrado" }, { status: 404 })
     }
 
-    // Crear cita
+    const finalDuration = service.duration || 30
+    console.log("⏱️ Service duration:", finalDuration)
+
     console.log("➕ Creating appointment...")
     const { data: appointment, error: appointmentError } = await supabaseAdmin
       .from("appointments")
       .insert({
         organization_id: orgId,
         professional_id: professionalId,
-        client_id: clientId,
-        service_id: serviceId || null,
+        client_id: finalClientId,
+        service_id: serviceId, // Now always required, removed || null
         consultation_id: consultationId || null,
         date,
         start_time: startTime,
         end_time: endTime,
-        duration: finalDuration || 30,
+        duration: finalDuration, // Always use duration from service
         status: "confirmed",
         notes: notes || null,
         user_id: professionalId,
@@ -196,11 +127,9 @@ export async function POST(request: NextRequest) {
 
     console.log("✅ Appointment created successfully:", appointment.id)
 
-    // 🆕 SINCRONIZAR CON GOOGLE CALENDAR DEL PROFESIONAL
     try {
       console.log("📅 Attempting Google Calendar sync for professional:", professionalId)
 
-      // Usar googleTokenManager para obtener tokens válidos (renueva automáticamente si es necesario)
       const tokens = await googleTokenManager.getValidTokens(professionalId)
 
       if (!tokens) {
@@ -208,13 +137,11 @@ export async function POST(request: NextRequest) {
       } else {
         console.log("🔄 Professional has valid Google tokens, syncing to calendar...")
 
-        // Usar la misma lógica que handleAppointmentSync
         await handleAppointmentSync(appointment.id, tokens.access_token)
         console.log("✅ Google Calendar sync completed successfully")
       }
     } catch (syncError) {
       console.error("❌ Error during Google Calendar sync:", syncError)
-      // No fallar la reserva por error de sincronización
     }
 
     return NextResponse.json({
@@ -234,11 +161,9 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Función para sincronizar cita con Google Calendar
 async function handleAppointmentSync(appointmentId: string, accessToken: string) {
   console.log("📅 Procesando cita:", appointmentId)
 
-  // Obtener datos de la cita con información del cliente y servicio
   const { data: appointment, error: appointmentError } = await supabaseAdmin
     .from("appointments")
     .select(
@@ -265,7 +190,6 @@ async function handleAppointmentSync(appointmentId: string, accessToken: string)
     hasEventId: !!appointment.google_calendar_event_id,
   })
 
-  // Validar datos requeridos
   if (!appointment.date || !appointment.start_time || !appointment.end_time) {
     console.error("❌ Datos de cita incompletos:", {
       date: appointment.date,
@@ -275,7 +199,6 @@ async function handleAppointmentSync(appointmentId: string, accessToken: string)
     throw new Error("Datos de cita incompletos")
   }
 
-  // Preparar datos del evento con validación
   const eventData = {
     summary: `${appointment.clients?.name || "Paciente"} - ${appointment.services?.name || "Consulta"}`,
     description: [
@@ -309,7 +232,6 @@ async function handleAppointmentSync(appointmentId: string, accessToken: string)
     let action = "updated"
 
     if (!eventId) {
-      // Crear nuevo evento
       console.log("🔄 Creando evento en Google Calendar...")
       const createResponse = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
         method: "POST",
@@ -336,7 +258,6 @@ async function handleAppointmentSync(appointmentId: string, accessToken: string)
       action = "created"
       console.log("✅ Evento creado:", eventId)
     } else {
-      // Actualizar evento existente
       console.log("🔄 Actualizando evento en Google Calendar:", eventId)
       const updateResponse = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`, {
         method: "PUT",
@@ -361,7 +282,6 @@ async function handleAppointmentSync(appointmentId: string, accessToken: string)
       console.log("✅ Evento actualizado:", eventId)
     }
 
-    // Actualizar la cita en la base de datos
     const { error: updateError } = await supabaseAdmin
       .from("appointments")
       .update({

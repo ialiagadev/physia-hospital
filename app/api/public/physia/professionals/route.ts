@@ -2,16 +2,12 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
 // Cliente admin que bypasea RLS
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  }
-)
+const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
+  },
+})
 
 export async function POST(request: NextRequest) {
   try {
@@ -63,11 +59,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Error al obtener profesionales" }, { status: 500 })
       }
 
-      professionals = (professionalsData || [])
-        .map((item: any) => item.users)
-        .filter(Boolean)
+      professionals = (professionalsData || []).map((item: any) => item.users).filter(Boolean)
     } else {
-      // Obtener todos los profesionales activos si no se especifica servicio
       const { data: professionalsData, error } = await supabaseAdmin
         .from("users")
         .select(`
@@ -75,7 +68,16 @@ export async function POST(request: NextRequest) {
           name,
           specialty,
           specialty_other,
-          avatar_url
+          avatar_url,
+          user_services!inner (
+            services (
+              id,
+              name,
+              description,
+              duration,
+              price
+            )
+          )
         `)
         .eq("organization_id", organizationId)
         .eq("is_active", true)
@@ -90,21 +92,35 @@ export async function POST(request: NextRequest) {
       professionals = professionalsData || []
     }
 
-    // Formatear datos para la respuesta pública
-    const formattedProfessionals = professionals.map((professional: any) => ({
-      id: professional.id,
-      name: professional.name || "Sin nombre",
-      specialty:
-        professional.specialty === "otros"
-          ? professional.specialty_other
-          : professional.specialty,
-      avatar_url: professional.avatar_url,
-    }))
+    const formattedProfessionals = professionals.map((professional: any) => {
+      const baseData = {
+        id: professional.id,
+        name: professional.name || "Sin nombre",
+        specialty: professional.specialty === "otros" ? professional.specialty_other : professional.specialty,
+        avatar_url: professional.avatar_url,
+      }
+
+      // Si no se especificó serviceId, incluir los servicios del profesional
+      if (!serviceId && professional.user_services) {
+        return {
+          ...baseData,
+          services: professional.user_services.map((us: any) => ({
+            id: us.services.id,
+            name: us.services.name,
+            description: us.services.description,
+            duration: us.services.duration,
+            price: us.services.price,
+          })),
+        }
+      }
+
+      return baseData
+    })
 
     if (formattedProfessionals.length === 0) {
       return NextResponse.json(
         { error: "No se encontraron profesionales para el servicio especificado" },
-        { status: 404 }
+        { status: 404 },
       )
     }
 

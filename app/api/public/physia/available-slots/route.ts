@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { format, parseISO } from "date-fns"
+import { format, parseISO, addDays, differenceInDays } from "date-fns"
 import { toZonedTime } from "date-fns-tz"
 import { isSameDay } from "date-fns"
 
@@ -32,7 +32,6 @@ function timeToMinutes(timeString: string): number {
 function roundUpToNextSlot(minutes: number, duration: number): number {
   return Math.ceil(minutes / duration) * duration
 }
-
 
 function minutesToTime(minutes: number): string {
   const hours = Math.floor(minutes / 60)
@@ -250,7 +249,6 @@ async function getSlotsForProfessional(
         console.log("[v0] Fast-forward rounded to", minutesToTime(currentMinutes), "due to 'today'")
       }
     }
-    
 
     while (currentMinutes + serviceDuration <= endMinutes) {
       const slotStart = minutesToTime(currentMinutes)
@@ -377,7 +375,7 @@ async function getSlotsForProfessional(
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { professionalId, serviceId, date, organizationId } = body
+    const { professionalId, serviceId, startDate, endDate, organizationId } = body
 
     const orgId = Number.parseInt(organizationId)
 
@@ -385,14 +383,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "ID de organización inválido" }, { status: 400 })
     }
 
-    if (!professionalId || !serviceId || !date || !organizationId) {
+    if (!professionalId || !serviceId || !startDate || !endDate || !organizationId) {
       return NextResponse.json(
-        { error: "Faltan parámetros requeridos: organizationId, professionalId, serviceId, date" },
+        { error: "Faltan parámetros requeridos: organizationId, professionalId, serviceId, startDate, endDate" },
         { status: 400 },
       )
     }
 
-    // Organización existe
+    const startDateParsed = parseISO(startDate)
+    const endDateParsed = parseISO(endDate)
+
+    if (startDateParsed > endDateParsed) {
+      return NextResponse.json(
+        { error: "La fecha de inicio no puede ser posterior a la fecha de fin" },
+        { status: 400 },
+      )
+    }
+
+    const daysDifference = differenceInDays(endDateParsed, startDateParsed)
+    if (daysDifference > 30) {
+      return NextResponse.json({ error: "El rango de fechas no puede exceder 30 días" }, { status: 400 })
+    }
+
     const { data: organization, error: orgError } = await supabaseAdmin
       .from("organizations")
       .select("id")
@@ -404,7 +416,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Organización no encontrada" }, { status: 404 })
     }
 
-    // Servicio (duración)
     const { data: service, error: serviceError } = await supabaseAdmin
       .from("services")
       .select("duration, name")
@@ -423,123 +434,135 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Duración del servicio inválida" }, { status: 500 })
     }
 
-    const targetDate = parseISO(date)
-    const formattedDate = format(targetDate, "yyyy-MM-dd")
+    const slotsByDate: Record<string, any[]> = {}
 
-    // professionalId === "any" → slots de cualquiera que pueda hacer el servicio
-    if (professionalId === "any") {
-      const { data: professionalServices, error: profServicesError } = await supabaseAdmin
-        .from("user_services")
-        .select(`
-          user_id,
-          users!inner (
-            id,
-            name,
-            is_active,
-            organization_id
-          )
-        `)
-        .eq("service_id", Number.parseInt(serviceId))
-        .eq("users.organization_id", orgId)
-        .eq("users.is_active", true)
+    let currentDate = startDateParsed
+    while (currentDate <= endDateParsed) {
+      const formattedDate = format(currentDate, "yyyy-MM-dd")
+      console.log(`[v0] Processing date: ${formattedDate}`)
 
-      let validProfessionals: any[] = []
-      if (profServicesError) {
-        console.error("❌ Error fetching professional services:", profServicesError)
-        return NextResponse.json({ error: "Error al obtener profesionales del servicio" }, { status: 500 })
-      }
+      if (professionalId === "any") {
+        const { data: professionalServices, error: profServicesError } = await supabaseAdmin
+          .from("user_services")
+          .select(`
+            user_id,
+            users!inner (
+              id,
+              name,
+              is_active,
+              organization_id
+            )
+          `)
+          .eq("service_id", Number.parseInt(serviceId))
+          .eq("users.organization_id", orgId)
+          .eq("users.is_active", true)
 
-      if (!professionalServices || professionalServices.length === 0) {
-        // Fallback: todos los usuarios activos de la org
-        const { data: allProfessionals, error: allProfError } = await supabaseAdmin
-          .from("users")
-          .select("id, name, is_active, organization_id")
-          .eq("organization_id", orgId)
-          .eq("is_active", true)
-
-        if (allProfError) {
-          console.error("❌ Error fetching all professionals:", allProfError)
-          return NextResponse.json({ error: "Error al obtener profesionales" }, { status: 500 })
+        let validProfessionals: any[] = []
+        if (profServicesError) {
+          console.error("❌ Error fetching professional services:", profServicesError)
+          return NextResponse.json({ error: "Error al obtener profesionales del servicio" }, { status: 500 })
         }
 
-        if (!allProfessionals || allProfessionals.length === 0) {
-          return NextResponse.json({ slots: [] })
-        }
+        if (!professionalServices || professionalServices.length === 0) {
+          const { data: allProfessionals, error: allProfError } = await supabaseAdmin
+            .from("users")
+            .select("id, name, is_active, organization_id")
+            .eq("organization_id", orgId)
+            .eq("is_active", true)
 
-        validProfessionals = allProfessionals.map((prof) => ({ users: prof }))
-      } else {
-        validProfessionals = professionalServices
-      }
-
-      // Mapa para evitar duplicados por hora
-      const allSlotsMap = new Map<
-        string,
-        {
-          start_time: string
-          end_time: string
-          professional_id: string
-          professional_name: string
-        }
-      >()
-
-      for (const profService of validProfessionals) {
-        const professional = profService.users
-        const professionalName = professional.name || "Profesional"
-
-        try {
-          const professionalSlots = await getSlotsForProfessional(
-            professional.id,
-            orgId,
-            serviceDuration,
-            targetDate,
-            formattedDate,
-          )
-
-          for (const slot of professionalSlots) {
-            const slotKey = `${slot.start_time}-${slot.end_time}`
-            if (!allSlotsMap.has(slotKey)) {
-              allSlotsMap.set(slotKey, {
-                start_time: slot.start_time,
-                end_time: slot.end_time,
-                professional_id: professional.id,
-                professional_name: professionalName,
-              })
-            }
+          if (allProfError) {
+            console.error("❌ Error fetching all professionals:", allProfError)
+            return NextResponse.json({ error: "Error al obtener profesionales" }, { status: 500 })
           }
-        } catch (slotError) {
-          console.error(`❌ Error getting slots for professional ${professionalName}:`, slotError)
+
+          if (!allProfessionals || allProfessionals.length === 0) {
+            slotsByDate[formattedDate] = []
+            currentDate = addDays(currentDate, 1)
+            continue
+          }
+
+          validProfessionals = allProfessionals.map((prof) => ({ users: prof }))
+        } else {
+          validProfessionals = professionalServices
         }
+
+        const allSlotsMap = new Map<
+          string,
+          {
+            start_time: string
+            end_time: string
+            professional_id: string
+            professional_name: string
+          }
+        >()
+
+        for (const profService of validProfessionals) {
+          const professional = profService.users
+          const professionalName = professional.name || "Profesional"
+
+          try {
+            const professionalSlots = await getSlotsForProfessional(
+              professional.id,
+              orgId,
+              serviceDuration,
+              currentDate,
+              formattedDate,
+            )
+
+            for (const slot of professionalSlots) {
+              const slotKey = `${slot.start_time}-${slot.end_time}`
+              if (!allSlotsMap.has(slotKey)) {
+                allSlotsMap.set(slotKey, {
+                  start_time: slot.start_time,
+                  end_time: slot.end_time,
+                  professional_id: professional.id,
+                  professional_name: professionalName,
+                })
+              }
+            }
+          } catch (slotError) {
+            console.error(`❌ Error getting slots for professional ${professionalName}:`, slotError)
+          }
+        }
+
+        const finalSlots = Array.from(allSlotsMap.values())
+          .sort((a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time))
+          .map((slot) => ({
+            start_time: slot.start_time,
+            end_time: slot.end_time,
+            available: true,
+            professional_id: slot.professional_id,
+            professional_name: slot.professional_name,
+          }))
+
+        slotsByDate[formattedDate] = finalSlots
+      } else {
+        const { error: serviceCheckError } = await supabaseAdmin
+          .from("user_services")
+          .select("id")
+          .eq("user_id", professionalId)
+          .eq("service_id", Number.parseInt(serviceId))
+          .single()
+
+        if (serviceCheckError && serviceCheckError.code !== "PGRST116") {
+          console.error("❌ Error checking service permission:", serviceCheckError)
+          return NextResponse.json({ error: "Error al verificar permisos del profesional" }, { status: 500 })
+        }
+
+        const slots = await getSlotsForProfessional(professionalId, orgId, serviceDuration, currentDate, formattedDate)
+        slotsByDate[formattedDate] = slots
       }
 
-      const finalSlots = Array.from(allSlotsMap.values())
-        .sort((a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time))
-        .map((slot) => ({
-          start_time: slot.start_time,
-          end_time: slot.end_time,
-          available: true,
-          professional_id: slot.professional_id,
-          professional_name: slot.professional_name,
-        }))
-
-      return NextResponse.json({ slots: finalSlots })
+      currentDate = addDays(currentDate, 1)
     }
 
-    // Profesional específico: comprobar permiso (user_services). Si no está, permitir igualmente (fallback).
-    const { error: serviceCheckError } = await supabaseAdmin
-      .from("user_services")
-      .select("id")
-      .eq("user_id", professionalId)
-      .eq("service_id", Number.parseInt(serviceId))
-      .single()
-
-    if (serviceCheckError && serviceCheckError.code !== "PGRST116") {
-      console.error("❌ Error checking service permission:", serviceCheckError)
-      return NextResponse.json({ error: "Error al verificar permisos del profesional" }, { status: 500 })
-    }
-
-    const slots = await getSlotsForProfessional(professionalId, orgId, serviceDuration, targetDate, formattedDate)
-
-    return NextResponse.json({ slots })
+    return NextResponse.json({
+      slotsByDate,
+      dateRange: {
+        startDate: format(startDateParsed, "yyyy-MM-dd"),
+        endDate: format(endDateParsed, "yyyy-MM-dd"),
+      },
+    })
   } catch (error) {
     console.error("API Error:", error)
     return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
