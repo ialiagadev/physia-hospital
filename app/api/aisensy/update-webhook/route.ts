@@ -27,8 +27,10 @@ export async function POST(req: Request) {
 
     const token = wabaRecord.token_proyecto
 
+    // ✅ URL fija para AiSensy
+    const webhookUrl = "https://api.myphysia.com/aisensy/webhook"
+
     // Llamada a AiSensy para actualizar el webhook
-    const webhookUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/api/webhooks/whatsapp`
     const response = await fetch("https://backend.aisensy.com/direct-apis/t1/settings/update-webhook", {
       method: "PATCH",
       headers: {
@@ -37,9 +39,7 @@ export async function POST(req: Request) {
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        webhooks: {
-          url: webhookUrl,
-        },
+        webhookUrl: webhookUrl,
       }),
     })
 
