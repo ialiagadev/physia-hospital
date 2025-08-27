@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { format, addDays, parseISO, startOfToday } from "date-fns"
+import { format, addDays, startOfToday } from "date-fns"
 
 // Cliente admin para bypass RLS
 const supabaseAdmin = createClient(
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     console.log("📩 Body recibido:", body)
 
-    const { organizationId, days = 30 } = body
+    const { organizationId, days = 30, name } = body
     const orgId = Number.parseInt(organizationId)
 
     if (isNaN(orgId)) {
@@ -35,8 +35,8 @@ export async function POST(request: NextRequest) {
       end: format(endDateObj, "yyyy-MM-dd"),
     })
 
-    // Query a Supabase
-    const { data: activities, error } = await supabaseAdmin
+    // Query base
+    let query = supabaseAdmin
       .from("group_activities")
       .select(`
         id,
@@ -65,10 +65,18 @@ export async function POST(request: NextRequest) {
       `)
       .eq("organization_id", orgId)
       .eq("status", "active")
-      .gte("date", format(today, "yyyy-MM-dd"))   // 👈 solo hoy y futuro
+      .gte("date", format(today, "yyyy-MM-dd"))
       .lte("date", format(endDateObj, "yyyy-MM-dd"))
       .order("date", { ascending: true })
       .order("start_time", { ascending: true })
+
+    // Filtro opcional por nombre
+    if (name && name.trim() !== "") {
+      console.log("🔎 Filtrando por nombre:", name)
+      query = query.ilike("name", `%${name}%`)
+    }
+
+    const { data: activities, error } = await query
 
     if (error) {
       console.error("❌ Error fetching group activities:", error)
@@ -97,6 +105,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(availableActivities)
   } catch (error: any) {
     console.error("🔥 API Error:", error)
-    return NextResponse.json({ error: "Error interno del servidor", details: error?.message }, { status: 500 })
+    return NextResponse.json(
+      { error: "Error interno del servidor", details: error?.message },
+      { status: 500 },
+    )
   }
 }
