@@ -39,9 +39,11 @@ export async function POST(req: Request) {
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        webhookUrl: webhookUrl,
+        webhooks: {
+          url: "https://api.myphysia.com/aisensy/webhook"
+        }
       }),
-    })
+    });
 
     const result = await response.json()
 

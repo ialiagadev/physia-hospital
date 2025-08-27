@@ -157,13 +157,12 @@ export function useConversations(
                     imagen
                   )
                 ),
-                users_conversations!inner(
+                users_conversations(
                   user_id,
                   unread_count
                 )
-              `)
+              `) // 👈 OJO: sin !inner, porque si no, filtra solo las que tienen relación
               .eq("organization_id", orgIdNumber)
-              .eq("users_conversations.user_id", currentUserId)
           
             if (conversationIds.length > 0) {
               query = query.in("id", conversationIds)
