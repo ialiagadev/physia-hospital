@@ -1,24 +1,42 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { supabase } from "@/lib/supabase/client"
-import { format, addDays, parseISO } from "date-fns"
+import { createClient } from "@supabase/supabase-js"
+import { format, addDays, parseISO, startOfToday } from "date-fns"
+
+// Cliente admin para bypass RLS
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  },
+)
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { organizationId, startDate, days = 30 } = body
+    console.log("📩 Body recibido:", body)
 
+    const { organizationId, days = 30 } = body
     const orgId = Number.parseInt(organizationId)
 
     if (isNaN(orgId)) {
       return NextResponse.json({ error: "ID de organización inválido" }, { status: 400 })
     }
 
-    // Calcular rango de fechas
-    const startDateObj = startDate ? parseISO(startDate) : new Date()
-    const endDateObj = addDays(startDateObj, days)
+    // Rango: desde hoy hasta X días después
+    const today = startOfToday()
+    const endDateObj = addDays(today, days)
 
-    // Obtener actividades grupales activas con plazas disponibles
-    const { data: activities, error } = await supabase
+    console.log("📅 Rango de fechas:", {
+      start: format(today, "yyyy-MM-dd"),
+      end: format(endDateObj, "yyyy-MM-dd"),
+    })
+
+    // Query a Supabase
+    const { data: activities, error } = await supabaseAdmin
       .from("group_activities")
       .select(`
         id,
@@ -47,13 +65,13 @@ export async function POST(request: NextRequest) {
       `)
       .eq("organization_id", orgId)
       .eq("status", "active")
-      .gte("date", format(startDateObj, "yyyy-MM-dd"))
+      .gte("date", format(today, "yyyy-MM-dd"))   // 👈 solo hoy y futuro
       .lte("date", format(endDateObj, "yyyy-MM-dd"))
       .order("date", { ascending: true })
       .order("start_time", { ascending: true })
 
     if (error) {
-      console.error("Error fetching group activities:", error)
+      console.error("❌ Error fetching group activities:", error)
       return NextResponse.json({ error: "Error al obtener actividades grupales" }, { status: 500 })
     }
 
@@ -77,8 +95,8 @@ export async function POST(request: NextRequest) {
       }))
 
     return NextResponse.json(availableActivities)
-  } catch (error) {
-    console.error("API Error:", error)
-    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
+  } catch (error: any) {
+    console.error("🔥 API Error:", error)
+    return NextResponse.json({ error: "Error interno del servidor", details: error?.message }, { status: 500 })
   }
 }
