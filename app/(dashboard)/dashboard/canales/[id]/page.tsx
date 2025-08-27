@@ -932,9 +932,17 @@ export default function CanalPage({ params }: PageProps) {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="numbers">Números</TabsTrigger>
-            <TabsTrigger value="assignments">Asignaciones</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-2 mb-6">
+            <TabsTrigger value="numbers" className="text-sm">
+              Números
+            </TabsTrigger>
+            <TabsTrigger
+              value="assignments"
+              className="text-sm font-semibold bg-purple-50 data-[state=active]:bg-purple-100 data-[state=active]:text-purple-700 border-2 border-purple-200 data-[state=active]:border-purple-300"
+              >
+              <Users className="w-4 h-4 mr-2" />
+              Asignaciones
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="numbers" className="space-y-6">
@@ -1064,6 +1072,23 @@ export default function CanalPage({ params }: PageProps) {
           </TabsContent>
 
           <TabsContent value="assignments" className="space-y-6">
+            <Card className="border-blue-200 bg-blue-50">
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-blue-100 rounded-full">
+                    <Users className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-blue-900 mb-1">Instrucciones de Asignación</h3>
+                    <p className="text-sm text-blue-700">
+                      Asigna usuarios a los que se les asignarán las conversaciones por defecto. Los usuarios asignados
+                      recibirán automáticamente las nuevas conversaciones de WhatsApp.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             {data.map((waba) => (
               <AssignmentCard
                 key={waba.id}
