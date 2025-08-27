@@ -16,26 +16,44 @@ const supabaseAdmin = createClient(
 export async function DELETE(request: NextRequest) {
   try {
     const body = await request.json()
-    const participantId = Number.parseInt(body.participant_id)
+    const { client_id, group_activity_id } = body
 
-    if (isNaN(participantId)) {
-      return NextResponse.json({ error: "ID de participante inválido" }, { status: 400 })
+    if (!client_id || !group_activity_id) {
+      return NextResponse.json({ error: "client_id and group_activity_id are required" }, { status: 400 })
     }
 
-    // Eliminar al participante de la actividad
-    const { error } = await supabaseAdmin
+    // Verificar que existe el registro antes de borrarlo
+    const { data: participant, error: fetchError } = await supabaseAdmin
+      .from("group_activity_participants")
+      .select("id")
+      .eq("client_id", client_id)
+      .eq("group_activity_id", group_activity_id)
+      .single()
+
+    if (fetchError || !participant) {
+      return NextResponse.json({ error: "Participant not found" }, { status: 404 })
+    }
+
+    // Eliminar el registro
+    const { error: deleteError } = await supabaseAdmin
       .from("group_activity_participants")
       .delete()
-      .eq("id", participantId)
+      .eq("client_id", client_id)
+      .eq("group_activity_id", group_activity_id)
 
-    if (error) {
-      console.error("Error eliminando participante:", error)
-      return NextResponse.json({ error: "No se pudo eliminar al participante" }, { status: 500 })
+    if (deleteError) {
+      console.error("Error deleting participant:", deleteError)
+      return NextResponse.json({ error: "Failed to delete participant" }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, message: "Participante eliminado correctamente" })
+    return NextResponse.json({
+      success: true,
+      message: "Participant removed successfully",
+      client_id,
+      group_activity_id,
+    })
   } catch (error) {
-    console.error("API Error:", error)
-    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
+    console.error("Error in remove participant API:", error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
