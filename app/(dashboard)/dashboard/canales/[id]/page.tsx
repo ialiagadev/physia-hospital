@@ -431,7 +431,7 @@ function AddNumberModal({
         .from("waba")
         .insert({
           nombre: formData.nombre,
-          numero: formData.prefix + formData.numero,
+          numero: (formData.prefix + formData.numero).replace(/^\+/, ""),
           descripcion: formData.descripcion,
           id_canales_organization: canalOrganizationId,
           estado: 0, // Initially not registered
