@@ -1,13 +1,17 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
+import { Settings } from "lucide-react"
 import ChatList from "@/components/chat-list"
 import ConversationWindow from "@/components/conversation-window"
 import { useAuth } from "@/app/contexts/auth-context"
+import { Button } from "@/components/ui/button"
 
 export default function ChatPage() {
   const { userProfile, isLoading } = useAuth()
   const [selectedChat, setSelectedChat] = useState<string | null>(null)
+  const router = useRouter()
 
   // Estado para refrescar ChatList cuando se cambien etiquetas
   const [tagsRefreshKey, setTagsRefreshKey] = useState(0)
@@ -15,6 +19,10 @@ export default function ChatPage() {
   const handleTagsChange = () => {
     // Esto hará que ChatList se vuelva a renderizar y refetchee
     setTagsRefreshKey((prev) => prev + 1)
+  }
+
+  const handleConfigureNumber = () => {
+    router.push("/dashboard/canales/1")
   }
 
   if (isLoading) {
@@ -43,6 +51,19 @@ export default function ChatPage() {
     <div className="flex h-full w-full bg-gray-100 overflow-hidden m-0 p-0">
       {/* Lista de chats */}
       <div className="w-[25%] min-w-[280px] max-w-[350px] bg-white border-r border-gray-200 flex flex-col">
+      <div className="p-4 border-b border-gray-200">
+  <Button
+    onClick={handleConfigureNumber}
+    variant="outline"
+    size="sm"
+    className="w-full flex items-center gap-2 bg-transparent border border-purple-500 text-purple-500 hover:bg-purple-50"
+  >
+    <Settings className="h-4 w-4" />
+    Configurar número
+  </Button>
+</div>
+
+
         {/* Pasamos el key para que se refresque */}
         <ChatList key={tagsRefreshKey} selectedChatId={selectedChat} onChatSelect={setSelectedChat} />
       </div>
