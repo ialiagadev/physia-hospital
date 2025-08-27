@@ -24,6 +24,8 @@ export async function POST(request: NextRequest) {
 
     console.log("🔎 Buscando citas para clientId:", clientId)
 
+    const today = new Date().toISOString().split("T")[0]
+
     // === Citas individuales ===
     const { data: individualAppointments, error: individualError } = await supabaseAdmin
       .from("appointments")
@@ -60,6 +62,7 @@ export async function POST(request: NextRequest) {
         )
       `)
       .eq("client_id", clientId)
+      .gte("date", today) // 👉 solo hoy en adelante
       .order("date", { ascending: true })
       .order("start_time", { ascending: true })
 
@@ -75,45 +78,44 @@ export async function POST(request: NextRequest) {
 
     // === Actividades grupales ===
     const { data: groupAppointments, error: groupError } = await supabaseAdmin
-    .from("group_activity_participants")
-    .select(`
-      id,
-      status,
-      registration_date,
-      notes,
-      group_activities!inner(
+      .from("group_activity_participants")
+      .select(`
         id,
-        name,
-        description,
-        date,
-        start_time,
-        end_time,
         status,
-        max_participants,
-        current_participants,
-        color,
-        created_at,
-        updated_at,
-        professional_id,
-        consultation_id,
-        service_id,
-        users!fk_group_activities_professional(
-          id,
-          name,
-          email
-        ),
-        services(
+        registration_date,
+        notes,
+        group_activities!inner(
           id,
           name,
           description,
-          price
+          date,
+          start_time,
+          end_time,
+          status,
+          max_participants,
+          current_participants,
+          color,
+          created_at,
+          updated_at,
+          professional_id,
+          consultation_id,
+          service_id,
+          users!fk_group_activities_professional(
+            id,
+            name,
+            email
+          ),
+          services(
+            id,
+            name,
+            description,
+            price
+          )
         )
-      )
-    `)
-    .eq("client_id", clientId)
-    .order("group_activities(date)", { ascending: true })
-    .order("group_activities(start_time)", { ascending: true })
-  
+      `)
+      .eq("client_id", clientId)
+      .gte("group_activities.date", today) // 👉 solo hoy en adelante
+      .order("group_activities(date)", { ascending: true })
       .order("group_activities(start_time)", { ascending: true })
 
     if (groupError) {
@@ -142,14 +144,13 @@ export async function POST(request: NextRequest) {
         created_at: appointment.created_at,
         updated_at: appointment.updated_at,
 
-        professional:
-          Array.isArray(appointment.users) && appointment.users.length > 0
-            ? {
-                id: appointment.users[0].id,
-                name: appointment.users[0].name,
-                email: appointment.users[0].email,
-              }
-            : null,
+        professional: {
+            id: appointment.professional_id, // siempre el user_id de la tabla
+            name: appointment.users ? appointment.users.name : null,
+            email: appointment.users ? appointment.users.email : null,
+          },
+          
+          
 
         service:
           Array.isArray(appointment.services) && appointment.services.length > 0
@@ -181,7 +182,7 @@ export async function POST(request: NextRequest) {
         end_time: participant.group_activities.end_time,
         duration: null,
         status: participant.group_activities.status,
-        notes: participant.participant_notes,
+        notes: participant.notes,
         modalidad: "presencial",
         virtual_link: null,
         created_at: participant.group_activities.created_at,
@@ -191,7 +192,7 @@ export async function POST(request: NextRequest) {
         max_participants: participant.group_activities.max_participants,
         current_participants: participant.group_activities.current_participants,
         color: participant.group_activities.color,
-        participant_status: participant.participant_status,
+        participant_status: participant.status,
         registration_date: participant.registration_date,
 
         professional:
