@@ -2,11 +2,11 @@
 import { useState, useEffect } from "react"
 import type React from "react"
 
-import { Plus, Trash2, ChevronLeft, ChevronRight, Search, MessageCircle, Facebook, Users } from "lucide-react"
+import { Plus, Trash2, ChevronLeft, ChevronRight, Search, MessageCircle, Facebook, Users, Info } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -17,9 +17,10 @@ import { useAuth } from "@/app/contexts/auth-context"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { AssignmentCard } from "@/components/assignment-card"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
 interface PageProps {
-  params: Promise<{ id: string }>
+  params: { id: string }
 }
 
 interface Canal {
@@ -242,12 +243,12 @@ function ActionButtons({
         },
         body: JSON.stringify({ wabaId: id }),
       })
-  
+
       const result = await response.json()
-  
+
       if (response.ok) {
         console.log("Webhook actualizado exitosamente:", result)
-  
+
         // ✅ ya no llamamos a /api/waba/update-status
         // porque el estado se actualiza directamente en update-webhook
         if (onStatusUpdate) {
@@ -262,7 +263,7 @@ function ActionButtons({
       setIsActivating(false)
     }
   }
-  
+
   return (
     <div className="flex gap-1">
       <Button
@@ -319,8 +320,8 @@ function TableRowComponent({
   }
 
   return (
-    <tr className="hover:bg-gray-50 border-b border-gray-100">
-      <td className="p-4">
+    <TableRow className="hover:bg-gray-50 border-b border-gray-100">
+      <TableCell className="p-4">
         <div className="flex items-center gap-3">
           <div className="w-1 h-10 bg-green-600 rounded-full"></div>
           <div className="flex items-center gap-2">
@@ -330,20 +331,20 @@ function TableRowComponent({
             <span className="font-mono text-sm font-medium text-gray-900">{firstColumnValue}</span>
           </div>
         </div>
-      </td>
-      <td className="p-4">
+      </TableCell>
+      <TableCell className="p-4">
         <span className="font-medium text-gray-900">{item.nombre}</span>
-      </td>
-      <td className="p-4">
+      </TableCell>
+      <TableCell className="p-4">
         <span className="text-gray-600 text-sm">{item.descripcion}</span>
-      </td>
-      <td className="p-4">
+      </TableCell>
+      <TableCell className="p-4">
         <StatusBadge status={item.estado} />
-      </td>
-      <td className="p-4">
+      </TableCell>
+      <TableCell className="p-4">
         <span className="text-gray-500 text-sm">{formatDate(item.fecha_alta)}</span>
-      </td>
-      <td className="p-4">
+      </TableCell>
+      <TableCell className="p-4">
         <ActionButtons
           status={item.estado}
           id={item.id}
@@ -352,8 +353,8 @@ function TableRowComponent({
           facebookUrl={item.url_register_facebook}
           onStatusUpdate={onStatusUpdate} // Pass callback to ActionButtons
         />
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   )
 }
 
@@ -685,8 +686,7 @@ export default function CanalPage({ params }: PageProps) {
 
       try {
         setLoading(true)
-        const resolvedParams = await params
-        const canalId = Number.parseInt(resolvedParams.id)
+        const canalId = Number.parseInt(params.id)
 
         if (isNaN(canalId)) {
           notFound()
@@ -840,6 +840,53 @@ export default function CanalPage({ params }: PageProps) {
           </Button>
         </div>
 
+        <Card className="border-blue-200 bg-blue-50/50">
+          <CardHeader>
+            <CardTitle className="text-lg text-blue-900 flex items-center gap-2">
+              <Info className="h-5 w-5" />
+              Instrucciones de Configuración
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">
+                  1
+                </div>
+                <div>
+                  <p className="font-medium text-blue-900">Añade el número</p>
+                  <p className="text-sm text-blue-700">
+                    Haz clic en "Añadir Número" y completa el formulario. Espera a que termine el proceso de registro.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">
+                  2
+                </div>
+                <div>
+                  <p className="font-medium text-blue-900">Vincula con Facebook</p>
+                  <p className="text-sm text-blue-700">
+                    Dale al botón de Facebook <Facebook className="inline h-4 w-4 mx-1" /> y completa la vinculación en
+                    la ventana que se abre.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">
+                  3
+                </div>
+                <div>
+                  <p className="font-medium text-blue-900">Activa el número</p>
+                  <p className="text-sm text-blue-700">
+                    Una vez vinculado con Facebook, haz clic en "Activar" para completar la configuración.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card>
             <CardContent className="p-6">
@@ -912,17 +959,17 @@ export default function CanalPage({ params }: PageProps) {
 
             <Card>
               <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="bg-gray-50 border-b">
+                <Table className="w-full">
+                  <TableHeader>
+                    <TableRow>
                       {config.columns.map((column: string) => (
-                        <th key={column} className="h-12 px-4 text-left text-sm font-medium text-gray-700">
+                        <TableHead key={column} className="h-12 px-4 text-left text-sm font-medium text-gray-700">
                           {column}
-                        </th>
+                        </TableHead>
                       ))}
-                    </tr>
-                  </thead>
-                  <tbody>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {currentData.map((item) => (
                       <TableRowComponent
                         key={item.id}
@@ -932,8 +979,8 @@ export default function CanalPage({ params }: PageProps) {
                         onStatusUpdate={handleStatusUpdate} // Pass callback to TableRowComponent
                       />
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             </Card>
 
