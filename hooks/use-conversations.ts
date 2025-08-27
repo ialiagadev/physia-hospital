@@ -246,9 +246,17 @@ export function useConversations(
         // 🔹 Unificación de formato
         const conversationsWithMessages = (conversationsData || []).map((conv: any) => {
           let unreadCount = 0
-          if (Array.isArray(conv.users_conversations) && conv.users_conversations.length > 0) {
-            unreadCount = conv.users_conversations[0].unread_count || 0
+
+          if (viewMode === "assigned") {
+            // por usuario
+            if (Array.isArray(conv.users_conversations) && conv.users_conversations.length > 0) {
+              unreadCount = conv.users_conversations[0].unread_count || 0
+            }
+          } else {
+            // global
+            unreadCount = conv.unread_count || 0
           }
+          
           
 
           const conversationTags = tagsMap.get(conv.id) || []
@@ -369,36 +377,53 @@ export function useConversations(
 
   const markAsRead = useCallback(
     async (conversationId: string) => {
-      if (!currentUserId) return
-
       try {
-        const { error } = await supabase
-          .from("users_conversations")
-          .update({
-            unread_count: 0,
-            last_read_at: new Date().toISOString(),
-          })
-          .eq("conversation_id", conversationId)
-          .eq("user_id", currentUserId)
-
-        if (error) {
-          console.error("Error marking conversation as read:", error)
-          return
+        if (viewMode === "assigned" && currentUserId) {
+          // 🔹 Modo asignado → contador por usuario
+          const { error } = await supabase
+            .from("users_conversations")
+            .update({
+              unread_count: 0,
+              last_read_at: new Date().toISOString(),
+            })
+            .eq("conversation_id", conversationId)
+            .eq("user_id", currentUserId)
+  
+          if (error) {
+            console.error("Error marking conversation as read (assigned):", error)
+            return
+          }
+        } else {
+          // 🔹 Modo todos → contador global
+          const { error } = await supabase
+            .from("conversations")
+            .update({
+              unread_count: 0,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", conversationId)
+  
+          if (error) {
+            console.error("Error marking conversation as read (all):", error)
+            return
+          }
         }
-
-        // Actualizar el estado local inmediatamente
+  
+        // ✅ Actualizar el estado local inmediatamente
         if (isMounted.current) {
-          setConversations((prev) => {
-            return prev.map((conv) => (conv.id === conversationId ? { ...conv, unread_count: 0 } : conv))
-          })
+          setConversations((prev) =>
+            prev.map((conv) =>
+              conv.id === conversationId ? { ...conv, unread_count: 0 } : conv
+            )
+          )
         }
       } catch (err) {
         console.error("Error marking conversation as read:", err)
       }
     },
-    [currentUserId],
+    [currentUserId, viewMode] // 👈 importante añadir viewMode aquí
   )
-
+  
   const handleTagDelete = useCallback(
     (tagId: string) => {
       let targetConversationId: string | null = null
