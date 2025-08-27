@@ -13,7 +13,7 @@ const supabaseAdmin = createClient(
   },
 )
 
-export async function DELETE(request: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { appointmentId } = body
@@ -43,9 +43,6 @@ export async function DELETE(request: NextRequest) {
       console.error("Error deleting appointment:", deleteError)
       return NextResponse.json({ error: "Failed to delete appointment" }, { status: 500 })
     }
-
-    // TODO: Eliminar también en Google Calendar si estaba sincronizada
-    // TODO: Enviar notificación al cliente/profesional si es necesario
 
     return NextResponse.json({
       message: "Appointment deleted successfully",
