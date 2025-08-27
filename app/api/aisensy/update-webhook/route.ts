@@ -56,17 +56,21 @@ export async function POST(req: Request) {
 
     // ✅ Si AiSensy responde OK, actualizamos el estado en la tabla waba
     const { error: updateError } = await supabase
-      .from("waba")
-      .update({ estado: 1 }) // solo actualizamos estado
-      .eq("id", wabaId)
-
-    if (updateError) {
-      console.error("❌ Error actualizando waba:", updateError)
-      return NextResponse.json(
-        { error: "Webhook actualizado en AiSensy pero fallo al actualizar en BD" },
-        { status: 500 },
-      )
-    }
+    .from("waba")
+    .update({ 
+      estado: 1,
+      waba_id: 1   // 👈 siempre pone 1
+    })
+    .eq("id", wabaId)
+  
+  if (updateError) {
+    console.error("❌ Error actualizando waba:", updateError)
+    return NextResponse.json(
+      { error: "Webhook actualizado en AiSensy pero fallo al actualizar en BD" },
+      { status: 500 },
+    )
+  }
+  
 
     return NextResponse.json({ success: true, result })
   } catch (e) {
