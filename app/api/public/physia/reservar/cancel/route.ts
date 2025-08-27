@@ -1,33 +1,31 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
-// Cliente admin para bypasear RLS
-const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
+// Cliente admin para bypass RLS
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
   },
-})
+)
 
-export async function POST(request: NextRequest) {
+export async function DELETE(request: NextRequest) {
   try {
     const body = await request.json()
     const { appointmentId } = body
 
-    // Validar que se proporcione el appointmentId
     if (!appointmentId) {
       return NextResponse.json({ error: "appointmentId is required" }, { status: 400 })
     }
 
-    // Verificar que la cita existe y obtener sus datos
+    // Verificar que la cita existe antes de borrar
     const { data: appointment, error: fetchError } = await supabaseAdmin
       .from("appointments")
-      .select(`
-        *,
-        client:clients(*),
-        professional:users(*),
-        service:services(*)
-      `)
+      .select("id")
       .eq("id", appointmentId)
       .single()
 
@@ -35,42 +33,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Appointment not found" }, { status: 404 })
     }
 
-    // Verificar que la cita no esté ya cancelada
-    if (appointment.status === "cancelled") {
-      return NextResponse.json({ error: "Appointment is already cancelled" }, { status: 400 })
-    }
-
-    // Actualizar el status de la cita a cancelada
-    const { data: updatedAppointment, error: updateError } = await supabaseAdmin
+    // Eliminar la cita
+    const { error: deleteError } = await supabaseAdmin
       .from("appointments")
-      .update({
-        status: "cancelled",
-        updated_at: new Date().toISOString(),
-      })
+      .delete()
       .eq("id", appointmentId)
-      .select(`
-        *,
-        client:clients(*),
-        professional:users(*),
-        service:services(*)
-      `)
-      .single()
 
-    if (updateError) {
-      console.error("Error updating appointment:", updateError)
-      return NextResponse.json({ error: "Failed to cancel appointment" }, { status: 500 })
+    if (deleteError) {
+      console.error("Error deleting appointment:", deleteError)
+      return NextResponse.json({ error: "Failed to delete appointment" }, { status: 500 })
     }
 
-    // TODO: Sincronizar con Google Calendar si está habilitado
-    // TODO: Enviar notificación al cliente
-    // TODO: Enviar notificación al profesional
+    // TODO: Eliminar también en Google Calendar si estaba sincronizada
+    // TODO: Enviar notificación al cliente/profesional si es necesario
 
     return NextResponse.json({
-      message: "Appointment cancelled successfully",
-      appointment: updatedAppointment,
+      message: "Appointment deleted successfully",
+      appointmentId,
     })
   } catch (error) {
-    console.error("Error in cancel appointment API:", error)
+    console.error("Error in delete appointment API:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
