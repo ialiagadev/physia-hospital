@@ -407,22 +407,57 @@ export function useConversations(
             console.error("Error marking conversation as read (all):", error)
             return
           }
+  
+          // 👇 adicional: si hay usuario asignado, sincronizar también su contador individual
+          if (currentUserId) {
+            const { error: userError } = await supabase
+              .from("users_conversations")
+              .update({
+                unread_count: 0,
+                last_read_at: new Date().toISOString(),
+              })
+              .eq("conversation_id", conversationId)
+              .eq("user_id", currentUserId)
+  
+            if (userError) {
+              console.error("Error syncing assigned unread_count:", userError)
+            }
+          }
         }
   
         // ✅ Actualizar el estado local inmediatamente
         if (isMounted.current) {
           setConversations((prev) =>
-            prev.map((conv) =>
-              conv.id === conversationId ? { ...conv, unread_count: 0 } : conv
-            )
+            prev.map((conv) => {
+              if (conv.id === conversationId) {
+                let updatedUC = conv.users_conversations
+  
+                if (Array.isArray(conv.users_conversations)) {
+                  // 👇 forzamos el tipo aquí
+                  updatedUC = (conv.users_conversations as any[]).map((uc: any) =>
+                    currentUserId && uc.user_id === currentUserId
+                      ? { ...uc, unread_count: 0 }
+                      : uc
+                  ) as any
+                }
+  
+                return {
+                  ...conv,
+                  unread_count: 0,
+                  users_conversations: updatedUC as any, // 👈 aquí también casteamos
+                } as ConversationWithLastMessage
+              }
+              return conv
+            })
           )
         }
       } catch (err) {
         console.error("Error marking conversation as read:", err)
       }
     },
-    [currentUserId, viewMode] // 👈 importante añadir viewMode aquí
+    [currentUserId, viewMode]
   )
+  
   
   const handleTagDelete = useCallback(
     (tagId: string) => {
