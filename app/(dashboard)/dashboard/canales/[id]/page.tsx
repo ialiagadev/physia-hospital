@@ -459,7 +459,7 @@ function AddNumberModal({
           const updatedData = {
             ...data,
             aisensy_status: aisensyResult.status || "registered",
-            facebook_url: aisensyResult.facebook_url || null,
+            url_register_facebook: aisensyResult.facebook_url || null,
           }
 
           onAdd(updatedData)
