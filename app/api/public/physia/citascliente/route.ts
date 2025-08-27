@@ -22,6 +22,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "ID de cliente inválido" }, { status: 400 })
     }
 
+    console.log("🔎 Buscando citas para clientId:", clientId)
+
     // === Citas individuales ===
     const { data: individualAppointments, error: individualError } = await supabaseAdmin
       .from("appointments")
@@ -42,8 +44,7 @@ export async function POST(request: NextRequest) {
         service_id,
         users!appointments_professional_id_fkey(
           id,
-          first_name,
-          last_name,
+          name,
           email
         ),
         services(
@@ -55,7 +56,6 @@ export async function POST(request: NextRequest) {
         appointment_types(
           id,
           name,
-          description,
           color
         )
       `)
@@ -64,56 +64,67 @@ export async function POST(request: NextRequest) {
       .order("start_time", { ascending: true })
 
     if (individualError) {
-      console.error("Error fetching individual appointments:", individualError)
-      return NextResponse.json({ error: "Error obteniendo citas individuales" }, { status: 500 })
+      console.error("❌ Error fetching individual appointments:", individualError)
+      return NextResponse.json(
+        { error: "Error obteniendo citas individuales", details: individualError.message },
+        { status: 500 },
+      )
     }
+
+    console.log("✅ Citas individuales obtenidas:", individualAppointments?.length)
 
     // === Actividades grupales ===
     const { data: groupAppointments, error: groupError } = await supabaseAdmin
-      .from("group_activity_participants")
-      .select(`
+    .from("group_activity_participants")
+    .select(`
+      id,
+      status,
+      registration_date,
+      notes,
+      group_activities!inner(
         id,
-        status as participant_status,
-        registration_date,
-        notes as participant_notes,
-        group_activities!inner(
+        name,
+        description,
+        date,
+        start_time,
+        end_time,
+        status,
+        max_participants,
+        current_participants,
+        color,
+        created_at,
+        updated_at,
+        professional_id,
+        consultation_id,
+        service_id,
+        users!fk_group_activities_professional(
+          id,
+          name,
+          email
+        ),
+        services(
           id,
           name,
           description,
-          date,
-          start_time,
-          end_time,
-          status,
-          max_participants,
-          current_participants,
-          color,
-          created_at,
-          updated_at,
-          professional_id,
-          consultation_id,
-          service_id,
-          users!group_activities_professional_id_fkey(
-            id,
-            first_name,
-            last_name,
-            email
-          ),
-          services(
-            id,
-            name,
-            description,
-            price
-          )
+          price
         )
-      `)
-      .eq("client_id", clientId)
-      .order("group_activities(date)", { ascending: true })
+      )
+    `)
+    .eq("client_id", clientId)
+    .order("group_activities(date)", { ascending: true })
+    .order("group_activities(start_time)", { ascending: true })
+  
       .order("group_activities(start_time)", { ascending: true })
 
     if (groupError) {
-      console.error("Error fetching group appointments:", groupError)
-      return NextResponse.json({ error: "Error obteniendo actividades grupales" }, { status: 500 })
+      console.error("❌ Error fetching group appointments:", groupError)
+      return NextResponse.json(
+        { error: "Error obteniendo actividades grupales", details: groupError.message },
+        { status: 500 },
+      )
     }
+
+    console.log("✅ Actividades grupales obtenidas:", groupAppointments?.length)
 
     // === Formateo citas individuales ===
     const formattedIndividualAppointments =
@@ -135,7 +146,7 @@ export async function POST(request: NextRequest) {
           Array.isArray(appointment.users) && appointment.users.length > 0
             ? {
                 id: appointment.users[0].id,
-                name: `${appointment.users[0].first_name} ${appointment.users[0].last_name}`,
+                name: appointment.users[0].name,
                 email: appointment.users[0].email,
               }
             : null,
@@ -155,7 +166,6 @@ export async function POST(request: NextRequest) {
             ? {
                 id: appointment.appointment_types[0].id,
                 name: appointment.appointment_types[0].name,
-                description: appointment.appointment_types[0].description,
                 color: appointment.appointment_types[0].color,
               }
             : null,
@@ -169,10 +179,10 @@ export async function POST(request: NextRequest) {
         date: participant.group_activities.date,
         start_time: participant.group_activities.start_time,
         end_time: participant.group_activities.end_time,
-        duration: null, // las actividades grupales no tienen duración específica
+        duration: null,
         status: participant.group_activities.status,
         notes: participant.participant_notes,
-        modalidad: "presencial", // por defecto
+        modalidad: "presencial",
         virtual_link: null,
         created_at: participant.group_activities.created_at,
         updated_at: participant.group_activities.updated_at,
@@ -184,22 +194,24 @@ export async function POST(request: NextRequest) {
         participant_status: participant.participant_status,
         registration_date: participant.registration_date,
 
-        professional: participant.group_activities.users
-          ? {
-              id: participant.group_activities.users.id,
-              name: `${participant.group_activities.users.first_name} ${participant.group_activities.users.last_name}`,
-              email: participant.group_activities.users.email,
-            }
-          : null,
+        professional:
+          Array.isArray(participant.group_activities.users) && participant.group_activities.users.length > 0
+            ? {
+                id: participant.group_activities.users[0].id,
+                name: participant.group_activities.users[0].name,
+                email: participant.group_activities.users[0].email,
+              }
+            : null,
 
-        service: participant.group_activities.services
-          ? {
-              id: participant.group_activities.services.id,
-              name: participant.group_activities.services.name,
-              description: participant.group_activities.services.description,
-              price: participant.group_activities.services.price,
-            }
-          : null,
+        service:
+          Array.isArray(participant.group_activities.services) && participant.group_activities.services.length > 0
+            ? {
+                id: participant.group_activities.services[0].id,
+                name: participant.group_activities.services[0].name,
+                description: participant.group_activities.services[0].description,
+                price: participant.group_activities.services[0].price,
+              }
+            : null,
       })) || []
 
     // === Unificar y ordenar ===
@@ -208,6 +220,8 @@ export async function POST(request: NextRequest) {
       const dateB = new Date(`${b.date}T${b.start_time}`)
       return dateA.getTime() - dateB.getTime()
     })
+
+    console.log("📊 Total citas:", allAppointments.length)
 
     return NextResponse.json({
       success: true,
@@ -220,7 +234,10 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error("Error in client appointments API:", error)
-    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
+    console.error("🔥 Error in client appointments API:", error)
+    return NextResponse.json(
+      { error: "Error interno del servidor", details: String(error) },
+      { status: 500 },
+    )
   }
 }
