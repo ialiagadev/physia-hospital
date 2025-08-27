@@ -375,7 +375,13 @@ async function getSlotsForProfessional(
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { professionalId, serviceId, startDate, endDate, organizationId } = body
+let { professionalId, serviceId, startDate, endDate, organizationId } = body
+
+// 👇 Si no viene professionalId, lo tratamos como "any"
+if (!professionalId) {
+  professionalId = "any"
+}
+
 
     const orgId = Number.parseInt(organizationId)
 
@@ -383,12 +389,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "ID de organización inválido" }, { status: 400 })
     }
 
-    if (!professionalId || !serviceId || !startDate || !endDate || !organizationId) {
+    if (!serviceId || !startDate || !endDate || !organizationId) {
       return NextResponse.json(
-        { error: "Faltan parámetros requeridos: organizationId, professionalId, serviceId, startDate, endDate" },
+        { error: "Faltan parámetros requeridos: organizationId, serviceId, startDate, endDate" },
         { status: 400 },
       )
     }
+    
 
     const startDateParsed = parseISO(startDate)
     const endDateParsed = parseISO(endDate)
