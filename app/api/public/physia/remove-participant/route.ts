@@ -13,13 +13,16 @@ const supabaseAdmin = createClient(
   },
 )
 
-export async function DELETE(request: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { client_id, group_activity_id } = body
 
     if (!client_id || !group_activity_id) {
-      return NextResponse.json({ error: "client_id and group_activity_id are required" }, { status: 400 })
+      return NextResponse.json(
+        { error: "client_id and group_activity_id are required" },
+        { status: 400 },
+      )
     }
 
     // Verificar que existe el registro antes de borrarlo
