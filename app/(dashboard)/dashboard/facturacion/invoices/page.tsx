@@ -1022,10 +1022,7 @@ export default function InvoicesPage() {
                 {selectedInvoices.size !== 1 ? "s" : ""}
               </span>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={isExportingCSV}>
-                  <Download className="mr-2 h-4 w-4" />
-                  {isExportingCSV ? "Exportando..." : "Exportar CSV"}
-                </Button>
+               
                 <BulkDownloadButton
                   selectedInvoiceIds={Array.from(selectedInvoices)}
                   onDownloadComplete={handleInvoicesDownloaded}
