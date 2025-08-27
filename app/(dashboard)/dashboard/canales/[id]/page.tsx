@@ -232,7 +232,6 @@ function ActionButtons({
       window.open(facebookUrl, "_blank")
     }
   }
-
   const handleActivate = async () => {
     setIsActivating(true)
     try {
@@ -243,27 +242,16 @@ function ActionButtons({
         },
         body: JSON.stringify({ wabaId: id }),
       })
-
+  
       const result = await response.json()
-
+  
       if (response.ok) {
         console.log("Webhook actualizado exitosamente:", result)
-
-        const updateResponse = await fetch("/api/waba/update-status", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ wabaId: id, status: 1 }),
-        })
-
-        if (updateResponse.ok) {
-          console.log("Estado del WABA actualizado a 1")
-          if (onStatusUpdate) {
-            onStatusUpdate(id, 1)
-          }
-        } else {
-          console.error("Error al actualizar estado del WABA")
+  
+        // ✅ ya no llamamos a /api/waba/update-status
+        // porque el estado se actualiza directamente en update-webhook
+        if (onStatusUpdate) {
+          onStatusUpdate(id, 1)
         }
       } else {
         console.error("Error al actualizar webhook:", result.error)
@@ -274,7 +262,7 @@ function ActionButtons({
       setIsActivating(false)
     }
   }
-
+  
   return (
     <div className="flex gap-1">
       <Button
