@@ -130,29 +130,35 @@ export async function POST(request: NextRequest) {
         virtual_link: appointment.virtual_link,
         created_at: appointment.created_at,
         updated_at: appointment.updated_at,
-        professional: appointment.users
-          ? {
-              id: appointment.users.id,
-              name: `${appointment.users.first_name} ${appointment.users.last_name}`,
-              email: appointment.users.email,
-            }
-          : null,
-        service: appointment.services
-          ? {
-              id: appointment.services.id,
-              name: appointment.services.name,
-              description: appointment.services.description,
-              price: appointment.services.price,
-            }
-          : null,
-        appointment_type: appointment.appointment_types
-          ? {
-              id: appointment.appointment_types.id,
-              name: appointment.appointment_types.name,
-              description: appointment.appointment_types.description,
-              color: appointment.appointment_types.color,
-            }
-          : null,
+
+        professional:
+          Array.isArray(appointment.users) && appointment.users.length > 0
+            ? {
+                id: appointment.users[0].id,
+                name: `${appointment.users[0].first_name} ${appointment.users[0].last_name}`,
+                email: appointment.users[0].email,
+              }
+            : null,
+
+        service:
+          Array.isArray(appointment.services) && appointment.services.length > 0
+            ? {
+                id: appointment.services[0].id,
+                name: appointment.services[0].name,
+                description: appointment.services[0].description,
+                price: appointment.services[0].price,
+              }
+            : null,
+
+        appointment_type:
+          Array.isArray(appointment.appointment_types) && appointment.appointment_types.length > 0
+            ? {
+                id: appointment.appointment_types[0].id,
+                name: appointment.appointment_types[0].name,
+                description: appointment.appointment_types[0].description,
+                color: appointment.appointment_types[0].color,
+              }
+            : null,
       })) || []
 
     // === Formateo citas grupales ===
@@ -177,6 +183,7 @@ export async function POST(request: NextRequest) {
         color: participant.group_activities.color,
         participant_status: participant.participant_status,
         registration_date: participant.registration_date,
+
         professional: participant.group_activities.users
           ? {
               id: participant.group_activities.users.id,
@@ -184,6 +191,7 @@ export async function POST(request: NextRequest) {
               email: participant.group_activities.users.email,
             }
           : null,
+
         service: participant.group_activities.services
           ? {
               id: participant.group_activities.services.id,
