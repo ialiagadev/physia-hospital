@@ -14,13 +14,20 @@ import { STRIPE_PLANS } from "@/lib/stripe-config"
 import { PaymentSetup } from "@/components/payment-setup"
 
 export default function RegisterPage() {
-  const [step, setStep] = useState(1) // 1: form, 2: plan selection, 3: payment
+  const [step, setStep] = useState(1)
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [name, setName] = useState("")
   const [phone, setPhone] = useState("")
   const [organizationName, setOrganizationName] = useState("")
-  const [taxId, setTaxId] = useState("") // 👈 nuevo campo para CIF/NIF
+  const [taxId, setTaxId] = useState("")
+
+  // Dirección
+  const [addressLine1, setAddressLine1] = useState("")
+  const [city, setCity] = useState("")
+  const [postalCode, setPostalCode] = useState("")
+  const [country, setCountry] = useState("ES") // por defecto España
+
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null)
   const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("yearly")
   const [isLoading, setIsLoading] = useState(false)
@@ -38,7 +45,17 @@ export default function RegisterPage() {
     e.preventDefault()
     setError("")
 
-    if (!email || !password || !name || !phone || !organizationName || !taxId) {
+    if (
+      !email ||
+      !password ||
+      !name ||
+      !phone ||
+      !organizationName ||
+      !taxId ||
+      !addressLine1 ||
+      !city ||
+      !postalCode
+    ) {
       setError("Todos los campos son obligatorios")
       return
     }
@@ -67,7 +84,6 @@ export default function RegisterPage() {
       console.log("🔄 Iniciando proceso de registro completo...")
 
       // 1. Crear cliente en Stripe
-      console.log("💳 Creando cliente en Stripe...")
       const stripeResponse = await fetch("/api/create-stripe-customer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -76,13 +92,18 @@ export default function RegisterPage() {
           name: name.trim(),
           phone: phone.trim(),
           organizationName: organizationName.trim(),
-          taxId: taxId.trim(), // 👈 lo pasamos también por si lo quieres usar en Stripe
+          taxId: taxId.trim(),
+          address: {
+            line1: addressLine1.trim(),
+            city: city.trim(),
+            postal_code: postalCode.trim(),
+            country: country.trim(),
+          },
         }),
       })
 
       if (!stripeResponse.ok) {
         const errorText = await stripeResponse.text()
-        console.error("❌ Stripe customer API error:", errorText)
         throw new Error(
           `Error del servidor (${stripeResponse.status}): ${
             errorText.includes("<!DOCTYPE") ? "API endpoint no encontrado" : errorText
@@ -103,7 +124,6 @@ export default function RegisterPage() {
 
       const priceId = planConfig.prices[billingPeriod].priceId
 
-      console.log("📝 Creando suscripción en Stripe con:", { planId: selectedPlan, billingPeriod, priceId })
       const subResponse = await fetch("/api/create-subscription", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -116,7 +136,6 @@ export default function RegisterPage() {
 
       if (!subResponse.ok) {
         const errorText = await subResponse.text()
-        console.error("❌ Subscription API error:", errorText)
         throw new Error(
           `Error del servidor (${subResponse.status}): ${
             errorText.includes("<!DOCTYPE") ? "API endpoint no encontrado" : errorText
@@ -129,11 +148,6 @@ export default function RegisterPage() {
         throw new Error(subData.error || "Error creando suscripción")
       }
 
-      console.log("✅ Suscripción Stripe creada:", subData.subscriptionId)
-      console.log("📦 Datos completos de la suscripción recibidos:", subData)
-      console.log("[v0] DEBUG - subData.subscriptionId:", subData.subscriptionId)
-      console.log("[v0] DEBUG - typeof subData.subscriptionId:", typeof subData.subscriptionId)
-
       setSubscriptionData({
         subscriptionId: subData.subscriptionId,
         clientSecret: subData.clientSecret,
@@ -141,14 +155,7 @@ export default function RegisterPage() {
         trialEnd: subData.trialEnd,
       })
 
-      console.log("[v0] DEBUG - subscriptionData que se va a guardar:", {
-        subscriptionId: subData.subscriptionId,
-        clientSecret: subData.clientSecret,
-        customerId: stripeData.customerId,
-        trialEnd: subData.trialEnd,
-      })
-
-      setStep(3) // Paso a pago
+      setStep(3)
     } catch (err: any) {
       console.error("💥 Registration error:", err)
       setError("Error inesperado durante el registro: " + (err.message || "Inténtalo de nuevo"))
@@ -167,19 +174,6 @@ export default function RegisterPage() {
     setError("")
 
     try {
-      console.log("👤 Creando usuario en Supabase con metadata...")
-      console.log("📦 Metadata que voy a guardar:", {
-        name: name.trim(),
-        phone: phone.trim(),
-        organization_name: organizationName.trim(),
-        tax_id: taxId.trim(), // 👈 nuevo campo
-        stripe_customer_id: subscriptionData.customerId,
-        stripe_subscription_id: subscriptionData.subscriptionId,
-        selected_plan: selectedPlan,
-        billing_period: billingPeriod,
-        trial_end: subscriptionData.trialEnd,
-      })
-
       const { data: authData, error: authError } = await modernSupabase.auth.signUp({
         email: email.trim(),
         password,
@@ -189,7 +183,11 @@ export default function RegisterPage() {
             name: name.trim(),
             phone: phone.trim(),
             organization_name: organizationName.trim(),
-            tax_id: taxId.trim(), // 👈 nuevo campo
+            tax_id: taxId.trim(),
+            address_line1: addressLine1.trim(),
+            city: city.trim(),
+            postal_code: postalCode.trim(),
+            country: country.trim(),
             stripe_customer_id: subscriptionData.customerId,
             stripe_subscription_id: subscriptionData.subscriptionId,
             selected_plan: selectedPlan,
@@ -200,18 +198,14 @@ export default function RegisterPage() {
       })
 
       if (authError) {
-        console.error("❌ Error en signUp:", authError)
         setError(authError.message)
         return
       }
 
       if (authData.user) {
-        console.log("✅ Usuario creado en Supabase:", authData.user.email)
-        console.log("🔎 user_metadata guardado:", authData.user.user_metadata)
         setSuccess(true)
       }
     } catch (err: any) {
-      console.error("💥 User creation error:", err)
       setError("Error creando usuario: " + (err.message || "Inténtalo de nuevo"))
     } finally {
       setIsLoading(false)
@@ -242,19 +236,18 @@ export default function RegisterPage() {
 
   return (
     <div className="min-h-screen bg-white">
-      <div className="text-center pt-16 pb-12">
-        <h1 className="text-5xl font-bold bg-gradient-to-r from-purple-600 via-purple-700 to-purple-800 bg-clip-text text-transparent tracking-tight">
+      <div className="text-center pt-8 pb-6">
+        <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-600 via-purple-700 to-purple-800 bg-clip-text text-transparent tracking-tight">
           ¡Bienvenido a Physia! ✨
         </h1>
       </div>
 
-      <div className="flex justify-center px-4 pb-8">
+      <div className="flex justify-center px-4 pb-4">
         <div className="flex items-center space-x-4">
+          {/* Paso 1-3 */}
           <div className="flex items-center">
             <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                step >= 1 ? "bg-purple-600 text-white" : "bg-gray-200 text-gray-500"
-              }`}
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step >= 1 ? "bg-purple-600 text-white" : "bg-gray-200 text-gray-500"}`}
             >
               1
             </div>
@@ -263,9 +256,7 @@ export default function RegisterPage() {
           <div className={`w-8 h-0.5 ${step >= 2 ? "bg-purple-600" : "bg-gray-200"}`} />
           <div className="flex items-center">
             <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                step >= 2 ? "bg-purple-600 text-white" : "bg-gray-200 text-gray-500"
-              }`}
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step >= 2 ? "bg-purple-600 text-white" : "bg-gray-200 text-gray-500"}`}
             >
               2
             </div>
@@ -274,9 +265,7 @@ export default function RegisterPage() {
           <div className={`w-8 h-0.5 ${step >= 3 ? "bg-purple-600" : "bg-gray-200"}`} />
           <div className="flex items-center">
             <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                step >= 3 ? "bg-purple-600 text-white" : "bg-gray-200 text-gray-500"
-              }`}
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${step >= 3 ? "bg-purple-600 text-white" : "bg-gray-200 text-gray-500"}`}
             >
               3
             </div>
@@ -285,76 +274,182 @@ export default function RegisterPage() {
         </div>
       </div>
 
-      <div className="flex items-center justify-center px-4 pb-12">
-        <div className="w-full max-w-6xl grid lg:grid-cols-2 gap-20 items-center">
-          {/* Imagen */}
+      <div className="flex items-center justify-center px-4 pb-6">
+        <div className="w-full max-w-6xl grid lg:grid-cols-2 gap-12 items-center">
           <div className="flex justify-center lg:justify-end order-2 lg:order-1">
-            <img src="/images/physia-mascot.png" alt="Physia" className="w-full max-w-lg" />
+            <img src="/images/physia-mascot.png" alt="Physia" className="w-full max-w-sm" />
           </div>
 
-          {/* Formulario / Plan Selector / Payment Setup */}
           <div className="flex justify-center lg:justify-start order-1 lg:order-2">
             <div className="w-full max-w-sm">
               {step === 1 && (
-                <form onSubmit={handleFormSubmit} className="space-y-6">
-                  <div className="space-y-2">
-                    <Label htmlFor="name">Nombre completo</Label>
-                    <Input id="name" type="text" value={name} onChange={(e) => setName(e.target.value)} required />
+                <form onSubmit={handleFormSubmit} className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label htmlFor="name" className="text-sm">
+                        Nombre completo
+                      </Label>
+                      <Input
+                        id="name"
+                        type="text"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        required
+                        className="h-9"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="email" className="text-sm">
+                        Email
+                      </Label>
+                      <Input
+                        id="email"
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        required
+                        className="h-9"
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Correo electrónico</Label>
-                    <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label htmlFor="phone" className="text-sm">
+                        Teléfono
+                      </Label>
+                      <Input
+                        id="phone"
+                        type="tel"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        required
+                        className="h-9"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="password" className="text-sm">
+                        Contraseña
+                      </Label>
+                      <Input
+                        id="password"
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        required
+                        minLength={6}
+                        className="h-9"
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="phone">Teléfono</Label>
-                    <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} required />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="password">Contraseña</Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                      minLength={6}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="organizationName">Nombre de tu clínica</Label>
+
+                  <div className="space-y-1">
+                    <Label htmlFor="organizationName" className="text-sm">
+                      Nombre de tu clínica
+                    </Label>
                     <Input
                       id="organizationName"
                       type="text"
                       value={organizationName}
                       onChange={(e) => setOrganizationName(e.target.value)}
                       required
+                      className="h-9"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="taxId">CIF / NIF (se usará para facturación)</Label>
-                    <Input id="taxId" type="text" value={taxId} onChange={(e) => setTaxId(e.target.value)} required />
+
+                  <div className="space-y-1">
+                    <Label htmlFor="taxId" className="text-sm">
+                      CIF / NIF
+                    </Label>
+                    <Input
+                      id="taxId"
+                      type="text"
+                      value={taxId}
+                      onChange={(e) => setTaxId(e.target.value)}
+                      required
+                      className="h-9"
+                    />
                   </div>
-                  <Button type="submit" className="w-full mt-8">
+
+                  <div className="space-y-1">
+                    <Label htmlFor="addressLine1" className="text-sm">
+                      Dirección
+                    </Label>
+                    <Input
+                      id="addressLine1"
+                      type="text"
+                      value={addressLine1}
+                      onChange={(e) => setAddressLine1(e.target.value)}
+                      required
+                      className="h-9"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <Label htmlFor="city" className="text-sm">
+                        Ciudad
+                      </Label>
+                      <Input
+                        id="city"
+                        type="text"
+                        value={city}
+                        onChange={(e) => setCity(e.target.value)}
+                        required
+                        className="h-9"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="postalCode" className="text-sm">
+                        C.P.
+                      </Label>
+                      <Input
+                        id="postalCode"
+                        type="text"
+                        value={postalCode}
+                        onChange={(e) => setPostalCode(e.target.value)}
+                        required
+                        className="h-9"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="country" className="text-sm">
+                        País
+                      </Label>
+                      <Input
+                        id="country"
+                        type="text"
+                        value={country}
+                        onChange={(e) => setCountry(e.target.value)}
+                        required
+                        className="h-9"
+                      />
+                    </div>
+                  </div>
+
+                  <Button type="submit" className="w-full mt-4 h-10">
                     Continuar al plan
                   </Button>
                 </form>
               )}
 
               {step === 2 && (
-                <div className="space-y-6">
-                  <div className="w-full">
-                    <PlanSelector
-                      selectedPlan={selectedPlan}
-                      onPlanSelect={setSelectedPlan}
-                      billingPeriod={billingPeriod}
-                      onBillingPeriodChange={setBillingPeriod}
-                      disabled={isLoading}
-                    />
-                  </div>
-                  <Button onClick={handleCompleteRegistration} className="w-full" disabled={isLoading || !selectedPlan}>
+                <div className="space-y-4">
+                  <PlanSelector
+                    selectedPlan={selectedPlan}
+                    onPlanSelect={setSelectedPlan}
+                    billingPeriod={billingPeriod}
+                    onBillingPeriodChange={setBillingPeriod}
+                    disabled={isLoading}
+                  />
+                  <Button
+                    onClick={handleCompleteRegistration}
+                    className="w-full h-10"
+                    disabled={isLoading || !selectedPlan}
+                  >
                     {isLoading ? (
                       <div className="flex items-center">
-                        <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Preparando pago...
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Preparando pago...
                       </div>
                     ) : (
                       "Continuar al pago"
@@ -366,7 +461,7 @@ export default function RegisterPage() {
               {step === 3 && subscriptionData && (
                 <PaymentSetup
                   clientSecret={subscriptionData.clientSecret}
-                  subscriptionId={subscriptionData.subscriptionId} // Confirmando que subscriptionId se pasa correctamente
+                  subscriptionId={subscriptionData.subscriptionId}
                   onSuccess={handlePaymentSuccess}
                   onError={setError}
                   planName={Object.values(STRIPE_PLANS).find((p) => p.id === selectedPlan)?.name || ""}
@@ -376,9 +471,9 @@ export default function RegisterPage() {
                 />
               )}
 
-              {error && <div className="mt-4 p-4 text-sm text-red-600 bg-red-50 rounded-xl">{error}</div>}
+              {error && <div className="mt-3 p-3 text-sm text-red-600 bg-red-50 rounded-xl">{error}</div>}
 
-              <div className="mt-8 text-center">
+              <div className="mt-4 text-center">
                 <p className="text-sm text-gray-500">
                   ¿Ya tienes cuenta?{" "}
                   <Link href="/login" className="text-purple-600 hover:text-purple-700 font-semibold">
