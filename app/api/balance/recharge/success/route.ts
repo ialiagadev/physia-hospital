@@ -49,7 +49,23 @@ export async function GET(req: Request) {
 
     if (error) throw error
 
-    // 4️⃣ Redirigir al dashboard
+    // 4️⃣ Generar factura llamando a la API de facturasaldo
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/public/physia/facturasaldo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          organizationId: orgId,
+          baseAmount,
+          vat: 21,
+          totalAmount: amountWithVAT,
+        }),
+      })
+    } catch (facturaError) {
+      console.error("⚠️ Error creando factura:", facturaError)
+    }
+
+    // 5️⃣ Redirigir al dashboard
     return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/dashboard?recharge=success`)
   } catch (error: any) {
     console.error("❌ Error en success Stripe:", error)
