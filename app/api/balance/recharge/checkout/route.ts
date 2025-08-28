@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
-import { stripe } from "@/lib/stripe"  // 👈 usas tu wrapper
-import { headers } from "next/headers"
+import { stripe } from "@/lib/stripe"
 
 export async function POST(req: Request) {
   try {
@@ -9,6 +8,10 @@ export async function POST(req: Request) {
     if (!amount || amount <= 0) {
       return NextResponse.json({ success: false, error: "Cantidad inválida" }, { status: 400 })
     }
+
+    // 🔹 Calcular IVA y total
+    const baseAmount = Number(amount)
+    const amountWithVAT = baseAmount * 1.21
 
     // ⚡ crea sesión de pago en Stripe
     const session = await stripe.checkout.sessions.create({
@@ -19,15 +22,15 @@ export async function POST(req: Request) {
             currency: "eur",
             product_data: {
               name: "Recarga de saldo",
-              description: notes || "Recarga manual de créditos",
+              description: `Recarga de ${baseAmount.toFixed(2)}€ + IVA (21%)`,
             },
-            unit_amount: Math.round(amount * 100), // Stripe usa céntimos
+            unit_amount: Math.round(amountWithVAT * 100), // Stripe usa céntimos
           },
           quantity: 1,
         },
       ],
       mode: "payment",
-      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/api/balance/recharge/success?session_id={CHECKOUT_SESSION_ID}&amount=${amount}&orgId=${orgId}`,
+      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/api/balance/recharge/success?session_id={CHECKOUT_SESSION_ID}&amount=${baseAmount}&orgId=${orgId}`,
       cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard?recharge=cancelled`,
     })
 

@@ -1,61 +1,45 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs"
-import { cookies } from "next/headers"
+import { NextResponse } from "next/server"
+import { stripe } from "@/lib/stripe"
 
-export async function POST(request: NextRequest) {
+export async function POST(req: Request) {
   try {
-    const { amount, notes } = await request.json()
+    const { amount, notes, orgId } = await req.json()
 
     if (!amount || amount <= 0) {
       return NextResponse.json({ success: false, error: "Cantidad inválida" }, { status: 400 })
     }
 
-    const supabase = createRouteHandlerClient({ cookies })
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ success: false, error: "No autenticado" }, { status: 401 })
-    }
-
-    // Obtener organización del usuario
-    const { data: userData, error: userError } = await supabase
-      .from("users")
-      .select("organization_id")
-      .eq("id", user.id)
-      .single()
-
-    if (userError || !userData) {
-      return NextResponse.json({ success: false, error: "Usuario no encontrado" }, { status: 404 })
-    }
-
-    // Llamar a la función SQL para procesar el movimiento
-    const { data: result, error: functionError } = await supabase.rpc("process_balance_movement", {
-      org_id: userData.organization_id,
-      movement_type: "ingreso",
-      movement_concept: "manual_recharge",
-      movement_amount: amount,
-      ref_id: null,
-      ref_data: null,
-      user_id: user.id,
-      movement_notes: notes || "Recarga manual de saldo",
+    // ⚡ crea sesión de pago en Stripe
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      line_items: [
+        {
+          price_data: {
+            currency: "eur",
+            product_data: {
+              name: "Recarga de saldo",
+              description: notes || "Recarga manual de créditos",
+            },
+            unit_amount: Math.round(amount * 1.21 * 100), // IVA incluido (21%)
+          },
+          quantity: 1,
+        },
+      ],
+      mode: "payment",
+      // 👇 solo enviamos session_id
+      success_url: `${process.env.NEXT_PUBLIC_APP_URL}/api/balance/recharge/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard?recharge=cancelled`,
+      // 👇 guardamos datos seguros en metadata
+      metadata: {
+        orgId: String(orgId),
+        baseAmount: String(amount), // neto sin IVA
+        vat: "21",
+      },
     })
 
-    if (functionError) {
-      console.error("Error procesando recarga:", functionError)
-      return NextResponse.json({ success: false, error: "Error procesando la recarga" }, { status: 500 })
-    }
-
-    return NextResponse.json({
-      success: true,
-      movementId: result,
-      message: `Saldo recargado con ${amount}€ correctamente`,
-    })
+    return NextResponse.json({ success: true, url: session.url })
   } catch (error: any) {
-    console.error("Error en recarga de saldo:", error)
-    return NextResponse.json({ success: false, error: error.message || "Error interno del servidor" }, { status: 500 })
+    console.error("❌ Error creando sesión de Stripe:", error)
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 })
   }
 }
