@@ -74,7 +74,7 @@ export default function ChatPage() {
           <ConversationWindow
             chatId={selectedChat}
             currentUser={userProfile}
-            onTagsChange={handleTagsChange} // 🔹 Le pasamos el callback
+            onTagsChange={handleTagsChange} // 🔹 Le pasamos el callback para optimizar
           />
         ) : (
           <div className="flex-1 flex items-center justify-center bg-gray-50">
