@@ -1212,6 +1212,9 @@ export default function ConversationWindowSimple({
               </div>
 
               {dateMessages.map((msg, idx) => {
+                  if (msg.message_type === "system_ia") {
+                    return null
+                  }
                 const isFirst = isFirstInGroup(idx, dateMessages)
                 const isLast = isLastInGroup(idx, dateMessages)
 

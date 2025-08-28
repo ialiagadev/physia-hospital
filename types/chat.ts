@@ -70,6 +70,7 @@ export interface Conversation {
 }
 
 export interface ConversationWithLastMessage extends Conversation {
+  users_conversations: boolean
   assigned_to: string | undefined
   last_message?: Message
   conversation_tags?: ConversationTag[]
@@ -82,9 +83,17 @@ export interface Message {
   sender_type: "contact" | "agent" | "system"
   user_id?: string
   content: string
-  message_type: "text" | "image" | "audio" | "video" | "document" | "location" | "system"
+  message_type:
+    | "text"
+    | "image"
+    | "audio"
+    | "video"
+    | "document"
+    | "location"
+    | "system"
+    | "system_ia"   // ✅ añadido
   media_url?: string
-  duration?: number // Added duration property for audio/video messages
+  duration?: number
   is_read: boolean
   external_message_id?: string
   created_at: string
