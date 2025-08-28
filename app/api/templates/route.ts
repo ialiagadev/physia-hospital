@@ -1,3 +1,5 @@
+import { createClient } from "@supabase/supabase-js"
+
 interface WabaConfig {
   id_proyecto: string
   token_proyecto: string
@@ -78,17 +80,32 @@ interface AisensyMessageData {
 
 export class TemplateAPI {
   private config: WabaConfig
+  private supabase: any
 
   constructor(config: WabaConfig) {
     this.config = config
+    this.supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
   }
 
   /**
    * Enviar una plantilla usando la API de Aisensy (endpoint /messages)
    */
-  async sendTemplate(templateData: AisensyMessageData): Promise<any> {
-    console.log("📤 Enviando plantilla via Aisensy /messages:", templateData)
-
+  async sendTemplate(templateData: AisensyMessageData, organizationId?: number): Promise<any> {
+    console.log("📤 Preparando envío de plantilla:", templateData)
+  
+    // 1. Cobrar primero (esto valida saldo)
+    try {
+      await this.chargeTemplateUsage(templateData, organizationId)
+    } catch (error: any) {
+      console.error("❌ Error cobrando plantilla (se aborta el envío):", error)
+      throw new Error(
+        error.message?.includes("Insufficient balance")
+          ? "Saldo insuficiente para enviar la plantilla"
+          : "No se pudo procesar el cobro de la plantilla"
+      )
+    }
+  
+    // 2. Si cobró OK → enviar plantilla a Aisensy
     const response = await fetch(`https://backend.aisensy.com/direct-apis/t1/messages`, {
       method: "POST",
       headers: {
@@ -98,24 +115,101 @@ export class TemplateAPI {
       },
       body: JSON.stringify(templateData),
     })
-
+  
     console.log("📡 Respuesta de Aisensy:", response.status, response.statusText)
-
+  
     if (!response.ok) {
       const errorText = await response.text()
       console.error("❌ Error response:", errorText)
       throw new Error(`Error ${response.status}: ${errorText}`)
     }
-
+  
     const result = await response.json()
     console.log("✅ Plantilla enviada exitosamente:", result)
     return result
+  }
+  
+
+  /**
+   * Cobrar el uso de una plantilla basándose en su categoría
+   */
+  private async chargeTemplateUsage(templateData: AisensyMessageData, organizationId?: number): Promise<void> {
+    console.log("[v0] 🔍 Iniciando proceso de cobro de plantilla")
+
+    try {
+      if (!organizationId) {
+        console.log("[v0] ⚠️ No se proporcionó organization_id, saltando cobro")
+        return
+      }
+
+      console.log("[v0] 🏢 Organization ID recibido:", organizationId)
+
+      // Obtener información de la plantilla para determinar la categoría
+      console.log("[v0] 📋 Obteniendo información de plantillas...")
+      const templateName = templateData.template.name
+      const templates = await this.getTemplates()
+
+      console.log("[v0] 📋 Templates obtenidos:", {
+        templateName,
+        templatesCount: templates.data?.length,
+        hasTemplates: !!templates.data,
+      })
+
+      const template = templates.data?.find((t: any) => t.name === templateName)
+      console.log("[v0] 📋 Template encontrado:", {
+        template: template ? { name: template.name, category: template.category } : null,
+      })
+
+      // Determinar el tipo de plantilla para el cobro
+      let templateType = "utility" // Por defecto utility (0.04€)
+      if (template?.category === "MARKETING") {
+        templateType = "marketing" // Marketing (0.07€)
+      }
+
+      console.log("[v0] 💰 Preparando cobro:", {
+        templateName,
+        templateType,
+        organizationId,
+        recipient: templateData.to,
+      })
+
+      // Llamar a la función SQL para cobrar la plantilla
+      console.log("[v0] 🔧 Ejecutando función SQL charge_whatsapp_template...")
+      const { data: chargeResult, error: chargeError } = await this.supabase.rpc("charge_whatsapp_template", {
+        org_id: organizationId,
+        template_type: templateType,
+        template_ref: templateName,
+        template_data: {
+          recipient: templateData.to,
+          template_name: templateName,
+          language: templateData.template.language.code,
+          sent_at: new Date().toISOString(),
+        },
+      })
+
+      console.log("[v0] 🔧 Resultado de función SQL:", { chargeResult, error: chargeError })
+
+      if (chargeError) {
+        console.error("[v0] ❌ Error ejecutando charge_whatsapp_template:", chargeError)
+        throw chargeError
+      }
+
+      console.log("[v0] ✅ Plantilla cobrada exitosamente")
+    } catch (error) {
+      console.error("[v0] ❌ Error en chargeTemplateUsage:", error)
+      throw error
+    }
   }
 
   /**
    * Enviar plantilla simple sin parámetros
    */
-  async sendSimpleTemplate(to: string, templateName: string, languageCode = "es"): Promise<any> {
+  async sendSimpleTemplate(
+    to: string,
+    templateName: string,
+    languageCode = "es",
+    organizationId?: number,
+  ): Promise<any> {
     const templateData: AisensyMessageData = {
       to: to,
       type: "template",
@@ -129,7 +223,7 @@ export class TemplateAPI {
       },
     }
 
-    return this.sendTemplate(templateData)
+    return this.sendTemplate(templateData, organizationId)
   }
 
   /**
@@ -140,6 +234,7 @@ export class TemplateAPI {
     templateName: string,
     textParams: string[],
     languageCode = "es",
+    organizationId?: number,
   ): Promise<any> {
     const components = []
 
@@ -168,7 +263,7 @@ export class TemplateAPI {
       },
     }
 
-    return this.sendTemplate(templateData)
+    return this.sendTemplate(templateData, organizationId)
   }
 
   /**
@@ -179,6 +274,7 @@ export class TemplateAPI {
     templateName: string,
     languageCode = "es",
     parameters?: string[],
+    organizationId?: number,
   ): Promise<any> {
     const components = []
 
@@ -207,7 +303,7 @@ export class TemplateAPI {
       },
     }
 
-    return this.sendTemplate(templateData)
+    return this.sendTemplate(templateData, organizationId)
   }
 
   /**

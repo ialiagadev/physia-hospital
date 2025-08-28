@@ -33,7 +33,13 @@ export default function RootLayout({
         <link rel="shortcut icon" href="/favicon.ico" />
       </head>
       <body className={inter.className}>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+        <div className="pr-2 md:pr-4 border-t">
+  {children}
+</div>
+
+
+        </AuthProvider>
       </body>
     </html>
   )

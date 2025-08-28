@@ -333,6 +333,15 @@ export function TemplateSelectorDialog({
       return
     }
 
+    if (!userProfile?.organization_id) {
+      toast({
+        title: "Error",
+        description: "No se pudo obtener la información de la organización",
+        variant: "destructive",
+      })
+      return
+    }
+
     setSending(template.id)
 
     try {
@@ -340,9 +349,15 @@ export function TemplateSelectorDialog({
       const formattedPhone = formatPhoneNumber(recipientPhone)
 
       if (parameters.length > 0) {
-        await api.sendTemplateWithTextParams(formattedPhone, template.name, parameters, template.language)
+        await api.sendTemplateWithTextParams(
+          formattedPhone,
+          template.name,
+          parameters,
+          template.language,
+          userProfile.organization_id,
+        )
       } else {
-        await api.sendSimpleTemplate(formattedPhone, template.name, template.language)
+        await api.sendSimpleTemplate(formattedPhone, template.name, template.language, userProfile.organization_id)
       }
 
       toast({
@@ -364,16 +379,23 @@ export function TemplateSelectorDialog({
       setVariableValues({})
     } catch (error) {
       console.error("❌ Error sending template:", error)
+  
+      let description = "No se pudo enviar la plantilla"
+  
+      if (error instanceof Error && error.message.includes("Saldo insuficiente")) {
+        description = "Saldo insuficiente. Recarga tu balance para enviar plantillas."
+      }
+  
       toast({
         title: "Error al enviar plantilla",
-        description: error instanceof Error ? error.message : "No se pudo enviar la plantilla",
+        description,
         variant: "destructive",
       })
     } finally {
       setSending(null)
     }
   }
-
+  
   const handleClose = () => {
     setOpen(false)
     setShowVariableForm(false)
@@ -382,21 +404,21 @@ export function TemplateSelectorDialog({
     setSelectedCategory(null)
     setError(null)
   }
-
+  
   const handleOpenChange = (newOpen: boolean) => {
     setOpen(newOpen)
     if (!newOpen) {
       handleClose()
     }
   }
-
+  
   // Debug del botón trigger
   const handleTriggerClick = (e: React.MouseEvent) => {
     if (disabled) {
       e.preventDefault()
       return
     }
-
+  
     if (!userProfile?.organization_id) {
       toast({
         title: "Error",
@@ -407,6 +429,7 @@ export function TemplateSelectorDialog({
       return
     }
   }
+  
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>

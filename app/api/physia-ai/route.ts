@@ -4,7 +4,7 @@ import type { NextRequest } from "next/server"
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, model = "gpt-4o", conversationId } = await req.json()
+    const { messages, model = "gpt-5-mini", conversationId } = await req.json();
 
     if (!messages || !Array.isArray(messages)) {
       return new Response("Messages are required", { status: 400 })
