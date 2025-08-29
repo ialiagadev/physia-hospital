@@ -3,6 +3,26 @@ import { NextResponse } from "next/server"
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs"
 import { cookies } from "next/headers"
 
+async function createTemplate(token: string, template: any) {
+  const res = await fetch("https://backend.aisensy.com/direct-apis/t1/wa_template", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(template),
+  })
+
+  const result = await res.json()
+
+  if (!res.ok) {
+    throw new Error(`Error creando plantilla ${template.name}: ${JSON.stringify(result)}`)
+  }
+
+  return { created: true, result }
+}
+
 export async function POST(req: Request) {
   try {
     const { wabaId } = await req.json()
@@ -48,78 +68,46 @@ export async function POST(req: Request) {
       )
     }
 
-    // ✅ 2. Crear plantilla "recordatorios_cita"
-    const recordatorioTemplate = {
-      name: "recordatorios_cita",
+    // ✅ 2. Plantilla aviso_cita
+    const avisoTemplate = {
+      name: "aviso_cita",
       category: "UTILITY",
       language: "es",
       components: [
         {
           type: "BODY",
-          text: "Hola {{1}}, te recordamos tu cita en {{2}} el día {{3}} a las {{4}}. Respondiendo a este mensaje podrás resolver cualquier duda o cancelar la cita.",
+          text: "Hola {{1}}, te informamos que tienes una cita en {{2}} el día {{3}} a las {{4}}. Si necesitas modificarla o cancelarla, responde a este mensaje.",
           example: {
-            body_text: [["Juan", "Clínica Physia", "10 de Septiembre", "16:00"]],
+            body_text: [["Juan", "Clínica Physia", "15 de Octubre", "11:00"]],
           },
         },
       ],
     }
+    const avisoResult = await createTemplate(token, avisoTemplate)
 
-    const recRes = await fetch("https://backend.aisensy.com/direct-apis/t1/wa_template", {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(recordatorioTemplate),
-    })
-    const recResult = await recRes.json()
-    if (!recRes.ok) {
-      return NextResponse.json(
-        { error: `Error creando plantilla recordatorios_cita: ${recRes.status} - ${JSON.stringify(recResult)}` },
-        { status: recRes.status },
-      )
-    }
-
-    // ✅ 3. Crear plantilla "seguimiento_cita"
-    const seguimientoTemplate = {
-      name: "seguimiento_cita",
+    // ✅ 3. Plantilla revision_cita
+    const revisionTemplate = {
+      name: "revision_cita",
       category: "UTILITY",
       language: "es",
       components: [
         {
           type: "BODY",
-          text: "Hola {{1}}, ¿cómo te has sentido después de tu cita? Si tienes alguna molestia o duda, respóndenos por aquí y te ayudaremos.",
+          text: "Hola {{1}}, queríamos saber cómo te encuentras después de tu cita. Si necesitas hacer alguna consulta, puedes responder directamente a este mensaje.",
           example: {
             body_text: [["Juan"]],
           },
         },
       ],
     }
-
-    const segRes = await fetch("https://backend.aisensy.com/direct-apis/t1/wa_template", {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(seguimientoTemplate),
-    })
-    const segResult = await segRes.json()
-    if (!segRes.ok) {
-      return NextResponse.json(
-        { error: `Error creando plantilla seguimiento_cita: ${segRes.status} - ${JSON.stringify(segResult)}` },
-        { status: segRes.status },
-      )
-    }
+    const revisionResult = await createTemplate(token, revisionTemplate)
 
     // ✅ 4. Actualizar tabla waba
     const { error: updateError } = await supabase
       .from("waba")
       .update({
         estado: 1,
-        waba_id: 1, // ⚠️ aquí sigues guardando "1" fijo, revisa si quieres guardar el ID real de AiSensy
+        waba_id: 1, // ⚠️ sigue fijo, cámbialo si quieres guardar un ID real
       })
       .eq("id", wabaId)
 
@@ -131,7 +119,7 @@ export async function POST(req: Request) {
       )
     }
 
-    return NextResponse.json({ success: true, result, recResult, segResult })
+    return NextResponse.json({ success: true, result, avisoResult, revisionResult })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Error desconocido" }, { status: 500 })
   }
