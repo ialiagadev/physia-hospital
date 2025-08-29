@@ -145,11 +145,11 @@ export default function OrganizationsPage() {
 
   const getButtonText = (org: any): string => {
     if (configuringOrg === org.id) return "Configurando..."
-    return "Configurar Verifactu"
+    return "Verifactu"
   }
 
   const isButtonDisabled = (org: any): boolean => {
-    return configuringOrg === org.id || org.tax_id === DEFAULT_TAX_ID
+    return true
   }
 
   const shouldShowButton = (org: any): boolean => {
@@ -224,7 +224,7 @@ export default function OrganizationsPage() {
         <Alert className="border-blue-500 bg-blue-50">
           <Info className="h-4 w-4 text-blue-600" />
           <AlertDescription className="text-blue-800">
-            <strong>Importante:</strong> Completa los datos de tu negocio y dale al botón "Configurar Verifactu" para
+            <strong>Importante:</strong> Completa los datos de tu negocio para
             utilizar el sistema de facturación.
           </AlertDescription>
         </Alert>
@@ -324,13 +324,8 @@ export default function OrganizationsPage() {
                       <CheckCircle className="h-4 w-4" />
                       Configurado
                     </span>
-                  ) : org.tax_id === DEFAULT_TAX_ID ? (
-                    <span className="inline-flex items-center gap-1 text-orange-600 text-sm">
-                      <AlertTriangle className="h-4 w-4" />
-                      Configurar datos primero
-                    </span>
                   ) : (
-                    <span className="text-gray-600 text-sm">Listo para configurar</span>
+                    <span className="text-gray-500 text-sm">Próximamente disponible</span>
                   )}
                 </TableCell>
                 <TableCell className="text-right space-x-2">
@@ -345,24 +340,14 @@ export default function OrganizationsPage() {
                   >
                     <Edit className="h-4 w-4" />
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      copyPublicLink(org.id)
-                    }}
-                    aria-label="Copiar Enlace calendario público"
-                  >
-                    <LinkIcon className="h-4 w-4 mr-1" />
-                    Enlace público
-                  </Button>
+               
                   {shouldShowButton(org) && (
                     <Button
-                      variant="default"
+                      variant="secondary"
                       size="sm"
                       onClick={(e) => handleConfigureVerifactu(org, e)}
                       disabled={isButtonDisabled(org)}
+                      className="opacity-50 cursor-not-allowed"
                     >
                       {getButtonText(org)}
                     </Button>

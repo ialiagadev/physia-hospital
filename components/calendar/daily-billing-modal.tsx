@@ -4,7 +4,23 @@ import { useState, useEffect } from "react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import Link from "next/link"
-import { FileText, X, CheckCircle, Users, Euro, Clock, AlertTriangle, Search, Filter, Download, Zap, Package, User, CreditCard, Loader2 } from 'lucide-react'
+import {
+  FileText,
+  X,
+  CheckCircle,
+  Users,
+  Euro,
+  Clock,
+  AlertTriangle,
+  Search,
+  Filter,
+  Download,
+  Zap,
+  Package,
+  User,
+  CreditCard,
+  Loader2,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Progress } from "@/components/ui/progress"
@@ -1096,6 +1112,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           }
 
           // Enviar a VeriFactu
+          /*
           try {
             const res = await fetch(`/api/verifactu/send-invoice?invoice_id=${draft.invoice_id}`)
             const data = await res.json()
@@ -1103,66 +1120,6 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
             if (!res.ok) {
               throw new Error(data?.error || `Error ${res.status}: ${res.statusText}`)
             }
-
-            // Fase de creación de PDFs
-            setProgress((prev) => ({
-              ...prev!,
-              phase: "creating_pdfs",
-              message: `📄 Generando PDF para ${draft.client_name}...`,
-              currentClient: draft.client_name,
-            }))
-
-            // Obtener datos completos de la factura para el PDF
-            const { data: fullInvoiceData, error: invoiceError } = await supabase
-              .from("invoices")
-              .select(`
-                *,
-                organization:organizations(*),
-                client:clients(*),
-                invoice_lines(*)
-              `)
-              .eq("id", draft.invoice_id)
-              .single()
-
-            if (invoiceError || !fullInvoiceData) {
-              throw new Error("No se pudieron obtener los datos de la factura")
-            }
-
-            // Preparar datos para el PDF
-            const invoiceForPdf = {
-              ...fullInvoiceData,
-              client_data: {
-                name: fullInvoiceData.client.name,
-                tax_id: fullInvoiceData.client.tax_id || "",
-                address: fullInvoiceData.client.address || "",
-                postal_code: fullInvoiceData.client.postal_code || "",
-                city: fullInvoiceData.client.city || "",
-                province: fullInvoiceData.client.province || "",
-                country: "España",
-                email: fullInvoiceData.client.email || "",
-                phone: fullInvoiceData.client.phone || "",
-                client_type: "private",
-              },
-            }
-
-            const pdfBlob = await generatePdf(
-              invoiceForPdf,
-              fullInvoiceData.invoice_lines,
-              `factura-${invoiceNumberFormatted}.pdf`,
-              false,
-            )
-
-            if (pdfBlob && pdfBlob instanceof Blob) {
-              invoicesForZip.push({
-                invoiceNumber: invoiceNumberFormatted,
-                clientName: draft.client_name,
-                amount: fullInvoiceData.total_amount,
-                pdfBlob: pdfBlob,
-                invoiceId: draft.invoice_id,
-              })
-            }
-
-            successCount++
           } catch (verifactuError) {
             console.error("Error en VeriFactu, haciendo rollback...")
 
@@ -1183,6 +1140,67 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
 
             throw new Error("Error al enviar a VeriFactu. Se ha revertido la emisión.")
           }
+          */
+
+          // Fase de creación de PDFs
+          setProgress((prev) => ({
+            ...prev!,
+            phase: "creating_pdfs",
+            message: `📄 Generando PDF para ${draft.client_name}...`,
+            currentClient: draft.client_name,
+          }))
+
+          // Obtener datos completos de la factura para el PDF
+          const { data: fullInvoiceData, error: invoiceError } = await supabase
+            .from("invoices")
+            .select(`
+                *,
+                organization:organizations(*),
+                client:clients(*),
+                invoice_lines(*)
+              `)
+            .eq("id", draft.invoice_id)
+            .single()
+
+          if (invoiceError || !fullInvoiceData) {
+            throw new Error("No se pudieron obtener los datos de la factura")
+          }
+
+          // Preparar datos para el PDF
+          const invoiceForPdf = {
+            ...fullInvoiceData,
+            client_data: {
+              name: fullInvoiceData.client.name,
+              tax_id: fullInvoiceData.client.tax_id || "",
+              address: fullInvoiceData.client.address || "",
+              postal_code: fullInvoiceData.client.postal_code || "",
+              city: fullInvoiceData.client.city || "",
+              province: fullInvoiceData.client.province || "",
+              country: "España",
+              email: fullInvoiceData.client.email || "",
+              phone: fullInvoiceData.client.phone || "",
+              client_type: "private",
+            },
+          }
+
+          const pdfBlob = await generatePdf(
+            invoiceForPdf,
+            fullInvoiceData.invoice_lines,
+            `factura-${invoiceNumberFormatted}.pdf`,
+            false,
+          )
+
+          if (pdfBlob && pdfBlob instanceof Blob) {
+            invoicesForZip.push({
+              invoiceNumber: invoiceNumberFormatted,
+              clientName: draft.client_name,
+              amount: fullInvoiceData.total_amount,
+              pdfBlob: pdfBlob,
+              invoiceId: draft.invoice_id,
+            })
+          }
+
+          successCount++
         } catch (error) {
           console.error(`Error issuing invoice for client ${draft.client_name}:`, error)
           errors.push(`${draft.client_name}: ${error instanceof Error ? error.message : "Error desconocido"}`)
@@ -1250,14 +1268,14 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
         phase: "completed",
         current: draftInvoices.length,
         total: draftInvoices.length,
-        message: `🎉 ¡Facturas emitidas exitosamente! ${successCount} facturas emitidas. Usa el botón "Descargar ZIP" para obtener el archivo.`,
+        message: `🎉 ¡Facturas emitidas exitosamente! ${successCount} facturas emitidas. VeriFactu temporalmente desactivado. Usa el botón "Descargar ZIP" para obtener el archivo.`,
         errors,
       })
 
       if (successCount > 0) {
         toast({
           title: "🎉 Facturas emitidas",
-          description: `Se emitieron ${successCount} facturas correctamente. Usa el botón para descargar el ZIP`,
+          description: `Se emitieron ${successCount} facturas correctamente. VeriFactu temporalmente desactivado. Usa el botón para descargar el ZIP`,
         })
       }
 

@@ -6,7 +6,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase/client"
-import { ChevronDown, Check, FileText, AlertTriangle, HelpCircle } from "lucide-react"
+import { ChevronDown, Check, FileText, AlertTriangle, HelpCircle, Send, DollarSign, X, RotateCcw } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dialog"
 import { generateUniqueInvoiceNumber } from "@/lib/invoice-utils"
 
-type InvoiceStatus = "draft" | "issued"
+type InvoiceStatus = "draft" | "issued" | "sent" | "paid" | "cancelled" | "rectified"
 
 interface InvoiceStatusSelectorProps {
   invoiceId: number
@@ -48,7 +48,31 @@ const statusConfig: Record<
     label: "Emitida",
     color: "bg-blue-100 text-blue-800 border-blue-200",
     icon: Check,
-    description: "Factura emitida",
+    description: "Factura emitida con número asignado",
+  },
+  sent: {
+    label: "Enviada",
+    color: "bg-purple-100 text-purple-800 border-purple-200",
+    icon: Send,
+    description: "Factura enviada al cliente",
+  },
+  paid: {
+    label: "Pagada",
+    color: "bg-green-100 text-green-800 border-green-200",
+    icon: DollarSign,
+    description: "Factura pagada por el cliente",
+  },
+  cancelled: {
+    label: "Cancelada",
+    color: "bg-red-100 text-red-800 border-red-200",
+    icon: X,
+    description: "Factura cancelada",
+  },
+  rectified: {
+    label: "Rectificada",
+    color: "bg-orange-100 text-orange-800 border-orange-200",
+    icon: RotateCcw,
+    description: "Factura rectificada",
   },
 }
 
@@ -80,16 +104,24 @@ export function InvoiceStatusSelector({
 
   const isValidStatusTransition = (from: InvoiceStatus, to: InvoiceStatus): boolean => {
     const validTransitions: Record<InvoiceStatus, InvoiceStatus[]> = {
-      draft: ["issued"],
-      issued: [], // No hay transiciones desde issued
+      draft: ["issued", "cancelled"],
+      issued: ["sent", "paid", "cancelled", "rectified"],
+      sent: ["paid", "cancelled"],
+      paid: ["rectified"],
+      cancelled: [],
+      rectified: [],
     }
     return validTransitions[from]?.includes(to) || false
   }
 
   const getAvailableStatuses = (): InvoiceStatus[] => {
     const validTransitions: Record<InvoiceStatus, InvoiceStatus[]> = {
-      draft: ["issued"],
-      issued: [], // No hay transiciones desde issued
+      draft: ["issued", "cancelled"],
+      issued: ["sent", "paid", "cancelled", "rectified"],
+      sent: ["paid", "cancelled"],
+      paid: ["rectified"],
+      cancelled: [],
+      rectified: [],
     }
     return validTransitions[currentStatus] || []
   }
@@ -97,7 +129,15 @@ export function InvoiceStatusSelector({
   const getStatusExplanation = (status: InvoiceStatus): string => {
     switch (status) {
       case "issued":
-        return "Validar y emitir la factura (se asignará número y enviará a VeriFactu)"
+        return "Emitir la factura (se asignará número)"
+      case "sent":
+        return "Marcar como enviada al cliente"
+      case "paid":
+        return "Marcar como pagada"
+      case "cancelled":
+        return "Cancelar la factura"
+      case "rectified":
+        return "Marcar como rectificada"
       default:
         return "Cambiar estado"
     }
@@ -124,21 +164,10 @@ export function InvoiceStatusSelector({
       if (isFromDraftToIssued) {
         console.log("🔄 Iniciando cambio de draft a issued...")
 
-        try {
-          const healthCheck = await fetch("/api/verifactu/health-check", { method: "HEAD" })
-          if (!healthCheck.ok) {
-            throw new Error("El servicio de VeriFactu no está disponible en este momento")
-          }
-        } catch (healthError) {
-          throw new Error("No se puede conectar con VeriFactu. Inténtalo más tarde.")
-        }
-
-        // GENERAR Y ASIGNAR NÚMERO DE FACTURA
         const numberResult = await generateUniqueInvoiceNumber(organizationId, invoiceType as any)
         invoiceNumberFormatted = numberResult.invoiceNumberFormatted
         newInvoiceNumber = numberResult.newInvoiceNumber
 
-        // ACTUALIZAR CONTADOR EN ORGANIZACIÓN
         const getFieldNameForUpdate = (type: string): string => {
           switch (type) {
             case "rectificativa":
@@ -177,7 +206,6 @@ export function InvoiceStatusSelector({
           throw new Error("Error al verificar la actualización del contador de facturación")
         }
 
-        // ACTUALIZAR FACTURA CON NÚMERO Y ESTADO
         const { error: dbError } = await supabase
           .from("invoices")
           .update({
@@ -211,82 +239,11 @@ export function InvoiceStatusSelector({
 
         await new Promise((resolve) => setTimeout(resolve, 200))
 
-        // ENVIAR A VERIFACTU SOLO DESPUÉS DE VERIFICAR QUE TODO ESTÁ CORRECTO
-        try {
-          console.log(`🔄 Enviando factura ${invoiceNumberFormatted} a VeriFactu...`)
-
-          const res = await fetch(`/api/verifactu/send-invoice?invoice_id=${invoiceId}`, {
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-            },
-          })
-
-          const data = await res.json()
-
-          if (!res.ok) {
-            throw new Error(data?.error || `Error ${res.status}: ${res.statusText}`)
-          }
-
-          console.log(`✅ Factura ${invoiceNumberFormatted} enviada a VeriFactu exitosamente`)
-
-          toast({
-            title: "✅ Factura emitida correctamente",
-            description: `La factura ${invoiceNumberFormatted} se ha validado y enviado a VeriFactu exitosamente`,
-          })
-        } catch (verifactuError) {
-          console.error("❌ Error en Verifactu, ejecutando rollback completo...")
-
-          try {
-            // Rollback de la factura
-            const { error: rollbackInvoiceError } = await supabase
-              .from("invoices")
-              .update({
-                status: "draft",
-                invoice_number: null,
-                validated_at: null,
-              })
-              .eq("id", invoiceId)
-
-            if (rollbackInvoiceError) {
-              console.error("Error en rollback de factura:", rollbackInvoiceError)
-            }
-
-            // Rollback del contador
-            const { error: rollbackOrgError } = await supabase
-              .from("organizations")
-              .update({ [fieldName]: newInvoiceNumber - 1 })
-              .eq("id", organizationId)
-
-            if (rollbackOrgError) {
-              console.error("Error en rollback de organización:", rollbackOrgError)
-            }
-
-            // Verificar que el rollback se completó
-            const { data: rollbackVerification } = await supabase
-              .from("invoices")
-              .select("status, invoice_number")
-              .eq("id", invoiceId)
-              .single()
-
-            if (rollbackVerification?.status === "draft" && rollbackVerification?.invoice_number === null) {
-              console.log("✅ Rollback completado exitosamente")
-            } else {
-              console.error("⚠️ El rollback puede no haberse completado correctamente")
-            }
-          } catch (rollbackError) {
-            console.error("❌ Error crítico durante el rollback:", rollbackError)
-          }
-
-          toast({
-            title: "Error en VeriFactu",
-            description: `${verifactuError instanceof Error ? verifactuError.message : "Error desconocido"}. La factura se mantiene en borrador.`,
-            variant: "destructive",
-          })
-          return
-        }
+        toast({
+          title: "✅ Factura emitida correctamente",
+          description: `La factura ${invoiceNumberFormatted} se ha emitido exitosamente`,
+        })
       } else {
-        // OTROS CAMBIOS DE ESTADO (SIN CAMBIAR NÚMERO)
         const { error: dbError } = await supabase.from("invoices").update({ status: newStatus }).eq("id", invoiceId)
 
         if (dbError) {
@@ -299,7 +256,6 @@ export function InvoiceStatusSelector({
         })
       }
 
-      // NOTIFICAR CAMBIO
       if (onStatusChange) {
         onStatusChange(newStatus)
       }
@@ -439,16 +395,39 @@ export function InvoiceStatusSelector({
               <div>
                 <div className="font-medium">📝 Factura en borrador</div>
                 <div className="text-yellow-700 mt-0.5">
-                  Al emitir se asignará automáticamente el número de factura, se validará fiscalmente con VeriFactu y no
-                  podrá volver a borrador.
+                  Al emitir se asignará automáticamente el número de factura y no podrá volver a borrador.
                 </div>
               </div>
             </div>
           )}
           {currentStatus === "issued" && (
             <div className="px-3 py-2 text-xs text-blue-600 bg-blue-50 border-t">
-              <div className="font-medium">✅ Factura validada (VeriFactu)</div>
-              <div className="text-blue-700 mt-0.5">Factura emitida y validada fiscalmente.</div>
+              <div className="font-medium">✅ Factura emitida</div>
+              <div className="text-blue-700 mt-0.5">Factura emitida con número asignado.</div>
+            </div>
+          )}
+          {currentStatus === "sent" && (
+            <div className="px-3 py-2 text-xs text-purple-600 bg-purple-50 border-t">
+              <div className="font-medium">✉️ Factura enviada</div>
+              <div className="text-purple-700 mt-0.5">Factura marcada como enviada al cliente.</div>
+            </div>
+          )}
+          {currentStatus === "paid" && (
+            <div className="px-3 py-2 text-xs text-green-600 bg-green-50 border-t">
+              <div className="font-medium">💰 Factura pagada</div>
+              <div className="text-green-700 mt-0.5">Factura marcada como pagada por el cliente.</div>
+            </div>
+          )}
+          {currentStatus === "cancelled" && (
+            <div className="px-3 py-2 text-xs text-red-600 bg-red-50 border-t">
+              <div className="font-medium">❌ Factura cancelada</div>
+              <div className="text-red-700 mt-0.5">Factura marcada como cancelada.</div>
+            </div>
+          )}
+          {currentStatus === "rectified" && (
+            <div className="px-3 py-2 text-xs text-orange-600 bg-orange-50 border-t">
+              <div className="font-medium">🔄 Factura rectificada</div>
+              <div className="text-orange-700 mt-0.5">Factura marcada como rectificada.</div>
             </div>
           )}
         </DropdownMenuContent>
@@ -471,11 +450,7 @@ export function InvoiceStatusSelector({
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-1 h-1 bg-amber-600 rounded-full"></div>
-                    <span>Se enviará automáticamente a VeriFactu</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-1 h-1 bg-amber-600 rounded-full"></div>
-                    <span>La factura se validará fiscalmente</span>
+                    <span>La factura cambiará a estado "Emitida"</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-1 h-1 bg-amber-600 rounded-full"></div>
@@ -485,8 +460,8 @@ export function InvoiceStatusSelector({
               </div>
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
                 <p className="text-sm text-blue-800">
-                  <strong>📋 Qué sucederá:</strong> La factura se marcará como "Emitida", se generará el código QR de
-                  VeriFactu y estará lista para enviar al cliente.
+                  <strong>📋 Qué sucederá:</strong> La factura se marcará como "Emitida", se generará el número
+                  correspondiente y estará lista para enviar al cliente.
                 </p>
               </div>
             </DialogDescription>

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { FileText, Loader2, AlertTriangle, Clock, Download, CreditCard } from 'lucide-react'
+import { FileText, Loader2, AlertTriangle, Clock, Download, CreditCard } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -308,6 +308,7 @@ Servicio: ${serviceData!.name} - ${servicePrice}€`
       }
 
       // Enviar a VeriFactu
+      /*
       try {
         const res = await fetch(`/api/verifactu/send-invoice?invoice_id=${existingInvoice.id}`)
         const data = await res.json()
@@ -354,6 +355,27 @@ Servicio: ${serviceData!.name} - ${servicePrice}€`
           .eq("id", userProfile.organization_id)
 
         throw new Error("Error al enviar a VeriFactu. Se ha revertido la emisión.")
+      }
+      */
+
+      // Actualizar estado local
+      setExistingInvoice((prev) =>
+        prev
+          ? {
+              ...prev,
+              invoice_number: invoiceNumberFormatted,
+              status: "issued",
+            }
+          : null,
+      )
+
+      toast({
+        title: "✅ Factura emitida",
+        description: `Factura ${invoiceNumberFormatted} emitida correctamente (VeriFactu desactivado temporalmente)`,
+      })
+
+      if (onBillingComplete) {
+        onBillingComplete()
       }
     } catch (error) {
       console.error("Error issuing invoice:", error)
@@ -556,9 +578,7 @@ Servicio: ${serviceData!.name} - ${servicePrice}€`
         >
           <div className="flex items-center gap-2">
             {StatusIcon && <StatusIcon className="h-4 w-4" />}
-            <div className="font-medium">
-              {existingInvoice.status === "draft" ? "Borrador" : statusConfig.label}
-            </div>
+            <div className="font-medium">{existingInvoice.status === "draft" ? "Borrador" : statusConfig.label}</div>
           </div>
         </button>
 
