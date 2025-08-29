@@ -24,12 +24,15 @@ import { TemplateAPI, extractVariables, formatPhoneNumber } from "@/app/api/temp
 import { toast } from "@/hooks/use-toast"
 
 interface Template {
+  mediaUrl: any
   id: string
   name: string
   status: string
   language: string
   category: string
   components?: Array<{
+    example: any
+    format: string
     text?: string
     type?: string
   }>
@@ -332,7 +335,7 @@ export function TemplateSelectorDialog({
       })
       return
     }
-
+  
     if (!userProfile?.organization_id) {
       toast({
         title: "Error",
@@ -341,37 +344,105 @@ export function TemplateSelectorDialog({
       })
       return
     }
-
+  
     setSending(template.id)
-
+  
     try {
       const api = new TemplateAPI(wabaConfig)
       const formattedPhone = formatPhoneNumber(recipientPhone)
-
-      if (parameters.length > 0) {
-        await api.sendTemplateWithTextParams(
-          formattedPhone,
-          template.name,
-          parameters,
-          template.language,
-          userProfile.organization_id,
-        )
-      } else {
-        await api.sendSimpleTemplate(formattedPhone, template.name, template.language, userProfile.organization_id)
+  
+      const headerComponent = template.components?.find((c) => c.type === "HEADER")
+  
+      // 👇 construimos los parámetros que se mandarán
+      const components: any[] = []
+  
+      if (headerComponent?.format === "DOCUMENT") {
+        const docUrl = headerComponent.example?.header_handle?.[0] || template.mediaUrl // 👈 tu campo real
+        if (docUrl) {
+          components.push({
+            type: "header",
+            parameters: [
+              {
+                type: "document",
+                document: {
+                  link: docUrl,
+                  filename: "archivo.pdf",
+                },
+              },
+            ],
+          })
+        }
+      } else if (headerComponent?.format === "IMAGE") {
+        const imageUrl = headerComponent.example?.header_handle?.[0] || template.mediaUrl
+        if (imageUrl) {
+          components.push({
+            type: "header",
+            parameters: [
+              {
+                type: "image",
+                image: { link: imageUrl },
+              },
+            ],
+          })
+        }
+      } else if (headerComponent?.format === "VIDEO") {
+        const videoUrl = headerComponent.example?.header_handle?.[0] || template.mediaUrl
+        if (videoUrl) {
+          components.push({
+            type: "header",
+            parameters: [
+              {
+                type: "video",
+                video: { link: videoUrl },
+              },
+            ],
+          })
+        }
       }
-
+      
+  
+      // BODY: parámetros de texto
+      if (parameters.length > 0) {
+        components.push({
+          type: "body",
+          parameters: parameters.map((text) => ({
+            type: "text",
+            text,
+          })),
+        })
+      }
+  
+      // 👇 payload final para Aisensy
+      const templateData = {
+        to: formattedPhone,
+        type: "template" as const,
+        recipient_type: "individual" as const,
+        template: {
+          language: {
+            policy: "deterministic" as const,
+            code: template.language,
+          },
+          name: template.name,
+          components: components.length > 0 ? components : undefined,
+        },
+      }
+  
+      console.log("📤 Payload final:", JSON.stringify(templateData, null, 2))
+  
+      // Enviar plantilla
+      await api.sendTemplate(templateData, userProfile.organization_id)
+  
       toast({
         title: "Plantilla enviada",
         description: `La plantilla "${template.name}" se ha enviado correctamente`,
       })
-
-      // Crear el template con variables para enviar al callback
+  
       const templateWithVariables: TemplateWithVariables = {
         ...template,
         variableValues,
         finalContent: buildFinalTemplateContent(template, variableValues),
       }
-
+  
       onTemplateSent?.(templateWithVariables)
       setOpen(false)
       setShowVariableForm(false)
@@ -379,16 +450,9 @@ export function TemplateSelectorDialog({
       setVariableValues({})
     } catch (error) {
       console.error("❌ Error sending template:", error)
-  
-      let description = "No se pudo enviar la plantilla"
-  
-      if (error instanceof Error && error.message.includes("Saldo insuficiente")) {
-        description = "Saldo insuficiente. Recarga tu balance para enviar plantillas."
-      }
-  
       toast({
         title: "Error al enviar plantilla",
-        description,
+        description: "No se pudo enviar la plantilla",
         variant: "destructive",
       })
     } finally {
@@ -413,7 +477,7 @@ export function TemplateSelectorDialog({
   }
   
   // Debug del botón trigger
-  const handleTriggerClick = (e: React.MouseEvent) => {
+  const handleTriggerClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (disabled) {
       e.preventDefault()
       return
@@ -446,7 +510,7 @@ export function TemplateSelectorDialog({
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[80vh]">
+      <DialogContent className="max-w-7xl max-h-[80vh]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-green-600" />

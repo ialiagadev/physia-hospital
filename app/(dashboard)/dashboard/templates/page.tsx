@@ -43,13 +43,12 @@ export default function AiSensyTemplatesPage() {
   const [wabaConfig, setWabaConfig] = useState<WabaConfig | null>(null)
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [openDropdowns, setOpenDropdowns] = useState<Set<string>>(new Set())
 
-  // Función para obtener la configuración WABA del usuario
   const fetchWabaConfig = async (organizationId: number) => {
     try {
       console.log("🔍 Buscando configuración WABA para organización:", organizationId)
 
-      // Primero obtenemos los canales de la organización
       console.log("📡 Consultando canales_organizations...")
       const { data: canalesOrg, error: canalError } = await supabase
         .from("canales_organizations")
@@ -67,21 +66,17 @@ export default function AiSensyTemplatesPage() {
         throw new Error("No se encontró configuración de canal para esta organización")
       }
 
-      // Si hay múltiples canales, tomamos el primero
       const canalOrg = canalesOrg[0]
       console.log("✅ Canal seleccionado:", canalOrg)
 
-      // Luego obtenemos la configuración WABA
       console.log("📡 Consultando tabla waba con id_canales_organization:", canalOrg.id)
 
-      // Primero veamos TODOS los registros de waba para debug
       const { data: allWabaData, error: allWabaError } = await supabase
         .from("waba")
         .select("id, id_canales_organization, id_proyecto, token_proyecto, numero, nombre, estado")
 
       console.log("🔍 TODOS los registros WABA:", { allWabaData, error: allWabaError })
 
-      // Ahora busquemos específicamente por id_canales_organization
       const { data: wabaData, error: wabaError } = await supabase
         .from("waba")
         .select("id, id_proyecto, token_proyecto, numero, nombre, estado, id_canales_organization")
@@ -90,7 +85,6 @@ export default function AiSensyTemplatesPage() {
 
       console.log("📋 Resultado waba filtrado por id_canales_organization:", { wabaData, error: wabaError })
 
-      // Si no encuentra con estado = 0, busquemos sin filtro de estado
       if (!wabaData || wabaData.length === 0) {
         console.log("⚠️ No se encontró con estado = 0, buscando sin filtro de estado...")
         const { data: wabaDataNoFilter, error: wabaErrorNoFilter } = await supabase
@@ -101,7 +95,6 @@ export default function AiSensyTemplatesPage() {
         console.log("📋 Resultado waba SIN filtro de estado:", { wabaDataNoFilter, error: wabaErrorNoFilter })
 
         if (wabaDataNoFilter && wabaDataNoFilter.length > 0) {
-          // Usar el primer registro encontrado, sin importar el estado
           const waba = wabaDataNoFilter[0]
           console.log("✅ WABA seleccionado (sin filtro estado):", waba)
 
@@ -134,7 +127,6 @@ export default function AiSensyTemplatesPage() {
         throw new Error("No se encontró configuración WABA para este canal")
       }
 
-      // Si hay múltiples registros WABA, tomamos el primero
       const waba = wabaData[0]
       console.log("✅ WABA seleccionado:", waba)
 
@@ -162,11 +154,16 @@ export default function AiSensyTemplatesPage() {
     }
   }
 
-  // Función para obtener las plantillas
   const fetchTemplates = async () => {
-    if (!wabaConfig) return
+    if (!wabaConfig) {
+      console.warn("⚠️ No hay configuración WABA disponible")
+      return
+    }
 
     try {
+      setLoading(true)
+      setError(null)
+
       const api = new TemplateAPI(wabaConfig)
       const result = await api.getTemplates()
 
@@ -179,7 +176,9 @@ export default function AiSensyTemplatesPage() {
       }
     } catch (err: any) {
       console.error("❌ Error obteniendo plantillas:", err)
-      throw err
+      setError(`Error al recargar plantillas: ${err.message}`)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -196,11 +195,9 @@ export default function AiSensyTemplatesPage() {
       setLoading(true)
       setError(null)
 
-      // Obtener configuración WABA
       const config = await fetchWabaConfig(userProfile.organization_id)
       setWabaConfig(config)
 
-      // Obtener plantillas
       const api = new TemplateAPI(config)
       const result = await api.getTemplates()
 
@@ -222,13 +219,34 @@ export default function AiSensyTemplatesPage() {
   }, [userProfile, authLoading])
 
   const handleTemplateAction = (template: Template) => {
+    setOpenDropdowns(new Set())
     setSelectedTemplate(template)
     setIsModalOpen(true)
   }
 
-  const handleTemplateUpdated = () => {
-    // Recargar las plantillas después de una actualización
-    fetchTemplates()
+  const handleTemplateUpdated = async () => {
+    try {
+      console.log("🔄 Recargando plantillas después de actualización...")
+      setOpenDropdowns(new Set())
+      setIsModalOpen(false)
+      setSelectedTemplate(null)
+
+      await fetchTemplates()
+    } catch (err: any) {
+      console.error("❌ Error al recargar plantillas:", err)
+    }
+  }
+
+  const handleDropdownOpenChange = (templateId: string, isOpen: boolean) => {
+    setOpenDropdowns((prev) => {
+      const newSet = new Set(prev)
+      if (isOpen) {
+        newSet.add(templateId)
+      } else {
+        newSet.delete(templateId)
+      }
+      return newSet
+    })
   }
 
   const getStatusIcon = (status: string) => {
@@ -300,7 +318,6 @@ export default function AiSensyTemplatesPage() {
 
   return (
     <div className="container mx-auto p-6 max-w-6xl">
-      {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
           <div className="flex items-center gap-3 mb-2">
@@ -317,7 +334,6 @@ export default function AiSensyTemplatesPage() {
         </Link>
       </div>
 
-      {/* Stats */}
       <div className="grid gap-4 md:grid-cols-4 mb-8">
         <Card>
           <CardContent className="p-4">
@@ -371,7 +387,6 @@ export default function AiSensyTemplatesPage() {
         </Card>
       </div>
 
-      {/* Templates Grid */}
       {templates.length === 0 ? (
         <Card>
           <CardContent className="p-12 text-center">
@@ -397,7 +412,10 @@ export default function AiSensyTemplatesPage() {
                   <CardTitle className="text-lg font-semibold text-gray-900 line-clamp-2">{template.name}</CardTitle>
                   <div className="flex items-center gap-2">
                     {getStatusIcon(template.status)}
-                    <DropdownMenu>
+                    <DropdownMenu
+                      open={openDropdowns.has(template.id)}
+                      onOpenChange={(isOpen) => handleDropdownOpenChange(template.id, isOpen)}
+                    >
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
                           <MoreVertical className="h-4 w-4" />
@@ -520,11 +538,11 @@ export default function AiSensyTemplatesPage() {
         </div>
       )}
 
-      {/* Modal de acciones */}
       <TemplateActionsModal
         template={selectedTemplate}
         isOpen={isModalOpen}
         onClose={() => {
+          setOpenDropdowns(new Set())
           setIsModalOpen(false)
           setSelectedTemplate(null)
         }}

@@ -266,45 +266,64 @@ export class TemplateAPI {
     return this.sendTemplate(templateData, organizationId)
   }
 
-  /**
-   * Enviar plantilla con header, body y botones (usando Aisensy)
-   */
-  async sendComplexTemplate(
-    to: string,
-    templateName: string,
-    languageCode = "es",
-    parameters?: string[],
-    organizationId?: number,
-  ): Promise<any> {
-    const components = []
+ /**
+ * Enviar plantilla con header (ej. DOCUMENT), body y botones (usando Aisensy)
+ */
+async sendComplexTemplate(
+  to: string,
+  templateName: string,
+  languageCode = "es",
+  parameters?: string[],              // Parámetros de texto para el body
+  organizationId?: number,
+  headerDocumentUrl?: string,         // URL pública del documento
+  headerDocumentFilename?: string,    // Nombre del archivo opcional
+): Promise<any> {
+  const components: any[] = []
 
-    // Si hay parámetros, crear componente body con parámetros
-    if (parameters && parameters.length > 0) {
-      components.push({
-        type: "body",
-        parameters: parameters.map((text) => ({
-          type: "text",
-          text: text,
-        })),
-      })
-    }
-
-    const templateData: AisensyMessageData = {
-      to: to,
-      type: "template",
-      recipient_type: "individual",
-      template: {
-        language: {
-          policy: "deterministic",
-          code: languageCode,
+  // 👇 HEADER con DOCUMENT (si se pasa la URL)
+  if (headerDocumentUrl) {
+    components.push({
+      type: "header",
+      parameters: [
+        {
+          type: "document",
+          document: {
+            link: headerDocumentUrl,
+            filename: headerDocumentFilename || "documento.pdf",
+          },
         },
-        name: templateName,
-        components: components.length > 0 ? components : undefined,
-      },
-    }
-
-    return this.sendTemplate(templateData, organizationId)
+      ],
+    })
   }
+
+  // 👇 BODY con parámetros de texto
+  if (parameters && parameters.length > 0) {
+    components.push({
+      type: "body",
+      parameters: parameters.map((text) => ({
+        type: "text",
+        text: text,
+      })),
+    })
+  }
+
+  const templateData: AisensyMessageData = {
+    to: to,
+    type: "template",
+    recipient_type: "individual",
+    template: {
+      language: {
+        policy: "deterministic",
+        code: languageCode,
+      },
+      name: templateName,
+      components: components.length > 0 ? components : undefined,
+    },
+  }
+
+  return this.sendTemplate(templateData, organizationId)
+}
+
 
   /**
    * Eliminar una plantilla
