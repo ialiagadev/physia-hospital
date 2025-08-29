@@ -14,7 +14,7 @@ export async function POST(req: Request) {
     const cookieStore = await cookies()
     const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
 
-    // Recuperar el token_proyecto de la tabla waba
+    // Recuperar token_proyecto
     const { data: wabaRecord, error } = await supabase
       .from("waba")
       .select("token_proyecto")
@@ -27,10 +27,7 @@ export async function POST(req: Request) {
 
     const token = wabaRecord.token_proyecto
 
-    // ✅ URL fija para AiSensy
-    const webhookUrl = "https://api.myphysia.com/aisensy/webhook"
-
-    // Llamada a AiSensy para actualizar el webhook
+    // ✅ 1. Actualizar webhook en AiSensy
     const response = await fetch("https://backend.aisensy.com/direct-apis/t1/settings/update-webhook", {
       method: "PATCH",
       headers: {
@@ -39,40 +36,102 @@ export async function POST(req: Request) {
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        webhooks: {
-          url: "https://api.myphysia.com/aisensy/webhook"
-        }
+        webhooks: { url: "https://api.myphysia.com/aisensy/webhook" },
       }),
-    });
+    })
 
     const result = await response.json()
-
     if (!response.ok) {
       return NextResponse.json(
-        { error: `Error AiSensy: ${response.status} - ${JSON.stringify(result)}` },
+        { error: `Error AiSensy Webhook: ${response.status} - ${JSON.stringify(result)}` },
         { status: response.status },
       )
     }
 
-    // ✅ Si AiSensy responde OK, actualizamos el estado en la tabla waba
-    const { error: updateError } = await supabase
-    .from("waba")
-    .update({ 
-      estado: 1,
-      waba_id: 1   // 👈 siempre pone 1
-    })
-    .eq("id", wabaId)
-  
-  if (updateError) {
-    console.error("❌ Error actualizando waba:", updateError)
-    return NextResponse.json(
-      { error: "Webhook actualizado en AiSensy pero fallo al actualizar en BD" },
-      { status: 500 },
-    )
-  }
-  
+    // ✅ 2. Crear plantilla "recordatorios_cita"
+    const recordatorioTemplate = {
+      name: "recordatorios_cita",
+      category: "UTILITY",
+      language: "es",
+      components: [
+        {
+          type: "BODY",
+          text: "Hola {{1}}, te recordamos tu cita en {{2}} el día {{3}} a las {{4}}. Respondiendo a este mensaje podrás resolver cualquier duda o cancelar la cita.",
+          example: {
+            body_text: [["Juan", "Clínica Physia", "10 de Septiembre", "16:00"]],
+          },
+        },
+      ],
+    }
 
-    return NextResponse.json({ success: true, result })
+    const recRes = await fetch("https://backend.aisensy.com/direct-apis/t1/wa_template", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(recordatorioTemplate),
+    })
+    const recResult = await recRes.json()
+    if (!recRes.ok) {
+      return NextResponse.json(
+        { error: `Error creando plantilla recordatorios_cita: ${recRes.status} - ${JSON.stringify(recResult)}` },
+        { status: recRes.status },
+      )
+    }
+
+    // ✅ 3. Crear plantilla "seguimiento_cita"
+    const seguimientoTemplate = {
+      name: "seguimiento_cita",
+      category: "UTILITY",
+      language: "es",
+      components: [
+        {
+          type: "BODY",
+          text: "Hola {{1}}, ¿cómo te has sentido después de tu cita? Si tienes alguna molestia o duda, respóndenos por aquí y te ayudaremos.",
+          example: {
+            body_text: [["Juan"]],
+          },
+        },
+      ],
+    }
+
+    const segRes = await fetch("https://backend.aisensy.com/direct-apis/t1/wa_template", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(seguimientoTemplate),
+    })
+    const segResult = await segRes.json()
+    if (!segRes.ok) {
+      return NextResponse.json(
+        { error: `Error creando plantilla seguimiento_cita: ${segRes.status} - ${JSON.stringify(segResult)}` },
+        { status: segRes.status },
+      )
+    }
+
+    // ✅ 4. Actualizar tabla waba
+    const { error: updateError } = await supabase
+      .from("waba")
+      .update({
+        estado: 1,
+        waba_id: 1, // ⚠️ aquí sigues guardando "1" fijo, revisa si quieres guardar el ID real de AiSensy
+      })
+      .eq("id", wabaId)
+
+    if (updateError) {
+      console.error("❌ Error actualizando waba:", updateError)
+      return NextResponse.json(
+        { error: "Webhook/plantillas creados pero fallo al actualizar en BD" },
+        { status: 500 },
+      )
+    }
+
+    return NextResponse.json({ success: true, result, recResult, segResult })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Error desconocido" }, { status: 500 })
   }
