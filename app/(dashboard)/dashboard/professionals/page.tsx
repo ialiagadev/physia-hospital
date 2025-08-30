@@ -32,12 +32,24 @@ interface User {
   type: number
 }
 
+const SUBSCRIPTION_LIMITS = {
+  inicial: 3,
+  avanzado: 6,
+  premium: Number.POSITIVE_INFINITY,
+} as const
+
+const getSubscriptionLimit = (tier: string | null | undefined): number => {
+  if (!tier) return Number.POSITIVE_INFINITY
+  return SUBSCRIPTION_LIMITS[tier as keyof typeof SUBSCRIPTION_LIMITS] || Number.POSITIVE_INFINITY
+}
+
 export default function ProfessionalsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [user, setUser] = useState<any>(null)
   const [profile, setProfile] = useState<any>(null)
   const [organizations, setOrganizations] = useState<any[]>([])
+  const [organization, setOrganization] = useState<any>(null)
 
   // Estados para usuarios
   const [users, setUsers] = useState<User[]>([])
@@ -107,6 +119,20 @@ export default function ProfessionalsPage() {
         }
 
         setProfile(profile)
+
+        if (profile.organization_id) {
+          const { data: orgData, error: orgError } = await supabase
+            .from("organizations")
+            .select("*")
+            .eq("id", profile.organization_id)
+            .single()
+
+          if (orgError) {
+            console.error("Error obteniendo organización:", orgError)
+          } else {
+            setOrganization(orgData)
+          }
+        }
 
         // Obtener organizaciones para el modal
         const { data: orgs, error: orgsError } = await supabase
@@ -332,6 +358,23 @@ export default function ProfessionalsPage() {
     }
   }
 
+  const canCreateMoreProfessionals = (): boolean => {
+    if (!organization) return true
+    const limit = getSubscriptionLimit(organization.subscription_tier)
+    return users.length < limit
+  }
+
+  const getRemainingProfessionals = (): number => {
+    if (!organization) return Number.POSITIVE_INFINITY
+    const limit = getSubscriptionLimit(organization.subscription_tier)
+    return Math.max(0, limit - users.length)
+  }
+
+  const getSubscriptionTierName = (tier: string | null | undefined): string => {
+    if (!tier) return "Sin plan"
+    return tier.charAt(0).toUpperCase() + tier.slice(1)
+  }
+
   if (loading) {
     return <div>Cargando profesionales...</div>
   }
@@ -350,6 +393,21 @@ export default function ProfessionalsPage() {
               ? "Administra los profesionales de tu organización"
               : "Lista de profesionales de tu organización"}
           </p>
+          {organization && (
+            <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
+              <span>
+                Plan: <strong>{getSubscriptionTierName(organization.subscription_tier)}</strong>
+              </span>
+              <span>
+                Profesionales:{" "}
+                <strong>
+                  {users.length}
+                  {getSubscriptionLimit(organization.subscription_tier) !== Number.POSITIVE_INFINITY &&
+                    `/${getSubscriptionLimit(organization.subscription_tier)}`}
+                </strong>
+              </span>
+            </div>
+          )}
         </div>
 
         {profile?.role === "admin" && (
@@ -361,7 +419,7 @@ export default function ProfessionalsPage() {
             }}
           >
             <DialogTrigger asChild>
-              <Button>
+              <Button disabled={!canCreateMoreProfessionals()}>
                 <Plus className="mr-2 h-4 w-4" />
                 Invitar Profesional
               </Button>
@@ -491,6 +549,18 @@ export default function ProfessionalsPage() {
         )}
       </div>
 
+      {profile?.role === "admin" && !canCreateMoreProfessionals() && (
+        <Alert className="border-amber-200 bg-amber-50">
+          <AlertTriangle className="h-4 w-4 text-amber-600" />
+          <AlertDescription className="text-amber-800">
+            <strong>Límite alcanzado:</strong> Has alcanzado el límite de profesionales para tu plan{" "}
+            {getSubscriptionTierName(organization?.subscription_tier)}.
+            {getSubscriptionLimit(organization?.subscription_tier) !== Number.POSITIVE_INFINITY &&
+              ` (${users.length}/${getSubscriptionLimit(organization?.subscription_tier)})`}
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* OPCIÓN ALTERNATIVA: Aviso general en la parte superior */}
       {profile?.role === "admin" && (
         <Alert className="border-amber-200 bg-amber-50">
@@ -527,7 +597,6 @@ export default function ProfessionalsPage() {
                 <h5 className="text-xs font-semibold text-red-700 mb-2 uppercase tracking-wide">Restricciones:</h5>
                 <ul className="text-sm space-y-1">
                   <li className="text-red-600">• No puede acceder a facturación</li>
-                  <li className="text-red-600">• Solo tiene acceso a su calendario</li>
                   <li className="text-red-600">• No puede crear otros usuarios</li>
                   <li className="text-red-600">• No puede acceder a configuración avanzada</li>
                 </ul>
@@ -586,7 +655,6 @@ export default function ProfessionalsPage() {
                   <li>• Puede crear y gestionar otros usuarios</li>
                   <li>• Acceso a toda la información médica</li>
                   <li>• Puede configurar la organización</li>
-                  <li>• En fichaje: ve todos los registros y puede aprobar/rechazar</li>
                   <li>• Gestión completa del sistema</li>
                 </ul>
               </div>

@@ -67,7 +67,7 @@ function LoginForm() {
             {/* Logo centrado arriba */}
             <div className="flex justify-center mb-8">
               <Image
-                src="/images/physia-logo.png"
+                src="/images/healthmate.jpeg"
                 alt="PHYSIA Logo"
                 width={150}
                 height={150}
@@ -78,7 +78,7 @@ function LoginForm() {
 
             <div className="mb-8 text-center">
               <h1 className="text-5xl font-bold text-gray-900 mb-2">Iniciar Sesión</h1>
-              <p className="text-gray-600 text-sm">Bienvenido de vuelta al Sistema Médico PHYSIA</p>
+              <p className="text-gray-600 text-sm">Bienvenido de vuelta al Sistema Médico HEALTHMATE</p>
             </div>
 
             <form onSubmit={handleLogin} className="space-y-8">

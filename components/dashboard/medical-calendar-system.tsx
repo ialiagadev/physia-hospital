@@ -422,13 +422,10 @@ const MedicalCalendarSystem: React.FC = () => {
   // Inicializar con todos los usuarios seleccionados
   useEffect(() => {
     if (users.length > 0 && usuariosSeleccionados.length === 0) {
-      if (isUserRole && currentUserId) {
-        setUsuariosSeleccionados([currentUserId])
-      } else {
-        setUsuariosSeleccionados(users.map((u) => u.id))
-      }
+      setUsuariosSeleccionados(users.map((u) => u.id))
     }
-  }, [users, usuariosSeleccionados.length, isUserRole, currentUserId])
+  }, [users, usuariosSeleccionados.length])
+  
 
   // 🚀 OPTIMIZADO: Navegación de fechas
   const navigateDate = useCallback(

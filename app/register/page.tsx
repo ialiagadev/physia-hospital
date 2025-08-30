@@ -238,7 +238,7 @@ export default function RegisterPage() {
     <div className="min-h-screen bg-white">
       <div className="text-center pt-8 pb-6">
         <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-600 via-purple-700 to-purple-800 bg-clip-text text-transparent tracking-tight">
-          ¡Bienvenido a Physia! ✨
+          ¡Bienvenido a Healthmate! ✨
         </h1>
       </div>
 

@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { Plus, Bot, Edit, Trash2, MessageSquare, AlertTriangle, Loader2, Settings } from "lucide-react"
+import { Plus, Bot, Edit, Trash2, MessageSquare, AlertTriangle, Loader2, Settings, Crown, Lock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -28,7 +28,22 @@ interface AIFunction {
   usage_price: number | null
   created_at: string
   updated_at: string
+  name_front: string | null
+  description_front: string | null
 }
+
+interface Organization {
+  id: number
+  subscription_tier: string
+  name: string
+}
+
+const SUBSCRIPTION_LIMITS = {
+  inicial: 1,
+  avanzado: 3,
+  premium: Number.POSITIVE_INFINITY,
+  free: 1, // fallback for free tier
+} as const
 
 function AgentDialog({
   agent,
@@ -168,7 +183,6 @@ function AgentDialog({
       if (agent?.id) {
         await saveAgentFunctions(agent.id, selectedFunctions)
       }
-      
 
       onOpenChange(false)
     } catch (error) {
@@ -214,12 +228,21 @@ function AgentDialog({
             </div>
 
             <div className="space-y-4">
-              <div className="flex items-center gap-3 mb-4">
-                <Settings className="h-5 w-5 text-blue-600" />
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-800">Funciones AI</h3>
-                  <p className="text-sm text-gray-600">Selecciona las funciones disponibles para este agente</p>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <Settings className="h-5 w-5 text-blue-600" />
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-800">Funciones AI</h3>
+                    <p className="text-sm text-gray-600">Selecciona las funciones disponibles para este agente</p>
+                  </div>
                 </div>
+                {!loadingFunctions && aiFunctions.length > 0 && (
+                  <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm font-medium">
+                    <span>
+                      {selectedFunctions.length}/{aiFunctions.length}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {loadingFunctions ? (
@@ -256,13 +279,15 @@ function AgentDialog({
                         <div className="flex-1 min-w-0">
                           <label htmlFor={func.id} className="cursor-pointer">
                             <div className="flex items-center gap-2 mb-1">
-                              <h4 className="font-medium text-gray-800 text-sm">{func.name}</h4>
+                              <h4 className="font-medium text-gray-800 text-sm">{func.name_front || func.name}</h4>
                               <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full">
                                 {func.http_method}
                               </span>
                             </div>
-                            {func.description && (
-                              <p className="text-xs text-gray-600 mb-2 line-clamp-2">{func.description}</p>
+                            {(func.description_front || func.description) && (
+                              <p className="text-xs text-gray-600 mb-2 line-clamp-2">
+                                {func.description_front || func.description}
+                              </p>
                             )}
                             <div className="flex items-center gap-4 text-xs text-gray-500">
                               {func.base_price && <span>Base: €{func.base_price}</span>}
@@ -281,7 +306,8 @@ function AgentDialog({
                 <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
                   <p className="text-sm text-blue-800">
                     <strong>{selectedFunctions.length}</strong> función{selectedFunctions.length !== 1 ? "es" : ""}{" "}
-                    seleccionada{selectedFunctions.length !== 1 ? "s" : ""}
+                    seleccionada{selectedFunctions.length !== 1 ? "s" : ""} de <strong>{aiFunctions.length}</strong>{" "}
+                    disponibles
                   </p>
                 </div>
               )}
@@ -395,12 +421,72 @@ function AgentCard({ agent, onEdit, onDelete }: { agent: User; onEdit: () => voi
 export default function AgentsPage() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [editingAgent, setEditingAgent] = useState<User | null>(null)
+  const [organization, setOrganization] = useState<Organization | null>(null)
+  const [loadingOrganization, setLoadingOrganization] = useState(true)
   const { userProfile } = useAuth()
 
   const { agents, loading, error, createAgent, updateAgent, deleteAgent } = useAgents(
-    userProfile?.organization_id ? String(userProfile.organization_id) : undefined
+    userProfile?.organization_id ? String(userProfile.organization_id) : undefined,
   )
-  
+
+  const loadOrganization = async () => {
+    if (!userProfile?.organization_id) return
+
+    try {
+      setLoadingOrganization(true)
+      const { data, error } = await supabase
+        .from("organizations")
+        .select("id, subscription_tier, name")
+        .eq("id", userProfile.organization_id)
+        .single()
+
+      if (error) {
+        console.error("Error loading organization:", error)
+      } else {
+        setOrganization(data)
+      }
+    } catch (err) {
+      console.error("Error loading organization:", err)
+    } finally {
+      setLoadingOrganization(false)
+    }
+  }
+
+  const canCreateMoreAgents = () => {
+    if (!organization) return false
+
+    const tier = organization.subscription_tier as keyof typeof SUBSCRIPTION_LIMITS
+    const limit = SUBSCRIPTION_LIMITS[tier] || Number.POSITIVE_INFINITY
+
+    return agents.length < limit
+  }
+
+  const getRemainingAgents = () => {
+    if (!organization) return 0
+
+    const tier = organization.subscription_tier as keyof typeof SUBSCRIPTION_LIMITS
+    const limit = SUBSCRIPTION_LIMITS[tier] || Number.POSITIVE_INFINITY
+
+    if (limit === Number.POSITIVE_INFINITY) return Number.POSITIVE_INFINITY
+    return Math.max(0, limit - agents.length)
+  }
+
+  const getSubscriptionTierName = (tier: string) => {
+    const names = {
+      inicial: "Inicial",
+      avanzado: "Avanzado",
+      premium: "Premium",
+      free: "Gratuito",
+    } as const
+    return names[tier as keyof typeof names] || tier.charAt(0).toUpperCase() + tier.slice(1)
+  }
+
+  useEffect(() => {
+    if (userProfile?.organization_id) {
+      loadOrganization()
+    }
+  }, [userProfile?.organization_id])
+
   const handleCreateAgent = async (data: any) => {
     console.log("Creating agent with data:", data)
     await createAgent(data)
@@ -465,29 +551,76 @@ export default function AgentsPage() {
               <p className="text-lg text-gray-600 max-w-2xl">
                 Gestiona tus asistentes de inteligencia artificial para automatizar conversaciones
               </p>
+              {organization && !loadingOrganization && (
+                <div className="flex items-center gap-4 mt-4">
+                  <div className="flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
+                    <Crown className="h-4 w-4" />
+                    Plan {getSubscriptionTierName(organization.subscription_tier)}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    {agents.length} /{" "}
+                    {SUBSCRIPTION_LIMITS[organization.subscription_tier as keyof typeof SUBSCRIPTION_LIMITS] ===
+                    Number.POSITIVE_INFINITY
+                      ? "∞"
+                      : SUBSCRIPTION_LIMITS[organization.subscription_tier as keyof typeof SUBSCRIPTION_LIMITS] ||
+                        "∞"}{" "}
+                    agentes
+                  </div>
+                </div>
+              )}
             </div>
-            <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-              <DialogTrigger asChild>
+            {loadingOrganization ? (
+              <div className="flex items-center gap-2 px-6 py-3 bg-gray-100 rounded-lg">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-gray-600">Cargando...</span>
+              </div>
+            ) : canCreateMoreAgents() ? (
+              <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+                <DialogTrigger asChild>
+                  <LiquidGlass
+                    variant="button"
+                    intensity="medium"
+                    className="cursor-pointer px-6 py-3"
+                    style={{
+                      background: "rgba(147, 51, 234, 0.15)",
+                      backdropFilter: "blur(10px)",
+                      border: "1px solid rgba(147, 51, 234, 0.3)",
+                      boxShadow: "0 4px 16px rgba(147, 51, 234, 0.1)",
+                    }}
+                    rippleEffect={true}
+                  >
+                    <div className="flex items-center text-purple-700 font-medium">
+                      <Plus className="mr-2.5 h-5 w-5" />
+                      Crear Agente
+                    </div>
+                  </LiquidGlass>
+                </DialogTrigger>
+                <AgentDialog open={createDialogOpen} onOpenChange={setCreateDialogOpen} onSave={handleCreateAgent} />
+              </Dialog>
+            ) : (
+              <div className="text-center">
                 <LiquidGlass
-                  variant="button"
-                  intensity="medium"
-                  className="cursor-pointer px-6 py-3"
+                  variant="card"
+                  intensity="subtle"
+                  className="px-6 py-3 cursor-not-allowed"
                   style={{
-                    background: "rgba(147, 51, 234, 0.15)",
+                    background: "rgba(156, 163, 175, 0.15)",
                     backdropFilter: "blur(10px)",
-                    border: "1px solid rgba(147, 51, 234, 0.3)",
-                    boxShadow: "0 4px 16px rgba(147, 51, 234, 0.1)",
+                    border: "1px solid rgba(156, 163, 175, 0.3)",
+                    boxShadow: "0 4px 16px rgba(156, 163, 175, 0.1)",
                   }}
-                  rippleEffect={true}
                 >
-                  <div className="flex items-center text-purple-700 font-medium">
-                    <Plus className="mr-2.5 h-5 w-5" />
-                    Crear Agente
+                  <div className="flex items-center text-gray-500 font-medium">
+                    <Lock className="mr-2.5 h-5 w-5" />
+                    Límite alcanzado
                   </div>
                 </LiquidGlass>
-              </DialogTrigger>
-              <AgentDialog open={createDialogOpen} onOpenChange={setCreateDialogOpen} onSave={handleCreateAgent} />
-            </Dialog>
+                <p className="text-xs text-gray-500 mt-2 max-w-48">
+                  Has alcanzado el límite de agentes para tu plan{" "}
+                  {getSubscriptionTierName(organization?.subscription_tier || "free")}
+                </p>
+              </div>
+            )}
           </div>
         </LiquidGlass>
 
@@ -554,24 +687,48 @@ export default function AgentsPage() {
             <p className="text-gray-600 mb-6 max-w-md">
               Crea tu primer agente IA para automatizar las respuestas en tus conversaciones
             </p>
-            <LiquidGlass
-              variant="button"
-              intensity="medium"
-              className="cursor-pointer px-6 py-3"
-              style={{
-                background: "rgba(147, 51, 234, 0.15)",
-                backdropFilter: "blur(10px)",
-                border: "1px solid rgba(147, 51, 234, 0.3)",
-                boxShadow: "0 4px 16px rgba(147, 51, 234, 0.1)",
-              }}
-              rippleEffect={true}
-              onClick={() => setCreateDialogOpen(true)}
-            >
-              <div className="flex items-center text-purple-700 font-medium">
-                <Plus className="mr-2 h-5 w-5" />
-                Crear primer agente
+            {canCreateMoreAgents() ? (
+              <LiquidGlass
+                variant="button"
+                intensity="medium"
+                className="cursor-pointer px-6 py-3"
+                style={{
+                  background: "rgba(147, 51, 234, 0.15)",
+                  backdropFilter: "blur(10px)",
+                  border: "1px solid rgba(147, 51, 234, 0.3)",
+                  boxShadow: "0 4px 16px rgba(147, 51, 234, 0.1)",
+                }}
+                rippleEffect={true}
+                onClick={() => setCreateDialogOpen(true)}
+              >
+                <div className="flex items-center text-purple-700 font-medium">
+                  <Plus className="mr-2 h-5 w-5" />
+                  Crear primer agente
+                </div>
+              </LiquidGlass>
+            ) : (
+              <div className="text-center">
+                <LiquidGlass
+                  variant="card"
+                  intensity="subtle"
+                  className="px-6 py-3 cursor-not-allowed"
+                  style={{
+                    background: "rgba(156, 163, 175, 0.15)",
+                    backdropFilter: "blur(10px)",
+                    border: "1px solid rgba(156, 163, 175, 0.3)",
+                    boxShadow: "0 4px 16px rgba(156, 163, 175, 0.1)",
+                  }}
+                >
+                  <div className="flex items-center text-gray-500 font-medium">
+                    <Lock className="mr-2.5 h-5 w-5" />
+                    Límite alcanzado
+                  </div>
+                </LiquidGlass>
+                <p className="text-xs text-gray-500 mt-2 max-w-48">
+                  Tu plan {getSubscriptionTierName(organization?.subscription_tier || "free")} no permite crear agentes
+                </p>
               </div>
-            </LiquidGlass>
+            )}
           </LiquidGlass>
         ) : (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
