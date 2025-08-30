@@ -47,36 +47,4 @@ export const STRIPE_PLANS = {
       },
     },
   },
-  TEST: {
-    id: "test",
-    name: "Plan Test (0,01€)",
-    prices: {
-      monthly: {
-        priceId: "price_1RxVVVDXuo6lFrulecOoZdib",
-        amount: 1, // 💰 0,01 €
-        currency: "EUR",
-      },
-      yearly: {
-        priceId: "price_1RxVVVDXuo6lFrulecOoZdib",
-        amount: 1,
-        currency: "EUR",
-      },
-    },
-  },
-  NUEVO: {
-    id: "nuevo",
-    name: "Plan Nuevo (0,50€)",
-    prices: {
-      monthly: {
-        priceId: "price_1Ry8nWDXuo6lFrulyk1wMszn", // 👈 tu nuevo priceId
-        amount: 50, // 💰 0,50 € en céntimos
-        currency: "EUR",
-      },
-      yearly: {
-        priceId: "price_1Ry8nWDXuo6lFrulyk1wMszn", // si solo tienes un price, lo puedes reutilizar
-        amount: 600, // 💰 6 € en céntimos (ejemplo, 0,50 * 12)
-        currency: "EUR",
-      },
-    },
-  },
 } as const
