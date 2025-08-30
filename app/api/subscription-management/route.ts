@@ -161,9 +161,9 @@ export async function POST(request: NextRequest) {
             },
           ],
           proration_behavior: isUpgrade ? "create_prorations" : "none",
-          billing_cycle_anchor: "now",
           expand: ["latest_invoice.payment_intent"],
         })
+        
 
         // 🔹 Si es upgrade → generar y cobrar factura inmediata
         let latestInvoice = updatedSubscription.latest_invoice as any
