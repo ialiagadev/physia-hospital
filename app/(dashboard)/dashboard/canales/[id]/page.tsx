@@ -452,37 +452,42 @@ function AddNumberModal({
         })
 
         const aisensyResult = await response.json()
-
         if (response.ok) {
           setAisensyStatus("¡Número registrado exitosamente!")
           console.log("Aisensy registration successful:", aisensyResult)
-
+        
           const updatedData = {
             ...data,
             aisensy_status: aisensyResult.status || "registered",
             url_register_facebook: aisensyResult.facebook_url || null,
           }
-
+        
           onAdd(updatedData)
-
-          // 👇 abrir popup automáticamente al registrar
+        
+          // 👇 Abrir Facebook directamente y luego refrescar la página
           if (aisensyResult.facebook_url) {
             window.open(
               aisensyResult.facebook_url,
               "popupFacebook",
               "width=800,height=600,scrollbars=yes"
             )
+        
+            // ⚡ Forzar recarga tras 1s (da tiempo a abrir el popup primero)
+            setTimeout(() => {
+              window.location.reload()
+            }, 1000)
           }
         } else {
           console.error("Aisensy registration failed:", aisensyResult)
           setAisensyStatus(`Error en Aisensy: ${aisensyResult.error || "Error desconocido"}`)
-
+        
           onAdd({
             ...data,
             aisensy_status: "failed",
             aisensy_error: aisensyResult.error,
           })
         }
+        
       } catch (aisensyError) {
         console.error("Error calling Aisensy API:", aisensyError)
         setAisensyStatus("Error de conexión con Aisensy")
@@ -876,7 +881,7 @@ export default function CanalPage({ params }: PageProps) {
                 <div>
                   <p className="font-medium text-blue-900">Vincula con Facebook</p>
                   <p className="text-sm text-blue-700">
-                    Dale al botón de Facebook <Facebook className="inline h-4 w-4 mx-1" /> y completa la vinculación en
+                    Si no lo has hecho ya dale al botón de Facebook <Facebook className="inline h-4 w-4 mx-1" /> y completa la vinculación en
                     la ventana que se abre.
                   </p>
                 </div>
