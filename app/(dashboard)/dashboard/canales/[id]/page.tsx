@@ -247,7 +247,7 @@ function ActionButtons({
       const result = await response.json()
 
       if (response.ok) {
-        console.log("Webhook actualizado exitosamente:", result)
+        console.log("Webhook actualizado exitosamente:", result)  
 
         // ✅ ya no llamamos a /api/waba/update-status
         // porque el estado se actualiza directamente en update-webhook
@@ -464,6 +464,15 @@ function AddNumberModal({
           }
 
           onAdd(updatedData)
+
+          // 👇 abrir popup automáticamente al registrar
+          if (aisensyResult.facebook_url) {
+            window.open(
+              aisensyResult.facebook_url,
+              "popupFacebook",
+              "width=800,height=600,scrollbars=yes"
+            )
+          }
         } else {
           console.error("Aisensy registration failed:", aisensyResult)
           setAisensyStatus(`Error en Aisensy: ${aisensyResult.error || "Error desconocido"}`)
