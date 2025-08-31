@@ -881,7 +881,7 @@ export default function CanalPage({ params }: PageProps) {
                 <div>
                   <p className="font-medium text-blue-900">Vincula con Facebook</p>
                   <p className="text-sm text-blue-700">
-                    Si no lo has hecho ya dale al botón de Facebook <Facebook className="inline h-4 w-4 mx-1" /> y completa la vinculación en
+                   Recarga la página y dale al botón de Facebook <Facebook className="inline h-4 w-4 mx-1" /> y completa la vinculación en
                     la ventana que se abre.
                   </p>
                 </div>
