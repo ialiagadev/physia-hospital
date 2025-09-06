@@ -10,7 +10,23 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Loader2, Phone, User, CheckCircle, AlertTriangle, MapPin, Info, Briefcase, Search, CalendarIcon, Clock, ClipboardList, Repeat, Ban, CreditCard, Globe } from 'lucide-react'
+import {
+  Loader2,
+  Phone,
+  User,
+  CheckCircle,
+  AlertTriangle,
+  MapPin,
+  Info,
+  Briefcase,
+  Search,
+  CalendarIcon,
+  Clock,
+  ClipboardList,
+  Repeat,
+  Ban,
+  CreditCard,
+} from "lucide-react"
 import { useClients } from "@/hooks/use-clients"
 import { useUsers } from "@/hooks/use-users"
 import { useUserServices } from "../services/use-user-services"
@@ -19,7 +35,7 @@ import { useServices } from "@/hooks/use-services"
 import { useVacations } from "@/hooks/use-vacations"
 import { useAppointmentConflicts } from "@/hooks/use-appointment-conflicts"
 import { useAuth } from "@/app/contexts/auth-context"
-import { normalizePhoneNumber, formatPhoneNumber, isValidPhoneNumber } from "@/utils/phone-utils"
+import { formatPhoneNumber, isValidPhoneNumber } from "@/utils/phone-utils"
 import { supabase } from "@/lib/supabase/client"
 import { RecurrenceService } from "@/lib/services/recurrence-service"
 import type { Cita, EstadoCita, RecurrenceConfig, RecurrencePreview } from "@/types/calendar"
@@ -45,20 +61,20 @@ interface ClientMatch {
 
 // Prefijos telefónicos comunes
 const PHONE_PREFIXES = [
-  { code: '+34', country: 'España', flag: '🇪🇸' },
-  { code: '+33', country: 'Francia', flag: '🇫🇷' },
-  { code: '+49', country: 'Alemania', flag: '🇩🇪' },
-  { code: '+39', country: 'Italia', flag: '🇮🇹' },
-  { code: '+351', country: 'Portugal', flag: '🇵🇹' },
-  { code: '+44', country: 'Reino Unido', flag: '🇬🇧' },
-  { code: '+1', country: 'Estados Unidos', flag: '🇺🇸' },
-  { code: '+52', country: 'México', flag: '🇲🇽' },
-  { code: '+54', country: 'Argentina', flag: '🇦🇷' },
-  { code: '+55', country: 'Brasil', flag: '🇧🇷' },
-  { code: '+56', country: 'Chile', flag: '🇨🇱' },
-  { code: '+57', country: 'Colombia', flag: '🇨🇴' },
-  { code: '+58', country: 'Venezuela', flag: '🇻🇪' },
-  { code: '+212', country: 'Marruecos', flag: '🇲🇦' },
+  { code: "+34", country: "España", flag: "🇪🇸" },
+  { code: "+33", country: "Francia", flag: "🇫🇷" },
+  { code: "+49", country: "Alemania", flag: "🇩🇪" },
+  { code: "+39", country: "Italia", flag: "🇮🇹" },
+  { code: "+351", country: "Portugal", flag: "🇵🇹" },
+  { code: "+44", country: "Reino Unido", flag: "🇬🇧" },
+  { code: "+1", country: "Estados Unidos", flag: "🇺🇸" },
+  { code: "+52", country: "México", flag: "🇲🇽" },
+  { code: "+54", country: "Argentina", flag: "🇦🇷" },
+  { code: "+55", country: "Brasil", flag: "🇧🇷" },
+  { code: "+56", country: "Chile", flag: "🇨🇱" },
+  { code: "+57", country: "Colombia", flag: "🇨🇴" },
+  { code: "+58", country: "Venezuela", flag: "🇻🇪" },
+  { code: "+212", country: "Marruecos", flag: "🇲🇦" },
 ]
 
 const estadosCita = [
@@ -102,9 +118,6 @@ export function AppointmentFormModal({
   const { userProfile } = useAuth()
   const organizationId = userProfile?.organization_id ? Number(userProfile.organization_id) : undefined
 
-  // 🆕 VERIFICAR SI ES USUARIO 'USER'
-  const isUserRole = userProfile?.role === "user"
-
   // Hooks centralizados
   const { clients } = useClients(organizationId)
   const { users } = useUsers(organizationId)
@@ -129,9 +142,9 @@ export function AppointmentFormModal({
   const [telefonoFormateado, setTelefonoFormateado] = useState("")
 
   // 🆕 Estados para cliente nuevo
-  const [phonePrefix, setPhonePrefix] = useState('+34')
-  const [phoneNumber, setPhoneNumber] = useState('')
-  const [taxId, setTaxId] = useState('')
+  const [phonePrefix, setPhonePrefix] = useState("+34")
+  const [phoneNumber, setPhoneNumber] = useState("")
+  const [taxId, setTaxId] = useState("")
 
   // 🆕 Estados para recurrencia
   const [recurrencePreview, setRecurrencePreview] = useState<RecurrencePreview | null>(null)
@@ -169,13 +182,7 @@ export function AppointmentFormModal({
   const [formData, setFormData] = useState(() => {
     const waitingListProfessionalId = getWaitingListProfessionalId()
 
-    // 🆕 PARA USUARIOS 'USER', FORZAR SU PROPIO ID
-    let defaultProfessionalId = citaExistente?.profesionalId || waitingListProfessionalId || profesionalId || 0
-    if (isUserRole && userProfile?.id) {
-      // Convertir UUID a número para usuarios 'user'
-      const userIdAsNumber = Number.parseInt(userProfile.id.slice(-8), 16)
-      defaultProfessionalId = userIdAsNumber
-    }
+    const defaultProfessionalId = citaExistente?.profesionalId || waitingListProfessionalId || profesionalId || 0
 
     return {
       telefonoPaciente: citaExistente?.telefonoPaciente || waitingListEntry?.client_phone || "",
@@ -187,7 +194,6 @@ export function AppointmentFormModal({
       hora: citaExistente?.hora || hora,
       duracion: citaExistente?.duracion || waitingListEntry?.service_duration || 45,
       notas: citaExistente?.notas || waitingListEntry?.notes || "",
-      // 🆕 PROFESIONAL ID CORREGIDO - forzar para usuarios 'user'
       profesionalId: defaultProfessionalId,
       estado: citaExistente?.estado || ("pendiente" as EstadoCita),
       consultationId:
@@ -195,8 +201,8 @@ export function AppointmentFormModal({
       service_id: citaExistente?.service_id
         ? Number(citaExistente.service_id)
         : waitingListEntry?.service_id
-        ? Number(waitingListEntry.service_id)
-        : null, // ✅ Mantener servicio de lista de espera si existe
+          ? Number(waitingListEntry.service_id)
+          : null, // ✅ Mantener servicio de lista de espera si existe
       // 🆕 CAMPOS PARA RECURRENCIA - Añadida opción "daily"
       isRecurring: citaExistente?.isRecurring || false,
       recurrenceType: citaExistente?.recurrenceType || "weekly",
@@ -213,7 +219,7 @@ export function AppointmentFormModal({
     if (citaExistente?.telefonoPaciente) {
       // Separar prefijo y número si existe
       const fullPhone = citaExistente.telefonoPaciente
-      const prefix = PHONE_PREFIXES.find(p => fullPhone.startsWith(p.code))
+      const prefix = PHONE_PREFIXES.find((p) => fullPhone.startsWith(p.code))
       if (prefix) {
         setPhonePrefix(prefix.code)
         setPhoneNumber(fullPhone.substring(prefix.code.length))
@@ -222,7 +228,7 @@ export function AppointmentFormModal({
       }
     } else if (waitingListEntry?.client_phone) {
       const fullPhone = waitingListEntry.client_phone
-      const prefix = PHONE_PREFIXES.find(p => fullPhone.startsWith(p.code))
+      const prefix = PHONE_PREFIXES.find((p) => fullPhone.startsWith(p.code))
       if (prefix) {
         setPhonePrefix(prefix.code)
         setPhoneNumber(fullPhone.substring(prefix.code.length))
@@ -409,12 +415,7 @@ export function AppointmentFormModal({
 
   // ✅ ACTUALIZAR USUARIOS FILTRADOS - SIMPLIFICADO (ya no filtra por servicio)
   const updateFilteredUsers = useCallback(async () => {
-    let usersToFilter = users.filter((user) => user.type === 1) // Solo profesionales
-
-    // 🆕 PARA USUARIOS 'USER', SOLO MOSTRAR A SÍ MISMOS
-    if (isUserRole && userProfile?.id) {
-      usersToFilter = usersToFilter.filter((user) => user.id === userProfile.id)
-    }
+    const usersToFilter = users.filter((user) => user.type === 1) // Solo profesionales
 
     // Filtrar por vacaciones
     const availableUsers = getAvailableUsers(usersToFilter, formData.fecha)
@@ -429,24 +430,14 @@ export function AppointmentFormModal({
       formData.profesionalId &&
       formData.profesionalId !== profesionalId && // No resetear si viene del calendario
       formData.profesionalId !== waitingListProfessionalId && // 🔧 No resetear si viene de lista de espera
-      !availableUsers.find((user) => Number.parseInt(user.id.slice(-8), 16) === formData.profesionalId) &&
-      !isUserRole // 🆕 No resetear para usuarios 'user'
+      !availableUsers.find((user) => Number.parseInt(user.id.slice(-8), 16) === formData.profesionalId)
     ) {
       setFormData((prev) => ({
         ...prev,
         profesionalId: waitingListProfessionalId || profesionalId || 0,
       }))
     }
-  }, [
-    formData.fecha,
-    formData.profesionalId,
-    users,
-    getAvailableUsers,
-    profesionalId,
-    getWaitingListProfessionalId,
-    isUserRole,
-    userProfile?.id,
-  ])
+  }, [formData.fecha, formData.profesionalId, users, getAvailableUsers, profesionalId, getWaitingListProfessionalId])
 
   // Función para buscar clientes
   const searchClients = useCallback(
@@ -593,7 +584,7 @@ export function AppointmentFormModal({
 
     // Separar prefijo y número para cliente existente
     const fullPhone = client.phone || ""
-    const prefix = PHONE_PREFIXES.find(p => fullPhone.startsWith(p.code))
+    const prefix = PHONE_PREFIXES.find((p) => fullPhone.startsWith(p.code))
     if (prefix) {
       setPhonePrefix(prefix.code)
       setPhoneNumber(fullPhone.substring(prefix.code.length))
@@ -645,22 +636,14 @@ export function AppointmentFormModal({
   }, [clienteEncontrado, searchTerm])
 
   // ✅ HANDLER MEJORADO: Para cambio de profesional con reset de servicio
-  const handleProfessionalChange = useCallback(
-    (value: string) => {
-      // 🆕 BLOQUEAR CAMBIO PARA USUARIOS 'USER'
-      if (isUserRole) {
-        return // No permitir cambios
-      }
-
-      const newProfessionalId = Number.parseInt(value)
-      setFormData((prev) => ({
-        ...prev,
-        profesionalId: newProfessionalId,
-        service_id: null, // ✅ Reset service when professional changes
-      }))
-    },
-    [isUserRole],
-  )
+  const handleProfessionalChange = useCallback((value: string) => {
+    const newProfessionalId = Number.parseInt(value)
+    setFormData((prev) => ({
+      ...prev,
+      profesionalId: newProfessionalId,
+      service_id: null, // ✅ Reset service when professional changes
+    }))
+  }, [])
 
   // ✅ HANDLER MEJORADO: Para cambio de servicio con validación
   const handleServiceChange = useCallback(
@@ -707,7 +690,7 @@ export function AppointmentFormModal({
 
   // 🆕 Handler para cambio de número telefónico
   const handlePhoneNumberChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.replace(/\D/g, '') // Solo números
+    const value = e.target.value.replace(/\D/g, "") // Solo números
     setPhoneNumber(value)
     // 🔧 NO actualizar formData.telefonoPaciente aquí para evitar duplicación
   }, [])
@@ -792,11 +775,13 @@ export function AppointmentFormModal({
       }
 
       // 🆕 CREAR OBJETO newClientData CON LOGS
-      const newClientData = !clienteEncontrado ? {
-        phonePrefix: phonePrefix,
-        taxId: taxId.trim() || undefined,
-        fullPhone: phonePrefix + phoneNumber
-      } : undefined
+      const newClientData = !clienteEncontrado
+        ? {
+            phonePrefix: phonePrefix,
+            taxId: taxId.trim() || undefined,
+            fullPhone: phonePrefix + phoneNumber,
+          }
+        : undefined
 
       console.log("=== CREANDO newClientData ===")
       console.log("newClientData:", newClientData)
@@ -823,28 +808,28 @@ export function AppointmentFormModal({
         newClientData: newClientData,
       }
 
-    console.log("=== CITA FINAL ===")
-    console.log("nuevaCita:", nuevaCita)
-    console.log("nuevaCita.newClientData:", nuevaCita.newClientData)
+      console.log("=== CITA FINAL ===")
+      console.log("nuevaCita:", nuevaCita)
+      console.log("nuevaCita.newClientData:", nuevaCita.newClientData)
 
-    onSubmit(nuevaCita)
-    onClose()
-  },
-  [
-    formData,
-    clienteEncontrado,
-    calcularHoraFin,
-    citaExistente?.id,
-    onSubmit,
-    onClose,
-    profesionalId,
-    conflicts.length,
-    filteredServices,
-    phoneNumber, // 🆕 AÑADIDA DEPENDENCIA
-    phonePrefix, // 🆕 AÑADIDA DEPENDENCIA
-    taxId, // 🆕 AÑADIDA DEPENDENCIA
-  ],
-)
+      onSubmit(nuevaCita)
+      onClose()
+    },
+    [
+      formData,
+      clienteEncontrado,
+      calcularHoraFin,
+      citaExistente?.id,
+      onSubmit,
+      onClose,
+      profesionalId,
+      conflicts.length,
+      filteredServices,
+      phoneNumber, // 🆕 AÑADIDA DEPENDENCIA
+      phonePrefix, // 🆕 AÑADIDA DEPENDENCIA
+      taxId, // 🆕 AÑADIDA DEPENDENCIA
+    ],
+  )
 
   if (!organizationId) {
     return (
@@ -872,24 +857,10 @@ export function AppointmentFormModal({
             {citaExistente ? "Editar Cita" : waitingListEntry ? "Programar desde Lista de Espera" : "Nueva Cita"}
             {clienteEncontrado && <CheckCircle className="h-4 w-4 text-green-600" />}
             {formData.isRecurring && <Repeat className="h-4 w-4 text-blue-600" />}
-            {/* 🆕 INDICADOR PARA USUARIOS 'USER' */}
-            {isUserRole && <User className="h-4 w-4 text-blue-600" />}
           </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 px-1">
-          {/* 🆕 ALERTA PARA USUARIOS 'USER' */}
-          {isUserRole && (
-            <Alert className="border-blue-200 bg-blue-50">
-              <User className="h-4 w-4" />
-              <AlertDescription className="text-blue-800">
-                <strong>👤 Modo Usuario</strong>
-                <br />
-                <span className="text-sm">Solo puedes crear citas asignadas a ti mismo.</span>
-              </AlertDescription>
-            </Alert>
-          )}
-
           {/* Indicador de lista de espera */}
           {waitingListEntry && (
             <Alert className="border-blue-200 bg-blue-50">
@@ -898,21 +869,33 @@ export function AppointmentFormModal({
                 <strong>📋 Programando desde Lista de Espera</strong>
                 <br />
                 <div className="text-sm mt-2 space-y-1">
-                  <div><strong>Cliente:</strong> {waitingListEntry.client_name}</div>
+                  <div>
+                    <strong>Cliente:</strong> {waitingListEntry.client_name}
+                  </div>
                   {waitingListEntry.client_phone && (
-                    <div><strong>Teléfono:</strong> {waitingListEntry.client_phone}</div>
+                    <div>
+                      <strong>Teléfono:</strong> {waitingListEntry.client_phone}
+                    </div>
                   )}
                   {waitingListEntry.service_name && (
-                    <div><strong>Servicio:</strong> {waitingListEntry.service_name}</div>
+                    <div>
+                      <strong>Servicio:</strong> {waitingListEntry.service_name}
+                    </div>
                   )}
                   {waitingListEntry.professional_name && (
-                    <div><strong>Profesional preferido:</strong> {waitingListEntry.professional_name}</div>
+                    <div>
+                      <strong>Profesional preferido:</strong> {waitingListEntry.professional_name}
+                    </div>
                   )}
                   {waitingListEntry.service_duration && (
-                    <div><strong>Duración estimada:</strong> {waitingListEntry.service_duration} min</div>
+                    <div>
+                      <strong>Duración estimada:</strong> {waitingListEntry.service_duration} min
+                    </div>
                   )}
                   {waitingListEntry.notes && (
-                    <div><strong>Notas:</strong> {waitingListEntry.notes}</div>
+                    <div>
+                      <strong>Notas:</strong> {waitingListEntry.notes}
+                    </div>
                   )}
                 </div>
                 <div className="text-sm mt-2 text-blue-700">
@@ -1090,7 +1073,11 @@ export function AppointmentFormModal({
                 </div>
                 {phonePrefix && phoneNumber && (
                   <p className="text-sm text-gray-600">
-                    Teléfono completo: <strong>{phonePrefix}{phoneNumber}</strong>
+                    Teléfono completo:{" "}
+                    <strong>
+                      {phonePrefix}
+                      {phoneNumber}
+                    </strong>
                   </p>
                 )}
               </div>
@@ -1111,13 +1098,9 @@ export function AppointmentFormModal({
                   placeholder="12345678A o B12345678"
                   className="w-full"
                 />
-                <p className="text-xs text-gray-500">
-                  Introduce el NIF para personas físicas o CIF para empresas
-                </p>
+                <p className="text-xs text-gray-500">Introduce el NIF para personas físicas o CIF para empresas</p>
                 {/* 🆕 MOSTRAR VALOR ACTUAL */}
-                <p className="text-xs text-blue-600">
-                  Valor actual: "{taxId}"
-                </p>
+                <p className="text-xs text-blue-600">Valor actual: "{taxId}"</p>
               </div>
             </div>
           )}
@@ -1126,15 +1109,9 @@ export function AppointmentFormModal({
           <div className="space-y-2">
             <Label htmlFor="profesional" className="flex items-center gap-2 text-sm font-medium">
               Profesional *
-              {/* 🆕 INDICADOR PARA USUARIOS 'USER' */}
-              {isUserRole && <span className="text-xs text-blue-600">(Solo tú)</span>}
             </Label>
-            <Select
-              value={formData.profesionalId.toString()}
-              onValueChange={handleProfessionalChange}
-              disabled={isUserRole} // 🆕 DESHABILITAR PARA USUARIOS 'USER'
-            >
-              <SelectTrigger className={`w-full ${isUserRole ? "bg-gray-50 cursor-not-allowed" : ""}`}>
+            <Select value={formData.profesionalId.toString()} onValueChange={handleProfessionalChange}>
+              <SelectTrigger className="w-full">
                 <SelectValue placeholder="Selecciona un profesional *" />
               </SelectTrigger>
               <SelectContent>
@@ -1143,18 +1120,12 @@ export function AppointmentFormModal({
                     <div className="flex items-center gap-2 w-full">
                       <span className="truncate">{user.name || user.email}</span>
                       <span className="text-xs text-gray-500 flex-shrink-0">({user.role})</span>
-                      {/* 🆕 INDICADOR SI ES EL USUARIO ACTUAL */}
-                      {isUserRole && <span className="text-xs text-blue-600">(Tú)</span>}
                     </div>
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             {errors.profesional && <p className="text-sm text-red-600">{errors.profesional}</p>}
-            {/* 🆕 MENSAJE EXPLICATIVO PARA USUARIOS 'USER' */}
-            {isUserRole && (
-              <p className="text-xs text-blue-600">Como usuario, solo puedes crear citas para ti mismo.</p>
-            )}
           </div>
 
           {/* ✅ SERVICIO SEGUNDO - FILTRADO POR PROFESIONAL */}
@@ -1176,10 +1147,10 @@ export function AppointmentFormModal({
                     !formData.profesionalId
                       ? "Primero selecciona un profesional"
                       : loadingProfessionalServices || userServicesLoading
-                      ? "Cargando servicios..."
-                      : filteredServices.length === 0
-                      ? "No hay servicios disponibles"
-                      : "Selecciona un servicio"
+                        ? "Cargando servicios..."
+                        : filteredServices.length === 0
+                          ? "No hay servicios disponibles"
+                          : "Selecciona un servicio"
                   }
                 />
               </SelectTrigger>
@@ -1187,10 +1158,7 @@ export function AppointmentFormModal({
                 {filteredServices.map((service) => (
                   <SelectItem key={service.id} value={service.id.toString()}>
                     <div className="flex items-center gap-2 w-full">
-                      <div
-                        className="w-3 h-3 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: service.color }}
-                      />
+                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: service.color }} />
                       <div className="min-w-0 flex-1">
                         <div className="font-medium truncate">{service.name}</div>
                         <div className="text-xs text-gray-500 truncate">
@@ -1337,8 +1305,8 @@ export function AppointmentFormModal({
                       {formData.recurrenceType === "daily"
                         ? "días"
                         : formData.recurrenceType === "weekly"
-                        ? "semanas"
-                        : "meses"}
+                          ? "semanas"
+                          : "meses"}
                     </Label>
                     <Select
                       value={formData.recurrenceInterval.toString()}
@@ -1356,16 +1324,16 @@ export function AppointmentFormModal({
                               </SelectItem>
                             ))
                           : formData.recurrenceType === "weekly"
-                          ? [1, 2, 3, 4].map((interval) => (
-                              <SelectItem key={interval} value={interval.toString()}>
-                                {interval} {interval === 1 ? "semana" : "semanas"}
-                              </SelectItem>
-                            ))
-                          : [1, 2, 3, 4, 6, 8, 12].map((interval) => (
-                              <SelectItem key={interval} value={interval.toString()}>
-                                {interval} {interval === 1 ? "mes" : "meses"}
-                              </SelectItem>
-                            ))}
+                            ? [1, 2, 3, 4].map((interval) => (
+                                <SelectItem key={interval} value={interval.toString()}>
+                                  {interval} {interval === 1 ? "semana" : "semanas"}
+                                </SelectItem>
+                              ))
+                            : [1, 2, 3, 4, 6, 8, 12].map((interval) => (
+                                <SelectItem key={interval} value={interval.toString()}>
+                                  {interval} {interval === 1 ? "mes" : "meses"}
+                                </SelectItem>
+                              ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -1610,10 +1578,6 @@ export function AppointmentFormModal({
               <p className="text-blue-600">
                 • ✅ El sistema garantiza que solo se asignen servicios compatibles con el profesional
               </p>
-            )}
-            {/* 🆕 CONSEJO PARA USUARIOS 'USER' */}
-            {isUserRole && (
-              <p className="text-blue-600">• 👤 Como usuario, solo puedes crear citas asignadas a ti mismo</p>
             )}
           </div>
 
