@@ -36,7 +36,7 @@ export default function NewClientPage() {
   const [error, setError] = useState<string | null>(null)
   const [organizations, setOrganizations] = useState<any[]>([])
   const [existingClientWarning, setExistingClientWarning] = useState<string | null>(null)
-  
+
   const [formData, setFormData] = useState({
     organization_id: "",
     name: "",
@@ -79,7 +79,7 @@ export default function NewClientPage() {
     try {
       // Crear el teléfono completo para la búsqueda
       const fullPhone = `${phonePrefix}${phone}`
-      
+
       // Buscar por teléfono completo O por teléfono sin prefijo (compatibilidad)
       const { data: existingClients, error } = await supabase
         .from("clients")
@@ -95,7 +95,7 @@ export default function NewClientPage() {
       if (existingClients && existingClients.length > 0) {
         const client = existingClients[0]
         setExistingClientWarning(
-          `⚠️ Ya existe un cliente con este teléfono: "${client.name}" (${client.full_phone || client.phone})`
+          `⚠️ Ya existe un cliente con este teléfono: "${client.name}" (${client.full_phone || client.phone})`,
         )
       } else {
         setExistingClientWarning(null)
@@ -127,7 +127,7 @@ export default function NewClientPage() {
         checkExistingClient(formData.phone, value, formData.organization_id)
       }, 500)
     }
-    
+
     if (name === "organization_id") {
       setTimeout(() => {
         checkExistingClient(formData.phone, formData.phone_prefix, value)
@@ -149,18 +149,18 @@ export default function NewClientPage() {
     setError(null)
 
     try {
-      if (!formData.organization_id) {
-        throw new Error("Debes seleccionar una organización")
+      if (!formData.phone) {
+        throw new Error("El teléfono es obligatorio")
       }
 
       // ✅ Verificación final antes de crear el cliente
       if (formData.phone && formData.phone_prefix) {
         const fullPhone = `${formData.phone_prefix}${formData.phone}`
-        
+
         const { data: existingClient } = await supabase
           .from("clients")
           .select("id, name")
-          .eq("organization_id", Number.parseInt(formData.organization_id))
+          .eq("organization_id", Number.parseInt(formData.organization_id || "0"))
           .or(`full_phone.eq.${fullPhone},phone.eq.${formData.phone}`)
           .single()
 
@@ -173,18 +173,18 @@ export default function NewClientPage() {
       const { data, error: insertError } = await supabase
         .from("clients")
         .insert({
-          organization_id: Number.parseInt(formData.organization_id),
-          name: formData.name,
-          tax_id: formData.tax_id,
-          address: formData.address,
-          postal_code: formData.postal_code,
-          city: formData.city,
-          province: formData.province,
-          country: formData.country,
+          organization_id: formData.organization_id ? Number.parseInt(formData.organization_id) : null,
+          name: formData.name || null,
+          tax_id: formData.tax_id || null,
+          address: formData.address || null,
+          postal_code: formData.postal_code || null,
+          city: formData.city || null,
+          province: formData.province || null,
+          country: formData.country || null,
           client_type: formData.client_type,
           email: formData.email || null,
           phone: formData.phone,
-          phone_prefix: formData.phone_prefix, // ✅ Guardar prefijo
+          phone_prefix: formData.phone_prefix,
           birth_date: formData.birth_date || null,
           gender: formData.gender || null,
           medical_notes: formData.medical_notes || null,
@@ -226,16 +226,12 @@ export default function NewClientPage() {
 
             {existingClientWarning && (
               <Alert variant="default" className="border-orange-200 bg-orange-50">
-                <AlertDescription className="text-orange-800">
-                  {existingClientWarning}
-                </AlertDescription>
+                <AlertDescription className="text-orange-800">{existingClientWarning}</AlertDescription>
               </Alert>
             )}
 
             <div className="space-y-2">
-              <RequiredLabel htmlFor="organization_id" required>
-                Organización
-              </RequiredLabel>
+              <RequiredLabel htmlFor="organization_id">Organización</RequiredLabel>
               <Select
                 value={formData.organization_id}
                 onValueChange={(value) => handleSelectChange("organization_id", value)}
@@ -254,17 +250,13 @@ export default function NewClientPage() {
             </div>
 
             <div className="space-y-2">
-              <RequiredLabel htmlFor="name" required>
-                Nombre o Razón Social
-              </RequiredLabel>
-              <Input id="name" name="name" value={formData.name} onChange={handleChange} required />
+              <RequiredLabel htmlFor="name">Nombre o Razón Social</RequiredLabel>
+              <Input id="name" name="name" value={formData.name} onChange={handleChange} />
             </div>
 
             <div className="space-y-2">
-              <RequiredLabel htmlFor="tax_id" required>
-                CIF/NIF
-              </RequiredLabel>
-              <Input id="tax_id" name="tax_id" value={formData.tax_id} onChange={handleChange} required />
+              <RequiredLabel htmlFor="tax_id">CIF/NIF</RequiredLabel>
+              <Input id="tax_id" name="tax_id" value={formData.tax_id} onChange={handleChange} />
             </div>
 
             {/* Campos de información personal */}
@@ -296,45 +288,29 @@ export default function NewClientPage() {
             </div>
 
             <div className="space-y-2">
-              <RequiredLabel htmlFor="address" required>
-                Dirección
-              </RequiredLabel>
-              <Textarea id="address" name="address" value={formData.address} onChange={handleChange} required />
+              <RequiredLabel htmlFor="address">Dirección</RequiredLabel>
+              <Textarea id="address" name="address" value={formData.address} onChange={handleChange} />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <RequiredLabel htmlFor="postal_code" required>
-                  Código Postal
-                </RequiredLabel>
-                <Input
-                  id="postal_code"
-                  name="postal_code"
-                  value={formData.postal_code}
-                  onChange={handleChange}
-                  required
-                />
+                <RequiredLabel htmlFor="postal_code">Código Postal</RequiredLabel>
+                <Input id="postal_code" name="postal_code" value={formData.postal_code} onChange={handleChange} />
               </div>
               <div className="space-y-2">
-                <RequiredLabel htmlFor="city" required>
-                  Ciudad
-                </RequiredLabel>
-                <Input id="city" name="city" value={formData.city} onChange={handleChange} required />
+                <RequiredLabel htmlFor="city">Ciudad</RequiredLabel>
+                <Input id="city" name="city" value={formData.city} onChange={handleChange} />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <RequiredLabel htmlFor="province" required>
-                  Provincia
-                </RequiredLabel>
-                <Input id="province" name="province" value={formData.province} onChange={handleChange} required />
+                <RequiredLabel htmlFor="province">Provincia</RequiredLabel>
+                <Input id="province" name="province" value={formData.province} onChange={handleChange} />
               </div>
               <div className="space-y-2">
-                <RequiredLabel htmlFor="country" required>
-                  País
-                </RequiredLabel>
-                <Input id="country" name="country" value={formData.country} onChange={handleChange} required />
+                <RequiredLabel htmlFor="country">País</RequiredLabel>
+                <Input id="country" name="country" value={formData.country} onChange={handleChange} />
               </div>
             </div>
 
@@ -380,7 +356,11 @@ export default function NewClientPage() {
                 {/* Mostrar teléfono completo como preview */}
                 {formData.phone && (
                   <p className="text-sm text-gray-500">
-                    Teléfono completo: <strong>{formData.phone_prefix}{formData.phone}</strong>
+                    Teléfono completo:{" "}
+                    <strong>
+                      {formData.phone_prefix}
+                      {formData.phone}
+                    </strong>
                   </p>
                 )}
               </div>
@@ -400,7 +380,7 @@ export default function NewClientPage() {
             </div>
 
             <div className="space-y-2">
-              <RequiredLabel required>Tipo de Cliente</RequiredLabel>
+              <RequiredLabel>Tipo de Cliente</RequiredLabel>
               <RadioGroup
                 value={formData.client_type}
                 onValueChange={(value) => setFormData((prev) => ({ ...prev, client_type: value }))}
@@ -421,39 +401,30 @@ export default function NewClientPage() {
               <div className="space-y-4 border p-4 rounded-md">
                 <h3 className="font-medium">Códigos DIR3</h3>
                 <div className="space-y-2">
-                  <RequiredLabel htmlFor="CentroGestor" required>
-                    Centro Gestor
-                  </RequiredLabel>
+                  <RequiredLabel htmlFor="CentroGestor">Centro Gestor</RequiredLabel>
                   <Input
                     id="CentroGestor"
                     name="CentroGestor"
                     value={formData.dir3_codes.CentroGestor}
                     onChange={handleDir3Change}
-                    required
                   />
                 </div>
                 <div className="space-y-2">
-                  <RequiredLabel htmlFor="UnidadTramitadora" required>
-                    Unidad Tramitadora
-                  </RequiredLabel>
+                  <RequiredLabel htmlFor="UnidadTramitadora">Unidad Tramitadora</RequiredLabel>
                   <Input
                     id="UnidadTramitadora"
                     name="UnidadTramitadora"
                     value={formData.dir3_codes.UnidadTramitadora}
                     onChange={handleDir3Change}
-                    required
                   />
                 </div>
                 <div className="space-y-2">
-                  <RequiredLabel htmlFor="OficinaContable" required>
-                    Oficina Contable
-                  </RequiredLabel>
+                  <RequiredLabel htmlFor="OficinaContable">Oficina Contable</RequiredLabel>
                   <Input
                     id="OficinaContable"
                     name="OficinaContable"
                     value={formData.dir3_codes.OficinaContable}
                     onChange={handleDir3Change}
-                    required
                   />
                 </div>
               </div>
