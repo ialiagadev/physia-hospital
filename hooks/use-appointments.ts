@@ -32,7 +32,7 @@ export function useAppointments(
       }
 
       // Si es usuario 'user', forzar filtro por su propio ID
-      const finalProfessionalIds = isUserRole && userProfile?.id ? [userProfile.id] : professionalIds
+      const finalProfessionalIds = professionalIds
 
       const data = await AppointmentService.getAppointmentsWithDetails(startDate, endDate, finalProfessionalIds)
       setAppointments(data)

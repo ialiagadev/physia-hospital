@@ -753,23 +753,24 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
     setIsSaving(true)
     setError(null)
     try {
-      if (!formData.organization_id) {
-        throw new Error("Debes seleccionar una organización")
+      if (!formData.phone) {
+        throw new Error("El teléfono es obligatorio")
       }
+
       const { error: updateError } = await supabase
         .from("clients")
         .update({
-          organization_id: Number.parseInt(formData.organization_id),
-          name: formData.name,
-          tax_id: formData.tax_id,
-          address: formData.address,
-          postal_code: formData.postal_code,
-          city: formData.city,
-          province: formData.province,
-          country: formData.country,
+          organization_id: formData.organization_id ? Number.parseInt(formData.organization_id) : null,
+          name: formData.name || null,
+          tax_id: formData.tax_id || null,
+          address: formData.address || null,
+          postal_code: formData.postal_code || null,
+          city: formData.city || null,
+          province: formData.province || null,
+          country: formData.country || null,
           client_type: formData.client_type,
           email: formData.email || null,
-          phone: formData.phone || null,
+          phone: formData.phone, // Phone is now required, no null fallback
           birth_date: formData.birth_date || null,
           gender: formData.gender || null,
           dir3_codes: formData.client_type === "public" ? formData.dir3_codes : null,
@@ -1150,11 +1151,12 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
                   Información Personal
                 </CardTitle>
               </CardHeader>
+              {/* También actualizar en la sección de resumen */}
               <CardContent className="space-y-4">
                 <div>
                   <Label className="text-sm text-gray-500">Nombre completo</Label>
                   {isEditing ? (
-                    <Input name="name" value={formData.name} onChange={handleChange} required className="mt-1" />
+                    <Input name="name" value={formData.name} onChange={handleChange} className="mt-1" />
                   ) : (
                     <p className="font-medium mt-1">{formData.name}</p>
                   )}
@@ -1180,7 +1182,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
                 <div>
                   <Label className="text-sm text-gray-500">ID Paciente</Label>
                   {isEditing ? (
-                    <Input name="tax_id" value={formData.tax_id} onChange={handleChange} required className="mt-1" />
+                    <Input name="tax_id" value={formData.tax_id} onChange={handleChange} className="mt-1" />
                   ) : (
                     <p className="font-medium mt-1">{formData.tax_id}</p>
                   )}
@@ -1199,10 +1201,10 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
                 <div>
                   <Label className="text-sm text-gray-500 flex items-center gap-1">
                     <Phone className="h-3 w-3" />
-                    Teléfono
+                    Teléfono <span className="text-red-500">*</span>
                   </Label>
                   {isEditing ? (
-                    <Input name="phone" value={formData.phone} onChange={handleChange} className="mt-1" />
+                    <Input name="phone" value={formData.phone} onChange={handleChange} className="mt-1" required />
                   ) : (
                     <p className="font-medium mt-1">{formData.phone || "No registrado"}</p>
                   )}
@@ -1371,7 +1373,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
                     Nombre o Razón Social
                   </Label>
                   {isEditing ? (
-                    <Input id="name" name="name" value={formData.name} onChange={handleChange} required />
+                    <Input id="name" name="name" value={formData.name} onChange={handleChange} />
                   ) : (
                     <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
                       <p className="text-base font-medium text-gray-900 dark:text-gray-100">{formData.name}</p>
@@ -1383,7 +1385,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
                     CIF/NIF
                   </Label>
                   {isEditing ? (
-                    <Input id="tax_id" name="tax_id" value={formData.tax_id} onChange={handleChange} required />
+                    <Input id="tax_id" name="tax_id" value={formData.tax_id} onChange={handleChange} />
                   ) : (
                     <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
                       <p className="text-base font-medium text-gray-900 dark:text-gray-100">{formData.tax_id}</p>
@@ -1442,7 +1444,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
                     Dirección
                   </Label>
                   {isEditing ? (
-                    <Textarea id="address" name="address" value={formData.address} onChange={handleChange} required />
+                    <Textarea id="address" name="address" value={formData.address} onChange={handleChange} />
                   ) : (
                     <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
                       <p className="text-base font-medium text-gray-900 dark:text-gray-100">
@@ -1457,13 +1459,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
                       Código Postal
                     </Label>
                     {isEditing ? (
-                      <Input
-                        id="postal_code"
-                        name="postal_code"
-                        value={formData.postal_code}
-                        onChange={handleChange}
-                        required
-                      />
+                      <Input id="postal_code" name="postal_code" value={formData.postal_code} onChange={handleChange} />
                     ) : (
                       <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
                         <p className="text-base font-medium text-gray-900 dark:text-gray-100">
@@ -1477,7 +1473,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
                       Ciudad
                     </Label>
                     {isEditing ? (
-                      <Input id="city" name="city" value={formData.city} onChange={handleChange} required />
+                      <Input id="city" name="city" value={formData.city} onChange={handleChange} />
                     ) : (
                       <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
                         <p className="text-base font-medium text-gray-900 dark:text-gray-100">
@@ -1493,7 +1489,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
                       Provincia
                     </Label>
                     {isEditing ? (
-                      <Input id="province" name="province" value={formData.province} onChange={handleChange} required />
+                      <Input id="province" name="province" value={formData.province} onChange={handleChange} />
                     ) : (
                       <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
                         <p className="text-base font-medium text-gray-900 dark:text-gray-100">
@@ -1507,7 +1503,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
                       País
                     </Label>
                     {isEditing ? (
-                      <Input id="country" name="country" value={formData.country} onChange={handleChange} required />
+                      <Input id="country" name="country" value={formData.country} onChange={handleChange} />
                     ) : (
                       <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
                         <p className="text-base font-medium text-gray-900 dark:text-gray-100">{formData.country}</p>
@@ -1532,10 +1528,10 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
                   </div>
                   <div className="space-y-3">
                     <Label htmlFor="phone" className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                      Teléfono
+                      Teléfono <span className="text-red-500">*</span>
                     </Label>
                     {isEditing ? (
-                      <Input id="phone" name="phone" value={formData.phone} onChange={handleChange} />
+                      <Input id="phone" name="phone" value={formData.phone} onChange={handleChange} required />
                     ) : (
                       <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md border">
                         <p className="text-base font-medium text-gray-900 dark:text-gray-100">
@@ -3330,10 +3326,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
         {/* Pestaña Seguimiento - Solo visible si NO es coordinador */}
         {!isCoordinator && (
           <TabsContent value="seguimiento" className="space-y-6">
-           <PatientFollowUpSection
-  clientId={clientId}
-  clientName={formData.name}
-/>
+            <PatientFollowUpSection clientId={clientId} clientName={formData.name} />
           </TabsContent>
         )}
         {/* Pestaña Documentos */}
@@ -3351,22 +3344,16 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
         <TabsContent value="loyalty-cards" className="space-y-6">
           <LoyaltyCardsSection clientId={clientId} clientName={formData.name} />
         </TabsContent>
-       {/* Pestaña Citas */}
-<TabsContent value="citas" className="space-y-6">
-  <PatientAppointmentsSection
-    clientId={clientId}
-    clientName={formData.name}
-  />
-</TabsContent>
+        {/* Pestaña Citas */}
+        <TabsContent value="citas" className="space-y-6">
+          <PatientAppointmentsSection clientId={clientId} clientName={formData.name} />
+        </TabsContent>
 
-{/* Pestaña Consentimientos */}
-<TabsContent value="consentimientos" className="space-y-6">
-  <PatientConsentsSection 
-    clientId={clientId} 
-    clientName={formData.name}
-  />
-</TabsContent>
-</Tabs>
+        {/* Pestaña Consentimientos */}
+        <TabsContent value="consentimientos" className="space-y-6">
+          <PatientConsentsSection clientId={clientId} clientName={formData.name} />
+        </TabsContent>
+      </Tabs>
       {/* Modal del Informe Clínico */}
       {showClinicalReport && reportData && (
         <ClinicalReportModal
@@ -3377,14 +3364,7 @@ export default function ClientDetailPage({ params }: { params: { id: string } })
           error={reportError}
         />
       )}
-      <InteractiveTourOverlay
-        steps={tourSteps}
-        onClose={endTour}
-        onFinish={endTour}
-        isActive={isActive}
-      />
+      <InteractiveTourOverlay steps={tourSteps} onClose={endTour} onFinish={endTour} isActive={isActive} />
     </div>
-    
   )
-  
 }
