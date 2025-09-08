@@ -601,6 +601,112 @@ export function useGroupActivities(organizationId?: number, users: any[] = []) {
     }
   }, [])
 
+  const addParticipantToRecurringSeries = useCallback(
+    async (
+      professionalId: string,
+      serviceId: number | null,
+      activityName: string,
+      startTime: string,
+      endTime: string,
+      maxParticipants: number,
+      clientId: number,
+      notes?: string,
+    ): Promise<void> => {
+      try {
+        // Buscar todas las actividades de la serie recurrente
+        const { data: seriesActivities, error: fetchError } = await supabase
+          .from("group_activities")
+          .select("id, date, current_participants")
+          .eq("organization_id", organizationId)
+          .eq("professional_id", professionalId)
+          .eq("name", activityName)
+          .eq("start_time", startTime)
+          .eq("end_time", endTime)
+          .eq("max_participants", maxParticipants)
+          .gte("date", new Date().toISOString().split("T")[0]) // Solo actividades futuras
+          .order("date", { ascending: true })
+
+        if (fetchError) throw fetchError
+
+        if (!seriesActivities || seriesActivities.length === 0) {
+          throw new Error("No se encontraron actividades en la serie")
+        }
+
+        console.log("[v0] Procesando serie de actividades:", seriesActivities.length)
+        const updatedActivityIds: string[] = []
+        const activitiesToUpdate: string[] = []
+
+        for (const activity of seriesActivities) {
+          try {
+            // Verificar si el participante ya existe
+            const { data: existingParticipant } = await supabase
+              .from("group_activity_participants")
+              .select("id")
+              .eq("group_activity_id", activity.id)
+              .eq("client_id", clientId)
+              .single()
+
+            if (!existingParticipant) {
+              activitiesToUpdate.push(activity.id)
+
+              const { error: insertError } = await supabase.from("group_activity_participants").insert({
+                group_activity_id: activity.id,
+                client_id: clientId,
+                notes: notes || null,
+              })
+
+              if (insertError) {
+                console.error(`Error añadiendo participante a actividad ${activity.id}:`, insertError)
+                continue // Continuar con las demás actividades
+              }
+
+              updatedActivityIds.push(activity.id)
+              console.log("[v0] Participante añadido a actividad:", activity.id)
+
+              // Sincronización automática
+              if (userProfile?.id && organizationId) {
+                try {
+                  await autoSyncGroupActivity(activity.id, userProfile.id, organizationId)
+                } catch (syncError) {
+                  console.error("❌ Error en sincronización automática:", syncError)
+                }
+              }
+            }
+          } catch (error) {
+            console.error(`Error procesando actividad ${activity.id}:`, error)
+          }
+        }
+
+        if (mountedRef.current && activitiesToUpdate.length > 0) {
+          setActivities((prev) =>
+            prev.map((act) =>
+              activitiesToUpdate.includes(act.id)
+                ? {
+                    ...act,
+                    current_participants: act.current_participants + 1,
+                  }
+                : act,
+            ),
+          )
+          console.log("[v0] Estado local actualizado para actividades:", activitiesToUpdate)
+        }
+
+        if (updatedActivityIds.length > 0) {
+          setTimeout(() => {
+            if (mountedRef.current) {
+              console.log("[v0] Refrescando datos desde la base de datos")
+              fetchActivities()
+            }
+          }, 300)
+        }
+      } catch (err) {
+        console.error("Error adding participant to recurring series:", err)
+        throw err
+      }
+    },
+    [fetchActivities, userProfile, organizationId],
+  )
+
   return {
     activities,
     loading: loading || authLoading,
@@ -613,5 +719,6 @@ export function useGroupActivities(organizationId?: number, users: any[] = []) {
     addParticipant,
     removeParticipant,
     updateParticipantStatus,
+    addParticipantToRecurringSeries,
   }
 }

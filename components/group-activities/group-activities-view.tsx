@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import { format, differenceInDays, differenceInMonths } from "date-fns"
+import { format, differenceInDays, differenceInMonths, isBefore, startOfDay } from "date-fns"
 import { es } from "date-fns/locale"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -69,14 +69,11 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
   const [selectedActivity, setSelectedActivity] = useState<GroupActivity | null>(null)
   const [expandedSeries, setExpandedSeries] = useState<Set<string>>(new Set())
   const [deletingSeries, setDeletingSeries] = useState<string | null>(null)
-
-  // Estados para el modal de confirmación de eliminación de series
-  const [showDeleteSeriesConfirm, setShowDeleteSeriesConfirm] = useState(false)
+  const [showPastActivities, setShowPastActivities] = useState(false)
   const [seriesToDelete, setSeriesToDelete] = useState<ActivitySeries | null>(null)
-
-  // Estados para el modal de confirmación de eliminación individual
-  const [showDeleteSingleConfirm, setShowDeleteSingleConfirm] = useState(false)
+  const [showDeleteSeriesConfirm, setShowDeleteSeriesConfirm] = useState(false)
   const [activityToDelete, setActivityToDelete] = useState<GroupActivity | null>(null)
+  const [showDeleteSingleConfirm, setShowDeleteSingleConfirm] = useState(false)
   const [deletingSingle, setDeletingSingle] = useState<string | null>(null)
 
   // ✅ FUNCIÓN PARA DETECTAR PATRONES DE RECURRENCIA
@@ -111,12 +108,45 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
     return isMonthly ? "monthly" : null
   }
 
-  // ✅ FUNCIÓN PARA AGRUPAR ACTIVIDADES EN SERIES
+  // ✅ FUNCIÓN PARA AGRUPAR ACTIVIDADES EN SERIES CON FILTRO DE FECHAS
   const groupActivitiesIntoSeries = useMemo((): ActivitySeries[] => {
+    const today = startOfDay(new Date())
+    const filteredActivities = showPastActivities
+      ? activities
+      : activities.filter((activity) => {
+          const activityDate = startOfDay(new Date(activity.date))
+          // Para actividades recurrentes, mostrar si al menos una sesión es futura
+          const isRecurring =
+            activities.filter(
+              (a) =>
+                a.name === activity.name &&
+                a.professional_id === activity.professional_id &&
+                a.start_time === activity.start_time &&
+                a.end_time === activity.end_time &&
+                a.max_participants === activity.max_participants,
+            ).length > 1
+
+          if (isRecurring) {
+            // Si es recurrente, incluir toda la serie si tiene al menos una sesión futura
+            const seriesActivities = activities.filter(
+              (a) =>
+                a.name === activity.name &&
+                a.professional_id === activity.professional_id &&
+                a.start_time === activity.start_time &&
+                a.end_time === activity.end_time &&
+                a.max_participants === activity.max_participants,
+            )
+            return seriesActivities.some((a) => !isBefore(startOfDay(new Date(a.date)), today))
+          } else {
+            // Si no es recurrente, solo mostrar si no ha pasado
+            return !isBefore(activityDate, today)
+          }
+        })
+
     const groups = new Map<string, GroupActivity[]>()
 
     // Agrupar por criterios similares
-    activities.forEach((activity) => {
+    filteredActivities.forEach((activity) => {
       const key = `${activity.name}-${activity.professional_id}-${activity.start_time}-${activity.end_time}-${activity.max_participants}`
       if (!groups.has(key)) {
         groups.set(key, [])
@@ -155,7 +185,7 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
 
     // Ordenar series por fecha de la primera actividad
     return series.sort((a, b) => new Date(a.activities[0].date).getTime() - new Date(b.activities[0].date).getTime())
-  }, [activities])
+  }, [activities, showPastActivities])
 
   const handleCreateActivity = async (activityData: any) => {
     try {
@@ -391,10 +421,24 @@ export function GroupActivitiesView({ organizationId, users }: GroupActivitiesVi
           <h2 className="text-2xl font-bold">Actividades Grupales</h2>
           <p className="text-gray-600">Gestiona las actividades grupales de tu organización</p>
         </div>
-        <Button onClick={() => setShowCreateModal(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Nueva Actividad
-        </Button>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="showPastActivities"
+              checked={showPastActivities}
+              onChange={(e) => setShowPastActivities(e.target.checked)}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <label htmlFor="showPastActivities" className="text-sm text-gray-600">
+              Mostrar actividades pasadas
+            </label>
+          </div>
+          <Button onClick={() => setShowCreateModal(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Nueva Actividad
+          </Button>
+        </div>
       </div>
 
       {/* Activities Content */}

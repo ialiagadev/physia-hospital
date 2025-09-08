@@ -1,6 +1,6 @@
 "use client"
 
-import React from "react"
+import type React from "react"
 import { useState, useEffect, useCallback, useRef } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -11,10 +11,24 @@ import { Textarea } from "@/components/ui/textarea"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, Phone, User, UserPlus, Users, Mail, Loader2, CheckCircle, AlertTriangle, CreditCard } from 'lucide-react'
+import {
+  Search,
+  Phone,
+  User,
+  UserPlus,
+  Users,
+  Mail,
+  Loader2,
+  CheckCircle,
+  AlertTriangle,
+  CreditCard,
+  Repeat,
+} from "lucide-react"
 import { supabase } from "@/lib/supabase/client"
 import { toast } from "sonner"
 import { useAuth } from "@/app/contexts/auth-context"
+import { Checkbox } from "@/components/ui/checkbox"
+import { useRouter } from "next/navigation"
 
 interface ClientMatch {
   id: number
@@ -34,25 +48,15 @@ interface AddParticipantModalProps {
   activityName?: string
   user?: any
   userProfile?: any
+  showRecurringOptions?: boolean
+  recurringActivitiesCount?: number
+  addToAllRecurring?: boolean
+  onAddToAllRecurringChange?: (value: boolean) => void
+  onAddToRecurringSeries?: (
+    clientId: number,
+    notes?: string,
+  ) => Promise<{ success: number; total: number; errors: string[] }>
 }
-
-// Prefijos telefónicos comunes
-const PHONE_PREFIXES = [
-  { code: '+34', country: 'España', flag: '🇪🇸' },
-  { code: '+33', country: 'Francia', flag: '🇫🇷' },
-  { code: '+49', country: 'Alemania', flag: '🇩🇪' },
-  { code: '+39', country: 'Italia', flag: '🇮🇹' },
-  { code: '+351', country: 'Portugal', flag: '🇵🇹' },
-  { code: '+44', country: 'Reino Unido', flag: '🇬🇧' },
-  { code: '+1', country: 'Estados Unidos', flag: '🇺🇸' },
-  { code: '+52', country: 'México', flag: '🇲🇽' },
-  { code: '+54', country: 'Argentina', flag: '🇦🇷' },
-  { code: '+55', country: 'Brasil', flag: '🇧🇷' },
-  { code: '+56', country: 'Chile', flag: '🇨🇱' },
-  { code: '+57', country: 'Colombia', flag: '🇨🇴' },
-  { code: '+58', country: 'Venezuela', flag: '🇻🇪' },
-  { code: '+212', country: 'Marruecos', flag: '🇲🇦' },
-]
 
 export function AddParticipantModal({
   isOpen,
@@ -62,10 +66,15 @@ export function AddParticipantModal({
   currentParticipants,
   maxParticipants,
   activityName,
+  showRecurringOptions = false,
+  recurringActivitiesCount = 0,
+  addToAllRecurring = false,
+  onAddToAllRecurringChange,
+  onAddToRecurringSeries,
 }: AddParticipantModalProps) {
   const { user, userProfile } = useAuth()
+  const router = useRouter()
 
-  // Estados principales
   const [searchTerm, setSearchTerm] = useState("")
   const [clientMatches, setClientMatches] = useState<ClientMatch[]>([])
   const [showMatches, setShowMatches] = useState(false)
@@ -74,26 +83,21 @@ export function AddParticipantModal({
   const [loading, setLoading] = useState(false)
   const [searching, setSearching] = useState(false)
 
-  // Estados para nuevo cliente
   const [newClientData, setNewClientData] = useState({
     name: "",
     phone: "",
   })
 
-  // 🆕 Estados para cliente nuevo con prefijo y NIF
-  const [phonePrefix, setPhonePrefix] = useState('+34')
-  const [phoneNumber, setPhoneNumber] = useState('')
-  const [taxId, setTaxId] = useState('')
+  const [phonePrefix, setPhonePrefix] = useState("+34")
+  const [phoneNumber, setPhoneNumber] = useState("")
+  const [taxId, setTaxId] = useState("")
 
-  // Refs para timeouts
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
 
-  // Función para normalizar teléfono
   const normalizePhoneNumber = (phone: string): string => {
     return phone.replace(/\D/g, "")
   }
 
-  // Función para formatear teléfono
   const formatPhoneNumber = (phone: string): string => {
     const cleaned = phone.replace(/\D/g, "")
     if (cleaned.length === 9) {
@@ -102,13 +106,11 @@ export function AddParticipantModal({
     return phone
   }
 
-  // Función para validar teléfono
   const isValidPhoneNumber = (phone: string): boolean => {
     const cleaned = phone.replace(/\D/g, "")
     return cleaned.length >= 9
   }
 
-  // Búsqueda de clientes con debounce
   const searchClients = useCallback(
     async (term: string) => {
       if (!term || term.length < 1 || !user || !userProfile) {
@@ -123,10 +125,8 @@ export function AddParticipantModal({
         const termLower = term.toLowerCase().trim()
         const phoneDigits = term.replace(/\D/g, "")
 
-        // Usar la organización del usuario autenticado
         const orgId = userProfile.organization_id || organizationId
 
-        // Buscar por teléfono si hay dígitos
         if (phoneDigits.length >= 3) {
           const { data: phoneMatches, error: phoneError } = await supabase
             .from("clients")
@@ -149,7 +149,6 @@ export function AddParticipantModal({
           }
         }
 
-        // Buscar por nombre si no es solo números
         if (!/^\d+$/.test(term)) {
           const { data: nameMatches, error: nameError } = await supabase
             .from("clients")
@@ -174,7 +173,6 @@ export function AddParticipantModal({
           }
         }
 
-        // Buscar por email si parece un email
         if (term.includes("@")) {
           const { data: emailMatches, error: emailError } = await supabase
             .from("clients")
@@ -212,25 +210,21 @@ export function AddParticipantModal({
     [organizationId, currentParticipants, user, userProfile],
   )
 
-  // Auto-completar datos para nuevo cliente basado en la búsqueda
   useEffect(() => {
     if (searchTerm && !selectedClient) {
       const phoneDigits = searchTerm.replace(/\D/g, "")
       if (/^\d+$/.test(searchTerm) && phoneDigits.length >= 3) {
-        // Si es solo números, asumir que es teléfono
         setNewClientData({
           name: "",
-          phone: "", // 🔧 Dejar vacío para evitar duplicación
+          phone: "",
         })
-        setPhoneNumber(searchTerm) // 🔧 Solo actualizar phoneNumber
+        setPhoneNumber(searchTerm)
       } else if (searchTerm.includes("@")) {
-        // Si contiene @, asumir que es email - pero no lo guardamos
         setNewClientData({
           name: "",
           phone: "",
         })
       } else {
-        // Si no, asumir que es nombre
         setNewClientData({
           name: searchTerm,
           phone: "",
@@ -239,7 +233,6 @@ export function AddParticipantModal({
     }
   }, [searchTerm, selectedClient])
 
-  // Efecto para búsqueda con debounce
   useEffect(() => {
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current)
@@ -259,11 +252,10 @@ export function AddParticipantModal({
   const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
     setSearchTerm(value)
-    setSelectedClient(null) // Limpiar cliente seleccionado al cambiar búsqueda
+    setSelectedClient(null)
   }, [])
 
   const handleSearchBlur = useCallback(() => {
-    // Ocultar matches después de un pequeño delay para permitir clicks
     setTimeout(() => setShowMatches(false), 200)
   }, [])
 
@@ -272,9 +264,8 @@ export function AddParticipantModal({
     setSearchTerm(`${client.name} - ${client.phone}`)
     setShowMatches(false)
 
-    // Separar prefijo y número para cliente existente
     const fullPhone = client.phone || ""
-    const prefix = PHONE_PREFIXES.find(p => fullPhone.startsWith(p.code))
+    const prefix = PHONE_PREFIXES.find((p) => fullPhone.startsWith(p.code))
     if (prefix) {
       setPhonePrefix(prefix.code)
       setPhoneNumber(fullPhone.substring(prefix.code.length))
@@ -283,17 +274,13 @@ export function AddParticipantModal({
     }
   }, [])
 
-  // 🆕 Handler para cambio de prefijo telefónico
   const handlePhonePrefixChange = useCallback((value: string) => {
     setPhonePrefix(value)
   }, [])
 
-  // 🆕 Handler para cambio de número telefónico
   const handlePhoneNumberChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.replace(/\D/g, ''); // Solo números
+    const value = e.target.value.replace(/\D/g, "")
     setPhoneNumber(value)
-    // 🔧 REMOVER ESTA LÍNEA para evitar duplicación:
-    // setNewClientData(prev => ({ ...prev, phone: value }))
   }, [])
 
   const handleAddExistingClient = async () => {
@@ -301,10 +288,26 @@ export function AddParticipantModal({
 
     setLoading(true)
     try {
-      await onAddParticipant(selectedClient.id, participantNotes.trim() || undefined)
+      if (addToAllRecurring && onAddToRecurringSeries) {
+        const result = await onAddToRecurringSeries(selectedClient.id, participantNotes.trim() || undefined)
+
+        if (result.errors.length > 0) {
+          toast.error(`Se añadió a ${result.success}/${result.total} actividades. Algunos errores: ${result.errors[0]}`)
+        } else {
+          toast.success(`${selectedClient.name} añadido a ${result.success} actividades de la serie`)
+        }
+
+        setTimeout(() => {
+          router.refresh()
+        }, 1000)
+      } else {
+        await onAddParticipant(selectedClient.id, participantNotes.trim() || undefined)
+        toast.success(`${selectedClient.name} añadido a la actividad`)
+      }
+
       handleClose()
-      toast.success(`${selectedClient.name} añadido a la actividad`)
     } catch (error) {
+      console.error("Error al añadir participante:", error)
       toast.error("Error al añadir participante")
     } finally {
       setLoading(false)
@@ -327,7 +330,6 @@ export function AddParticipantModal({
       return
     }
 
-    // Validar que el número tenga al menos 9 dígitos
     if (!phoneNumber || phoneNumber.length < 9) {
       toast.error("El teléfono debe tener al menos 9 dígitos")
       return
@@ -343,13 +345,13 @@ export function AddParticipantModal({
       const orgId = userProfile.organization_id || organizationId
       const clientData = {
         name: newClientData.name.trim(),
-        phone: phoneNumber, // 🔧 Solo el número sin prefijo
-        phone_prefix: phonePrefix, // 🔧 Solo el prefijo
+        phone: phoneNumber,
+        phone_prefix: phonePrefix,
         tax_id: taxId.trim(),
         organization_id: orgId,
       }
 
-      console.log("🔧 Creando cliente con datos:", clientData)
+      console.log("Creando cliente con datos:", clientData)
 
       const { data: newClient, error } = await supabase.from("clients").insert([clientData]).select().single()
 
@@ -357,11 +359,28 @@ export function AddParticipantModal({
         throw error
       }
 
-      console.log("✅ Cliente creado:", newClient)
+      console.log("Cliente creado:", newClient)
 
-      await onAddParticipant(newClient.id, participantNotes.trim() || undefined)
+      if (addToAllRecurring && onAddToRecurringSeries) {
+        const result = await onAddToRecurringSeries(newClient.id, participantNotes.trim() || undefined)
+
+        if (result.errors.length > 0) {
+          toast.error(
+            `Cliente creado. Se añadió a ${result.success}/${result.total} actividades. Algunos errores: ${result.errors[0]}`,
+          )
+        } else {
+          toast.success(`${newClient.name} creado y añadido a ${result.success} actividades de la serie`)
+        }
+
+        setTimeout(() => {
+          router.refresh()
+        }, 1000)
+      } else {
+        await onAddParticipant(newClient.id, participantNotes.trim() || undefined)
+        toast.success(`${newClient.name} creado y añadido`)
+      }
+
       handleClose()
-      toast.success(`${newClient.name} creado y añadido`)
     } catch (error) {
       console.error("Error creating client:", error)
       toast.error("Error al crear cliente")
@@ -377,9 +396,9 @@ export function AddParticipantModal({
     setSelectedClient(null)
     setParticipantNotes("")
     setNewClientData({ name: "", phone: "" })
-    setPhonePrefix('+34')
-    setPhoneNumber('')
-    setTaxId('')
+    setPhonePrefix("+34")
+    setPhoneNumber("")
+    setTaxId("")
     onClose()
   }
 
@@ -396,7 +415,6 @@ export function AddParticipantModal({
     }
   }
 
-  // Si no hay usuario autenticado, no mostrar el modal
   if (!user || !userProfile) {
     return null
   }
@@ -422,7 +440,49 @@ export function AddParticipantModal({
         </DialogHeader>
 
         <div className="flex-1 space-y-4 overflow-y-auto">
-          {/* Buscador */}
+          {showRecurringOptions && onAddToAllRecurringChange && (
+            <Alert className="border-purple-200 bg-purple-50">
+              <Repeat className="h-4 w-4" />
+              <AlertDescription className="text-purple-800">
+                <div className="space-y-3">
+                  <div>
+                    <strong>Serie recurrente detectada</strong>
+                    <p className="text-sm mt-1">
+                      Esta actividad forma parte de una serie de {recurringActivitiesCount + 1} sesiones.
+                    </p>
+                  </div>
+
+                  <div className="flex items-start space-x-3">
+                    <Checkbox
+                      id="addToAllRecurring"
+                      checked={addToAllRecurring}
+                      onCheckedChange={(checked) => onAddToAllRecurringChange(!!checked)}
+                    />
+                    <div className="grid gap-1.5 leading-none">
+                      <label
+                        htmlFor="addToAllRecurring"
+                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                      >
+                        Añadir a todas las {recurringActivitiesCount + 1} sesiones de la serie
+                      </label>
+                      <p className="text-xs text-purple-600">
+                        El participante se registrará automáticamente en todas las sesiones futuras de esta serie
+                        recurrente.
+                      </p>
+                    </div>
+                  </div>
+
+                  {addToAllRecurring && (
+                    <div className="mt-2 p-2 bg-purple-100 rounded text-xs text-purple-700">
+                      <strong>⚠️ Importante:</strong> Se añadirá el participante a {recurringActivitiesCount + 1}{" "}
+                      sesiones. Asegúrate de que el cliente esté disponible para todas las fechas.
+                    </div>
+                  )}
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
           <div className="space-y-2">
             <Label className="flex items-center gap-2 text-sm font-medium">
               <Search className="h-4 w-4" />
@@ -446,7 +506,6 @@ export function AddParticipantModal({
               )}
             </div>
 
-            {/* Lista de coincidencias */}
             {showMatches && clientMatches.length > 0 && (
               <div className="relative z-50">
                 <div className="absolute top-0 left-0 right-0 bg-white border rounded-md shadow-lg max-h-40 overflow-y-auto">
@@ -472,7 +531,6 @@ export function AddParticipantModal({
             )}
           </div>
 
-          {/* Cliente seleccionado */}
           {selectedClient && (
             <Alert className="border-green-200 bg-green-50">
               <CheckCircle className="h-4 w-4" />
@@ -487,7 +545,6 @@ export function AddParticipantModal({
             </Alert>
           )}
 
-          {/* Advertencia si es cliente nuevo */}
           {!selectedClient && searchTerm && !searching && clientMatches.length === 0 && searchTerm.length >= 2 && (
             <Alert className="border-blue-200 bg-blue-50">
               <AlertTriangle className="h-4 w-4" />
@@ -499,7 +556,6 @@ export function AddParticipantModal({
             </Alert>
           )}
 
-          {/* Botón para añadir cliente existente */}
           {selectedClient && (
             <Button
               onClick={handleAddExistingClient}
@@ -507,14 +563,14 @@ export function AddParticipantModal({
               className="w-full bg-green-600 hover:bg-green-700"
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <UserPlus className="h-4 w-4 mr-2" />}
-              Añadir {selectedClient.name}
+              {showRecurringOptions && addToAllRecurring
+                ? `Añadir ${selectedClient.name} a ${recurringActivitiesCount + 1} sesiones`
+                : `Añadir ${selectedClient.name}`}
             </Button>
           )}
 
-          {/* Separador */}
           {selectedClient && searchTerm && <Separator />}
 
-          {/* Formulario para nuevo cliente */}
           {searchTerm && searchTerm.length >= 2 && remainingSlots > 0 && !selectedClient && (
             <div className="space-y-4 bg-blue-50 p-4 rounded-lg border border-blue-200">
               <div className="flex items-center gap-2 mb-2">
@@ -533,7 +589,6 @@ export function AddParticipantModal({
                   />
                 </div>
 
-                {/* Campo de teléfono con selector de prefijo */}
                 <div className="space-y-2">
                   <Label htmlFor="phoneNumber" className="flex items-center gap-2 text-sm font-medium">
                     <Phone className="h-4 w-4" />
@@ -566,12 +621,15 @@ export function AddParticipantModal({
                   </div>
                   {phonePrefix && phoneNumber && (
                     <p className="text-sm text-gray-600">
-                      Teléfono completo: <strong>{phonePrefix}{phoneNumber}</strong>
+                      Teléfono completo:{" "}
+                      <strong>
+                        {phonePrefix}
+                        {phoneNumber}
+                      </strong>
                     </p>
                   )}
                 </div>
 
-                {/* Campo NIF - AHORA OBLIGATORIO */}
                 <div className="space-y-2">
                   <Label htmlFor="taxId" className="flex items-center gap-2 text-sm font-medium">
                     <CreditCard className="h-4 w-4" />
@@ -585,9 +643,7 @@ export function AddParticipantModal({
                     className="w-full"
                     required
                   />
-                  <p className="text-xs text-gray-500">
-                    Introduce el NIF para personas físicas o CIF para empresas
-                  </p>
+                  <p className="text-xs text-gray-500">Introduce el NIF para personas físicas o CIF para empresas</p>
                 </div>
               </div>
 
@@ -599,19 +655,20 @@ export function AddParticipantModal({
                 {loading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Creando...
+                    {addToAllRecurring ? "Creando y añadiendo a serie..." : "Creando..."}
                   </>
                 ) : (
                   <>
                     <UserPlus className="h-4 w-4 mr-2" />
-                    Crear y Añadir Nuevo Cliente
+                    {showRecurringOptions && addToAllRecurring
+                      ? `Crear y Añadir a ${recurringActivitiesCount + 1} sesiones`
+                      : "Crear y Añadir Nuevo Cliente"}
                   </>
                 )}
               </Button>
             </div>
           )}
 
-          {/* Notas */}
           {(selectedClient || (searchTerm && searchTerm.length >= 2)) && (
             <div className="space-y-2">
               <Label htmlFor="notes">Notas del participante (opcional)</Label>
@@ -625,7 +682,6 @@ export function AddParticipantModal({
             </div>
           )}
 
-          {/* Estado vacío */}
           {!searching && !selectedClient && !searchTerm && (
             <div className="text-center py-8 text-gray-500">
               <Users className="h-12 w-12 mx-auto mb-2 text-gray-400" />
@@ -651,3 +707,20 @@ export function AddParticipantModal({
     </Dialog>
   )
 }
+
+const PHONE_PREFIXES = [
+  { code: "+34", country: "España", flag: "🇪🇸" },
+  { code: "+33", country: "Francia", flag: "🇫🇷" },
+  { code: "+49", country: "Alemania", flag: "🇩🇪" },
+  { code: "+39", country: "Italia", flag: "🇮🇹" },
+  { code: "+351", country: "Portugal", flag: "🇵🇹" },
+  { code: "+44", country: "Reino Unido", flag: "🇬🇧" },
+  { code: "+1", country: "Estados Unidos", flag: "🇺🇸" },
+  { code: "+52", country: "México", flag: "🇲🇽" },
+  { code: "+54", country: "Argentina", flag: "🇦🇷" },
+  { code: "+55", country: "Brasil", flag: "🇧🇷" },
+  { code: "+56", country: "Chile", flag: "🇨🇱" },
+  { code: "+57", country: "Colombia", flag: "🇨🇴" },
+  { code: "+58", country: "Venezuela", flag: "🇻🇪" },
+  { code: "+212", country: "Marruecos", flag: "🇲🇦" },
+]

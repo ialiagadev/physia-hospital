@@ -5,7 +5,6 @@ export interface GroupActivity {
     date: string
     start_time: string
     end_time: string
-    duration: number
     max_participants: number
     current_participants: number
     professional_id: string
