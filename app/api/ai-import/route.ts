@@ -450,10 +450,19 @@ Devuelve el mapeo de cada campo estándar a la cabecera original correspondiente
       }
       
       // Validar campos obligatorios
-      if (!client.name || !client.tax_id) {
-        invalidRows.push(`Fila ${rowNumber}: Faltan campos obligatorios (nombre o identificación fiscal)`)
-        continue
-      }
+// Validar nombre (obligatorio y al menos dos palabras)
+if (!client.name) {
+  invalidRows.push(`Fila ${rowNumber}: Falta el campo obligatorio (nombre completo)`)
+  continue
+} else {
+  const words = client.name.trim().split(/\s+/)
+  if (words.length < 2) {
+    invalidRows.push(`Fila ${rowNumber}: El nombre debe incluir al menos nombre y apellido`)
+    continue
+  }
+}
+
+
       
       // Teléfono obligatorio
       if (!client.phone) {
