@@ -213,6 +213,8 @@ export function NewCardModal({
           total_sessions: formData.total_sessions,
           reward: formData.reward,
           expiry_date: formData.expiry_date,
+          service_id: formData.service_id,
+          service_price: formData.service_price,
         })
 
         toast({
@@ -231,6 +233,8 @@ export function NewCardModal({
           reward: formData.reward,
           expiry_date: formData.expiry_date,
           status: "active" as const,
+          service_id: formData.service_id,
+          service_price: formData.service_price,
         }
 
         const { error } = await supabase.from("loyalty_cards").insert(cardData)

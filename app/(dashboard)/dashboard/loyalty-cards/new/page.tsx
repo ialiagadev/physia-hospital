@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast"
 import { PhysiaCard } from "@/components/loyalty-card/physia-card"
 import { Search, X, User, AlertCircle } from "lucide-react"
 import type { CardFormData } from "@/types/loyalty-cards"
+import type { ServiceBasic } from "@/types/services"
 import { cn } from "@/lib/utils"
 
 // Tipos para errores de validación
@@ -25,6 +26,11 @@ interface FormErrors {
   business_name?: string
   total_sessions?: string
   reward?: string
+}
+
+interface ExtendedCardFormData extends CardFormData {
+  service_id?: number | null
+  service_price?: number | null
 }
 
 // Componente de búsqueda de clientes
@@ -206,11 +212,12 @@ function NewLoyaltyCardForm() {
   const [selectedClientFromUrl, setSelectedClientFromUrl] = useState<any>(null)
   const [errors, setErrors] = useState<FormErrors>({})
   const [touched, setTouched] = useState<Record<string, boolean>>({})
+  const [services, setServices] = useState<ServiceBasic[]>([])
 
   // Obtener client_id de los parámetros de URL
   const clientIdFromUrl = searchParams.get("client_id")
 
-  const [formData, setFormData] = useState<CardFormData>({
+  const [formData, setFormData] = useState<ExtendedCardFormData>({
     organization_id: 0,
     client_id: clientIdFromUrl ? Number.parseInt(clientIdFromUrl) : null,
     template_id: null,
@@ -218,10 +225,12 @@ function NewLoyaltyCardForm() {
     total_sessions: 10,
     reward: "",
     expiry_date: null,
+    service_id: null,
+    service_price: null,
   })
 
   // Función de validación
-  const validateField = (field: keyof CardFormData, value: any): string | undefined => {
+  const validateField = (field: keyof ExtendedCardFormData, value: any): string | undefined => {
     switch (field) {
       case "organization_id":
         if (!value || value === 0) return "Debes seleccionar una organización"
@@ -265,6 +274,28 @@ function NewLoyaltyCardForm() {
     return newErrors
   }
 
+  const loadServices = async (organizationId: number) => {
+    if (!organizationId) return
+
+    try {
+      const { data, error } = await supabase
+        .from("services")
+        .select("id, name, description, price, category, duration, active")
+        .eq("organization_id", organizationId)
+        .eq("active", true)
+        .order("name")
+
+      if (error) {
+        console.error("Error loading services:", error)
+        return
+      }
+
+      setServices(data || [])
+    } catch (error) {
+      console.error("Error loading services:", error)
+    }
+  }
+
   // Cargar datos iniciales
   useEffect(() => {
     async function loadInitialData() {
@@ -289,7 +320,9 @@ function NewLoyaltyCardForm() {
           console.log("Organizaciones cargadas:", orgsData)
           setOrganizations(orgsData)
           // Seleccionar la primera organización por defecto
-          setFormData((prev) => ({ ...prev, organization_id: orgsData[0].id }))
+          const firstOrgId = orgsData[0].id
+          setFormData((prev) => ({ ...prev, organization_id: firstOrgId }))
+          await loadServices(firstOrgId)
         } else {
           console.warn("No se encontraron organizaciones")
         }
@@ -313,6 +346,7 @@ function NewLoyaltyCardForm() {
               organization_id: clientData.organization_id,
               client_id: clientData.id,
             }))
+            await loadServices(clientData.organization_id)
           }
         }
       } catch (error) {
@@ -328,27 +362,38 @@ function NewLoyaltyCardForm() {
     loadInitialData()
   }, [toast, clientIdFromUrl])
 
-  // Manejar cambios en el formulario con validación
-  const handleChange = (field: keyof CardFormData, value: any) => {
+  const handleChange = async (field: keyof ExtendedCardFormData, value: any) => {
     // Si el valor es numérico, asegurarse de que sea un número válido
-    if (field === "organization_id" || field === "client_id" || field === "total_sessions") {
+    if (
+      field === "organization_id" ||
+      field === "client_id" ||
+      field === "total_sessions" ||
+      field === "service_id" ||
+      field === "service_price"
+    ) {
       // Si es una cadena, intentar convertirla a número
       if (typeof value === "string") {
         const parsedValue = Number.parseInt(value, 10)
-        // Si la conversión resulta en NaN, usar 0
+        // Si la conversión resulta en NaN, usar 0 o null según el campo
         if (isNaN(parsedValue)) {
-          value = 0
+          value = field === "service_id" || field === "service_price" ? null : 0
         } else {
           value = parsedValue
         }
       }
-      // Si es null o undefined, usar 0
+      // Si es null o undefined, usar 0 o null según el campo
       else if (value == null) {
-        value = 0
+        value = field === "service_id" || field === "service_price" ? null : 0
       }
     }
 
     setFormData((prev) => ({ ...prev, [field]: value }))
+
+    if (field === "organization_id" && value && value !== 0) {
+      await loadServices(value)
+      // Reset service selection when organization changes
+      setFormData((prev) => ({ ...prev, service_id: null, service_price: null }))
+    }
 
     // Validar el campo si ya fue tocado
     if (touched[field]) {
@@ -360,8 +405,29 @@ function NewLoyaltyCardForm() {
     }
   }
 
+  const handleServiceChange = (serviceId: string) => {
+    const selectedService = services.find((s) => s.id.toString() === serviceId)
+
+    if (selectedService) {
+      setFormData((prev) => ({
+        ...prev,
+        service_id: selectedService.id,
+        service_price: selectedService.price,
+        business_name: selectedService.name,
+        reward: selectedService.description || `Servicio: ${selectedService.name}`,
+      }))
+    } else {
+      // "Servicio personalizado" selected
+      setFormData((prev) => ({
+        ...prev,
+        service_id: null,
+        service_price: null,
+      }))
+    }
+  }
+
   // Manejar cuando un campo pierde el foco
-  const handleBlur = (field: keyof CardFormData) => {
+  const handleBlur = (field: keyof ExtendedCardFormData) => {
     setTouched((prev) => ({ ...prev, [field]: true }))
     const fieldError = validateField(field, formData[field])
     setErrors((prev) => ({
@@ -415,7 +481,6 @@ function NewLoyaltyCardForm() {
     try {
       console.log("Creando tarjeta con datos:", formData)
 
-      // Crear la tarjeta directamente con Supabase para mayor control
       const cardData = {
         organization_id: formData.organization_id || 0,
         client_id: formData.client_id || 0,
@@ -426,6 +491,8 @@ function NewLoyaltyCardForm() {
         reward: formData.reward,
         expiry_date: formData.expiry_date,
         status: "active" as const,
+        service_id: formData.service_id,
+        service_price: formData.service_price,
       }
 
       console.log("Enviando datos a Supabase:", cardData)
@@ -483,7 +550,6 @@ function NewLoyaltyCardForm() {
     return value.toString()
   }
 
-  // Datos para la vista previa
   const previewCard = {
     id: 0,
     created_at: new Date().toISOString(),
@@ -498,6 +564,8 @@ function NewLoyaltyCardForm() {
     expiry_date: formData.expiry_date,
     last_visit_date: null,
     status: "active" as const,
+    service_id: formData.service_id,
+    service_price: formData.service_price,
   }
 
   return (
@@ -575,6 +643,30 @@ function NewLoyaltyCardForm() {
                     <p className="text-sm text-muted-foreground">
                       Tarjeta para: {selectedClientFromUrl.name} ({selectedClientFromUrl.tax_id})
                     </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="service_id">Servicio (opcional)</Label>
+                  <Select
+                    value={formData.service_id ? formData.service_id.toString() : "0"}
+                    onValueChange={handleServiceChange}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecciona un servicio" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">Servicio personalizado</SelectItem>
+                      {services.map((service) => (
+                        <SelectItem key={service.id} value={service.id.toString()}>
+                          {service.name} - €{service.price}
+                          {service.category && ` (${service.category})`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {formData.service_id && formData.service_price && (
+                    <p className="text-xs text-muted-foreground">Precio del servicio: €{formData.service_price}</p>
                   )}
                 </div>
 
