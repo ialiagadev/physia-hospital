@@ -769,6 +769,188 @@ export function useGroupActivities(organizationId?: number, users: any[] = []) {
     [fetchActivities, userProfile, organizationId],
   )
 
+  const removeParticipantFromRecurringSeries = useCallback(
+    async (
+      activityId: string,
+      participantId: string,
+      clientId: number,
+      organizationId: number,
+      onProgress?: (step: number, total: number, currentActivity: string, details?: string) => void,
+    ): Promise<{ success: number; total: number; errors: string[] }> => {
+      try {
+        // Obtener información de la actividad actual para buscar la serie
+        const { data: currentActivity, error: currentActivityError } = await supabase
+          .from("group_activities")
+          .select("name, professional_id, start_time, end_time, max_participants, date")
+          .eq("id", activityId)
+          .single()
+
+        if (currentActivityError || !currentActivity) {
+          throw new Error("No se pudo obtener información de la actividad")
+        }
+
+        // Buscar todas las actividades de la serie recurrente (incluyendo la actual)
+        const { data: seriesActivities, error: fetchError } = await supabase
+          .from("group_activities")
+          .select("id, date, current_participants")
+          .eq("organization_id", organizationId)
+          .eq("professional_id", currentActivity.professional_id)
+          .eq("name", currentActivity.name)
+          .eq("start_time", currentActivity.start_time)
+          .eq("end_time", currentActivity.end_time)
+          .eq("max_participants", currentActivity.max_participants)
+          .gte("date", currentActivity.date) // Desde la actividad actual hacia adelante
+          .order("date", { ascending: true })
+
+        if (fetchError) throw fetchError
+
+        if (!seriesActivities || seriesActivities.length === 0) {
+          throw new Error("No se encontraron actividades en la serie")
+        }
+
+        console.log("[v0] Eliminando participante de serie de actividades:", seriesActivities.length)
+
+        const totalActivities = seriesActivities.length
+        let processedCount = 0
+        let successCount = 0
+        const errors: string[] = []
+        const updatedActivityIds: string[] = []
+
+        onProgress?.(0, totalActivities, "Iniciando eliminación...", `Procesando ${totalActivities} actividades`)
+
+        for (const activity of seriesActivities) {
+          try {
+            const activityDate = new Date(activity.date).toLocaleDateString("es-ES")
+            onProgress?.(
+              processedCount + 1,
+              totalActivities,
+              `Procesando actividad del ${activityDate}`,
+              `Buscando participante...`,
+            )
+
+            // Buscar el participante en esta actividad específica
+            const { data: participantInActivity, error: findError } = await supabase
+              .from("group_activity_participants")
+              .select("id")
+              .eq("group_activity_id", activity.id)
+              .eq("client_id", clientId)
+              .single()
+
+            if (findError && findError.code !== "PGRST116") {
+              // PGRST116 = no rows found
+              console.error(`Error buscando participante en actividad ${activity.id}:`, findError)
+              errors.push(`Error en actividad del ${activityDate}: ${findError.message}`)
+              processedCount++
+              continue
+            }
+
+            if (participantInActivity) {
+              onProgress?.(
+                processedCount + 1,
+                totalActivities,
+                `Eliminando de actividad del ${activityDate}`,
+                `Removiendo participante...`,
+              )
+
+              const { error: deleteError } = await supabase
+                .from("group_activity_participants")
+                .delete()
+                .eq("id", participantInActivity.id)
+
+              if (deleteError) {
+                console.error(`Error eliminando participante de actividad ${activity.id}:`, deleteError)
+                errors.push(`Error en actividad del ${activityDate}: ${deleteError.message}`)
+                processedCount++
+                continue
+              }
+
+              updatedActivityIds.push(activity.id)
+              successCount++
+              console.log("[v0] Participante eliminado de actividad:", activity.id)
+
+              onProgress?.(
+                processedCount + 1,
+                totalActivities,
+                `Sincronizando actividad del ${activityDate}`,
+                `Actualizando calendario...`,
+              )
+
+              // Sincronización automática
+              if (userProfile?.id && organizationId) {
+                try {
+                  await autoSyncGroupActivity(activity.id, userProfile.id, organizationId)
+                } catch (syncError) {
+                  console.error("❌ Error en sincronización automática para actividad:", activity.id, syncError)
+                  // No añadir a errores críticos, solo log
+                }
+              }
+            } else {
+              onProgress?.(
+                processedCount + 1,
+                totalActivities,
+                `Actividad del ${activityDate}`,
+                `Participante no encontrado - omitiendo`,
+              )
+            }
+
+            processedCount++
+          } catch (error) {
+            console.error(`Error procesando eliminación en actividad ${activity.id}:`, error)
+            const activityDate = new Date(activity.date).toLocaleDateString("es-ES")
+            errors.push(
+              `Error en actividad del ${activityDate}: ${error instanceof Error ? error.message : "Error desconocido"}`,
+            )
+            processedCount++
+          }
+        }
+
+        onProgress?.(
+          totalActivities,
+          totalActivities,
+          "Eliminación completada",
+          `${successCount} participantes eliminados correctamente`,
+        )
+
+        // Actualizar estado local
+        if (mountedRef.current && updatedActivityIds.length > 0) {
+          setActivities((prev) =>
+            prev.map((act) =>
+              updatedActivityIds.includes(act.id)
+                ? {
+                    ...act,
+                    current_participants: Math.max(0, act.current_participants - 1),
+                    participants: act.participants?.filter((p) => p.client_id !== clientId) || [],
+                  }
+                : act,
+            ),
+          )
+          console.log("[v0] Estado local actualizado tras eliminación para actividades:", updatedActivityIds)
+        }
+
+        // Refrescar datos desde la base de datos
+        if (updatedActivityIds.length > 0) {
+          setTimeout(() => {
+            if (mountedRef.current) {
+              console.log("[v0] Refrescando datos desde la base de datos tras eliminación")
+              fetchActivities()
+            }
+          }, 300)
+        }
+
+        return {
+          success: successCount,
+          total: totalActivities,
+          errors,
+        }
+      } catch (err) {
+        console.error("Error removing participant from recurring series:", err)
+        onProgress?.(0, 1, "Error crítico", err instanceof Error ? err.message : "Error desconocido")
+        throw err
+      }
+    },
+    [fetchActivities, userProfile, organizationId],
+  )
+
   return {
     activities,
     loading: loading || authLoading,
@@ -782,5 +964,80 @@ export function useGroupActivities(organizationId?: number, users: any[] = []) {
     removeParticipant,
     updateParticipantStatus,
     addParticipantToRecurringSeries,
+    removeParticipantFromRecurringSeries, // Exportando nueva función
   }
+}
+
+export const removeParticipantFromRecurringSeriesExternal = async (
+  activityId: string,
+  participantId: string,
+  clientId: number,
+  organizationId: number,
+  onProgress?: (step: number, total: number, currentActivity: string, details?: string) => void,
+): Promise<{ success: number; total: number; errors: string[] }> => {
+  // Esta función se implementa usando directamente supabase para uso externo
+  const { data: currentActivity, error: currentActivityError } = await supabase
+    .from("group_activities")
+    .select("name, professional_id, start_time, end_time, max_participants, date")
+    .eq("id", activityId)
+    .single()
+
+  if (currentActivityError || !currentActivity) {
+    throw new Error("No se pudo obtener información de la actividad")
+  }
+
+  const { data: seriesActivities, error: fetchError } = await supabase
+    .from("group_activities")
+    .select("id, date, current_participants")
+    .eq("organization_id", organizationId)
+    .eq("professional_id", currentActivity.professional_id)
+    .eq("name", currentActivity.name)
+    .eq("start_time", currentActivity.start_time)
+    .eq("end_time", currentActivity.end_time)
+    .eq("max_participants", currentActivity.max_participants)
+    .gte("date", currentActivity.date)
+    .order("date", { ascending: true })
+
+  if (fetchError) throw fetchError
+
+  const totalActivities = seriesActivities?.length || 0
+  let successCount = 0
+  const errors: string[] = []
+
+  if (seriesActivities) {
+    for (let i = 0; i < seriesActivities.length; i++) {
+      const activity = seriesActivities[i]
+      const activityDate = new Date(activity.date).toLocaleDateString("es-ES")
+
+      onProgress?.(i + 1, totalActivities, `Eliminando de actividad del ${activityDate}`, "Procesando...")
+
+      try {
+        const { data: participantInActivity } = await supabase
+          .from("group_activity_participants")
+          .select("id")
+          .eq("group_activity_id", activity.id)
+          .eq("client_id", clientId)
+          .single()
+
+        if (participantInActivity) {
+          const { error: deleteError } = await supabase
+            .from("group_activity_participants")
+            .delete()
+            .eq("id", participantInActivity.id)
+
+          if (!deleteError) {
+            successCount++
+          } else {
+            errors.push(`Error en actividad del ${activityDate}: ${deleteError.message}`)
+          }
+        }
+      } catch (error) {
+        errors.push(
+          `Error en actividad del ${activityDate}: ${error instanceof Error ? error.message : "Error desconocido"}`,
+        )
+      }
+    }
+  }
+
+  return { success: successCount, total: totalActivities, errors }
 }

@@ -345,20 +345,30 @@ export function AddParticipantModal({
   const handleAddExistingClient = async () => {
     if (!selectedClient) return
 
+    console.log("[v0] handleAddExistingClient - addToAllRecurring:", addToAllRecurring)
+    console.log("[v0] handleAddExistingClient - onAddToRecurringSeries exists:", !!onAddToRecurringSeries)
+    console.log("[v0] handleAddExistingClient - recurringActivitiesCount:", recurringActivitiesCount)
+
     setLoading(true)
     try {
       if (addToAllRecurring && onAddToRecurringSeries) {
+        console.log("[v0] Activando barra de progreso...")
         setShowProgressDialog(true)
         setProgressCanClose(false)
         setCurrentProgressStep(0)
         setTotalProgressSteps(recurringActivitiesCount + 1)
         setProgressSteps([])
 
+        await new Promise((resolve) => setTimeout(resolve, 100))
+
+        console.log("[v0] Llamando a onAddToRecurringSeries...")
         const result = await onAddToRecurringSeries(
           selectedClient.id,
           participantNotes.trim() || undefined,
           handleProgressUpdate,
         )
+
+        console.log("[v0] Resultado de onAddToRecurringSeries:", result)
 
         if (result.errors.length > 0) {
           toast.error(`Se añadió a ${result.success}/${result.total} actividades. Algunos errores: ${result.errors[0]}`)
@@ -366,15 +376,13 @@ export function AddParticipantModal({
           toast.success(`${selectedClient.name} añadido a ${result.success} actividades de la serie`)
         }
 
-        setTimeout(() => {
-          router.refresh()
-        }, 1000)
+        setProgressCanClose(true)
+
+        
       } else {
+        console.log("[v0] Añadiendo a actividad individual...")
         await onAddParticipant(selectedClient.id, participantNotes.trim() || undefined)
         toast.success(`${selectedClient.name} añadido a la actividad`)
-      }
-
-      if (!showProgressDialog) {
         handleClose()
       }
     } catch (error) {
@@ -412,6 +420,9 @@ export function AddParticipantModal({
       return
     }
 
+    console.log("[v0] handleCreateAndAddClient - addToAllRecurring:", addToAllRecurring)
+    console.log("[v0] handleCreateAndAddClient - onAddToRecurringSeries exists:", !!onAddToRecurringSeries)
+
     setLoading(true)
     try {
       const orgId = userProfile.organization_id || organizationId
@@ -434,11 +445,14 @@ export function AddParticipantModal({
       console.log("Cliente creado:", newClient)
 
       if (addToAllRecurring && onAddToRecurringSeries) {
+        console.log("[v0] Activando barra de progreso para cliente nuevo...")
         setShowProgressDialog(true)
         setProgressCanClose(false)
         setCurrentProgressStep(0)
         setTotalProgressSteps(recurringActivitiesCount + 1)
         setProgressSteps([])
+
+        await new Promise((resolve) => setTimeout(resolve, 100))
 
         const result = await onAddToRecurringSeries(
           newClient.id,
@@ -454,15 +468,14 @@ export function AddParticipantModal({
           toast.success(`${newClient.name} creado y añadido a ${result.success} actividades de la serie`)
         }
 
+        setProgressCanClose(true)
+
         setTimeout(() => {
           router.refresh()
         }, 1000)
       } else {
         await onAddParticipant(newClient.id, participantNotes.trim() || undefined)
         toast.success(`${newClient.name} creado y añadido`)
-      }
-
-      if (!showProgressDialog) {
         handleClose()
       }
     } catch (error) {
@@ -524,8 +537,8 @@ export function AddParticipantModal({
 
   return (
     <>
-      <Dialog open={isOpen && !showProgressDialog} onOpenChange={handleClose}>
-        <DialogContent className="w-[800px] h-[700px] max-w-[90vw] max-h-[90vh] flex flex-col">
+<Dialog open={isOpen && !showProgressDialog} onOpenChange={(open) => !open && handleClose()}>
+<DialogContent className="w-[800px] h-[700px] max-w-[90vw] max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <UserPlus className="h-5 w-5" />
@@ -571,7 +584,7 @@ export function AddParticipantModal({
                         </label>
                         <p className="text-xs text-purple-600">
                           El participante se registrará automáticamente en todas las sesiones futuras de esta serie
-                          recurrente. No recargues la pagina hasta que acabe el proceso y te aparezca en todas las actividades. 
+                          recurrente.
                         </p>
                       </div>
                     </div>

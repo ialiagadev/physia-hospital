@@ -66,6 +66,15 @@ export function ParticipantsModal({
   const [bulkOperationProgress, setBulkOperationProgress] = useState(0)
   const [isBulkOperationActive, setIsBulkOperationActive] = useState(false)
   const [bulkOperationTotal, setBulkOperationTotal] = useState(0)
+  const [showRemoveFromSeriesModal, setShowRemoveFromSeriesModal] = useState(false)
+  const [participantToRemoveFromSeries, setParticipantToRemoveFromSeries] = useState<{
+    participantId: string
+    clientId: number
+    clientName: string
+  } | null>(null)
+  const [bulkRemovalProgress, setBulkRemovalProgress] = useState(0)
+  const [isBulkRemovalActive, setIsBulkRemovalActive] = useState(false)
+  const [bulkRemovalTotal, setBulkRemovalTotal] = useState(0)
 
   const loadParticipants = async () => {
     if (!activity?.id || !user || !userProfile) return
@@ -246,13 +255,12 @@ export function ParticipantsModal({
         setBulkOperationProgress(0)
       }
 
+      // Añadir a la actividad principal
       await onAddParticipant(activity.id, clientId, notes)
 
       if (addToAllRecurring && recurringActivities.length > 0) {
         setBulkOperationProgress(1)
-      }
 
-      if (addToAllRecurring && recurringActivities.length > 0) {
         console.log(`Añadiendo participante a ${recurringActivities.length} actividades recurrentes`)
 
         for (let i = 0; i < recurringActivities.length; i++) {
@@ -289,12 +297,6 @@ export function ParticipantsModal({
       }
 
       await loadParticipants()
-      setShowAddModal(false)
-      setAddToAllRecurring(false)
-
-      setIsBulkOperationActive(false)
-      setBulkOperationProgress(0)
-      setBulkOperationTotal(0)
 
       if (userProfile?.id && organizationId) {
         console.log("🔄 Sincronizando actividad después de añadir participante desde modal:", activity.id)
@@ -306,10 +308,12 @@ export function ParticipantsModal({
       }
     } catch (error) {
       console.error("Error adding participant:", error)
+      throw error
+    } finally {
+      setAddToAllRecurring(false)
       setIsBulkOperationActive(false)
       setBulkOperationProgress(0)
       setBulkOperationTotal(0)
-      throw error
     }
   }
 
@@ -333,7 +337,63 @@ export function ParticipantsModal({
     }
   }
 
+  const handleRemoveFromRecurringSeries = async (participantId: string, clientId: number) => {
+    try {
+      setIsBulkRemovalActive(true)
+      setBulkRemovalTotal(recurringActivities.length + 1)
+      setBulkRemovalProgress(0)
+
+      // Importar la función del hook
+      const { removeParticipantFromRecurringSeriesExternal } = await import("@/hooks/use-group-activities")
+
+      await removeParticipantFromRecurringSeriesExternal(
+        activity.id,
+        participantId,
+        clientId,
+        organizationId,
+        (step: number, total: number, currentActivity: string, details?: string) => {
+          console.log(`[v0] Eliminación paso ${step}/${total}: ${currentActivity} - ${details}`)
+          setBulkRemovalProgress(step)
+        },
+      )
+
+      await loadParticipants()
+      setShowRemoveFromSeriesModal(false)
+      setParticipantToRemoveFromSeries(null)
+
+      if (userProfile?.id && organizationId) {
+        console.log("🔄 Sincronizando actividad después de eliminar participante de serie:", activity.id)
+        try {
+          await autoSyncGroupActivity(activity.id, userProfile.id, organizationId)
+        } catch (syncError) {
+          console.error("❌ Error en sincronización automática:", syncError)
+        }
+      }
+    } catch (error) {
+      console.error("Error removing participant from series:", error)
+      throw error
+    } finally {
+      setIsBulkRemovalActive(false)
+      setBulkRemovalProgress(0)
+      setBulkRemovalTotal(0)
+    }
+  }
+
   const handleRemoveParticipant = async (participantId: string) => {
+    const participant = participants.find((p) => p.id === participantId)
+
+    if (showRecurringOptions && participant) {
+      // Mostrar modal de opciones para eliminar
+      setParticipantToRemoveFromSeries({
+        participantId,
+        clientId: participant.client_id,
+        clientName: participant.client.name,
+      })
+      setShowRemoveFromSeriesModal(true)
+      return
+    }
+
+    // Eliminación normal de una sola actividad
     setRemovingParticipant(participantId)
     try {
       await onRemoveParticipant(participantId)
@@ -414,7 +474,7 @@ export function ParticipantsModal({
 
   return (
     <>
-      <Dialog open={isOpen} onOpenChange={isBulkOperationActive ? () => {} : onClose}>
+      <Dialog open={isOpen} onOpenChange={isBulkOperationActive || isBulkRemovalActive ? () => {} : onClose}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -453,7 +513,27 @@ export function ParticipantsModal({
               </Alert>
             )}
 
-            {showRecurringOptions && !isBulkOperationActive && (
+            {isBulkRemovalActive && (
+              <Alert className="border-red-200 bg-red-50">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <AlertDescription className="text-red-800">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">Eliminando participante de múltiples sesiones...</span>
+                      <span className="text-sm">
+                        {bulkRemovalProgress}/{bulkRemovalTotal}
+                      </span>
+                    </div>
+                    <Progress value={(bulkRemovalProgress / bulkRemovalTotal) * 100} className="w-full h-2" />
+                    <p className="text-sm">
+                      ⚠️ No cierres esta ventana hasta que termine el proceso para evitar interrumpir la eliminación.
+                    </p>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {showRecurringOptions && !isBulkOperationActive && !isBulkRemovalActive && (
               <Alert className="border-blue-200 bg-blue-50">
                 <Info className="h-4 w-4" />
                 <AlertDescription className="text-blue-800">
@@ -485,7 +565,9 @@ export function ParticipantsModal({
               <h3 className="text-lg font-medium">Lista de Participantes</h3>
               <Button
                 onClick={() => setShowAddModal(true)}
-                disabled={participants.length >= activity.max_participants || isBulkOperationActive}
+                disabled={
+                  participants.length >= activity.max_participants || isBulkOperationActive || isBulkRemovalActive
+                }
                 className="bg-blue-600 hover:bg-blue-700"
               >
                 <UserPlus className="h-4 w-4 mr-2" />
@@ -563,7 +645,7 @@ export function ParticipantsModal({
                           variant="ghost"
                           size="sm"
                           onClick={() => handleRemoveParticipant(participant.id)}
-                          disabled={removingParticipant === participant.id}
+                          disabled={removingParticipant === participant.id || isBulkRemovalActive}
                           className="text-red-600 hover:text-red-700 hover:bg-red-50"
                         >
                           {removingParticipant === participant.id ? (
@@ -635,8 +717,8 @@ export function ParticipantsModal({
           </div>
 
           <div className="flex justify-end pt-4">
-            <Button variant="outline" onClick={onClose} disabled={isBulkOperationActive}>
-              {isBulkOperationActive ? "Procesando..." : "Cerrar"}
+            <Button variant="outline" onClick={onClose} disabled={isBulkOperationActive || isBulkRemovalActive}>
+              {isBulkOperationActive || isBulkRemovalActive ? "Procesando..." : "Cerrar"}
             </Button>
           </div>
         </DialogContent>
@@ -661,6 +743,94 @@ export function ParticipantsModal({
           addToAllRecurring={addToAllRecurring}
           onAddToAllRecurringChange={setAddToAllRecurring}
         />
+      )}
+
+      {showRemoveFromSeriesModal && (
+        <Dialog open={showRemoveFromSeriesModal} onOpenChange={() => setShowRemoveFromSeriesModal(false)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Trash2 className="h-5 w-5 text-red-600" />
+                Eliminar Participante
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                ¿Cómo quieres eliminar a <strong>{participantToRemoveFromSeries?.clientName}</strong>?
+              </p>
+
+              <Alert className="border-blue-200 bg-blue-50">
+                <Info className="h-4 w-4" />
+                <AlertDescription className="text-blue-800">
+                  <p className="text-sm">
+                    Esta actividad forma parte de una serie de{" "}
+                    <strong>{recurringActivities.length + 1} sesiones</strong>.
+                  </p>
+                </AlertDescription>
+              </Alert>
+
+              <div className="space-y-3">
+                <Button
+                  variant="outline"
+                  className="w-full justify-start bg-transparent"
+                  onClick={async () => {
+                    if (participantToRemoveFromSeries) {
+                      setShowRemoveFromSeriesModal(false)
+                      setRemovingParticipant(participantToRemoveFromSeries.participantId)
+                      try {
+                        await onRemoveParticipant(participantToRemoveFromSeries.participantId)
+                        await loadParticipants()
+                      } catch (error) {
+                        console.error("Error removing participant:", error)
+                      } finally {
+                        setRemovingParticipant(null)
+                        setParticipantToRemoveFromSeries(null)
+                      }
+                    }
+                  }}
+                >
+                  <Calendar className="h-4 w-4 mr-2" />
+                  Solo de esta sesión ({format(new Date(activity.date), "dd/MM/yyyy", { locale: es })})
+                </Button>
+
+                <Button
+                  variant="destructive"
+                  className="w-full justify-start"
+                  onClick={() => {
+                    if (participantToRemoveFromSeries) {
+                      handleRemoveFromRecurringSeries(
+                        participantToRemoveFromSeries.participantId,
+                        participantToRemoveFromSeries.clientId,
+                      )
+                    }
+                  }}
+                >
+                  <Repeat className="h-4 w-4 mr-2" />
+                  De toda la serie ({recurringActivities.length + 1} sesiones)
+                </Button>
+              </div>
+
+              <div className="text-xs text-gray-500 mt-3">
+                <strong>Próximas sesiones afectadas:</strong>
+                <ul className="list-disc list-inside mt-1">
+                  {recurringActivities.slice(0, 3).map((ra) => (
+                    <li key={ra.id}>
+                      {format(new Date(ra.date), "dd/MM/yyyy", { locale: es })} - {ra.start_time}
+                    </li>
+                  ))}
+                  {recurringActivities.length > 3 && <li>... y {recurringActivities.length - 3} sesiones más</li>}
+                </ul>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="outline" onClick={() => setShowRemoveFromSeriesModal(false)}>
+                Cancelar
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </>
   )
