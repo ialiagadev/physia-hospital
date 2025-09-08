@@ -413,7 +413,6 @@ function NewLoyaltyCardForm() {
         ...prev,
         service_id: selectedService.id,
         service_price: selectedService.price,
-        business_name: selectedService.name,
         reward: selectedService.description || `Servicio: ${selectedService.name}`,
       }))
     } else {
