@@ -5,9 +5,6 @@ import { useState, useRef, useEffect, useLayoutEffect } from "react"
 import {
   Send,
   Smile,
-  Phone,
-  Video,
-  MoreVertical,
   ArrowLeft,
   FileText,
   Sparkles,
@@ -1089,7 +1086,6 @@ export default function ConversationWindowSimple({
             </Avatar>
             {client?.channel && (
               <div
-                className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border border-white ${getChannelColor(client.channel)}`}
               ></div>
             )}
           </div>
@@ -1104,7 +1100,7 @@ export default function ConversationWindowSimple({
                 </span>
               )}
             </div>
-            <p className="text-xs text-gray-500 truncate">{getOnlineStatus(client)}</p>
+            {/* <p className="text-xs text-gray-500 truncate">{getOnlineStatus(client)}</p> */}
           </div>
         </div>
 
@@ -1122,6 +1118,7 @@ export default function ConversationWindowSimple({
             </Tooltip>
           </TooltipProvider>
 
+          {/* 
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -1169,6 +1166,7 @@ export default function ConversationWindowSimple({
               <TooltipContent>Más opciones</TooltipContent>
             </Tooltip>
           </TooltipProvider>
+          */}
         </div>
       </div>
 
@@ -1212,9 +1210,9 @@ export default function ConversationWindowSimple({
               </div>
 
               {dateMessages.map((msg, idx) => {
-                  if (msg.message_type === "system_ia") {
-                    return null
-                  }
+                if (msg.message_type === "system_ia") {
+                  return null
+                }
                 const isFirst = isFirstInGroup(idx, dateMessages)
                 const isLast = isLastInGroup(idx, dateMessages)
 
