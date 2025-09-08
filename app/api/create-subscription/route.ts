@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
     const subscription = await stripe.subscriptions.create({
       customer: customerId,
       items: [{ price: priceId }],
-      trial_period_days: 7,
+      trial_period_days: 120,
       payment_behavior: "allow_incomplete", // Cambio clave: permite que la suscripción se active incluso sin método de pago inicial
       payment_settings: {
         save_default_payment_method: "on_subscription",
