@@ -5,7 +5,7 @@ import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Brain, User, Calendar, Clock, Gift, Sparkles, Activity, Zap } from "lucide-react"
+import { Brain, User, Calendar, Clock, Gift, Sparkles, Activity, Zap, DollarSign } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { LoyaltyCard } from "@/types/loyalty-cards"
 
@@ -165,6 +165,13 @@ export function PhysiaCard({
                   <div className="flex items-center gap-1">
                     <span className="text-xs text-purple-600">Potenciado por IA</span>
                     <Sparkles className="h-3 w-3 text-purple-500" />
+                    {card.service_price && (
+                      <>
+                        <span className="text-xs text-purple-400 mx-1">•</span>
+                        <DollarSign className="h-3 w-3 text-purple-500" />
+                        <span className="text-xs text-purple-600">€{card.service_price}</span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -364,6 +371,13 @@ export function PhysiaCard({
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-purple-200">Potenciado por IA</span>
                   <Sparkles className="h-3 w-3 text-purple-200" />
+                  {card.service_price && (
+                    <>
+                      <span className="text-xs text-purple-300 mx-1">•</span>
+                      <DollarSign className="h-3 w-3 text-purple-200" />
+                      <span className="text-xs text-purple-200">€{card.service_price}</span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

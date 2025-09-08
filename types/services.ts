@@ -61,3 +61,13 @@ export interface ServiceFilters {
 export interface ServiceWithUserCount extends Service {
   user_count?: number
 }
+
+export interface ServiceBasic {
+  id: number
+  name: string
+  description: string | null
+  price: number
+  category: string | null
+  duration: number
+  active: boolean
+}

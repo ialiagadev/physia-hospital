@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dialog"
 import { LoyaltyCardService } from "@/lib/loyalty-card-service"
 import type { CardFormData, LoyaltyCard } from "@/types/loyalty-cards"
+import type { ServiceBasic } from "@/types/services"
 
 interface NewCardModalProps {
   open: boolean
@@ -43,6 +44,7 @@ export function NewCardModal({
   const [loading, setLoading] = useState(false)
   const [professionals, setProfessionals] = useState<any[]>([])
   const [client, setClient] = useState<any>(null)
+  const [services, setServices] = useState<ServiceBasic[]>([])
   const [formData, setFormData] = useState<CardFormData>({
     organization_id: Number.parseInt(organizationId),
     professional_id: null,
@@ -52,18 +54,18 @@ export function NewCardModal({
     total_sessions: 10,
     reward: "",
     expiry_date: null,
+    service_id: null,
+    service_price: null,
   })
 
   const isEditing = !!editingCard
 
-  // Cargar datos iniciales cuando se abre el modal
   useEffect(() => {
     if (open) {
       loadInitialData()
     }
   }, [open, clientId, organizationId])
 
-  // Cargar datos de la tarjeta cuando está en modo edición
   useEffect(() => {
     if (editingCard && open) {
       setFormData({
@@ -75,9 +77,10 @@ export function NewCardModal({
         total_sessions: editingCard.total_sessions,
         reward: editingCard.reward,
         expiry_date: editingCard.expiry_date,
+        service_id: editingCard.service_id || null,
+        service_price: editingCard.service_price || null,
       })
     } else if (!editingCard && open) {
-      // Resetear formulario para nueva tarjeta
       setFormData({
         organization_id: Number.parseInt(organizationId),
         professional_id: null,
@@ -87,13 +90,14 @@ export function NewCardModal({
         total_sessions: 10,
         reward: "",
         expiry_date: null,
+        service_id: null,
+        service_price: null,
       })
     }
   }, [editingCard, open, clientId, organizationId])
 
   const loadInitialData = async () => {
     try {
-      // Cargar profesionales solo si no está editando
       if (!isEditing) {
         const { data: profsData, error: profsError } = await supabase
           .from("professionals")
@@ -107,7 +111,13 @@ export function NewCardModal({
         }
       }
 
-      // Cargar datos del cliente
+      try {
+        const servicesData = await LoyaltyCardService.getServices(Number.parseInt(organizationId))
+        setServices(servicesData)
+      } catch (error) {
+        console.error("Error loading services:", error)
+      }
+
       const { data: clientData, error: clientError } = await supabase
         .from("clients")
         .select("id, name, tax_id")
@@ -129,36 +139,64 @@ export function NewCardModal({
     }
   }
 
-  // Manejar cambios en el formulario
+  const handleServiceChange = (serviceId: string) => {
+    if (serviceId === "0" || serviceId === "") {
+      setFormData((prev) => ({
+        ...prev,
+        service_id: null,
+        service_price: null,
+        business_name: "",
+        reward: "",
+      }))
+    } else {
+      const selectedService = services.find((s) => s.id === Number.parseInt(serviceId))
+      if (selectedService) {
+        setFormData((prev) => ({
+          ...prev,
+          service_id: selectedService.id,
+          service_price: selectedService.price,
+          business_name: selectedService.name,
+          reward: selectedService.description || `Servicio: ${selectedService.name}`,
+        }))
+      }
+    }
+  }
+
   const handleChange = (field: keyof CardFormData, value: any) => {
     if (
       field === "organization_id" ||
       field === "client_id" ||
       field === "professional_id" ||
-      field === "total_sessions"
+      field === "total_sessions" ||
+      field === "service_id"
     ) {
       if (typeof value === "string") {
         const parsedValue = Number.parseInt(value, 10)
         if (isNaN(parsedValue)) {
-          value = field === "professional_id" ? null : 0
+          value = field === "professional_id" || field === "service_id" ? null : 0
         } else {
           value = parsedValue
         }
-      } else if (value == null && field !== "professional_id") {
+      } else if (value == null && field !== "professional_id" && field !== "service_id") {
         value = 0
+      }
+    }
+
+    if (field === "service_price") {
+      if (typeof value === "string") {
+        const parsedValue = Number.parseFloat(value)
+        value = isNaN(parsedValue) ? null : parsedValue
       }
     }
 
     setFormData((prev) => ({ ...prev, [field]: value }))
   }
 
-  // Manejar envío del formulario
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
 
     try {
-      // Validar datos
       if (!formData.business_name) {
         throw new Error("Debes ingresar el nombre del negocio")
       }
@@ -170,7 +208,6 @@ export function NewCardModal({
       }
 
       if (isEditing && editingCard) {
-        // Actualizar tarjeta existente (sin cambiar professional_id)
         await LoyaltyCardService.updateCard(editingCard.id, {
           business_name: formData.business_name,
           total_sessions: formData.total_sessions,
@@ -183,7 +220,6 @@ export function NewCardModal({
           description: "La tarjeta de fidelización ha sido actualizada correctamente",
         })
       } else {
-        // Crear nueva tarjeta
         const cardData = {
           organization_id: formData.organization_id,
           professional_id: formData.professional_id,
@@ -233,7 +269,6 @@ export function NewCardModal({
     return value.toString()
   }
 
-  // Datos para la vista previa
   const previewCard = {
     id: editingCard?.id || 0,
     created_at: editingCard?.created_at || new Date().toISOString(),
@@ -266,7 +301,27 @@ export function NewCardModal({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div>
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Campo de profesional solo para creación */}
+              <div className="space-y-2">
+                <Label htmlFor="service_id">Servicio (opcional)</Label>
+                <Select value={getSelectValue(formData.service_id)} onValueChange={handleServiceChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona un servicio" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">Servicio personalizado</SelectItem>
+                    {services.map((service) => (
+                      <SelectItem key={service.id} value={service.id.toString()}>
+                        {service.name} - €{service.price}
+                        {service.category && ` (${service.category})`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {formData.service_id && (
+                  <p className="text-xs text-muted-foreground">Precio del servicio: €{formData.service_price}</p>
+                )}
+              </div>
+
               {!isEditing && (
                 <div className="space-y-2">
                   <Label htmlFor="professional_id">Profesional (opcional)</Label>

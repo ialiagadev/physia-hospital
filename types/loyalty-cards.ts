@@ -36,6 +36,8 @@ export interface LoyaltyCard {
   last_visit_date: string | null
   status: "active" | "completed" | "expired" | "cancelled" | "redeemed"
   custom_data?: any
+  service_id?: number | null
+  service_price?: number | null
 
   // Joined data
   clients?: {
@@ -44,6 +46,14 @@ export interface LoyaltyCard {
   }
   professionals?: {
     name: string
+  }
+  services?: {
+    id: number
+    name: string
+    description: string | null
+    price: number
+    category: string | null
+    duration: number
   }
 }
 
@@ -69,4 +79,6 @@ export interface CardFormData {
   reward: string
   expiry_date: string | null
   custom_data?: any
+  service_id?: number | null
+  service_price?: number | null
 }

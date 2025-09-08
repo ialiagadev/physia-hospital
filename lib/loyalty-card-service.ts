@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase/client"
 import type { LoyaltyCard, CardFormData, CardSession } from "@/types/loyalty-cards"
+import type { ServiceBasic } from "@/types/services"
 
 export const LoyaltyCardService = {
   // Obtener todas las tarjetas de fidelización
@@ -9,7 +10,8 @@ export const LoyaltyCardService = {
       .select(`
         *,
         clients (name, tax_id),
-        professionals (name)
+        professionals (name),
+        services (id, name, description, price, category, duration)
       `)
       .order("created_at", { ascending: false })
 
@@ -34,7 +36,8 @@ export const LoyaltyCardService = {
       .select(`
         *,
         clients (name, tax_id),
-        professionals (name)
+        professionals (name),
+        services (id, name, description, price, category, duration)
       `)
       .eq("client_id", clientId)
       .order("created_at", { ascending: false })
@@ -60,7 +63,8 @@ export const LoyaltyCardService = {
       .select(`
         *,
         clients (name, tax_id),
-        professionals (name)
+        professionals (name),
+        services (id, name, description, price, category, duration)
       `)
       .eq("id", id)
       .single()
@@ -89,6 +93,8 @@ export const LoyaltyCardService = {
         expiry_date: cardData.expiry_date,
         status: "active",
         custom_data: cardData.custom_data || {},
+        service_id: cardData.service_id,
+        service_price: cardData.service_price,
       })
       .select("id")
       .single()
@@ -218,5 +224,21 @@ export const LoyaltyCardService = {
       console.error("Error redeeming reward:", updateError)
       throw new Error("No se pudo canjear la recompensa")
     }
+  },
+
+  async getServices(organizationId: number): Promise<ServiceBasic[]> {
+    const { data, error } = await supabase
+      .from("services")
+      .select("id, name, description, price, category, duration, active")
+      .eq("organization_id", organizationId)
+      .eq("active", true)
+      .order("name")
+
+    if (error) {
+      console.error("Error fetching services:", error)
+      throw new Error("No se pudieron cargar los servicios")
+    }
+
+    return data || []
   },
 }
