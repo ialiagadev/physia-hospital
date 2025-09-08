@@ -170,9 +170,7 @@ export function PaymentSetup({
     <div className="space-y-6">
       <div className="text-center space-y-2">
         <h3 className="text-xl font-semibold text-gray-900">Configurar método de pago</h3>
-        <p className="text-gray-600">
-          Plan seleccionado: <span className="font-medium">{planName}</span> - {planPrice}
-        </p>
+        
       </div>
 
       <Elements stripe={stripePromise}>
