@@ -24,12 +24,16 @@ function ResetPasswordForm() {
   const searchParams = useSearchParams()
 
   useEffect(() => {
-    // Verificar si hay un token de reset en la URL
-    const code = searchParams.get("code")
-    if (!code) {
-      setError("Enlace de recuperación inválido o expirado")
+    const code = searchParams.get("code");
+    if (code) {
+      supabase.auth.exchangeCodeForSession(code).catch(() => {
+        setError("El enlace de recuperación no es válido o ha expirado.");
+      });
+    } else {
+      setError("Enlace de recuperación inválido o expirado");
     }
-  }, [searchParams])
+  }, [searchParams]);
+  
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
