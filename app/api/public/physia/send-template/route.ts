@@ -42,9 +42,9 @@ export async function POST(request: NextRequest) {
       .select("*")
       .eq("organization_id", organizationId)
       .or(`phone.eq.${phone},full_phone.eq.${phone}`)
-      .single()
+      .maybeSingle()
 
-    if (clientSearchError && clientSearchError.code === "PGRST116") {
+    if (!existingClient) {
       const { data: newClient, error: createClientError } = await supabase
         .from("clients")
         .insert({
@@ -58,8 +58,6 @@ export async function POST(request: NextRequest) {
         .single()
       if (createClientError) throw createClientError
       client = newClient
-    } else if (clientSearchError) {
-      throw clientSearchError
     } else {
       client = existingClient
     }
@@ -99,10 +97,10 @@ export async function POST(request: NextRequest) {
         .eq("organization_id", organizationId)
         .eq("client_id", client.id)
         .eq("status", "active")
-        .single()
+        .maybeSingle()
 
-    if (conversationSearchError && conversationSearchError.code === "PGRST116") {
-      const { data: newConversation } = await supabase
+    if (!existingConversation) {
+      const { data: newConversation, error: newConvError } = await supabase
         .from("conversations")
         .insert({
           organization_id: organizationId,
@@ -115,6 +113,8 @@ export async function POST(request: NextRequest) {
         })
         .select()
         .single()
+
+      if (newConvError) throw newConvError
       conversation = newConversation
 
       // ⭐ NEW: Asignar todos los usuarios vinculados al WABA
