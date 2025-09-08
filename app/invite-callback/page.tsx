@@ -314,30 +314,34 @@ export default function InviteCallback() {
           }
         }
 
-        // Método 2: Si tenemos token en query params
-        if (token && type === "invite") {
-          console.log("🔄 Método 2: Verificando token de invitación...")
-          setMessage("Verificando tu invitación...")
+       // Método 2: Si tenemos token en query params
+if (token && type === "invite") {
+  console.log("🔄 Método 2: Verificando token de invitación...")
+  setMessage("Verificando tu invitación...")
 
-          const { data, error } = await supabase.auth.verifyOtp({
-            token_hash: token,
-            type: "invite",
-          })
+  const { data, error } = await supabase.auth.verifyOtp({
+    token_hash: token,
+    type: "invite",
+  })
 
-          if (error) {
-            console.error("❌ Error verificando invitación:", error)
-            setStatus("error")
-            setMessage("El enlace de invitación es inválido o ha expirado. Solicita una nueva invitación.")
-            return
-          }
+  if (error) {
+    console.error("❌ Error verificando invitación:", error)
+    setStatus("error")
+    setMessage("El enlace de invitación es inválido o ha expirado. Solicita una nueva invitación.")
+    return
+  }
 
-          const currentUser = data.user
-          if (currentUser) {
-            console.log("✅ Token verificado correctamente")
-            await processUser(currentUser, organizationId)
-            return
-          }
-        }
+  const currentUser = data?.user
+  if (currentUser) {
+    console.log("✅ Token verificado correctamente (aunque no haya sesión activa)")
+    // ⚡️ Forzar procesamiento aunque no exista sesión todavía
+    await processUser(currentUser, organizationId)
+    return
+  }
+
+  console.warn("⚠️ No se recibió user en verifyOtp, continuando con otros métodos...")
+}
+
 
         // Método 3: Esperar a que Supabase procese automáticamente
         console.log("🔄 Método 3: Esperando procesamiento automático...")
