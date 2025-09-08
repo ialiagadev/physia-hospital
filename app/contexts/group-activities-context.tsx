@@ -676,6 +676,137 @@ export function GroupActivitiesProvider({ children, organizationId, users }: Gro
     }
   }, [organizationId, userProfile, users.length, fetchActivities])
 
+  useEffect(() => {
+    if (!organizationId || !userProfile) return
+
+    console.log("[v0] Configurando suscripciones de tiempo real para actividades grupales")
+
+    // Suscripción a cambios en group_activities (current_participants)
+    const activitiesSubscription = supabase
+      .channel(`group_activities_${organizationId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "group_activities",
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        (payload) => {
+          console.log("[v0] Cambio en group_activities:", payload)
+
+          if (payload.eventType === "UPDATE" && payload.new) {
+            // Actualizar solo el current_participants en tiempo real
+            dispatch({
+              type: "UPDATE_ACTIVITY",
+              payload: {
+                id: payload.new.id,
+                updates: { current_participants: payload.new.current_participants },
+              },
+            })
+          } else if (payload.eventType === "INSERT" && payload.new) {
+            const professional = users.find((u) => u.id === payload.new.professional_id)
+            const newActivity: GroupActivity = {
+              id: payload.new.id,
+              organization_id: payload.new.organization_id,
+              name: payload.new.name,
+              description: payload.new.description,
+              date: payload.new.date,
+              start_time: payload.new.start_time,
+              end_time: payload.new.end_time,
+              service_id: payload.new.service_id,
+              professional_id: payload.new.professional_id,
+              consultation_id: payload.new.consultation_id,
+              max_participants: payload.new.max_participants,
+              current_participants: payload.new.current_participants,
+              status: payload.new.status,
+              color: payload.new.color,
+              created_at: payload.new.created_at,
+              updated_at: payload.new.updated_at,
+              professional: professional ? { id: professional.id, name: professional.name } : undefined,
+              participants: [],
+            }
+            dispatch({ type: "ADD_ACTIVITY", payload: newActivity })
+          } else if (payload.eventType === "DELETE" && payload.old) {
+            dispatch({ type: "DELETE_ACTIVITY", payload: payload.old.id })
+          }
+        },
+      )
+      .subscribe()
+
+    // Suscripción a cambios en group_activity_participants
+    const participantsSubscription = supabase
+      .channel(`group_activity_participants_${organizationId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "group_activity_participants",
+        },
+        async (payload) => {
+          console.log("[v0] Cambio en group_activity_participants:", payload)
+
+          if (payload.eventType === "INSERT" && payload.new) {
+            // Obtener datos del cliente para el nuevo participante
+            const { data: clientData } = await supabase
+              .from("clients")
+              .select("id, name, phone, email")
+              .eq("id", payload.new.client_id)
+              .single()
+
+            const newParticipant: GroupActivityParticipant = {
+              id: payload.new.id,
+              group_activity_id: payload.new.group_activity_id,
+              client_id: payload.new.client_id,
+              status: payload.new.status,
+              registration_date: payload.new.registration_date,
+              notes: payload.new.notes,
+              client: clientData || {
+                id: payload.new.client_id,
+                name: "Cliente",
+                phone: null,
+                email: null,
+              },
+            }
+
+            dispatch({
+              type: "ADD_PARTICIPANT",
+              payload: {
+                activityId: payload.new.group_activity_id,
+                participant: newParticipant,
+              },
+            })
+          } else if (payload.eventType === "DELETE" && payload.old) {
+            dispatch({
+              type: "REMOVE_PARTICIPANT",
+              payload: {
+                activityId: payload.old.group_activity_id,
+                participantId: payload.old.id,
+              },
+            })
+          } else if (payload.eventType === "UPDATE" && payload.new) {
+            dispatch({
+              type: "UPDATE_PARTICIPANT_STATUS",
+              payload: {
+                activityId: payload.new.group_activity_id,
+                participantId: payload.new.id,
+                status: payload.new.status,
+              },
+            })
+          }
+        },
+      )
+      .subscribe()
+
+    // Cleanup function
+    return () => {
+      console.log("[v0] Limpiando suscripciones de tiempo real")
+      supabase.removeChannel(activitiesSubscription)
+      supabase.removeChannel(participantsSubscription)
+    }
+  }, [organizationId, userProfile, users])
+
   const value: GroupActivitiesContextType = {
     activities: state.activities,
     loading: state.loading,

@@ -611,7 +611,8 @@ export function useGroupActivities(organizationId?: number, users: any[] = []) {
       maxParticipants: number,
       clientId: number,
       notes?: string,
-    ): Promise<void> => {
+      onProgress?: (step: number, total: number, currentActivity: string, details?: string) => void,
+    ): Promise<{ success: number; total: number; errors: string[] }> => {
       try {
         // Buscar todas las actividades de la serie recurrente
         const { data: seriesActivities, error: fetchError } = await supabase
@@ -633,11 +634,26 @@ export function useGroupActivities(organizationId?: number, users: any[] = []) {
         }
 
         console.log("[v0] Procesando serie de actividades:", seriesActivities.length)
+
+        const totalActivities = seriesActivities.length
+        let processedCount = 0
+        let successCount = 0
+        const errors: string[] = []
         const updatedActivityIds: string[] = []
         const activitiesToUpdate: string[] = []
 
+        onProgress?.(0, totalActivities, "Iniciando proceso...", `Procesando ${totalActivities} actividades`)
+
         for (const activity of seriesActivities) {
           try {
+            const activityDate = new Date(activity.date).toLocaleDateString("es-ES")
+            onProgress?.(
+              processedCount,
+              totalActivities,
+              `Procesando actividad del ${activityDate}`,
+              `Verificando participante existente...`,
+            )
+
             // Verificar si el participante ya existe
             const { data: existingParticipant } = await supabase
               .from("group_activity_participants")
@@ -647,6 +663,13 @@ export function useGroupActivities(organizationId?: number, users: any[] = []) {
               .single()
 
             if (!existingParticipant) {
+              onProgress?.(
+                processedCount,
+                totalActivities,
+                `Añadiendo a actividad del ${activityDate}`,
+                `Registrando participante...`,
+              )
+
               activitiesToUpdate.push(activity.id)
 
               const { error: insertError } = await supabase.from("group_activity_participants").insert({
@@ -657,25 +680,57 @@ export function useGroupActivities(organizationId?: number, users: any[] = []) {
 
               if (insertError) {
                 console.error(`Error añadiendo participante a actividad ${activity.id}:`, insertError)
+                errors.push(`Error en actividad del ${activityDate}: ${insertError.message}`)
+                processedCount++
                 continue // Continuar con las demás actividades
               }
 
               updatedActivityIds.push(activity.id)
+              successCount++
               console.log("[v0] Participante añadido a actividad:", activity.id)
+
+              onProgress?.(
+                processedCount,
+                totalActivities,
+                `Sincronizando actividad del ${activityDate}`,
+                `Actualizando calendario...`,
+              )
 
               // Sincronización automática
               if (userProfile?.id && organizationId) {
                 try {
                   await autoSyncGroupActivity(activity.id, userProfile.id, organizationId)
                 } catch (syncError) {
-                  console.error("❌ Error en sincronización automática:", syncError)
+                  console.error("❌ Error en sincronización automática para actividad:", activity.id, syncError)
+                  // No añadir a errores críticos, solo log
                 }
               }
+            } else {
+              onProgress?.(
+                processedCount,
+                totalActivities,
+                `Actividad del ${activityDate}`,
+                `Participante ya registrado - omitiendo`,
+              )
             }
+
+            processedCount++
           } catch (error) {
             console.error(`Error procesando actividad ${activity.id}:`, error)
+            const activityDate = new Date(activity.date).toLocaleDateString("es-ES")
+            errors.push(
+              `Error en actividad del ${activityDate}: ${error instanceof Error ? error.message : "Error desconocido"}`,
+            )
+            processedCount++
           }
         }
+
+        onProgress?.(
+          totalActivities,
+          totalActivities,
+          "Proceso completado",
+          `${successCount} participantes añadidos correctamente`,
+        )
 
         if (mountedRef.current && activitiesToUpdate.length > 0) {
           setActivities((prev) =>
@@ -699,8 +754,15 @@ export function useGroupActivities(organizationId?: number, users: any[] = []) {
             }
           }, 300)
         }
+
+        return {
+          success: successCount,
+          total: totalActivities,
+          errors,
+        }
       } catch (err) {
         console.error("Error adding participant to recurring series:", err)
+        onProgress?.(0, 1, "Error crítico", err instanceof Error ? err.message : "Error desconocido")
         throw err
       }
     },

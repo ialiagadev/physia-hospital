@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Users, UserPlus, Trash2, User, Phone, Mail, Calendar, Clock, Repeat, Info } from "lucide-react"
+import { Progress } from "@/components/ui/progress"
+import { Users, UserPlus, Trash2, User, Phone, Mail, Calendar, Clock, Repeat, Info, Loader2 } from "lucide-react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { AddParticipantModal } from "./add-participant-modal"
@@ -62,6 +63,9 @@ export function ParticipantsModal({
   const [showRecurringOptions, setShowRecurringOptions] = useState(false)
   const [addToAllRecurring, setAddToAllRecurring] = useState(false)
   const [loadingRecurring, setLoadingRecurring] = useState(false)
+  const [bulkOperationProgress, setBulkOperationProgress] = useState(0)
+  const [isBulkOperationActive, setIsBulkOperationActive] = useState(false)
+  const [bulkOperationTotal, setBulkOperationTotal] = useState(0)
 
   const loadParticipants = async () => {
     if (!activity?.id || !user || !userProfile) return
@@ -177,14 +181,82 @@ export function ParticipantsModal({
     }
   }, [isOpen, activity?.id, user, userProfile])
 
+  useEffect(() => {
+    if (!isOpen || !activity?.id || !user || !userProfile) return
+
+    console.log("[v0] Configurando suscripción de tiempo real para participantes del modal:", activity.id)
+
+    // Suscripción específica para los participantes de esta actividad
+    const participantsSubscription = supabase
+      .channel(`modal_participants_${activity.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "group_activity_participants",
+          filter: `group_activity_id=eq.${activity.id}`,
+        },
+        async (payload) => {
+          console.log("[v0] Cambio en participantes del modal:", payload)
+
+          if (payload.eventType === "INSERT" && payload.new) {
+            // Obtener datos completos del cliente
+            const { data: clientData } = await supabase
+              .from("clients")
+              .select("id, name, phone, email")
+              .eq("id", payload.new.client_id)
+              .single()
+
+            const newParticipant: Participant = {
+              id: payload.new.id,
+              client_id: payload.new.client_id,
+              status: payload.new.status,
+              notes: payload.new.notes,
+              registration_date: payload.new.registration_date,
+              client: clientData || { id: payload.new.client_id, name: "Cliente", phone: null, email: null },
+            }
+
+            setParticipants((prev) => [...prev, newParticipant])
+          } else if (payload.eventType === "DELETE" && payload.old) {
+            setParticipants((prev) => prev.filter((p) => p.id !== payload.old.id))
+          } else if (payload.eventType === "UPDATE" && payload.new) {
+            setParticipants((prev) =>
+              prev.map((p) =>
+                p.id === payload.new.id ? { ...p, status: payload.new.status, notes: payload.new.notes } : p,
+              ),
+            )
+          }
+        },
+      )
+      .subscribe()
+
+    // Cleanup cuando se cierra el modal o cambia la actividad
+    return () => {
+      console.log("[v0] Limpiando suscripción del modal de participantes")
+      supabase.removeChannel(participantsSubscription)
+    }
+  }, [isOpen, activity?.id, user, userProfile])
+
   const handleAddParticipantToSeries = async (clientId: number, notes?: string) => {
     try {
+      if (addToAllRecurring && recurringActivities.length > 0) {
+        setIsBulkOperationActive(true)
+        setBulkOperationTotal(recurringActivities.length + 1)
+        setBulkOperationProgress(0)
+      }
+
       await onAddParticipant(activity.id, clientId, notes)
+
+      if (addToAllRecurring && recurringActivities.length > 0) {
+        setBulkOperationProgress(1)
+      }
 
       if (addToAllRecurring && recurringActivities.length > 0) {
         console.log(`Añadiendo participante a ${recurringActivities.length} actividades recurrentes`)
 
-        for (const recurringActivity of recurringActivities) {
+        for (let i = 0; i < recurringActivities.length; i++) {
+          const recurringActivity = recurringActivities[i]
           try {
             const { data: existingParticipant } = await supabase
               .from("group_activity_participants")
@@ -208,6 +280,8 @@ export function ParticipantsModal({
                 }
               }
             }
+
+            setBulkOperationProgress(i + 2)
           } catch (error) {
             console.error(`Error añadiendo participante a actividad ${recurringActivity.id}:`, error)
           }
@@ -217,6 +291,10 @@ export function ParticipantsModal({
       await loadParticipants()
       setShowAddModal(false)
       setAddToAllRecurring(false)
+
+      setIsBulkOperationActive(false)
+      setBulkOperationProgress(0)
+      setBulkOperationTotal(0)
 
       if (userProfile?.id && organizationId) {
         console.log("🔄 Sincronizando actividad después de añadir participante desde modal:", activity.id)
@@ -228,6 +306,9 @@ export function ParticipantsModal({
       }
     } catch (error) {
       console.error("Error adding participant:", error)
+      setIsBulkOperationActive(false)
+      setBulkOperationProgress(0)
+      setBulkOperationTotal(0)
       throw error
     }
   }
@@ -333,7 +414,7 @@ export function ParticipantsModal({
 
   return (
     <>
-      <Dialog open={isOpen} onOpenChange={onClose}>
+      <Dialog open={isOpen} onOpenChange={isBulkOperationActive ? () => {} : onClose}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -352,7 +433,27 @@ export function ParticipantsModal({
           </DialogHeader>
 
           <div className="space-y-6">
-            {showRecurringOptions && (
+            {isBulkOperationActive && (
+              <Alert className="border-blue-200 bg-blue-50">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <AlertDescription className="text-blue-800">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">Añadiendo participante a múltiples sesiones...</span>
+                      <span className="text-sm">
+                        {bulkOperationProgress}/{bulkOperationTotal}
+                      </span>
+                    </div>
+                    <Progress value={(bulkOperationProgress / bulkOperationTotal) * 100} className="w-full h-2" />
+                    <p className="text-sm">
+                      ⚠️ No cierres esta ventana hasta que termine el proceso para evitar interrumpir la inserción.
+                    </p>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {showRecurringOptions && !isBulkOperationActive && (
               <Alert className="border-blue-200 bg-blue-50">
                 <Info className="h-4 w-4" />
                 <AlertDescription className="text-blue-800">
@@ -384,7 +485,7 @@ export function ParticipantsModal({
               <h3 className="text-lg font-medium">Lista de Participantes</h3>
               <Button
                 onClick={() => setShowAddModal(true)}
-                disabled={participants.length >= activity.max_participants}
+                disabled={participants.length >= activity.max_participants || isBulkOperationActive}
                 className="bg-blue-600 hover:bg-blue-700"
               >
                 <UserPlus className="h-4 w-4 mr-2" />
@@ -534,8 +635,8 @@ export function ParticipantsModal({
           </div>
 
           <div className="flex justify-end pt-4">
-            <Button variant="outline" onClick={onClose}>
-              Cerrar
+            <Button variant="outline" onClick={onClose} disabled={isBulkOperationActive}>
+              {isBulkOperationActive ? "Procesando..." : "Cerrar"}
             </Button>
           </div>
         </DialogContent>
@@ -545,8 +646,10 @@ export function ParticipantsModal({
         <AddParticipantModal
           isOpen={showAddModal}
           onClose={() => {
-            setShowAddModal(false)
-            setAddToAllRecurring(false)
+            if (!isBulkOperationActive) {
+              setShowAddModal(false)
+              setAddToAllRecurring(false)
+            }
           }}
           onAddParticipant={showRecurringOptions ? handleAddParticipantToSeries : handleAddParticipant}
           organizationId={organizationId}
