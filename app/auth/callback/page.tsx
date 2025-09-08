@@ -23,8 +23,13 @@ export default function AuthCallback() {
         setMessage("Confirmando email...")
         console.log("📩 Iniciando callback...")
 
-        // Obtener tokens del hash
         const hashParams = new URLSearchParams(window.location.hash.substring(1))
+        const urlParams = new URLSearchParams(window.location.search)
+        const callbackType = urlParams.get("type") || hashParams.get("type")
+
+        console.log("🔍 Tipo de callback:", callbackType)
+
+        // Obtener tokens del hash
         const accessToken = hashParams.get("access_token")
         const refreshToken = hashParams.get("refresh_token")
         console.log("🔑 Tokens obtenidos:", { accessToken, refreshToken })
@@ -48,6 +53,16 @@ export default function AuthCallback() {
           console.error("❌ Error estableciendo sesión:", sessionError)
           setStatus("error")
           setMessage("Error al procesar la confirmación")
+          return
+        }
+
+        if (callbackType === "recovery") {
+          console.log("🔄 Callback de recovery - redirigiendo a reset-password")
+          setStatus("success")
+          setMessage("¡Sesión establecida! Redirigiendo para cambiar contraseña...")
+          setTimeout(() => {
+            router.push("/reset-password")
+          }, 1500)
           return
         }
 
@@ -140,7 +155,7 @@ export default function AuthCallback() {
         const organizationName = userMetadata.organization_name || "Mi Organización"
         const userName = userMetadata.name || existingUser?.name || user.email?.split("@")[0] || "Usuario"
         const userPhone = userMetadata.phone || null
-        const taxId = userMetadata.tax_id || "PENDIENTE"   // 👈 CIF/NIF real del registro
+        const taxId = userMetadata.tax_id || "PENDIENTE" // 👈 CIF/NIF real del registro
 
         // Stripe & plan metadata
         const stripeCustomerId = userMetadata.stripe_customer_id || null
@@ -162,7 +177,7 @@ export default function AuthCallback() {
         const { data: orgResult, error: orgError } = await supabase.rpc("create_organization_during_registration", {
           p_name: organizationName,
           p_email: user.email,
-          p_tax_id: taxId,  // 👈 ahora coge el real del metadata
+          p_tax_id: taxId, // 👈 ahora coge el real del metadata
           p_address: "Dirección temporal",
           p_postal_code: "28001",
           p_city: "Madrid",
