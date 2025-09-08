@@ -35,15 +35,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log("🚀 Sending template:", {
-      organizationId,
-      phone,
-      name,
-      templateName,
-      templateParams,
-      deductBalance,
-    })
-
     // 🔍 Buscar cliente
     let client
     const { data: existingClient, error: clientSearchError } = await supabase
@@ -100,7 +91,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 🔍 Buscar conversación activa
-    let conversation
+    let conversation: { id: any }
     const { data: existingConversation, error: conversationSearchError } =
       await supabase
         .from("conversations")
@@ -120,11 +111,33 @@ export async function POST(request: NextRequest) {
           unread_count: 0,
           last_message_at: new Date().toISOString(),
           title: `Conversación con ${client.name}`,
-          id_canales_organization: wabaConfigData.id_canales_organization, // ✅ Guardamos el canal desde el cual se envía
+          id_canales_organization: wabaConfigData.id_canales_organization,
         })
         .select()
         .single()
       conversation = newConversation
+
+      // ⭐ NEW: Asignar todos los usuarios vinculados al WABA
+      const { data: wabaUsers, error: wabaUsersError } = await supabase
+        .from("users_waba")
+        .select("user_id")
+        .eq("waba_id", wabaConfigData.id)
+
+      if (wabaUsersError) {
+        console.error("❌ Error fetching waba users:", wabaUsersError)
+      } else if (wabaUsers?.length) {
+        const conversationUsers = wabaUsers.map((u) => ({
+          conversation_id: conversation.id,
+          user_id: u.user_id,
+        }))
+        const { error: convUsersError } = await supabase
+          .from("users_conversations")
+          .insert(conversationUsers)
+
+        if (convUsersError) {
+          console.error("❌ Error inserting users_conversations:", convUsersError)
+        }
+      }
     } else {
       conversation = existingConversation
     }
@@ -178,8 +191,6 @@ export async function POST(request: NextRequest) {
       throw error
     }
 
-    console.log("📡 Aisensy response:", JSON.stringify(response, null, 2))
-
     const templateButtons =
       tpl?.components?.find((c: any) => c.type === "BUTTONS")?.buttons || []
 
@@ -188,7 +199,7 @@ export async function POST(request: NextRequest) {
       .insert({
         conversation_id: conversation.id,
         sender_type: "agent",
-        user_id: null,
+        user_id: null, // 👈 mensaje enviado “por el sistema”
         content: renderedContent,
         message_type: "text",
         is_read: false,

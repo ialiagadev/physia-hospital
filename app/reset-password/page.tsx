@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useState, useEffect, Suspense } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -20,20 +20,76 @@ function ResetPasswordForm() {
   const [error, setError] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [isValidSession, setIsValidSession] = useState(false)
+  const [isCheckingSession, setIsCheckingSession] = useState(true)
   const router = useRouter()
-  const searchParams = useSearchParams()
 
   useEffect(() => {
-    const code = searchParams.get("code");
-    if (code) {
-      supabase.auth.exchangeCodeForSession(code).catch(() => {
-        setError("El enlace de recuperación no es válido o ha expirado.");
-      });
-    } else {
-      setError("Enlace de recuperación inválido o expirado");
+    const handlePasswordResetSession = async () => {
+      try {
+        console.log("[v0] Checking password reset session...")
+
+        // Obtener tokens del hash de la URL
+        const hashParams = new URLSearchParams(window.location.hash.substring(1))
+        const accessToken = hashParams.get("access_token")
+        const refreshToken = hashParams.get("refresh_token")
+        const type = hashParams.get("type")
+
+        console.log("[v0] URL hash params:", { accessToken: !!accessToken, refreshToken: !!refreshToken, type })
+
+        // Verificar si es un enlace de recovery
+        if (type !== "recovery" || !accessToken) {
+          console.log("[v0] Invalid recovery link - missing tokens or wrong type")
+          setError("Enlace de recuperación inválido o expirado")
+          setIsCheckingSession(false)
+          return
+        }
+
+        // Establecer la sesión con los tokens
+        const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken || "",
+        })
+
+        console.log("[v0] Set session result:", { sessionData: !!sessionData.session, sessionError })
+
+        if (sessionError || !sessionData.session) {
+          console.error("[v0] Error setting session:", sessionError)
+          setError("Error al procesar el enlace de recuperación")
+          setIsCheckingSession(false)
+          return
+        }
+
+        // Verificar que la sesión es válida
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser()
+
+        console.log("[v0] Current user after session:", { user: !!user, userError })
+
+        if (userError || !user) {
+          console.error("[v0] Error getting user:", userError)
+          setError("Sesión inválida")
+          setIsCheckingSession(false)
+          return
+        }
+
+        console.log("[v0] Password reset session established successfully")
+        setIsValidSession(true)
+        setIsCheckingSession(false)
+
+        // Limpiar la URL del hash para mejor UX
+        window.history.replaceState({}, document.title, window.location.pathname)
+      } catch (error) {
+        console.error("[v0] Unexpected error in password reset:", error)
+        setError("Error inesperado al procesar el enlace")
+        setIsCheckingSession(false)
+      }
     }
-  }, [searchParams]);
-  
+
+    handlePasswordResetSession()
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -53,13 +109,17 @@ function ResetPasswordForm() {
     }
 
     try {
+      console.log("[v0] Updating password...")
+
       const { error } = await supabase.auth.updateUser({
         password: password,
       })
 
       if (error) {
+        console.error("[v0] Error updating password:", error)
         setError(error.message)
       } else {
+        console.log("[v0] Password updated successfully")
         setSuccess(true)
         // Redirigir al login después de 3 segundos
         setTimeout(() => {
@@ -67,10 +127,55 @@ function ResetPasswordForm() {
         }, 3000)
       }
     } catch (err: any) {
+      console.error("[v0] Unexpected error updating password:", err)
       setError("Error inesperado: " + err.message)
     } finally {
       setLoading(false)
     }
+  }
+
+  // Mostrar loading mientras verificamos la sesión
+  if (isCheckingSession) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center px-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl">Verificando enlace...</CardTitle>
+          </CardHeader>
+          <CardContent className="text-center">
+            <div className="flex justify-center mb-4">
+              <div className="w-8 h-8 border-2 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+            <p className="text-gray-600">Por favor espera mientras verificamos tu enlace de recuperación.</p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // Mostrar error si la sesión no es válida
+  if (!isValidSession) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center px-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl">Enlace inválido</CardTitle>
+          </CardHeader>
+          <CardContent className="text-center space-y-4">
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+            <p className="text-gray-600">El enlace de recuperación puede haber expirado o ya haber sido usado.</p>
+            <Button
+              onClick={() => router.push("/forgot-password")}
+              className="w-full bg-purple-600 hover:bg-purple-700"
+            >
+              Solicitar nuevo enlace
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   if (success) {
