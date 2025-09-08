@@ -1,7 +1,9 @@
 "use client"
 
+import { useRef } from "react"
+
 import type React from "react"
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -26,6 +28,9 @@ import {
   Repeat,
   Ban,
   CreditCard,
+  Video,
+  Link,
+  RefreshCw,
 } from "lucide-react"
 import { useClients } from "@/hooks/use-clients"
 import { useUsers } from "@/hooks/use-users"
@@ -203,6 +208,8 @@ export function AppointmentFormModal({
         : waitingListEntry?.service_id
           ? Number(waitingListEntry.service_id)
           : null, // ✅ Mantener servicio de lista de espera si existe
+      modalidad: citaExistente?.modalidad || "presencial",
+      virtual_link: citaExistente?.virtual_link || "",
       // 🆕 CAMPOS PARA RECURRENCIA - Añadida opción "daily"
       isRecurring: citaExistente?.isRecurring || false,
       recurrenceType: citaExistente?.recurrenceType || "weekly",
@@ -213,6 +220,19 @@ export function AppointmentFormModal({
         : addMonths(ensureLocalDate(fecha), 3),
     }
   })
+
+  const generateJitsiMeetUrl = () => {
+    const roomName = `physia-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    return `https://meet.jit.si/${roomName}`
+  }
+
+  const handleModalidadChange = (value: "presencial" | "virtual") => {
+    setFormData((prev) => ({
+      ...prev,
+      modalidad: value,
+      virtual_link: value === "virtual" && !prev.virtual_link ? generateJitsiMeetUrl() : prev.virtual_link,
+    }))
+  }
 
   // 🆕 Inicializar campos de cliente nuevo si hay datos existentes
   useEffect(() => {
@@ -806,6 +826,8 @@ export function AppointmentFormModal({
         clienteEncontrado: clienteEncontrado,
         // 🆕 AÑADIR: Datos del cliente nuevo si no existe
         newClientData: newClientData,
+        modalidad: formData.modalidad,
+        virtual_link: formData.virtual_link,
       }
 
       console.log("=== CITA FINAL ===")
@@ -1241,9 +1263,10 @@ export function AppointmentFormModal({
                 Duración (min)
               </Label>
               <Select
-                value={formData.duracion.toString()}
-                onValueChange={(value) => setFormData((prev) => ({ ...prev, duracion: Number.parseInt(value) }))}
-              >
+  value={formData.duracion.toString()}
+  onValueChange={(value) => setFormData((prev) => ({ ...prev, duracion: Number.parseInt(value) }))}
+>
+
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
@@ -1508,6 +1531,66 @@ export function AppointmentFormModal({
                 <p className="text-sm text-gray-600 text-center">No hay consultas configuradas en tu organización</p>
                 <p className="text-xs text-gray-500 text-center mt-1">
                   Las citas se crearán sin asignar consulta específica
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2 text-sm font-medium">
+                <Video className="h-4 w-4" />
+                Modalidad de la cita
+              </Label>
+              {/* Verificando que el Select esté usando onValueChange correctamente */}
+              <Select value={formData.modalidad} onValueChange={handleModalidadChange}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Selecciona la modalidad" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="presencial">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4" />
+                      Presencial
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="virtual">
+                    <div className="flex items-center gap-2">
+                      <Video className="h-4 w-4" />
+                      Virtual (Online)
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {formData.modalidad === "virtual" && (
+              <div className="space-y-2 bg-blue-50 p-4 rounded-lg border border-blue-200">
+                <Label htmlFor="virtual_link" className="flex items-center gap-2 text-sm font-medium text-blue-800">
+                  <Link className="h-4 w-4" />
+                  Enlace de videoconferencia
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="virtual_link"
+                    value={formData.virtual_link}
+                    onChange={(e) => setFormData({ ...formData, virtual_link: e.target.value })}
+                    placeholder="https://meet.jit.si/mi-sala"
+                    className="flex-1"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setFormData({ ...formData, virtual_link: generateJitsiMeetUrl() })}
+                    className="whitespace-nowrap"
+                  >
+                    <RefreshCw className="h-4 w-4 mr-1" />
+                    Generar
+                  </Button>
+                </div>
+                <p className="text-xs text-blue-600">
+                  Se enviará este enlace al cliente para que pueda unirse a la videollamada
                 </p>
               </div>
             )}

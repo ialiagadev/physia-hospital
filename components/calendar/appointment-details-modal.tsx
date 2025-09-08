@@ -308,6 +308,8 @@ export function AppointmentDetailsModal({
         status: editedAppointment.status,
         notes: editedAppointment.notes || null,
         service_id: editedAppointment.service_id, // Puede ser null
+        modalidad: editedAppointment.modalidad, // Puede ser null
+        virtual_link: editedAppointment.virtual_link || null,
         updated_at: new Date().toISOString(),
       }
 
@@ -355,6 +357,8 @@ export function AppointmentDetailsModal({
           consultation: appointment.consultation,
           professional: appointment.professional,
           appointment_type: appointment.appointment_type,
+          modalidad: editedAppointment.modalidad,
+          virtual_link: editedAppointment.virtual_link,
         }
         await onUpdate(basicAppointment)
       } else {
@@ -402,7 +406,7 @@ export function AppointmentDetailsModal({
   }
   const handleDelete = async () => {
     console.log("🚨 handleDelete llamado para cita:", appointment?.id)
-  
+
     setIsDeleting(true)
     try {
       // 🆕 Obtener google_calendar_event_id actualizado desde Supabase
@@ -411,17 +415,17 @@ export function AppointmentDetailsModal({
         .select("google_calendar_event_id")
         .eq("id", appointment.id)
         .single()
-  
+
       const calendarEventId = citaActualizada?.google_calendar_event_id
       const professionalId = appointment?.professional_id
       const orgId = userProfile?.organization_id
-  
+
       console.log("🔍 Intentando eliminar de Google Calendar:", {
         eventId: calendarEventId,
         professionalId,
         organizationId: orgId,
       })
-  
+
       // Solo eliminar si tenemos todos los datos
       if (calendarEventId && professionalId && orgId) {
         try {
@@ -436,7 +440,7 @@ export function AppointmentDetailsModal({
               organizationId: orgId,
             }),
           })
-  
+
           const result = await response.json()
           if (!response.ok && response.status !== 404) {
             console.warn("❌ Fallo al eliminar de Google Calendar:", result)
@@ -449,11 +453,11 @@ export function AppointmentDetailsModal({
       } else {
         console.log("⚠️ No se elimina de Google Calendar: falta algún dato obligatorio")
       }
-  
+
       // Eliminar en Supabase después de la sincronización
       await onDelete(appointment.id)
       console.log("✅ Cita eliminada de Supabase")
-  
+
       setShowDeleteDialog(false)
       onClose()
     } catch (error) {
@@ -464,9 +468,7 @@ export function AppointmentDetailsModal({
       setShowDeleteDialog(false)
     }
   }
-  
-  
-  
+
   const handleCancel = () => {
     setEditedAppointment(appointment)
     setIsEditing(false)
@@ -861,6 +863,41 @@ export function AppointmentDetailsModal({
                     )}
                   </div>
 
+                  {/* MODALIDAD - Display and editing */}
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-medium text-gray-700">Modalidad:</span>
+                    {isEditing ? (
+                      <Select
+                        value={editedAppointment.modalidad}
+                        onValueChange={(value) =>
+                          setEditedAppointment({
+                            ...editedAppointment,
+                            modalidad: value as "presencial" | "virtual",
+                          })
+                        }
+                      >
+                        <SelectTrigger className="h-8 text-sm w-32">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="presencial">Presencial</SelectItem>
+                          <SelectItem value="virtual">Virtual</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Badge
+                        variant="outline"
+                        className={
+                          appointment.modalidad === "virtual"
+                            ? "bg-blue-100 text-blue-800 border-blue-200"
+                            : "bg-gray-100 text-gray-800 border-gray-200"
+                        }
+                      >
+                        {appointment.modalidad === "virtual" ? "Virtual" : "Presencial"}
+                      </Badge>
+                    )}
+                  </div>
+
                   {/* MOTIVO DE CONSULTA - Solo mostrar si existe */}
                   {appointment.motivo_consulta && (
                     <div className="flex items-center gap-2">
@@ -954,6 +991,48 @@ export function AppointmentDetailsModal({
                         )}
                       </div>
                     </div>
+                  </div>
+                )}
+
+                {/* SECCIÓN 6: ENLACE VIRTUAL - Solo si la modalidad es virtual */}
+                {(appointment.modalidad === "virtual" || (isEditing && editedAppointment.modalidad === "virtual")) && (
+                  <div className="flex items-center gap-4 p-3 bg-blue-50 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-gray-700">Enlace Virtual:</span>
+                    </div>
+                    {isEditing ? (
+                      <div className="flex-1">
+                        <Input
+                          type="url"
+                          value={editedAppointment.virtual_link || ""}
+                          onChange={(e) =>
+                            setEditedAppointment({
+                              ...editedAppointment,
+                              virtual_link: e.target.value,
+                            })
+                          }
+                          placeholder="https://meet.jit.si/sala-ejemplo"
+                          className="h-8 text-sm"
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex-1">
+                        {appointment.virtual_link ? (
+                          <a
+                            href={appointment.virtual_link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-800 underline text-sm"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {appointment.virtual_link}
+                          </a>
+                        ) : (
+                          <span className="text-sm text-gray-500">Sin enlace configurado</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

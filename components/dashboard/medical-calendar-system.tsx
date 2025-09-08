@@ -425,7 +425,6 @@ const MedicalCalendarSystem: React.FC = () => {
       setUsuariosSeleccionados(users.map((u) => u.id))
     }
   }, [users, usuariosSeleccionados.length])
-  
 
   // 🚀 OPTIMIZADO: Navegación de fechas
   const navigateDate = useCallback(
@@ -575,6 +574,8 @@ const MedicalCalendarSystem: React.FC = () => {
           notes: appointmentData.notas || undefined,
           created_by: currentUser.id,
           service_id: appointmentData.service_id || null,
+          modalidad: appointmentData.modalidad || "presencial",
+          virtual_link: appointmentData.virtual_link || null,
           // Campos de recurrencia
           is_recurring: appointmentData.isRecurring || false,
           recurrence_type: appointmentData.isRecurring ? appointmentData.recurrenceType || "weekly" : null,

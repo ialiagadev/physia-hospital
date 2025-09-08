@@ -141,6 +141,11 @@ export async function POST(request: NextRequest, { params }: { params: { organiz
 
     // Crear cita
     console.log("➕ Creating appointment...")
+    const isOrg68 = organizationId === 68
+    const virtualLink = isOrg68
+      ? `https://meet.jit.si/physia-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+      : null
+
     const { data: appointment, error: appointmentError } = await supabaseAdmin
       .from("appointments")
       .insert({
@@ -158,6 +163,8 @@ export async function POST(request: NextRequest, { params }: { params: { organiz
         user_id: professionalId,
         created_by: professionalId,
         is_group_activity: false,
+        modalidad: isOrg68 ? "virtual" : "presencial",
+        virtual_link: virtualLink,
       })
       .select(`
         id,
@@ -167,6 +174,8 @@ export async function POST(request: NextRequest, { params }: { params: { organiz
         duration,
         status,
         notes,
+        modalidad,
+        virtual_link,
         professional:users!appointments_professional_id_fkey(name),
         service:services(name),
         client:clients(name, phone, email)

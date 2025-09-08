@@ -12,6 +12,8 @@ export interface AppointmentUpdate {
   appointment_type_id?: number
   consultation_id?: string
   service_id?: number
+  modalidad?: "presencial" | "virtual"
+  virtual_link?: string | null
   // 🆕 CAMPOS DE GOOGLE CALENDAR
   google_calendar_event_id?: string | null
   synced_with_google?: boolean | null
@@ -104,6 +106,8 @@ export interface Database {
           updated_at: string
           created_by: string
           service_id: number | null
+          modalidad: "presencial" | "virtual"
+          virtual_link: string | null
           // 🆕 CAMPOS DE GOOGLE CALENDAR
           google_calendar_event_id: string | null
           synced_with_google: boolean | null
@@ -133,6 +137,8 @@ export interface Database {
           updated_at?: string
           created_by: string
           service_id?: number | null
+          modalidad?: "presencial" | "virtual"
+          virtual_link?: string | null
           // 🆕 CAMPOS DE GOOGLE CALENDAR
           google_calendar_event_id?: string | null
           synced_with_google?: boolean | null
@@ -162,6 +168,8 @@ export interface Database {
           updated_at?: string
           created_by?: string
           service_id?: number | null
+          modalidad?: "presencial" | "virtual"
+          virtual_link?: string | null
           // 🆕 CAMPOS DE GOOGLE CALENDAR
           google_calendar_event_id?: string | null
           synced_with_google?: boolean | null
@@ -246,6 +254,8 @@ export interface AppointmentWithDetails {
   updated_at: string
   created_by: string
   service_id: number | null
+  modalidad: "presencial" | "virtual"
+  virtual_link: string | null
   // 🆕 CAMPOS DE GOOGLE CALENDAR
   google_calendar_event_id: string | null
   synced_with_google: boolean | null
@@ -283,6 +293,8 @@ export interface AppointmentInsert {
   notes?: string | null
   created_by: string
   service_id?: number | null
+  modalidad?: "presencial" | "virtual"
+  virtual_link?: string | null
   // 🆕 CAMPOS DE GOOGLE CALENDAR
   google_calendar_event_id?: string | null
   synced_with_google?: boolean | null
@@ -460,6 +472,8 @@ export interface Cita {
   clienteEncontrado?: ClientMatch // Añadir esta línea
   // 🆕 DATOS DE CLIENTE NUEVO
   newClientData?: NewClientData
+  modalidad?: "presencial" | "virtual"
+  virtual_link?: string | null
 }
 
 // NUEVO: Tipo para múltiples descansos
