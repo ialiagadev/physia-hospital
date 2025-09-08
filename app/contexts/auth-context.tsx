@@ -47,11 +47,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // 🚨 Excepción: no validar sesión inmediatamente en /reset-password
-    if (pathname.startsWith("/reset-password")) {
-      console.log("⏭ Saltando validación inicial en reset-password")
+    if (
+      pathname.startsWith("/reset-password") ||
+      pathname.startsWith("/invite-callback")
+    ) {
+      console.log("⏭ Saltando validación inicial en", pathname)
       setIsLoading(false)
       return
     }
+    
 
     // 🚀 PREVENIR DOBLE INICIALIZACIÓN
     if (isInitializedRef.current) {
