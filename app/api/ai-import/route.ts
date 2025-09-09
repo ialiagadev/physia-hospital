@@ -1,10 +1,10 @@
-import { NextRequest, NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
 import { generateObject, generateText } from "ai"
 import { openai } from "@ai-sdk/openai"
 import { z } from "zod"
 import * as XLSX from "xlsx"
-import { parsePhoneNumber, isValidPhoneNumber } from 'libphonenumber-js'
-import type { CountryCode } from 'libphonenumber-js'
+import { parsePhoneNumber, isValidPhoneNumber } from "libphonenumber-js"
+import type { CountryCode } from "libphonenumber-js"
 
 // Schema para validar el mapeo de columnas
 const ColumnMappingSchema = z.object({
@@ -26,75 +26,75 @@ const ColumnMappingSchema = z.object({
 
 // ✅ Función para extraer teléfono y prefijo usando libphonenumber-js
 function extractPhoneAndPrefix(
-  phone: string, 
-  defaultCountry: CountryCode = 'ES'
-): { 
-  phone: string; 
-  prefix: string; 
-  isValid: boolean; 
-  country?: CountryCode;
-  formatted?: string;
+  phone: string,
+  defaultCountry: CountryCode = "ES",
+): {
+  phone: string
+  prefix: string
+  isValid: boolean
+  country?: CountryCode
+  formatted?: string
 } {
   if (!phone) return { phone: "", prefix: "+34", isValid: false }
-  
+
   try {
     // Intentar parsear con país por defecto
     let phoneNumber = parsePhoneNumber(phone, defaultCountry)
-    
+
     // Si no funciona, intentar sin país por defecto
     if (!phoneNumber) {
       phoneNumber = parsePhoneNumber(phone)
     }
-    
+
     if (phoneNumber) {
       return {
         phone: phoneNumber.nationalNumber,
         prefix: `+${phoneNumber.countryCallingCode}`,
         isValid: phoneNumber.isValid(),
         country: phoneNumber.country,
-        formatted: phoneNumber.format('INTERNATIONAL')
+        formatted: phoneNumber.format("INTERNATIONAL"),
       }
     }
   } catch (error) {
     console.warn(`Error parsing phone ${phone}:`, error)
   }
-  
+
   // Fallback manual para casos edge
   const cleanPhone = phone.replace(/[\s\-()]/g, "").trim()
-  
-  if (cleanPhone.startsWith('+34')) {
+
+  if (cleanPhone.startsWith("+34")) {
     return {
       phone: cleanPhone.substring(3),
-      prefix: '+34',
+      prefix: "+34",
       isValid: false,
-      country: 'ES'
+      country: "ES",
     }
   }
-  
-  if (cleanPhone.startsWith('+1')) {
+
+  if (cleanPhone.startsWith("+1")) {
     return {
       phone: cleanPhone.substring(2),
-      prefix: '+1',
+      prefix: "+1",
       isValid: false,
-      country: 'US'
+      country: "US",
     }
   }
-  
-  if (cleanPhone.startsWith('+33')) {
+
+  if (cleanPhone.startsWith("+33")) {
     return {
       phone: cleanPhone.substring(3),
-      prefix: '+33',
+      prefix: "+33",
       isValid: false,
-      country: 'FR'
+      country: "FR",
     }
   }
-  
+
   // Por defecto España
-  return { 
-    phone: cleanPhone, 
-    prefix: "+34", 
+  return {
+    phone: cleanPhone,
+    prefix: "+34",
     isValid: false,
-    country: 'ES'
+    country: "ES",
   }
 }
 
@@ -113,24 +113,24 @@ function isValidPhone(phone: string, country?: CountryCode): boolean {
 // ✅ Función para normalizar teléfono para detectar duplicados
 function normalizePhoneForDuplicateCheck(phone: string, prefix: string): string {
   try {
-    const fullPhone = prefix.startsWith('+') ? `${prefix}${phone}` : `+${prefix}${phone}`
+    const fullPhone = prefix.startsWith("+") ? `${prefix}${phone}` : `+${prefix}${phone}`
     const phoneNumber = parsePhoneNumber(fullPhone)
     if (phoneNumber) {
-      return phoneNumber.format('E.164')
+      return phoneNumber.format("E.164")
     }
   } catch {
     // Fallback manual
   }
-  
+
   const cleanPhone = phone.replace(/[\s\-()]/g, "").trim()
-  const cleanPrefix = prefix.startsWith('+') ? prefix : `+${prefix}`
+  const cleanPrefix = prefix.startsWith("+") ? prefix : `+${prefix}`
   return `${cleanPrefix}${cleanPhone}`
 }
 
 // Función para limpiar texto con problemas de encoding
 function cleanText(text: string): string {
   if (!text) return text
-  
+
   return text
     .replace(/Ã±/g, "ñ")
     .replace(/Ã¡/g, "á")
@@ -157,21 +157,21 @@ function cleanText(text: string): string {
 // Función para normalizar código postal
 function normalizePostalCode(postalCode: string): string {
   let cleaned = postalCode.replace(/[^\d]/g, "").trim()
-  
+
   if (cleaned.length <= 5 && cleaned.length >= 3) {
     cleaned = cleaned.padStart(5, "0")
   }
-  
+
   return cleaned
 }
 
 // Función para normalizar fecha de nacimiento
 function normalizeBirthDate(dateStr: string): string | null {
   if (!dateStr) return null
-  
+
   try {
     const cleanDate = dateStr.toString().trim()
-    
+
     // Si es un número (Excel serial date)
     if (!isNaN(Number(cleanDate))) {
       const excelDate = new Date((Number(cleanDate) - 25569) * 86400 * 1000)
@@ -179,13 +179,13 @@ function normalizeBirthDate(dateStr: string): string | null {
         return excelDate.toISOString().split("T")[0]
       }
     }
-    
+
     // Intentar parsear como fecha normal
     const date = new Date(cleanDate)
     if (!isNaN(date.getTime()) && date.getFullYear() > 1900 && date.getFullYear() < 2100) {
       return date.toISOString().split("T")[0]
     }
-    
+
     // Intentar formato DD/MM/YYYY o DD-MM-YYYY
     const dateRegex = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/
     const match = cleanDate.match(dateRegex)
@@ -196,7 +196,7 @@ function normalizeBirthDate(dateStr: string): string | null {
         return parsedDate.toISOString().split("T")[0]
       }
     }
-    
+
     return null
   } catch {
     return null
@@ -206,27 +206,31 @@ function normalizeBirthDate(dateStr: string): string | null {
 // Función para normalizar género
 function normalizeGender(gender: string): string | null {
   if (!gender) return null
-  
+
   const cleanGender = gender.toString().toLowerCase().trim()
-  
-  if (cleanGender.includes("masculino") ||
-      cleanGender.includes("hombre") ||
-      cleanGender === "m" ||
-      cleanGender === "male") {
+
+  if (
+    cleanGender.includes("masculino") ||
+    cleanGender.includes("hombre") ||
+    cleanGender === "m" ||
+    cleanGender === "male"
+  ) {
     return "male"
   }
-  
-  if (cleanGender.includes("femenino") ||
-      cleanGender.includes("mujer") ||
-      cleanGender === "f" ||
-      cleanGender === "female") {
+
+  if (
+    cleanGender.includes("femenino") ||
+    cleanGender.includes("mujer") ||
+    cleanGender === "f" ||
+    cleanGender === "female"
+  ) {
     return "female"
   }
-  
+
   if (cleanGender.includes("otro") || cleanGender === "other" || cleanGender === "o") {
     return "other"
   }
-  
+
   return null
 }
 
@@ -235,7 +239,7 @@ function isValidTaxId(taxId: string): boolean {
   if (taxId.length < 3 || taxId.length > 20) {
     return false
   }
-  
+
   const patterns = [
     // España: NIF/CIF/NIE
     /^[A-Z]?\d{8}[A-Z]?$/,
@@ -252,7 +256,7 @@ function isValidTaxId(taxId: string): boolean {
     // Genérico: Solo letras y números
     /^[A-Z0-9]+$/,
   ]
-  
+
   return patterns.some((pattern) => pattern.test(taxId.toUpperCase()))
 }
 
@@ -260,7 +264,7 @@ function isValidTaxId(taxId: string): boolean {
 function generateErrorCSV(invalidRows: string[], headers: string[], originalData: string[][]): string {
   const csvHeaders = ["Fila", "Error", ...headers]
   const csvRows = [csvHeaders.join(",")]
-  
+
   invalidRows.forEach((error) => {
     const rowMatch = error.match(/Fila (\d+):/)
     if (rowMatch) {
@@ -276,57 +280,116 @@ function generateErrorCSV(invalidRows: string[], headers: string[], originalData
       csvRows.push(csvRow.join(","))
     }
   })
-  
+
   return csvRows.join("\n")
 }
 
 export async function POST(request: NextRequest) {
   try {
+    console.log("[v0] Iniciando procesamiento de archivo CSV")
+
     const formData = await request.formData()
     const file = formData.get("file") as File
-    
+
     if (!file) {
+      console.log("[v0] Error: No se proporcionó archivo")
       return NextResponse.json({ error: "No se proporcionó ningún archivo" }, { status: 400 })
     }
-    
+
+    console.log("[v0] Archivo recibido:", { name: file.name, size: file.size, type: file.type })
+
+    if (file.size > 10 * 1024 * 1024) {
+      console.log("[v0] Error: Archivo demasiado grande:", file.size)
+      return NextResponse.json({ error: "El archivo es demasiado grande. Máximo 10MB permitido." }, { status: 400 })
+    }
+
+    const allowedTypes = [
+      "text/csv",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ]
+
+    if (!allowedTypes.includes(file.type) && !file.name.match(/\.(csv|xlsx|xls)$/i)) {
+      console.log("[v0] Error: Tipo de archivo no soportado:", file.type)
+      return NextResponse.json(
+        {
+          error: "Tipo de archivo no soportado. Use CSV, XLS o XLSX.",
+        },
+        { status: 400 },
+      )
+    }
+
     // Leer el archivo con mejor manejo de encoding
     const buffer = await file.arrayBuffer()
-    const workbook = XLSX.read(buffer, {
-      type: "buffer",
-      codepage: 65001, // UTF-8
-      cellText: false,
-      cellDates: true,
-    })
-    
+    console.log("[v0] Buffer leído, tamaño:", buffer.byteLength)
+
+    let workbook
+    try {
+      workbook = XLSX.read(buffer, {
+        type: "buffer",
+        codepage: 65001, // UTF-8
+        cellText: false,
+        cellDates: true,
+      })
+      console.log("[v0] Workbook leído exitosamente, hojas:", workbook.SheetNames)
+    } catch (xlsxError) {
+      console.log("[v0] Error al leer archivo XLSX:", xlsxError)
+      return NextResponse.json(
+        {
+          error: "Error al leer el archivo. Verifique que no esté corrupto y que sea un archivo Excel/CSV válido.",
+        },
+        { status: 400 },
+      )
+    }
+
     const sheetName = workbook.SheetNames[0]
     const worksheet = workbook.Sheets[sheetName]
-    
+
     // Convertir a JSON con mejor manejo de texto
     const jsonData = XLSX.utils.sheet_to_json(worksheet, {
       header: 1,
       defval: "",
       blankrows: false,
     }) as string[][]
-    
+
+    console.log("[v0] Datos JSON extraídos, filas totales:", jsonData.length)
+
     if (jsonData.length === 0) {
+      console.log("[v0] Error: Archivo vacío")
       return NextResponse.json({ error: "El archivo está vacío" }, { status: 400 })
     }
-    
+
     // Obtener las cabeceras (primera fila) y limpiar encoding
     const headers = jsonData[0].map((header) => cleanText(header?.toString() || ""))
     const dataRows = jsonData.slice(1).filter((row) => row.some((cell) => cell && cell.toString().trim() !== ""))
-    
+
+    console.log("[v0] Headers encontrados:", headers)
+    console.log("[v0] Filas de datos válidas:", dataRows.length)
+
     if (dataRows.length === 0) {
+      console.log("[v0] Error: No hay datos válidos")
       return NextResponse.json({ error: "No se encontraron datos válidos en el archivo" }, { status: 400 })
     }
-    
+
+    if (headers.length < 3) {
+      console.log("[v0] Error: Muy pocas columnas:", headers.length)
+      return NextResponse.json(
+        {
+          error: "El archivo debe tener al menos 3 columnas (nombre, identificación fiscal, teléfono)",
+        },
+        { status: 400 },
+      )
+    }
+
+    console.log("[v0] Preparando prompt para IA...")
+
     // Crear un prompt para que la IA analice las cabeceras
     const headersText = headers.join(", ")
     const sampleRows = dataRows
       .slice(0, 3)
       .map((row) => headers.map((header, index) => `${header}: ${cleanText(row[index]?.toString() || "")}`).join(", "))
       .join("\n")
-    
+
     const prompt = `Analiza las siguientes cabeceras de un archivo Excel/CSV y mapéalas a los campos estándar de cliente:
 
 Cabeceras disponibles: ${headersText}
@@ -357,46 +420,73 @@ IMPORTANTE:
 - Si el teléfono incluye prefijo internacional, se extraerá automáticamente
 
 Devuelve el mapeo de cada campo estándar a la cabecera original correspondiente.`
-    
+
     // Usar IA para mapear las columnas
-    const { object: mapping } = await generateObject({
-      model: openai("gpt-4o"),
-      prompt,
-      schema: ColumnMappingSchema,
-    })
-    
+    let mapping
+    try {
+      console.log("[v0] Enviando prompt a OpenAI...")
+      const result = await generateObject({
+        model: openai("gpt-4o"),
+        prompt,
+        schema: ColumnMappingSchema,
+      })
+      mapping = result.object
+      console.log("[v0] Mapeo recibido de IA:", mapping)
+    } catch (aiError) {
+      console.error("[v0] Error en análisis de IA:", aiError)
+      return NextResponse.json(
+        {
+          error:
+            "Error al analizar las columnas del archivo. Verifique que las cabeceras estén en español o inglés y sean descriptivas.",
+        },
+        { status: 400 },
+      )
+    }
+
+    // Añadir validación de que se hayan mapeado campos críticos
+    if (!mapping.name && !mapping.phone) {
+      console.log("[v0] Error: Campos críticos no mapeados")
+      return NextResponse.json(
+        {
+          error:
+            "No se pudieron identificar las columnas básicas (nombre, teléfono). Verifique que las cabeceras sean descriptivas.",
+        },
+        { status: 400 },
+      )
+    }
+
     // Procesar los datos usando el mapeo
     const processedData: any[] = []
     const invalidRows: string[] = []
     const duplicateTracker = new Set<string>() // Para detectar duplicados por Tax ID
     const phoneTracker = new Set<string>() // Para detectar duplicados por teléfono completo
     let duplicateCount = 0
-    
+
     for (let i = 0; i < dataRows.length; i++) {
       const row = dataRows[i]
       const client: any = {}
       const rowNumber = i + 2 // +2 porque empezamos desde la fila 1 y las filas en Excel empiezan en 1
-      
+
       // Mapear cada campo usando el mapeo de IA
       Object.entries(mapping).forEach(([standardField, originalHeader]) => {
         if (originalHeader) {
           const columnIndex = headers.indexOf(originalHeader)
           if (columnIndex !== -1 && row[columnIndex]) {
             let value = cleanText(row[columnIndex].toString().trim())
-            
+
             // Procesar campos específicos
             if (standardField === "tax_id" && value) {
               // Mantener normalización básica del tax_id
               value = value.replace(/[-\s]/g, "").toUpperCase().trim()
             } else if (standardField === "phone" && value) {
               // ✅ Extraer teléfono y prefijo automáticamente usando libphonenumber-js
-              const phoneResult = extractPhoneAndPrefix(value, 'ES')
+              const phoneResult = extractPhoneAndPrefix(value, "ES")
               client.phone = phoneResult.phone
               client.phone_prefix = phoneResult.prefix
               client.phone_country = phoneResult.country
               client.phone_is_valid = phoneResult.isValid
               client.phone_formatted = phoneResult.formatted
-              
+
               // Solo asignar prefijo si no se mapeó específicamente
               if (!mapping.phone_prefix) {
                 client.phone_prefix = phoneResult.prefix
@@ -411,14 +501,15 @@ Devuelve el mapeo de cada campo estándar a la cabecera original correspondiente
               value = normalizePostalCode(value)
             } else if (standardField === "client_type" && value) {
               const lowerValue = value.toLowerCase()
-              value = lowerValue.includes("público") ||
-                      lowerValue.includes("public") ||
-                      lowerValue.includes("ayuntamiento") ||
-                      lowerValue.includes("gobierno") ||
-                      lowerValue.includes("administracion") ||
-                      lowerValue.includes("administración")
-                ? "public"
-                : "private"
+              value =
+                lowerValue.includes("público") ||
+                lowerValue.includes("public") ||
+                lowerValue.includes("ayuntamiento") ||
+                lowerValue.includes("gobierno") ||
+                lowerValue.includes("administracion") ||
+                lowerValue.includes("administración")
+                  ? "public"
+                  : "private"
             } else if (standardField === "birth_date" && value) {
               const normalizedDate = normalizeBirthDate(value)
               value = normalizedDate || ""
@@ -426,14 +517,14 @@ Devuelve el mapeo de cada campo estándar a la cabecera original correspondiente
               const normalizedGender = normalizeGender(value)
               value = normalizedGender || ""
             }
-            
+
             if (value && value !== "") {
               client[standardField] = value
             }
           }
         }
       })
-      
+
       // Combinar nombre y apellidos si ambos existen
       if (client.name && client.last_name) {
         client.name = `${client.name} ${client.last_name}`.trim()
@@ -443,54 +534,39 @@ Devuelve el mapeo de cada campo estándar a la cabecera original correspondiente
         client.name = client.last_name
         delete client.last_name
       }
-      
+
       // ✅ Asegurar que hay prefijo por defecto
       if (!client.phone_prefix && client.phone) {
         client.phone_prefix = "+34" // Por defecto España
       }
-      
-      // Validar campos obligatorios
-// Validar nombre (obligatorio y al menos dos palabras)
-if (!client.name) {
-  invalidRows.push(`Fila ${rowNumber}: Falta el campo obligatorio (nombre completo)`)
-  continue
-} else {
-  const words = client.name.trim().split(/\s+/)
-  if (words.length < 2) {
-    invalidRows.push(`Fila ${rowNumber}: El nombre debe incluir al menos nombre y apellido`)
-    continue
-  }
-}
 
-
-      
-      // Teléfono obligatorio
-      if (!client.phone) {
-        invalidRows.push(`Fila ${rowNumber}: El teléfono es obligatorio`)
+      if (!client.name || client.name.trim() === "") {
+        invalidRows.push(`Fila ${rowNumber}: El nombre es obligatorio y no puede estar vacío`)
         continue
       }
-      
-      // Validar formato de Tax ID
-      if (!isValidTaxId(client.tax_id)) {
+
+      // Teléfono obligatorio
+      if (!client.phone || client.phone.trim() === "") {
+        invalidRows.push(`Fila ${rowNumber}: El teléfono es obligatorio y no puede estar vacío`)
+        continue
+      }
+
+      if (client.tax_id && client.tax_id.trim() !== "" && !isValidTaxId(client.tax_id)) {
         invalidRows.push(`Fila ${rowNumber}: La identificación fiscal "${client.tax_id}" no tiene un formato válido`)
         continue
       }
-      
-      // ✅ Validar formato de teléfono usando libphonenumber-js
-      const fullPhoneForValidation = `${client.phone_prefix}${client.phone}`
-      if (!isValidPhone(fullPhoneForValidation)) {
-        invalidRows.push(`Fila ${rowNumber}: El teléfono "${fullPhoneForValidation}" no tiene un formato válido`)
-        continue
+
+      if (client.tax_id && client.tax_id.trim() !== "") {
+        if (duplicateTracker.has(client.tax_id)) {
+          invalidRows.push(
+            `Fila ${rowNumber}: La identificación fiscal "${client.tax_id}" está duplicada en el archivo`,
+          )
+          duplicateCount++
+          continue
+        }
+        duplicateTracker.add(client.tax_id)
       }
-      
-      // Detectar duplicados por Tax ID
-      if (duplicateTracker.has(client.tax_id)) {
-        invalidRows.push(`Fila ${rowNumber}: La identificación fiscal "${client.tax_id}" está duplicada en el archivo`)
-        duplicateCount++
-        continue
-      }
-      duplicateTracker.add(client.tax_id)
-      
+
       // ✅ Detectar duplicados por teléfono completo usando normalización
       const normalizedFullPhone = normalizePhoneForDuplicateCheck(client.phone, client.phone_prefix)
       if (phoneTracker.has(normalizedFullPhone)) {
@@ -499,21 +575,21 @@ if (!client.name) {
         continue
       }
       phoneTracker.add(normalizedFullPhone)
-      
+
       // Aplicar valores por defecto
       client.country = client.country || "España"
       client.client_type = client.client_type || "private"
-      
+
       // Limpiar campos opcionales
       Object.keys(client).forEach((key) => {
         if (client[key] === "" || client[key] === null || client[key] === undefined) {
           client[key] = null
         }
       })
-      
+
       processedData.push(client)
     }
-    
+
     // Lookup de códigos postales a ciudades usando IA
     if (processedData.length > 0) {
       // Obtener códigos postales únicos que NO tengan ciudad o tengan ciudad vacía/null
@@ -524,9 +600,9 @@ if (!client.name) {
           return hasPostalCode && needsCity
         })
         .map((client) => client.postal_code.toString().trim())
-      
+
       const uniquePostalCodes = [...new Set(postalCodesNeedingCity)]
-      
+
       if (uniquePostalCodes.length > 0) {
         try {
           const postalCodePrompt = `Eres un experto en códigos postales españoles e internacionales. Analiza estos códigos postales y devuelve la ciudad correspondiente para cada uno:
@@ -555,12 +631,12 @@ Formato de respuesta:
 {"03010": "Alicante", "28001": "Madrid", "08001": "Barcelona"}
 
 IMPORTANTE: Solo incluye códigos postales que reconozcas con alta certeza.`
-          
+
           const { text } = await generateText({
             model: openai("gpt-4o"),
             prompt: postalCodePrompt,
           })
-          
+
           // Intentar parsear la respuesta JSON
           let cityMapping: Record<string, string> = {}
           try {
@@ -584,7 +660,7 @@ IMPORTANTE: Solo incluye códigos postales que reconozcas con alta certeza.`
               // Silenciar errores de parseo
             }
           }
-          
+
           // Aplicar el mapeo de ciudades a los datos
           processedData.forEach((client) => {
             const postalCode = client.postal_code?.toString().trim()
@@ -598,13 +674,25 @@ IMPORTANTE: Solo incluye códigos postales que reconozcas con alta certeza.`
         }
       }
     }
-    
+
+    if (processedData.length === 0) {
+      console.log("[v0] Error: No hay registros válidos")
+      return NextResponse.json(
+        {
+          error:
+            "No se encontraron registros válidos en el archivo. Revise que los datos cumplan con los requisitos mínimos.",
+          details: invalidRows.slice(0, 10), // Mostrar primeros 10 errores
+        },
+        { status: 400 },
+      )
+    }
+
     // Generar CSV de errores si hay errores
     let errorCSV = null
     if (invalidRows.length > 0) {
       errorCSV = generateErrorCSV(invalidRows, headers, dataRows)
     }
-    
+
     return NextResponse.json({
       mapping,
       data: processedData,
@@ -616,6 +704,34 @@ IMPORTANTE: Solo incluye códigos postales que reconozcas con alta certeza.`
       errorCSV, // CSV de errores
     })
   } catch (error) {
+    console.error("[v0] Error general en API:", error)
+
+    if (error instanceof Error) {
+      console.error("[v0] Detalles del error:", {
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+      })
+
+      if (error.message.includes("fetch")) {
+        return NextResponse.json(
+          {
+            error: "Error de conexión con el servicio de análisis. Inténtelo de nuevo.",
+          },
+          { status: 500 },
+        )
+      }
+
+      if (error.message.includes("API key")) {
+        return NextResponse.json(
+          {
+            error: "Error de configuración del servicio. Contacte al administrador.",
+          },
+          { status: 500 },
+        )
+      }
+    }
+
     return NextResponse.json(
       {
         error: `Error al procesar el archivo: ${error instanceof Error ? error.message : "Error desconocido"}`,

@@ -363,7 +363,7 @@ export function ConversationProfilePanel({
         return
       }
 
-      const { data, error } = await supabase
+      const { data: conversationTagData, error: insertError } = await supabase
         .from("conversation_tags")
         .insert({
           tag_id: orgTag.id,
@@ -374,14 +374,14 @@ export function ConversationProfilePanel({
         .select()
         .single()
 
-      if (error) throw error
+      if (insertError) throw insertError
 
       const newTagWithDetails: ConversationTagWithDetails = {
-        id: data.id,
+        id: conversationTagData.id,
         tag_id: orgTag.id,
         tag_name: orgTag.tag_name,
         color: orgTag.color,
-        created_at: data.created_at,
+        created_at: conversationTagData.created_at,
       }
 
       setSelectedTags((prev) => [newTagWithDetails, ...prev])
@@ -464,7 +464,7 @@ export function ConversationProfilePanel({
         return
       }
 
-      const { data, error } = await supabase
+      const { data: conversationTagData, error: insertError } = await supabase
         .from("conversation_tags")
         .insert({
           tag_id: orgTag.id,
@@ -475,14 +475,14 @@ export function ConversationProfilePanel({
         .select()
         .single()
 
-      if (error) throw error
+      if (insertError) throw insertError
 
       const newTagWithDetails: ConversationTagWithDetails = {
-        id: data.id,
+        id: conversationTagData.id,
         tag_id: orgTag.id,
         tag_name: orgTag.tag_name,
         color: orgTag.color,
-        created_at: data.created_at,
+        created_at: conversationTagData.created_at,
       }
 
       setSelectedTags((prev) => [newTagWithDetails, ...prev])
@@ -508,6 +508,8 @@ export function ConversationProfilePanel({
   }
 
   const handleRemoveTag = async (assignmentId: string) => {
+    if (!conversation?.id || !userProfile?.organization_id) return
+
     setTagsLoading(true)
     try {
       const { error } = await supabase.from("conversation_tags").delete().eq("id", assignmentId)
@@ -597,7 +599,7 @@ export function ConversationProfilePanel({
                     </AvatarFallback>
                   </Avatar>
                   <div>
-                    <p className="text-sm font-medium">{clientName}</p>
+                    <p className="text-sm font-medium truncate">{clientName}</p>
                     <p className="text-xs text-gray-500">Cliente</p>
                   </div>
                 </div>

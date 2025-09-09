@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Settings } from "lucide-react"
+import { Settings, Tag } from "lucide-react"
 import ChatList from "@/components/chat-list"
 import ConversationWindow from "@/components/conversation-window"
 import { useAuth } from "@/app/contexts/auth-context"
@@ -27,6 +27,10 @@ export default function ChatPage() {
 
   const handleConfigureNumber = () => {
     router.push("/dashboard/canales/1")
+  }
+
+  const handleEtiquetas = () => {
+    router.push("/dashboard/etiquetas")
   }
 
   if (isLoading) {
@@ -67,8 +71,30 @@ export default function ChatPage() {
           </Button>
 
           {userProfile?.organization_id && hasActiveWabas && (
-            <WhatsAppProfileModal organizationId={userProfile.organization_id} />
+            <WhatsAppProfileModal
+              organizationId={userProfile.organization_id}
+              trigger={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full flex items-center gap-2 bg-transparent border border-blue-500 text-blue-500 hover:bg-blue-50"
+                >
+                  <Settings className="h-4 w-4" />
+                  Perfil WhatsApp
+                </Button>
+              }
+            />
           )}
+
+          <Button
+            onClick={handleEtiquetas}
+            variant="outline"
+            size="sm"
+            className="w-full flex items-center gap-2 bg-transparent border border-orange-500 text-orange-500 hover:bg-orange-50"
+          >
+            <Tag className="h-4 w-4" />
+            Etiquetas
+          </Button>
         </div>
 
         {/* Pasamos el key para que se refresque */}

@@ -291,7 +291,7 @@ export default function TagsPage() {
 
       toast({
         title: "Etiqueta eliminada",
-        description: "La etiqueta se ha eliminada correctamente",
+        description: "La etiqueta se ha eliminado correctamente de todas las conversaciones y clientes",
       })
     } catch (error) {
       console.error("Error deleting tag:", error)

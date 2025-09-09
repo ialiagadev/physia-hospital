@@ -90,34 +90,11 @@ export function MainSidebar() {
       isActive: pathname === "/dashboard",
     },
     {
-      id: "chat",
-      label: "Chat",
-      href: "/dashboard/chat",
-      icon: MessageSquare,
-      isActive: isInSection("chat"),
-    },
-    {
       id: "clientes",
       label: "Pacientes",
       href: "/dashboard/clients",
       icon: Users,
       isActive: isInSection("clients"),
-    },
-    {
-      id: "marketing",
-      label: "Marketing",
-      href: "#", // Disabled marketing link
-      icon: Megaphone,
-      isActive: false, // Always inactive since it's disabled
-      badge: "Pronto", // Added "Pronto" badge
-      hidden: false, // Keep visible but disabled
-    },
-    {
-      id: "stock",
-      label: "Stock",
-      href: "/dashboard/stock",
-      icon: Warehouse,
-      isActive: isInSection("stock"),
     },
     {
       id: "facturacion",
@@ -129,11 +106,13 @@ export function MainSidebar() {
       hidden: userProfile?.role === "user",
     },
     {
-      id: "etiquetas",
-      label: "Etiquetas",
-      href: "/dashboard/etiquetas",
-      icon: Tag,
-      isActive: isInSection("etiquetas"),
+      id: "fichaje",
+      label: "Fichaje",
+      href: "/dashboard/fichaje",
+      icon: Clock,
+      isActive: isInSection("fichaje"),
+      // Agregar badge para solicitudes pendientes
+      badge: pendingRequestsCount > 0 ? pendingRequestsCount : null,
     },
     {
       id: "tareas",
@@ -141,6 +120,17 @@ export function MainSidebar() {
       href: "/dashboard/tareas",
       icon: CheckSquare,
       isActive: isInSection("tareas"),
+    },
+  ]
+
+  // Sección AI
+  const aiItems: MenuItem[] = [
+    {
+      id: "chat",
+      label: "Chat",
+      href: "/dashboard/chat",
+      icon: MessageSquare,
+      isActive: isInSection("chat"),
     },
     {
       id: "agents",
@@ -157,20 +147,13 @@ export function MainSidebar() {
       isActive: isInSection("physia-ai"),
     },
     {
-      id: "fichaje",
-      label: "Fichaje",
-      href: "/dashboard/fichaje",
-      icon: Clock,
-      isActive: isInSection("fichaje"),
-      // Agregar badge para solicitudes pendientes
-      badge: pendingRequestsCount > 0 ? pendingRequestsCount : null,
-    },
-    {
-      id: "feedback",
-      label: "Feedback",
-      href: "/dashboard/feedback",
-      icon: MessageSquare,
-      isActive: isInSection("feedback"),
+      id: "marketing",
+      label: "Marketing",
+      href: "#", // Disabled marketing link
+      icon: Megaphone,
+      isActive: false, // Always inactive since it's disabled
+      badge: "Pronto", // Added "Pronto" badge
+      hidden: false, // Keep visible but disabled
     },
   ]
 
@@ -178,7 +161,7 @@ export function MainSidebar() {
   const configItems: MenuItem[] = [
     {
       id: "equipo",
-      label: "Equipo",
+      label: "Equipos",
       href: "/dashboard/professionals",
       icon: UserCog,
       isActive: isInSection("professionals"),
@@ -206,7 +189,7 @@ export function MainSidebar() {
     },
     {
       id: "loyalty-cards",
-      label: "Tarjetas de Fidelización",
+      label: "Bonos", // Cambié el nombre de "Tarjetas de Fidelización" a "Bonos"
       href: "/dashboard/loyalty-cards",
       icon: CreditCard,
       isActive: isInSection("loyalty-cards"),
@@ -225,6 +208,13 @@ export function MainSidebar() {
       icon: Calendar,
       isActive: isInSection("public-calendar"),
     },
+    {
+      id: "etiquetas",
+      label: "Etiquetas",
+      href: "/dashboard/etiquetas",
+      icon: Tag,
+      isActive: isInSection("etiquetas"),
+    },
   ]
 
   // Sección General
@@ -235,6 +225,13 @@ export function MainSidebar() {
       href: "/dashboard/organizations",
       icon: BarChart2,
       isActive: isInSection("organizations"),
+    },
+    {
+      id: "stock",
+      label: "Stock",
+      href: "/dashboard/stock",
+      icon: Warehouse,
+      isActive: isInSection("stock"),
     },
     {
       id: "profile",
@@ -307,6 +304,55 @@ export function MainSidebar() {
     )
   }
 
+  const renderAISection = (title: string, items: MenuItem[]) => {
+    const visibleItems = items.filter((item) => !item.hidden)
+
+    return (
+      <div className="mb-6">
+        <div className="bg-blue-50/50 rounded-lg p-3 border-l-2 border-blue-500">
+          <h2 className="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-4 px-3 flex items-center gap-2">
+            <Brain className="h-3 w-3" />
+            AI
+          </h2>
+          <nav className="space-y-1">
+            {visibleItems.map((item) => {
+              const Icon = item.icon
+              return (
+                <Link
+                  key={item.id}
+                  href={item.href}
+                  className={cn(
+                    "flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors group",
+                    item.isActive
+                      ? "text-blue-600 bg-blue-100"
+                      : "text-gray-600 hover:text-gray-900 hover:bg-blue-100/50",
+                    item.id === "marketing"
+                      ? "opacity-60 cursor-not-allowed hover:bg-transparent hover:text-gray-600"
+                      : "",
+                  )}
+                  onClick={item.id === "marketing" ? (e) => e.preventDefault() : undefined}
+                >
+                  <div className="flex items-center space-x-3">
+                    <Icon className={cn("h-5 w-5", item.isActive ? "text-blue-600" : "text-gray-400")} />
+                    <span>{item.label}</span>
+                  </div>
+                  {item.badge && (
+                    <Badge
+                      variant="secondary"
+                      className="h-5 min-w-[20px] text-xs px-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200"
+                    >
+                      {item.badge}
+                    </Badge>
+                  )}
+                </Link>
+              )
+            })}
+          </nav>
+        </div>
+      </div>
+    )
+  }
+
   if (isCollapsed) {
     return (
       <div className="w-16 h-screen bg-white border-r border-gray-200 flex flex-col items-center py-4">
@@ -320,7 +366,7 @@ export function MainSidebar() {
 
         {/* Iconos colapsados */}
         <div className="flex flex-col space-y-2">
-          {[...principalItems, ...configItems, ...generalItems]
+          {[...principalItems, ...aiItems, ...configItems, ...generalItems]
             .filter((item) => !item.hidden)
             .map((item) => {
               const Icon = item.icon
@@ -392,6 +438,7 @@ export function MainSidebar() {
       {/* Navigation */}
       <div className="flex-1 px-6 py-6 overflow-y-auto">
         {renderMenuSection("PRINCIPAL", principalItems)}
+        {renderAISection("AI", aiItems)}
         {renderMenuSection("CONFIGURACIÓN", configItems)}
         {renderMenuSection("GENERAL", generalItems)}
       </div>
