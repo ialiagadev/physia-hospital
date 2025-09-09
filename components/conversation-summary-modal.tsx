@@ -14,7 +14,7 @@ interface ConversationSummaryModalProps {
   clientName: string
 }
 
-type TimeFilter = "all" | "3months" | "2months" | "1month" | "2weeks" | "1week"
+type TimeFilter = "all" | "3months" | "2months" | "1month" | "2weeks" | "1week" | "3days" | "1day"
 
 interface SummaryStats {
   clientName: string
@@ -143,6 +143,10 @@ ${conversationSummary}`
         return "Últimas 2 semanas"
       case "1week":
         return "Última semana"
+      case "3days":
+        return "Últimos 3 días"
+      case "1day":
+        return "Último día"
       default:
         return "Toda la conversación"
     }
@@ -229,6 +233,8 @@ ${conversationSummary}`
                         <SelectItem value="1month">Último mes</SelectItem>
                         <SelectItem value="2weeks">Últimas 2 semanas</SelectItem>
                         <SelectItem value="1week">Última semana</SelectItem>
+                        <SelectItem value="3days">Últimos 3 días</SelectItem>
+                        <SelectItem value="1day">Último día</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

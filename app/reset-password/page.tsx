@@ -62,9 +62,7 @@ function ResetPasswordForm() {
       } else {
         setSuccess(true)
         // Redirigir al login después de 3 segundos
-        setTimeout(() => {
-          router.push("/login?message=Contraseña actualizada exitosamente")
-        }, 3000)
+        
       }
     } catch (err: any) {
       setError("Error inesperado: " + err.message)

@@ -14,6 +14,7 @@ import {
   Trash2,
   Paperclip,
   ChevronDown,
+  StickyNote,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -33,6 +34,7 @@ import { useMediaQuery } from "@/hooks/use-media-query"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/app/contexts/auth-context"
 import type { Message, User, Client } from "@/types/chat"
+import { ConversationNotesModal } from "@/components/conversation-notes-modal"
 
 import EmojiPicker from "emoji-picker-react"
 
@@ -72,12 +74,7 @@ interface VoiceRecording {
   fileExtension: string
 }
 
-export default function ConversationWindowSimple({
-  chatId,
-  currentUser,
-  onBack,
-  onTagsChange,
-}: ConversationWindowSimpleProps) {
+export function ConversationWindow({ chatId, currentUser, onBack, onTagsChange }: ConversationWindowSimpleProps) {
   // Estado local
   const [message, setMessage] = useState("")
   const [sending, setSending] = useState(false)
@@ -89,6 +86,8 @@ export default function ConversationWindowSimple({
   const [uploading, setUploading] = useState(false)
   const [showSummaryModal, setShowSummaryModal] = useState(false)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+
+  const [showNotesModal, setShowNotesModal] = useState(false)
 
   const [voiceRecording, setVoiceRecording] = useState<VoiceRecording>({
     isRecording: false,
@@ -1084,10 +1083,7 @@ export default function ConversationWindowSimple({
               <AvatarImage src={client?.avatar_url || "/placeholder.svg"} alt={clientName} />
               <AvatarFallback>{clientName.charAt(0).toUpperCase()}</AvatarFallback>
             </Avatar>
-            {client?.channel && (
-              <div
-              ></div>
-            )}
+            {client?.channel && <div></div>}
           </div>
 
           <div className="flex-1 min-w-0">
@@ -1118,7 +1114,18 @@ export default function ConversationWindowSimple({
             </Tooltip>
           </TooltipProvider>
 
-          {/* 
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setShowNotesModal(true)}>
+                  <StickyNote className="h-4 w-4 text-blue-600" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Notas de conversación</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          {/*
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -1661,6 +1668,16 @@ export default function ConversationWindowSimple({
         onAssignmentChange={handleAssignmentChange}
         onTagsChange={onTagsChange}
       />
+
+      <ConversationNotesModal
+        isOpen={showNotesModal}
+        onOpenChange={setShowNotesModal}
+        conversationId={chatId}
+        currentUser={currentUser}
+        clientName={clientName}
+      />
     </div>
   )
 }
+
+export default ConversationWindow

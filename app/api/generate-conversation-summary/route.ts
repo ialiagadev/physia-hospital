@@ -10,35 +10,66 @@ export const runtime = "nodejs"
 export const maxDuration = 30
 
 // Configuración para manejo de conversaciones largas
-const MAX_MESSAGES = 100 // Máximo de mensajes a procesar
-const MAX_TOKENS_PER_MESSAGE = 100 // Máximo de tokens por mensaje
-const MAX_TOTAL_TOKENS = 8000 // Máximo total de tokens para el prompt
+const MAX_MESSAGES = 100
+const MAX_TOKENS_PER_MESSAGE = 100
+const MAX_TOTAL_TOKENS = 8000
 
-// Tipo para filtros de tiempo
-type TimeFilter = "all" | "3months" | "2months" | "1month" | "2weeks" | "1week"
+type TimeFilter =
+  | "all"
+  | "3months"
+  | "2months"
+  | "1month"
+  | "2weeks"
+  | "1week"
+  | "3days"
+  | "1day"
 
 // Función para obtener la fecha límite según el filtro de tiempo
 function getDateLimit(timeFilter: TimeFilter): Date | null {
   if (timeFilter === "all") return null
 
-  const now = new Date()
   switch (timeFilter) {
-    case "3months":
-      return new Date(now.setMonth(now.getMonth() - 3))
-    case "2months":
-      return new Date(now.setMonth(now.getMonth() - 2))
-    case "1month":
-      return new Date(now.setMonth(now.getMonth() - 1))
-    case "2weeks":
-      return new Date(now.setDate(now.getDate() - 14))
-    case "1week":
-      return new Date(now.setDate(now.getDate() - 7))
+    case "3months": {
+      const date = new Date()
+      date.setMonth(date.getMonth() - 3)
+      return date
+    }
+    case "2months": {
+      const date = new Date()
+      date.setMonth(date.getMonth() - 2)
+      return date
+    }
+    case "1month": {
+      const date = new Date()
+      date.setMonth(date.getMonth() - 1)
+      return date
+    }
+    case "2weeks": {
+      const date = new Date()
+      date.setDate(date.getDate() - 14)
+      return date
+    }
+    case "1week": {
+      const date = new Date()
+      date.setDate(date.getDate() - 7)
+      return date
+    }
+    case "3days": {
+      const date = new Date()
+      date.setDate(date.getDate() - 3)
+      return date
+    }
+    case "1day": {
+      // Últimas 24 horas
+      const date = new Date()
+      date.setDate(date.getDate() - 1)
+      return date
+    }
     default:
       return null
   }
 }
 
-// Función para obtener el texto descriptivo del filtro de tiempo
 function getTimeRangeText(timeFilter: TimeFilter): string {
   switch (timeFilter) {
     case "all":
@@ -53,16 +84,18 @@ function getTimeRangeText(timeFilter: TimeFilter): string {
       return "Últimas 2 semanas"
     case "1week":
       return "Última semana"
+    case "3days":
+      return "Últimos 3 días"
+    case "1day":
+      return "Últimas 24 horas"
     default:
       return ""
   }
 }
 
 function truncateMessage(content: string, maxTokens: number): string {
-  // Estimación aproximada: 1 token ≈ 4 caracteres
   const maxChars = maxTokens * 4
   if (content.length <= maxChars) return content
-
   return content.substring(0, maxChars - 3) + "..."
 }
 
@@ -71,11 +104,9 @@ function selectRelevantMessages(messages: any[]): any[] {
     return messages
   }
 
-  // Estrategia inteligente: tomar los primeros y últimos mensajes
-  const firstMessages = messages.slice(0, 20) // Primeros 20 para contexto inicial
-  const lastMessages = messages.slice(-60) // Últimos 60 para contexto reciente
+  const firstMessages = messages.slice(0, 20)
+  const lastMessages = messages.slice(-60)
 
-  // Buscar mensajes importantes en el medio (que contengan palabras clave médicas)
   const middleMessages = messages.slice(20, -60)
   const importantKeywords = [
     "dolor",
@@ -97,31 +128,47 @@ function selectRelevantMessages(messages: any[]): any[] {
   ]
 
   const importantMiddleMessages = middleMessages
-    .filter((msg) => importantKeywords.some((keyword) => msg.content.toLowerCase().includes(keyword)))
-    .slice(0, 20) // Máximo 20 mensajes importantes del medio
+    .filter((msg) =>
+      importantKeywords.some((keyword) =>
+        msg.content.toLowerCase().includes(keyword),
+      ),
+    )
+    .slice(0, 20)
 
-  // Combinar y ordenar por fecha
-  const selectedMessages = [...firstMessages, ...importantMiddleMessages, ...lastMessages]
-  return selectedMessages.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+  const selectedMessages = [
+    ...firstMessages,
+    ...importantMiddleMessages,
+    ...lastMessages,
+  ]
+  return selectedMessages.sort(
+    (a, b) =>
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+  )
 }
 
 function estimateTokens(text: string): number {
-  // Estimación aproximada de tokens
   return Math.ceil(text.length / 4)
 }
 
 export async function POST(req: Request) {
   try {
-    const { conversationId, organizationId, timeFilter = "all" } = await req.json()
+    const { conversationId, organizationId, timeFilter = "all" } =
+      await req.json()
 
     if (!process.env.OPENAI_API_KEY) {
       console.error("OpenAI API key not configured")
-      return Response.json({ success: false, error: "OpenAI API key not configured" }, { status: 500 })
+      return Response.json(
+        { success: false, error: "OpenAI API key not configured" },
+        { status: 500 },
+      )
     }
 
     if (!conversationId || !organizationId) {
       console.error("Missing required parameters")
-      return Response.json({ success: false, error: "Faltan parámetros requeridos" }, { status: 400 })
+      return Response.json(
+        { success: false, error: "Faltan parámetros requeridos" },
+        { status: 400 },
+      )
     }
 
     console.log("=== GENERANDO RESUMEN ===")
@@ -129,11 +176,9 @@ export async function POST(req: Request) {
     console.log("Organization ID:", organizationId)
     console.log("Time Filter:", timeFilter)
 
-    // Obtener la fecha límite según el filtro de tiempo
     const dateLimit = getDateLimit(timeFilter as TimeFilter)
     console.log("Date Limit:", dateLimit ? dateLimit.toISOString() : "No limit")
 
-    // Construir la consulta base
     let messagesQuery = supabase
       .from("messages")
       .select(`
@@ -146,20 +191,20 @@ export async function POST(req: Request) {
       .neq("message_type", "system")
       .order("created_at", { ascending: true })
 
-    // Aplicar filtro de fecha si es necesario
     if (dateLimit) {
       messagesQuery = messagesQuery.gte("created_at", dateLimit.toISOString())
     }
 
-    // Ejecutar la consulta
     const { data: allMessages, error: messagesError } = await messagesQuery
 
     if (messagesError) {
       console.error("Error obteniendo mensajes:", messagesError)
-      return Response.json({ success: false, error: "Error al obtener mensajes" }, { status: 500 })
+      return Response.json(
+        { success: false, error: "Error al obtener mensajes" },
+        { status: 500 },
+      )
     }
 
-    // Obtener información de la conversación
     const { data: conversation, error: convError } = await supabase
       .from("conversations")
       .select(`
@@ -172,10 +217,12 @@ export async function POST(req: Request) {
 
     if (convError) {
       console.error("Error obteniendo conversación:", convError)
-      return Response.json({ success: false, error: "Error al obtener conversación" }, { status: 500 })
+      return Response.json(
+        { success: false, error: "Error al obtener conversación" },
+        { status: 500 },
+      )
     }
 
-    // Obtener información del cliente por separado
     let clientName = "Cliente"
     if (conversation.client_id) {
       const { data: client, error: clientError } = await supabase
@@ -198,11 +245,11 @@ export async function POST(req: Request) {
 
     console.log(`Total de mensajes en la conversación: ${allMessages.length}`)
 
-    // Seleccionar mensajes relevantes para el resumen
     const selectedMessages = selectRelevantMessages(allMessages)
-    console.log(`Mensajes seleccionados para análisis: ${selectedMessages.length}`)
+    console.log(
+      `Mensajes seleccionados para análisis: ${selectedMessages.length}`,
+    )
 
-    // Formatear mensajes para el prompt con truncamiento
     let totalTokens = 0
     const formattedMessages = selectedMessages
       .map((msg, index) => {
@@ -212,13 +259,14 @@ export async function POST(req: Request) {
           minute: "2-digit",
         })
 
-        // Truncar mensaje si es muy largo
-        const truncatedContent = truncateMessage(msg.content, MAX_TOKENS_PER_MESSAGE)
+        const truncatedContent = truncateMessage(
+          msg.content,
+          MAX_TOKENS_PER_MESSAGE,
+        )
         const messageText = `${index + 1}. [${time}] ${sender}: ${truncatedContent}`
 
         totalTokens += estimateTokens(messageText)
 
-        // Si excedemos el límite, cortamos aquí
         if (totalTokens > MAX_TOTAL_TOKENS) {
           return null
         }
@@ -230,27 +278,32 @@ export async function POST(req: Request) {
 
     console.log(`Tokens estimados en el prompt: ${totalTokens}`)
 
-    const conversationDate = new Date(conversation.created_at).toLocaleDateString("es-ES")
+    const today = new Date().toLocaleDateString("es-ES")
+    const lastMessageDate = selectedMessages.length
+      ? new Date(
+          selectedMessages[selectedMessages.length - 1].created_at,
+        ).toLocaleDateString("es-ES")
+      : today
 
-    // Información adicional sobre la selección de mensajes
     const messageSelectionInfo =
       allMessages.length > MAX_MESSAGES
         ? `\n\nNOTA: Esta conversación tiene ${allMessages.length} mensajes. Para el análisis se han seleccionado ${selectedMessages.length} mensajes más relevantes (primeros, últimos y mensajes con contenido médico importante).`
         : ""
 
-    // Información sobre el filtro de tiempo
     const timeFilterInfo =
       timeFilter !== "all"
-        ? `\n\nNOTA: Este resumen solo incluye mensajes de ${getTimeRangeText(timeFilter as TimeFilter).toLowerCase()}.`
+        ? `\n\nNOTA: Este resumen solo incluye mensajes de ${getTimeRangeText(
+            timeFilter as TimeFilter,
+          ).toLowerCase()}.`
         : ""
 
-    // Generar resumen con IA
     const prompt = `
 Eres un asistente médico especializado. Analiza esta conversación entre un profesional de la salud y un paciente/cliente, y genera un resumen profesional y conciso.
 
 INFORMACIÓN DE LA CONVERSACIÓN:
 - Cliente: ${clientName}
-- Fecha: ${conversationDate}
+- Fecha actual: ${today}
+- Último mensaje analizado: ${lastMessageDate}
 - Total de mensajes en la conversación: ${allMessages.length}
 - Mensajes analizados: ${selectedMessages.length}${messageSelectionInfo}${timeFilterInfo}
 
@@ -259,7 +312,6 @@ ${formattedMessages}
 
 INSTRUCCIONES:
 1. Crea un resumen profesional de máximo 250 palabras
-
 `
 
     console.log("Generando resumen con IA...")
@@ -267,17 +319,22 @@ INSTRUCCIONES:
     const { text: summary } = await generateText({
       model: openai("gpt-4o-mini"),
       prompt,
-      maxTokens: 600, // Aumentado para resúmenes más detallados
+      maxTokens: 600,
       temperature: 0.3,
     })
 
-    // Calcular estadísticas completas (usando TODOS los mensajes)
-    const clientMessages = allMessages.filter((m) => m.sender_type === "contact").length
-    const agentMessages = allMessages.filter((m) => m.sender_type === "agent").length
+    const clientMessages = allMessages.filter(
+      (m) => m.sender_type === "contact",
+    ).length
+    const agentMessages = allMessages.filter(
+      (m) => m.sender_type === "agent",
+    ).length
     const duration =
       allMessages.length > 1
         ? Math.ceil(
-            (new Date(allMessages[allMessages.length - 1].created_at).getTime() -
+            (new Date(
+              allMessages[allMessages.length - 1].created_at,
+            ).getTime() -
               new Date(allMessages[0].created_at).getTime()) /
               (1000 * 60),
           )
@@ -292,15 +349,21 @@ INSTRUCCIONES:
         clientMessages,
         agentMessages,
         durationMinutes: duration,
-        conversationDate,
+        today,
+        lastMessageDate,
         clientName,
         wasLimited: allMessages.length > MAX_MESSAGES,
-        timeRange: timeFilter !== "all" ? getTimeRangeText(timeFilter as TimeFilter) : undefined,
+        timeRange:
+          timeFilter !== "all"
+            ? getTimeRangeText(timeFilter as TimeFilter)
+            : undefined,
       },
     }
 
     console.log("✅ Resumen generado exitosamente")
-    console.log(`Estadísticas: ${allMessages.length} mensajes totales, ${selectedMessages.length} analizados`)
+    console.log(
+      `Estadísticas: ${allMessages.length} mensajes totales, ${selectedMessages.length} analizados`,
+    )
 
     return Response.json(result)
   } catch (error) {
@@ -308,7 +371,10 @@ INSTRUCCIONES:
     return Response.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Error interno del servidor",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Error interno del servidor",
       },
       { status: 500 },
     )
