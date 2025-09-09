@@ -59,42 +59,44 @@ export default function ChatPage() {
     <div className="flex h-full w-full bg-gray-100 overflow-hidden m-0 p-0">
       {/* Lista de chats */}
       <div className="w-[25%] min-w-[280px] max-w-[350px] bg-white border-r border-gray-200 flex flex-col">
-        <div className="p-4 border-b border-gray-200 space-y-2">
-          <Button
-            onClick={handleConfigureNumber}
-            variant="outline"
-            size="sm"
-            className="w-full flex items-center gap-2 bg-transparent border border-purple-500 text-purple-500 hover:bg-purple-50"
-          >
-            <Settings className="h-4 w-4" />
-            Configurar número
-          </Button>
+        <div className="p-4 border-b border-gray-200">
+          <div className="flex gap-2">
+            <Button
+              onClick={handleConfigureNumber}
+              variant="outline"
+              size="sm"
+              className="flex-1 flex items-center gap-1 bg-transparent border border-purple-500 text-purple-500 hover:bg-purple-50 text-xs"
+            >
+              <Settings className="h-3 w-3" />
+              Número
+            </Button>
 
-          {userProfile?.organization_id && hasActiveWabas && (
-            <WhatsAppProfileModal
-              organizationId={userProfile.organization_id}
-              trigger={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full flex items-center gap-2 bg-transparent border border-blue-500 text-blue-500 hover:bg-blue-50"
-                >
-                  <Settings className="h-4 w-4" />
-                  Perfil WhatsApp
-                </Button>
-              }
-            />
-          )}
+            {userProfile?.organization_id && hasActiveWabas && (
+              <WhatsAppProfileModal
+                organizationId={userProfile.organization_id}
+                trigger={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 flex items-center gap-1 bg-transparent border border-blue-500 text-blue-500 hover:bg-blue-50 text-xs"
+                  >
+                    <Settings className="h-3 w-3" />
+                    Perfil
+                  </Button>
+                }
+              />
+            )}
 
-          <Button
-            onClick={handleEtiquetas}
-            variant="outline"
-            size="sm"
-            className="w-full flex items-center gap-2 bg-transparent border border-orange-500 text-orange-500 hover:bg-orange-50"
-          >
-            <Tag className="h-4 w-4" />
-            Etiquetas
-          </Button>
+            <Button
+              onClick={handleEtiquetas}
+              variant="outline"
+              size="sm"
+              className="flex-1 flex items-center gap-1 bg-transparent border border-orange-500 text-orange-500 hover:bg-orange-50 text-xs"
+            >
+              <Tag className="h-3 w-3" />
+              Etiquetas
+            </Button>
+          </div>
         </div>
 
         {/* Pasamos el key para que se refresque */}
