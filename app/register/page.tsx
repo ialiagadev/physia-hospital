@@ -178,7 +178,7 @@ export default function RegisterPage() {
         email: email.trim(),
         password,
         options: {
-          emailRedirectTo: `http://localhost:3000/auth/callback`,
+          emailRedirectTo: `https://app.healthmate.tech/auth/callback`,
           data: {
             name: name.trim(),
             phone: phone.trim(),
