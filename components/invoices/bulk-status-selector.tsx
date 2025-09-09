@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase/client"
-import { ChevronDown, Check, FileText, AlertTriangle, HelpCircle, Settings, Shield, Clock } from "lucide-react"
+import { ChevronDown, Check, FileText, AlertTriangle, HelpCircle, Settings, Clock } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -146,7 +146,6 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
     loadAvailableStatuses()
   }, [selectedInvoiceIds])
 
-  // ✅ FUNCIÓN PRINCIPAL CORREGIDA - ASEGURAR QUE EL NÚMERO ESTÉ ASIGNADO
   const performBulkStatusChange = async (invoices: InvoiceStatusInfo[], newStatus: InvoiceStatus) => {
     if (!Array.isArray(invoices) || invoices.length === 0 || !newStatus) {
       resetAllStates()
@@ -164,12 +163,9 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
       const draftInvoices = invoices.filter((inv) => inv && inv.status === "draft")
       const nonDraftInvoices = invoices.filter((inv) => inv && inv.status !== "draft")
 
-      // ✅ INICIALIZAR PROGRESO
       if (isDraftToIssued && draftInvoices.length > 0) {
         let successCount = 0
         let errorCount = 0
-        const processedInvoices: string[] = []
-        const failedInvoices: string[] = []
         const totalToProcess = draftInvoices.length + nonDraftInvoices.length
 
         setProcessingProgress({
@@ -187,7 +183,6 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
           let fieldName = ""
 
           try {
-            // ✅ ACTUALIZAR PROGRESO - FACTURA ACTUAL (SIN ID)
             setProcessingProgress((prev) => ({
               ...prev,
               current: i + 1,
@@ -198,12 +193,10 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
               `🔄 Procesando factura ${invoice.id} (${invoice.invoice_type})... [${i + 1}/${draftInvoices.length}]`,
             )
 
-            // ✅ GENERAR Y ASIGNAR NÚMERO DE FACTURA
             const numberResult = await generateUniqueInvoiceNumber(invoice.organization_id, invoice.invoice_type as any)
             invoiceNumberFormatted = numberResult.invoiceNumberFormatted
             newInvoiceNumber = numberResult.newInvoiceNumber
 
-            // ✅ ACTUALIZAR CONTADOR EN ORGANIZACIÓN
             const getFieldNameForUpdate = (type: string): string => {
               switch (type) {
                 case "rectificativa":
@@ -227,7 +220,6 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
               throw new Error("Error al reservar el número de factura")
             }
 
-            // ✅ ACTUALIZAR FACTURA CON NÚMERO Y ESTADO
             const { error: dbError } = await supabase
               .from("invoices")
               .update({
@@ -241,83 +233,23 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
               throw new Error(`Error al actualizar el estado: ${dbError.message}`)
             }
 
-            // ✅ VERIFICAR QUE LA FACTURA TENGA EL NÚMERO ASIGNADO ANTES DE VERIFACTU
             console.log(`✅ Factura ${invoice.id} actualizada con número ${invoiceNumberFormatted}`)
 
-            // ✅ PEQUEÑA PAUSA PARA ASEGURAR CONSISTENCIA
-            await new Promise((resolve) => setTimeout(resolve, 100))
+            successCount++
+            setProcessingProgress((prev) => ({
+              ...prev,
+              successCount: successCount,
+              currentInvoice: `✅ Factura ${invoiceNumberFormatted} completada`,
+            }))
 
-            // ✅ VERIFICAR EN BASE DE DATOS QUE EL NÚMERO ESTÉ ASIGNADO
-            const { data: verifyInvoice, error: verifyError } = await supabase
-              .from("invoices")
-              .select("invoice_number")
-              .eq("id", invoice.id)
-              .single()
+            console.log(
+              `✅ Factura ${invoiceNumberFormatted} procesada correctamente [${i + 1}/${draftInvoices.length}]`,
+            )
 
-            if (verifyError || !verifyInvoice?.invoice_number) {
-              throw new Error(`La factura ${invoice.id} no tiene número asignado después de la actualización`)
-            }
-
-            console.log(`🔍 Verificado: Factura ${invoice.id} tiene número ${verifyInvoice.invoice_number}`)
-
-            // ✅ ENVIAR A VERIFACTU SOLO SI EL NÚMERO ESTÁ CONFIRMADO
-            try {
-              const res = await fetch(`/api/verifactu/send-invoice?invoice_id=${invoice.id}`)
-              const data = await res.json()
-
-              if (!res.ok) {
-                throw new Error(data?.error || `Error ${res.status}: ${res.statusText}`)
-              }
-
-              successCount++
-              processedInvoices.push(invoiceNumberFormatted)
-              setProcessingProgress((prev) => ({
-                ...prev,
-                successCount: successCount,
-                currentInvoice: `✅ Factura ${invoiceNumberFormatted} completada`,
-              }))
-
-              console.log(
-                `✅ Factura ${invoiceNumberFormatted} enviada a VeriFactu correctamente [${i + 1}/${draftInvoices.length}]`,
-              )
-
-              // ✅ PEQUEÑA PAUSA PARA MOSTRAR EL PROGRESO
-              await new Promise((resolve) => setTimeout(resolve, 300))
-            } catch (verifactuError) {
-              console.error(`❌ Error en Verifactu para factura ${invoice.id}, haciendo rollback...`)
-
-              // ✅ ROLLBACK COMPLETO
-              await supabase
-                .from("invoices")
-                .update({
-                  status: "draft",
-                  invoice_number: null,
-                  validated_at: null,
-                })
-                .eq("id", invoice.id)
-
-              // ✅ ROLLBACK DEL CONTADOR
-              await supabase
-                .from("organizations")
-                .update({ [fieldName]: newInvoiceNumber - 1 })
-                .eq("id", invoice.organization_id)
-
-              errorCount++
-              failedInvoices.push(invoiceNumberFormatted)
-              setProcessingProgress((prev) => ({
-                ...prev,
-                errorCount: errorCount,
-                currentInvoice: `Procesando factura ${i + 1} de ${draftInvoices.length}`,
-              }))
-
-              // ✅ PEQUEÑA PAUSA PARA MOSTRAR EL ERROR
-              await new Promise((resolve) => setTimeout(resolve, 300))
-              console.log(`🔄 Rollback completado para factura ${invoice.id}`)
-            }
+            await new Promise((resolve) => setTimeout(resolve, 300))
           } catch (error) {
             console.error(`❌ Error procesando factura ${invoice.id}:`, error)
 
-            // ✅ ROLLBACK SI HAY NÚMERO ASIGNADO
             if (invoiceNumberFormatted && newInvoiceNumber > 0 && fieldName) {
               console.log(`🔄 Haciendo rollback para factura ${invoice.id}...`)
               await supabase
@@ -336,19 +268,16 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
             }
 
             errorCount++
-            failedInvoices.push(invoiceNumberFormatted)
             setProcessingProgress((prev) => ({
               ...prev,
               errorCount: errorCount,
               currentInvoice: `Procesando factura ${i + 1} de ${draftInvoices.length}`,
             }))
 
-            // ✅ PEQUEÑA PAUSA PARA MOSTRAR EL ERROR
             await new Promise((resolve) => setTimeout(resolve, 300))
           }
         }
 
-        // ✅ PROCESAR FACTURAS NO-BORRADOR CON PROGRESO
         if (nonDraftInvoices.length > 0) {
           setProcessingProgress((prev) => ({
             ...prev,
@@ -377,16 +306,14 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
           }
         }
 
-        // ✅ PAUSA FINAL PARA MOSTRAR RESULTADO
         await new Promise((resolve) => setTimeout(resolve, 1500))
 
-        // ✅ MOSTRAR RESULTADOS
         if (errorCount === 0) {
           toast({
             title: "✅ Facturas emitidas correctamente",
             description: `${successCount} factura${successCount !== 1 ? "s" : ""} emitida${
               successCount !== 1 ? "s" : ""
-            } y enviada${successCount !== 1 ? "s" : ""} a VeriFactu`,
+            } correctamente`,
           })
         } else if (successCount > 0) {
           toast({
@@ -402,10 +329,8 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
           })
         }
 
-        // ✅ ESPERAR UN POCO MÁS PARA QUE EL USUARIO VEA EL RESULTADO FINAL
         await new Promise((resolve) => setTimeout(resolve, 2000))
       } else {
-        // ✅ OTROS CAMBIOS DE ESTADO (SIN CAMBIAR NÚMERO)
         const updateData: any = { status: newStatus }
         if (isDraftToIssued) {
           updateData.validated_at = new Date().toISOString()
@@ -425,7 +350,6 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
         })
       }
 
-      // ✅ CALLBACK SEGURO
       if (onStatusChanged && typeof onStatusChanged === "function") {
         try {
           onStatusChanged()
@@ -446,7 +370,6 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
     }
   }
 
-  // ✅ RESTO DE FUNCIONES AUXILIARES (mantener las existentes)
   const getDraftCount = (): number => {
     if (!Array.isArray(applicableInvoices)) return 0
     return applicableInvoices.filter((inv) => inv && inv.status === "draft").length
@@ -462,7 +385,7 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
     setApplicableInvoices([])
     setNonApplicableInvoices([])
     setShowConfirmDialog(false)
-    setShowEmissionDialog(false) // ✅ Cerrar el modal aquí
+    setShowEmissionDialog(false)
     setIsUpdating(false)
     setProcessingProgress({ current: 0, total: 0, currentInvoice: "", successCount: 0, errorCount: 0 })
   }
@@ -585,13 +508,12 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
     }
 
     if (uniqueStatuses.has("draft") && !uniqueStatuses.has("issued")) {
-      return "✅ Facturas en borrador: pueden emitirse (se asignarán números y enviarán a VeriFactu)"
+      return "✅ Facturas en borrador: pueden emitirse (se asignarán números)"
     }
 
     return null
   }
 
-  // ✅ VALIDACIONES DE SEGURIDAD
   if (!Array.isArray(selectedInvoiceIds) || selectedInvoiceIds.length === 0) {
     return null
   }
@@ -618,7 +540,6 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
 
   return (
     <>
-      {/* ✅ DROPDOWN Y DIÁLOGOS - MANTENER IGUAL */}
       <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" disabled={disabled || isUpdating}>
@@ -657,9 +578,7 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-sm">{statusCfg.label}</div>
                   <div className="text-xs text-gray-500 mt-0.5 leading-tight">
-                    {status === "issued"
-                      ? "Asignar números únicos, validar y enviar a VeriFactu"
-                      : statusCfg.description}
+                    {status === "issued" ? "Asignar números únicos y validar facturas" : statusCfg.description}
                   </div>
                 </div>
               </DropdownMenuItem>
@@ -683,12 +602,11 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* ✅ MODAL MÁS GRANDE Y SIMPLIFICADO */}
       <Dialog open={showEmissionDialog} onOpenChange={handleEmissionDialogChange}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Shield className="h-5 w-5 text-blue-500" />
+              <FileText className="h-5 w-5 text-blue-500" />
               Emisión masiva de facturas
             </DialogTitle>
             <DialogDescription className="space-y-4 pt-2">
@@ -718,22 +636,15 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
                     <Check className="w-5 h-5 text-green-600" />
                     <span className="text-sm text-green-800">Asignación de números únicos</span>
                   </div>
-                  <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-md">
-                    <Shield className="w-5 h-5 text-blue-600" />
-                    <span className="text-sm text-blue-800">Validación fiscal</span>
-                  </div>
-                  <div className="flex items-center gap-2 p-3 bg-indigo-50 rounded-md">
-                    <Check className="w-5 h-5 text-indigo-600" />
-                    <span className="text-sm text-indigo-800">Envío a VeriFactu</span>
-                  </div>
+                  
                   <div className="flex items-center gap-2 p-3 bg-purple-50 rounded-md">
                     <Clock className="w-5 h-5 text-purple-600" />
                     <span className="text-sm text-purple-800">Registro de fecha/hora</span>
                   </div>
+                  
                 </div>
               </div>
 
-              {/* ✅ BARRA DE PROGRESO SIMPLIFICADA */}
               {isUpdating && processingProgress.total > 0 && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 space-y-4">
                   <div className="text-center">
@@ -743,7 +654,6 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
                     </div>
                   </div>
 
-                  {/* Barra de progreso grande y visible */}
                   <div className="w-full bg-blue-100 rounded-full h-4 overflow-hidden">
                     <div
                       className="bg-blue-600 h-full rounded-full transition-all duration-500 ease-out"
@@ -757,7 +667,6 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
                     />
                   </div>
 
-                  {/* Estado actual */}
                   {processingProgress.currentInvoice && (
                     <div className="text-center">
                       <div className="text-sm text-blue-700 bg-white rounded-lg px-4 py-3 border border-blue-200 font-medium">
@@ -766,7 +675,6 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
                     </div>
                   )}
 
-                  {/* Porcentaje grande */}
                   <div className="text-center">
                     <div className="text-4xl font-bold text-blue-600">
                       {processingProgress.total > 0
@@ -786,7 +694,6 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
             </Button>
             <Button
               onClick={() => {
-                // ✅ NO cerrar el modal aquí - mantenerlo abierto durante el proceso
                 if (selectedNewStatus) {
                   performBulkStatusChange(applicableInvoices, selectedNewStatus)
                 }
@@ -801,7 +708,7 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
                 </>
               ) : (
                 <>
-                  <Shield className="w-4 h-4 mr-2" />
+                  <FileText className="w-4 h-4 mr-2" />
                   Confirmar emisión masiva
                 </>
               )}
@@ -810,7 +717,6 @@ export function BulkStatusSelector({ selectedInvoiceIds, onStatusChanged, disabl
         </DialogContent>
       </Dialog>
 
-      {/* ✅ DIÁLOGO DE CONFIRMACIÓN PARCIAL - MANTENER IGUAL */}
       <Dialog open={showConfirmDialog} onOpenChange={handleConfirmDialogChange}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>

@@ -15,7 +15,6 @@ import {
   Zap,
   Package,
   Calendar,
-  Loader2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -56,18 +55,10 @@ interface ParticipantBillingData {
   missing_fields: string[]
   payment_method: "tarjeta" | "efectivo" | "transferencia" | "paypal" | "bizum" | "otro"
   payment_method_other: string
-  // ✅ NUEVOS CAMPOS PARA ESTADO DE FACTURACIÓN
-  invoice_status: "none" | "draft" | "issued" | "verified"
-  invoice_info?: {
-    invoice_id: string
-    invoice_number: string | null
-    created_at: string
-    total_amount: number
-  }
 }
 
 interface BillingProgress {
-  phase: "validating" | "generating_drafts" | "issuing" | "creating_pdfs" | "creating_zip" | "completed" | "error"
+  phase: "validating" | "generating" | "creating_pdfs" | "creating_zip" | "completed" | "error"
   current: number
   total: number
   message: string
@@ -84,24 +75,14 @@ interface GeneratedInvoice {
   invoiceId: string
 }
 
-interface DraftInvoice {
-  invoice_id: string
-  client_id: number
-  client_name: string
-  total_amount: number
-  created_at: string
-}
-
 // Componente de progreso mejorado
 function EnhancedProgressBar({ progress }: { progress: BillingProgress }) {
   const getPhaseIcon = () => {
     switch (progress.phase) {
       case "validating":
         return <CheckCircle className="h-5 w-5 text-blue-500 animate-pulse" />
-      case "generating_drafts":
-        return <FileText className="h-5 w-5 text-yellow-500 animate-bounce" />
-      case "issuing":
-        return <Zap className="h-5 w-5 text-orange-500 animate-pulse" />
+      case "generating":
+        return <Zap className="h-5 w-5 text-yellow-500 animate-bounce" />
       case "creating_pdfs":
         return <FileText className="h-5 w-5 text-green-500 animate-pulse" />
       case "creating_zip":
@@ -119,10 +100,8 @@ function EnhancedProgressBar({ progress }: { progress: BillingProgress }) {
     switch (progress.phase) {
       case "validating":
         return "bg-blue-500"
-      case "generating_drafts":
+      case "generating":
         return "bg-yellow-500"
-      case "issuing":
-        return "bg-orange-500"
       case "creating_pdfs":
         return "bg-green-500"
       case "creating_zip":
@@ -140,10 +119,8 @@ function EnhancedProgressBar({ progress }: { progress: BillingProgress }) {
     switch (progress.phase) {
       case "validating":
         return "Validando datos"
-      case "generating_drafts":
-        return "Creando borradores"
-      case "issuing":
-        return "Emitiendo facturas"
+      case "generating":
+        return "Generando facturas"
       case "creating_pdfs":
         return "Creando PDFs"
       case "creating_zip":
@@ -191,38 +168,29 @@ function EnhancedProgressBar({ progress }: { progress: BillingProgress }) {
             />
           </div>
           <div className="flex justify-between text-xs">
-            {["validating", "generating_drafts", "issuing", "creating_pdfs", "creating_zip", "completed"].map(
-              (phase, index) => {
-                const isActive = progress.phase === phase
-                const isCompleted =
-                  ["validating", "generating_drafts", "issuing", "creating_pdfs", "creating_zip", "completed"].indexOf(
-                    progress.phase,
-                  ) > index
-                return (
+            {["validating", "generating", "creating_pdfs", "creating_zip", "completed"].map((phase, index) => {
+              const isActive = progress.phase === phase
+              const isCompleted =
+                ["validating", "generating", "creating_pdfs", "creating_zip", "completed"].indexOf(progress.phase) >
+                index
+              return (
+                <div
+                  key={phase}
+                  className={`flex flex-col items-center gap-1 ${
+                    isActive ? "text-blue-600 font-medium" : isCompleted ? "text-green-600" : "text-gray-400"
+                  }`}
+                >
                   <div
-                    key={phase}
-                    className={`flex flex-col items-center gap-1 ${
-                      isActive ? "text-blue-600 font-medium" : isCompleted ? "text-green-600" : "text-gray-400"
+                    className={`w-2 h-2 rounded-full ${
+                      isActive ? "bg-blue-500 animate-pulse" : isCompleted ? "bg-green-500" : "bg-gray-300"
                     }`}
-                  >
-                    <div
-                      className={`w-2 h-2 rounded-full ${
-                        isActive ? "bg-blue-500 animate-pulse" : isCompleted ? "bg-green-500" : "bg-gray-300"
-                      }`}
-                    />
-                    <span className="capitalize">
-                      {phase === "generating_drafts"
-                        ? "Borradores"
-                        : phase === "creating_pdfs"
-                          ? "PDFs"
-                          : phase === "creating_zip"
-                            ? "ZIP"
-                            : phase.replace("_", " ")}
-                    </span>
-                  </div>
-                )
-              },
-            )}
+                  />
+                  <span className="capitalize">
+                    {phase === "creating_pdfs" ? "PDFs" : phase === "creating_zip" ? "ZIP" : phase.replace("_", " ")}
+                  </span>
+                </div>
+              )
+            })}
           </div>
           <div className="bg-white/70 rounded-lg p-3 border border-blue-100">
             <p className="text-sm text-gray-700 font-medium">{progress.message}</p>
@@ -271,10 +239,20 @@ export function GroupActivityBillingModal({
   const [selectedParticipants, setSelectedParticipants] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
-  const [issuing, setIssuing] = useState(false)
   const [progress, setProgress] = useState<BillingProgress | null>(null)
   const [generatedInvoices, setGeneratedInvoices] = useState<GeneratedInvoice[]>([])
-  const [draftInvoices, setDraftInvoices] = useState<DraftInvoice[]>([])
+  const [existingInvoices, setExistingInvoices] = useState<
+    Map<
+      number,
+      {
+        invoice_number: string
+        created_at: string
+        id: string
+      }
+    >
+  >(new Map())
+
+  const [initialSelectionDone, setInitialSelectionDone] = useState(false)
 
   // useEffect para añadir nota automática cuando IVA = 0
   useEffect(() => {
@@ -304,23 +282,13 @@ export function GroupActivityBillingModal({
       const participantsWithData: ParticipantBillingData[] = validParticipants.map((participant) => {
         const client = participant.client
 
-        // ✅ VALIDACIÓN MODIFICADA - SOLO NOMBRE (CON APELLIDOS) Y TAX_ID
+        // Validar datos requeridos
         const missingFields: string[] = []
-
-        // Verificar nombre (debe tener al menos 2 palabras para incluir apellidos)
-        if (!client?.name?.trim()) {
-          missingFields.push("Nombre")
-        } else {
-          const nameParts = client.name.trim().split(/\s+/)
-          if (nameParts.length < 2) {
-            missingFields.push("Apellidos (el nombre debe incluir nombre y apellidos)")
-          }
-        }
-
-        // Verificar tax_id (CIF/NIF)
-        if (!(client as any)?.tax_id?.trim()) {
-          missingFields.push("CIF/NIF")
-        }
+        if (!client?.name?.trim()) missingFields.push("Nombre")
+        if (!(client as any)?.tax_id?.trim()) missingFields.push("CIF/NIF")
+        if (!(client as any)?.address?.trim()) missingFields.push("Dirección")
+        if (!(client as any)?.postal_code?.trim()) missingFields.push("Código Postal")
+        if (!(client as any)?.city?.trim()) missingFields.push("Ciudad")
 
         const hasCompleteData = missingFields.length === 0
 
@@ -340,15 +308,14 @@ export function GroupActivityBillingModal({
           missing_fields: missingFields,
           payment_method: "tarjeta",
           payment_method_other: "",
-          // ✅ INICIALIZAR ESTADO DE FACTURACIÓN
-          invoice_status: "none",
         }
       })
 
       setParticipantsData(participantsWithData)
 
-      // ✅ VERIFICAR FACTURAS EXISTENTES CON LA NUEVA LÓGICA
-      await checkInvoiceStatusFromDatabase(participantsWithData)
+      // Verificar facturas existentes ANTES de seleccionar
+      const clientIds = participantsWithData.map((p) => p.client_id)
+      await checkExistingInvoices(clientIds, format(new Date(activity.date), "yyyy-MM-dd"))
     } catch (error) {
       console.error("Error loading participants data:", error)
       toast({
@@ -361,93 +328,53 @@ export function GroupActivityBillingModal({
     }
   }
 
-  // ✅ NUEVA FUNCIÓN: VERIFICAR ESTADO DE FACTURAS DIRECTAMENTE EN LA BASE DE DATOS
-  const checkInvoiceStatusFromDatabase = async (participantsArray: ParticipantBillingData[]) => {
-    if (!userProfile?.organization_id) return
-
-    try {
-      const drafts: DraftInvoice[] = []
-
-      // Para cada participante, verificar si existe factura
-      for (const participant of participantsArray) {
-        const { data: invoiceData, error } = await supabase
-          .from("invoices")
-          .select("id, invoice_number, status, total_amount, created_at, verifactu_sent_at")
-          .eq("organization_id", userProfile.organization_id)
-          .eq("group_activity_id", activity.id)
-          .eq("client_id", participant.client_id)
-          .limit(1)
-
-        if (error) {
-          console.error("Error checking invoice:", error)
-          continue
-        }
-
-        if (invoiceData && invoiceData.length > 0) {
-          const invoice = invoiceData[0]
-
-          // ✅ DETERMINAR EL ESTADO DE LA FACTURA IGUAL QUE EN DAILY-BILLING
-          let invoiceStatus: "none" | "draft" | "issued" | "verified" = "none"
-
-          if (invoice.status === "draft") {
-            invoiceStatus = "draft"
-          } else if (invoice.status === "issued") {
-            if (invoice.verifactu_sent_at) {
-              invoiceStatus = "verified"
-            } else {
-              invoiceStatus = "issued"
-            }
-          }
-
-          // Actualizar el participante con la información de la factura
-          participant.invoice_status = invoiceStatus
-          participant.invoice_info = {
-            invoice_id: invoice.id,
-            invoice_number: invoice.invoice_number,
-            created_at: invoice.created_at,
-            total_amount: invoice.total_amount,
-          }
-
-          // Si es borrador, añadir a la lista de borradores
-          if (invoiceStatus === "draft") {
-            const existingDraft = drafts.find((d) => d.invoice_id === invoice.id)
-            if (!existingDraft) {
-              drafts.push({
-                invoice_id: invoice.id,
-                client_id: participant.client_id,
-                client_name: participant.client_name,
-                total_amount: invoice.total_amount,
-                created_at: invoice.created_at,
-              })
-            }
-          }
-        } else {
-          participant.invoice_status = "none"
-        }
-      }
-
-      // Actualizar estado
-      setParticipantsData([...participantsArray])
-      setDraftInvoices(drafts)
-
-      // ✅ SELECCIONAR AUTOMÁTICAMENTE SOLO PARTICIPANTES VÁLIDOS SIN FACTURA
-      const participantsToSelect = participantsArray
-        .filter((participant) => participant.has_complete_data && participant.invoice_status === "none")
+  useEffect(() => {
+    if (participantsData.length > 0 && !loading && !initialSelectionDone) {
+      const participantsToSelect = participantsData
+        .filter((participant) => participant.has_complete_data && !existingInvoices.has(participant.client_id))
         .map((participant) => participant.participant_id)
 
-      console.log("Auto-seleccionando participantes sin facturar:", participantsToSelect.length)
+      console.log("Auto-seleccionando participantes:", participantsToSelect.length)
       setSelectedParticipants(new Set(participantsToSelect))
+      setInitialSelectionDone(true)
+    }
+  }, [participantsData, existingInvoices, loading, initialSelectionDone])
+
+  const checkExistingInvoices = async (clientIds: number[], dateStr: string) => {
+    if (!userProfile?.organization_id || clientIds.length === 0) return
+
+    try {
+      const { data, error } = await supabase
+        .from("invoices")
+        .select("id, invoice_number, created_at, client_id")
+        .eq("organization_id", userProfile.organization_id)
+        .eq("group_activity_id", activity.id)
+        .in("client_id", clientIds)
+        .order("created_at", { ascending: true })
+
+      if (error) throw error
+
+      const invoicesMap = new Map()
+      data?.forEach((invoice) => {
+        if (!invoicesMap.has(invoice.client_id)) {
+          invoicesMap.set(invoice.client_id, {
+            invoice_number: invoice.invoice_number,
+            created_at: invoice.created_at,
+            id: invoice.id,
+          })
+        }
+      })
+
+      setExistingInvoices(invoicesMap)
     } catch (error) {
-      console.error("Error checking invoice status from database:", error)
+      console.error("Error checking existing invoices:", error)
     }
   }
 
   const handleParticipantToggle = (participantId: string, checked: boolean) => {
     const participant = participantsData.find((p) => p.participant_id === participantId)
-
-    // ✅ VERIFICACIÓN SIMPLE: ¿Tiene factura?
-    if (participant && participant.invoice_status !== "none") {
-      return // No permitir si ya tiene factura
+    if (participant && existingInvoices.has(participant.client_id)) {
+      return
     }
 
     const newSelected = new Set(selectedParticipants)
@@ -461,7 +388,7 @@ export function GroupActivityBillingModal({
 
   const handleSelectAll = () => {
     const validParticipantIds = participantsData
-      .filter((p) => p.has_complete_data && p.invoice_status === "none")
+      .filter((p) => p.has_complete_data && !existingInvoices.has(p.client_id))
       .map((p) => p.participant_id)
     setSelectedParticipants(new Set(validParticipantIds))
   }
@@ -507,11 +434,12 @@ export function GroupActivityBillingModal({
     }
   }
 
-  // ✅ CREAR BORRADORES DE FACTURAS (SOLO PARA PARTICIPANTES SIN FACTURA)
-  const generateDraftInvoices = async () => {
+  const generateInvoices = async () => {
     if (selectedParticipants.size === 0) return
 
     setGenerating(true)
+    setGeneratedInvoices([])
+
     const selectedParticipantsArray = Array.from(selectedParticipants)
 
     setProgress({
@@ -523,6 +451,11 @@ export function GroupActivityBillingModal({
     })
 
     try {
+      // Importar funciones necesarias
+      const { generateUniqueInvoiceNumber } = await import("@/lib/invoice-utils")
+      const { generatePdf } = await import("@/lib/pdf-generator")
+      const { savePdfToStorage } = await import("@/lib/storage-utils")
+
       // Obtener datos de la organización
       const { data: orgData, error: orgError } = await supabase
         .from("organizations")
@@ -534,37 +467,54 @@ export function GroupActivityBillingModal({
         throw new Error("No se pudieron obtener los datos de la organización")
       }
 
-      // Fase de generación de borradores
+      // Fase de generación
       setProgress((prev) => ({
         ...prev!,
-        phase: "generating_drafts",
-        message: "📄 Creando borradores de facturas para actividad grupal...",
+        phase: "generating",
+        message: "⚡ Iniciando generación de facturas para actividad grupal...",
       }))
 
       const errors: string[] = []
       let successCount = 0
+      const invoicesForZip: GeneratedInvoice[] = []
 
       for (let i = 0; i < selectedParticipantsArray.length; i++) {
         const participantId = selectedParticipantsArray[i]
         const participantData = participantsData.find((p) => p.participant_id === participantId)!
 
-        // ✅ VERIFICAR QUE NO TENGA FACTURA
-        if (participantData.invoice_status !== "none") {
-          errors.push(`${participantData.client_name}: Ya tiene factura`)
-          continue
-        }
-
         setProgress((prev) => ({
           ...prev!,
           current: i + 1,
-          message: `📄 Creando borrador ${i + 1} de ${selectedParticipantsArray.length}`,
+          message: `📄 Generando factura ${i + 1} de ${selectedParticipantsArray.length}`,
           currentClient: participantData.client_name,
         }))
 
         try {
+          // Generar número de factura único
+          const { invoiceNumberFormatted, newInvoiceNumber } = await generateUniqueInvoiceNumber(
+            organizationId,
+            "normal",
+          )
+
           const serviceVatRate = service.vat_rate ?? 0
           const serviceIrpfRate = service.irpf_rate ?? 0
           const serviceRetentionRate = service.retention_rate ?? 0
+
+          // Preparar línea de factura para la actividad grupal
+          const invoiceLines = [
+            {
+              id: crypto.randomUUID(),
+              description: `Actividad Grupal: ${activity.name} - ${format(new Date(activity.date), "dd/MM/yyyy", { locale: es })} (${activity.start_time}-${activity.end_time}) - ${activity.professional?.name || "Sin profesional"}`,
+              quantity: 1,
+              unit_price: service.price,
+              discount_percentage: 0,
+              vat_rate: serviceVatRate,
+              irpf_rate: serviceIrpfRate,
+              retention_rate: serviceRetentionRate,
+              line_amount: service.price,
+              professional_id: null,
+            },
+          ]
 
           // Calcular totales
           const subtotalAmount = service.price
@@ -575,15 +525,10 @@ export function GroupActivityBillingModal({
           const retentionAmount = (baseAmount * serviceRetentionRate) / 100
           const totalAmount = baseAmount + vatAmount - irpfAmount - retentionAmount
 
-          // ✅ PREPARAR NOTAS DE LA FACTURA - INFORMACIÓN SIMPLIFICADA
-          const clientInfoText = `Cliente: ${participantData.client_name}, CIF/NIF: ${participantData.client_tax_id}`
-          const additionalNotes = `Factura generada para actividad grupal "${activity.name}" del ${format(
-            new Date(activity.date),
-            "dd/MM/yyyy",
-            { locale: es },
-          )}\nServicio: ${service.name} - ${service.price}€\nEstado del participante: ${
-            participantData.status === "attended" ? "Asistió" : "Registrado"
-          }\nMétodo de pago: ${getPaymentMethodText(participantData)}`
+          // Preparar notas de la factura
+          const clientInfoText = `Cliente: ${participantData.client_name}, CIF/NIF: ${participantData.client_tax_id}, Dirección: ${participantData.client_address}, ${participantData.client_postal_code} ${participantData.client_city}, ${participantData.client_province}`
+
+          const additionalNotes = `Factura generada para actividad grupal "${activity.name}" del ${format(new Date(activity.date), "dd/MM/yyyy", { locale: es })}\nServicio: ${service.name} - ${service.price}€\nEstado del participante: ${participantData.status === "attended" ? "Asistió" : "Registrado"}\nMétodo de pago: ${getPaymentMethodText(participantData)}`
 
           // Añadir nota de IVA exento automáticamente si vatAmount === 0
           const notaIVAExenta =
@@ -593,17 +538,17 @@ export function GroupActivityBillingModal({
 
           const fullNotes = clientInfoText + "\n\n" + additionalNotes + notaIVAExenta
 
-          // ✅ CREAR FACTURA EN ESTADO BORRADOR (SIN NÚMERO)
+          // Crear factura en la base de datos
           const { data: invoiceData, error: invoiceError } = await supabase
             .from("invoices")
             .insert({
               organization_id: organizationId,
-              invoice_number: null, // ✅ Sin número en borrador
+              invoice_number: invoiceNumberFormatted,
               client_id: participantData.client_id,
               group_activity_id: activity.id,
-              issue_date: format(new Date(), "yyyy-MM-dd"), // ✅ FECHA ACTUAL
+              issue_date: format(new Date(activity.date), "yyyy-MM-dd"),
               invoice_type: "normal",
-              status: "draft", // ✅ Estado borrador
+              status: "paid",
               base_amount: baseAmount,
               vat_amount: vatAmount,
               irpf_amount: irpfAmount,
@@ -620,304 +565,135 @@ export function GroupActivityBillingModal({
 
           if (invoiceError) throw invoiceError
 
-          // Preparar línea de factura para la actividad grupal
-          const invoiceLines = [
-            {
-              invoice_id: invoiceData.id,
-              description: `Actividad Grupal: ${activity.name} - ${format(new Date(activity.date), "dd/MM/yyyy", {
-                locale: es,
-              })} (${activity.start_time}-${activity.end_time}) - ${activity.professional?.name || "Sin profesional"}`,
-              quantity: 1,
-              unit_price: service.price,
-              discount_percentage: 0,
-              vat_rate: serviceVatRate,
-              irpf_rate: serviceIrpfRate,
-              retention_rate: serviceRetentionRate,
-              line_amount: service.price,
-              professional_id: null,
-            },
-          ]
-
-          // Crear líneas de factura
-          const { error: linesError } = await supabase.from("invoice_lines").insert(invoiceLines)
-
-          if (linesError) {
-            console.error("Error saving invoice lines:", linesError)
-          }
-
-          // ✅ ACTUALIZAR ESTADO LOCAL INMEDIATAMENTE
-          setParticipantsData((prevParticipants) =>
-            prevParticipants.map((participant) => {
-              if (participant.participant_id === participantId) {
-                return {
-                  ...participant,
-                  invoice_status: "draft" as const,
-                  invoice_info: {
-                    invoice_id: invoiceData.id,
-                    invoice_number: null,
-                    created_at: invoiceData.created_at,
-                    total_amount: totalAmount,
-                  },
-                }
-              }
-              return participant
+          setExistingInvoices((prev) =>
+            new Map(prev).set(participantData.client_id, {
+              invoice_number: invoiceNumberFormatted,
+              created_at: invoiceData.created_at,
+              id: invoiceData.id,
             }),
           )
 
-          setDraftInvoices((prev) => [
-            ...prev,
-            {
-              invoice_id: invoiceData.id,
-              client_id: participantData.client_id,
-              client_name: participantData.client_name,
-              total_amount: totalAmount,
-              created_at: invoiceData.created_at,
-            },
-          ])
-
-          // Remover de seleccionados
           setSelectedParticipants((prev) => {
             const newSet = new Set(prev)
             newSet.delete(participantId)
             return newSet
           })
 
-          successCount++
-        } catch (error) {
-          console.error(`Error generating draft for participant ${participantData.client_name}:`, error)
-          errors.push(`${participantData.client_name}: ${error instanceof Error ? error.message : "Error desconocido"}`)
-        }
+          // Crear líneas de factura
+          const invoiceLines_db = invoiceLines.map((line) => ({
+            invoice_id: invoiceData.id,
+            description: line.description,
+            quantity: line.quantity,
+            unit_price: line.unit_price,
+            discount_percentage: line.discount_percentage,
+            vat_rate: line.vat_rate,
+            irpf_rate: line.irpf_rate,
+            retention_rate: line.retention_rate,
+            line_amount: line.line_amount,
+            professional_id: line.professional_id ? Number.parseInt(line.professional_id) : null,
+          }))
 
-        // Pequeña pausa para no saturar
-        await new Promise((resolve) => setTimeout(resolve, 300))
-      }
+          const { error: linesError } = await supabase.from("invoice_lines").insert(invoiceLines_db)
 
-      // Completado
-      setProgress({
-        phase: "completed",
-        current: selectedParticipantsArray.length,
-        total: selectedParticipantsArray.length,
-        message: `🎉 ¡Borradores creados exitosamente! ${successCount} borradores generados para la actividad "${activity.name}".`,
-        errors,
-      })
+          if (linesError) {
+            console.error("Error saving invoice lines:", linesError)
+          }
 
-      if (successCount > 0) {
-        toast({
-          title: "✅ Borradores creados",
-          description: `Se crearon ${successCount} borradores para la actividad grupal`,
-        })
-      }
-
-      if (errors.length > 0) {
-        toast({
-          title: "⚠️ Algunos errores encontrados",
-          description: `${errors.length} borradores no se pudieron crear`,
-          variant: "destructive",
-        })
-      }
-    } catch (error) {
-      console.error("Error in group draft creation process:", error)
-      setProgress({
-        phase: "error",
-        current: 0,
-        total: selectedParticipantsArray.length,
-        message: "❌ Error en el proceso de creación de borradores",
-        errors: [error instanceof Error ? error.message : "Error desconocido"],
-      })
-    } finally {
-      setGenerating(false)
-    }
-  }
-
-  // ✅ EMITIR FACTURAS (ASIGNAR NÚMEROS Y ENVIAR A VERIFACTU)
-  const issueAllDrafts = async () => {
-    if (draftInvoices.length === 0) return
-
-    setIssuing(true)
-    setGeneratedInvoices([])
-
-    setProgress({
-      phase: "validating",
-      current: 0,
-      total: draftInvoices.length,
-      message: "🔍 Preparando emisión de facturas...",
-      errors: [],
-    })
-
-    try {
-      const { generateUniqueInvoiceNumber } = await import("@/lib/invoice-utils")
-      const { generatePdf } = await import("@/lib/pdf-generator")
-
-      // Obtener datos de la organización
-      const { data: orgData, error: orgError } = await supabase
-        .from("organizations")
-        .select("*")
-        .eq("id", organizationId)
-        .single()
-
-      if (orgError || !orgData) {
-        throw new Error("No se pudieron obtener los datos de la organización")
-      }
-
-      setProgress((prev) => ({
-        ...prev!,
-        phase: "issuing",
-        message: "⚡ Emitiendo facturas y enviando a VeriFactu...",
-      }))
-
-      const errors: string[] = []
-      let successCount = 0
-      const invoicesForZip: GeneratedInvoice[] = []
-
-      for (let i = 0; i < draftInvoices.length; i++) {
-        const draft = draftInvoices[i]
-
-        setProgress((prev) => ({
-          ...prev!,
-          current: i + 1,
-          message: `⚡ Emitiendo factura ${i + 1} de ${draftInvoices.length}`,
-          currentClient: draft.client_name,
-        }))
-
-        try {
-          // Generar número de factura único
-          const { invoiceNumberFormatted, newInvoiceNumber } = await generateUniqueInvoiceNumber(
-            organizationId,
-            "normal",
-          )
-
-          // Actualizar contador en organización
+          // Actualizar número de factura en la organización
           const { error: updateOrgError } = await supabase
             .from("organizations")
             .update({ last_invoice_number: newInvoiceNumber })
             .eq("id", organizationId)
 
           if (updateOrgError) {
-            throw new Error("Error al reservar el número de factura")
+            console.error("Error updating organization:", updateOrgError)
           }
-
-          // Actualizar factura con número y estado
-          const { error: updateInvoiceError } = await supabase
-            .from("invoices")
-            .update({
-              status: "issued",
-              invoice_number: invoiceNumberFormatted,
-              validated_at: new Date().toISOString(),
-            })
-            .eq("id", draft.invoice_id)
-
-          if (updateInvoiceError) {
-            throw new Error("Error al actualizar la factura")
-          }
-
-          // Enviar a VeriFactu
-          // try {
-          //   const res = await fetch(`/api/verifactu/send-invoice?invoice_id=${draft.invoice_id}`)
-          //   const data = await res.json()
-
-          //   if (!res.ok) {
-          //     throw new Error(data?.error || `Error ${res.status}: ${res.statusText}`)
-          //   }
 
           // Fase de creación de PDFs
           setProgress((prev) => ({
             ...prev!,
             phase: "creating_pdfs",
-            message: `📄 Generando PDF para ${draft.client_name}...`,
-            currentClient: draft.client_name,
+            message: `📄 Generando PDF para ${participantData.client_name}...`,
+            currentClient: participantData.client_name,
           }))
 
-          // Obtener datos completos de la factura para el PDF
-          const { data: fullInvoiceData, error: invoiceError } = await supabase
-            .from("invoices")
-            .select(`
-                *,
-                organization:organizations(*),
-                client:clients(*),
-                invoice_lines(*)
-              `)
-            .eq("id", draft.invoice_id)
-            .single()
+          // Generar PDF
+          try {
+            const newInvoice = {
+              id: invoiceData.id,
+              invoice_number: invoiceNumberFormatted,
+              issue_date: format(new Date(activity.date), "yyyy-MM-dd"),
+              invoice_type: "normal" as const,
+              status: "paid",
+              base_amount: baseAmount,
+              vat_amount: vatAmount,
+              irpf_amount: irpfAmount,
+              retention_amount: retentionAmount,
+              total_amount: totalAmount,
+              discount_amount: totalDiscountAmount,
+              notes: fullNotes,
+              signature: null,
+              payment_method: participantData.payment_method,
+              payment_method_other: participantData.payment_method_other || null,
+              organization: {
+                name: orgData.name,
+                tax_id: orgData.tax_id,
+                address: orgData.address,
+                postal_code: orgData.postal_code,
+                city: orgData.city,
+                province: orgData.province,
+                country: orgData.country,
+                email: orgData.email,
+                phone: orgData.phone,
+                invoice_prefix: orgData.invoice_prefix,
+                logo_url: orgData.logo_url,
+                logo_path: orgData.logo_path,
+              },
+              client_data: {
+                name: participantData.client_name,
+                tax_id: participantData.client_tax_id || "",
+                address: participantData.client_address || "",
+                postal_code: participantData.client_postal_code || "",
+                city: participantData.client_city || "",
+                province: participantData.client_province || "",
+                country: "España",
+                email: participantData.client_email || "",
+                phone: participantData.client_phone || "",
+                client_type: "private",
+              },
+            }
 
-          if (invoiceError || !fullInvoiceData) {
-            throw new Error("No se pudieron obtener los datos de la factura")
-          }
+            const pdfBlob = await generatePdf(newInvoice, invoiceLines, `factura-${invoiceNumberFormatted}.pdf`, false)
 
-          // Preparar datos para el PDF
-          const invoiceForPdf = {
-            ...fullInvoiceData,
-            client_data: {
-              name: fullInvoiceData.client.name,
-              tax_id: fullInvoiceData.client.tax_id || "",
-              address: fullInvoiceData.client.address || "",
-              postal_code: fullInvoiceData.client.postal_code || "",
-              city: fullInvoiceData.client.city || "",
-              province: fullInvoiceData.client.province || "",
-              country: "España",
-              email: fullInvoiceData.client.email || "",
-              phone: fullInvoiceData.client.phone || "",
-              client_type: "private",
-            },
-          }
+            if (pdfBlob && pdfBlob instanceof Blob) {
+              // Guardar para el ZIP
+              invoicesForZip.push({
+                invoiceNumber: invoiceNumberFormatted,
+                clientName: participantData.client_name,
+                amount: totalAmount,
+                pdfBlob: pdfBlob,
+                invoiceId: invoiceData.id,
+              })
 
-          const filename = `factura-${invoiceNumberFormatted}.pdf`
-          const pdfBlob = await generatePdf(invoiceForPdf, fullInvoiceData.invoice_lines, filename, false)
-
-          if (pdfBlob && pdfBlob instanceof Blob) {
-            invoicesForZip.push({
-              invoiceNumber: invoiceNumberFormatted,
-              clientName: draft.client_name,
-              amount: fullInvoiceData.total_amount,
-              pdfBlob: pdfBlob,
-              invoiceId: draft.invoice_id,
-            })
-          }
-
-          // ✅ ACTUALIZAR ESTADO LOCAL - Changed from "verified" to "issued" since VeriFactu is disabled
-          setParticipantsData((prevParticipants) =>
-            prevParticipants.map((participant) => {
-              if (participant.client_id === draft.client_id) {
-                return {
-                  ...participant,
-                  invoice_status: "issued" as const, // Changed from "verified" to "issued" - VeriFactu disabled
-                  invoice_info: {
-                    invoice_id: draft.invoice_id,
-                    invoice_number: invoiceNumberFormatted,
-                    created_at: draft.created_at,
-                    total_amount: draft.total_amount,
-                  },
-                }
+              // Guardar PDF en storage
+              try {
+                const pdfUrl = await savePdfToStorage(pdfBlob, `factura-${invoiceNumberFormatted}.pdf`, organizationId)
+                await supabase.from("invoices").update({ pdf_url: pdfUrl }).eq("id", invoiceData.id)
+              } catch (pdfError) {
+                console.error("Error saving PDF:", pdfError)
               }
-              return participant
-            }),
-          )
+            }
+          } catch (pdfError) {
+            console.error("Error generating PDF:", pdfError)
+          }
 
           successCount++
-          // } catch (verifactuError) {
-          //   console.error("Error en VeriFactu, haciendo rollback...")
-
-          //   // Rollback completo
-          //   await supabase
-          //     .from("invoices")
-          //     .update({
-          //       status: "draft",
-          //       invoice_number: null,
-          //       validated_at: null,
-          //     })
-          //     .eq("id", draft.invoice_id)
-
-          //   await supabase
-          //     .from("organizations")
-          //     .update({ last_invoice_number: newInvoiceNumber - 1 })
-          //     .eq("id", organizationId)
-
-          //   throw new Error("Error al enviar a VeriFactu. Se ha revertido la emisión.")
-          // }
         } catch (error) {
-          console.error(`Error issuing invoice for participant ${draft.client_name}:`, error)
-          errors.push(`${draft.client_name}: ${error instanceof Error ? error.message : "Error desconocido"}`)
+          console.error(`Error generating invoice for participant ${participantData.client_name}:`, error)
+          errors.push(`${participantData.client_name}: ${error instanceof Error ? error.message : "Error desconocido"}`)
         }
 
+        // Pequeña pausa para no saturar
         await new Promise((resolve) => setTimeout(resolve, 300))
       }
 
@@ -971,43 +747,45 @@ export function GroupActivityBillingModal({
         setGeneratedInvoices(invoicesForZip)
       }
 
-      // Limpiar lista de borradores
-      setDraftInvoices([])
+      await checkExistingInvoices(
+        participantsData.map((p) => p.client_id),
+        format(new Date(activity.date), "yyyy-MM-dd"),
+      )
 
       // Completado
       setProgress({
         phase: "completed",
-        current: draftInvoices.length,
-        total: draftInvoices.length,
-        message: `🎉 ¡Facturas emitidas exitosamente! ${successCount} facturas emitidas para la actividad "${activity.name}". Usa el botón "Descargar ZIP" para obtener el archivo. (VeriFactu temporalmente desactivado)`, // Added note about VeriFactu being disabled
+        current: selectedParticipantsArray.length,
+        total: selectedParticipantsArray.length,
+        message: `🎉 ¡Proceso completado exitosamente! ${successCount} facturas generadas para la actividad "${activity.name}". Usa el botón "Descargar ZIP" para obtener el archivo.`,
         errors,
       })
 
       if (successCount > 0) {
         toast({
-          title: "🎉 Facturas emitidas",
-          description: `Se emitieron ${successCount} facturas para la actividad grupal. VeriFactu temporalmente desactivado. Usa el botón para descargar el ZIP`, // Added note about VeriFactu being disabled
+          title: "🎉 Facturas generadas",
+          description: `Se generaron ${successCount} facturas para la actividad grupal. Usa el botón para descargar el ZIP`,
         })
       }
 
       if (errors.length > 0) {
         toast({
           title: "⚠️ Algunos errores encontrados",
-          description: `${errors.length} facturas no se pudieron emitir`,
+          description: `${errors.length} facturas no se pudieron generar`,
           variant: "destructive",
         })
       }
     } catch (error) {
-      console.error("Error in group invoice issuing process:", error)
+      console.error("Error in group billing process:", error)
       setProgress({
         phase: "error",
         current: 0,
-        total: draftInvoices.length,
-        message: "❌ Error en el proceso de emisión de facturas",
+        total: selectedParticipantsArray.length,
+        message: "❌ Error en el proceso de facturación grupal",
         errors: [error instanceof Error ? error.message : "Error desconocido"],
       })
     } finally {
-      setIssuing(false)
+      setGenerating(false)
     }
   }
 
@@ -1016,6 +794,7 @@ export function GroupActivityBillingModal({
 
     try {
       const zip = new JSZip()
+
       generatedInvoices.forEach((invoice) => {
         const cleanClientName = invoice.clientName
           .replace(/[^a-zA-Z0-9\s]/g, "")
@@ -1026,11 +805,9 @@ export function GroupActivityBillingModal({
       })
 
       const zipBlob = await zip.generateAsync({ type: "blob" })
+
       const dateStr = format(new Date(activity.date), "yyyy-MM-dd")
-      const zipFileName = `facturas_actividad_${activity.name.replace(
-        /[^a-zA-Z0-9]/g,
-        "_",
-      )}_${dateStr}_${generatedInvoices.length}_facturas.zip`
+      const zipFileName = `facturas_actividad_${activity.name.replace(/[^a-zA-Z0-9]/g, "_")}_${dateStr}_${generatedInvoices.length}_facturas.zip`
 
       const url = URL.createObjectURL(zipBlob)
       const a = document.createElement("a")
@@ -1062,7 +839,6 @@ export function GroupActivityBillingModal({
     }).format(amount)
   }
 
-  // ✅ CALCULAR TOTAL SOLO DE PARTICIPANTES SIN FACTURAR
   const getTotalSelected = () => {
     return selectedParticipants.size * service.price
   }
@@ -1075,46 +851,6 @@ export function GroupActivityBillingModal({
         return <Badge className="bg-blue-100 text-blue-800">Registrado</Badge>
       default:
         return <Badge variant="outline">{status}</Badge>
-    }
-  }
-
-  // ✅ FUNCIÓN PARA OBTENER BADGE DE ESTADO DE FACTURACIÓN
-  const getInvoiceStatusBadge = (participant: ParticipantBillingData) => {
-    switch (participant.invoice_status) {
-      case "draft":
-        return (
-          <Badge variant="secondary" className="bg-amber-100 text-amber-800">
-            <FileText className="h-3 w-3 mr-1" />
-            Borrador
-          </Badge>
-        )
-      case "issued":
-        return (
-          <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-            <CheckCircle className="h-3 w-3 mr-1" />
-            Emitida #{participant.invoice_info?.invoice_number}
-          </Badge>
-        )
-      case "verified":
-        return (
-          <Badge variant="secondary" className="bg-green-100 text-green-800">
-            <CheckCircle className="h-3 w-3 mr-1" />
-            Verificada #{participant.invoice_info?.invoice_number}
-          </Badge>
-        )
-      case "none":
-      default:
-        return participant.has_complete_data ? (
-          <Badge variant="secondary" className="bg-green-100 text-green-800">
-            <CheckCircle className="h-3 w-3 mr-1" />
-            Datos completos
-          </Badge>
-        ) : (
-          <Badge variant="destructive">
-            <AlertTriangle className="h-3 w-3 mr-1" />
-            Datos incompletos
-          </Badge>
-        )
     }
   }
 
@@ -1137,18 +873,7 @@ export function GroupActivityBillingModal({
                 </p>
               </div>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                // Solo permitir cerrar si no está generando ni emitiendo
-                if (!generating && !issuing) {
-                  onClose()
-                }
-              }}
-              disabled={generating || issuing}
-              className="text-gray-500 hover:text-gray-700"
-            >
+            <Button variant="ghost" size="sm" onClick={onClose} className="text-gray-500 hover:text-gray-700">
               <X className="h-5 w-5" />
             </Button>
           </div>
@@ -1173,129 +898,6 @@ export function GroupActivityBillingModal({
             <>
               {/* Barra de progreso */}
               {progress && <EnhancedProgressBar progress={progress} />}
-
-              {/* Mostrar borradores creados */}
-              {draftInvoices.length > 0 && (
-                <Card className="mb-6 border-2 border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                      <FileText className="h-5 w-5 text-amber-600" />
-                      Borradores Creados ({draftInvoices.length})
-                    </CardTitle>
-                    <p className="text-sm text-gray-600">
-                      Se han creado {draftInvoices.length} borradores. Puedes emitirlos para asignar números de factura
-                      y enviar a VeriFactu.
-                    </p>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2 mb-4">
-                      {draftInvoices.map((draft) => (
-                        <div
-                          key={draft.invoice_id}
-                          className="flex items-center justify-between p-2 bg-white rounded border"
-                        >
-                          <div className="flex-1">
-                            <span className="font-medium">{draft.client_name}</span>
-                            <span className="text-sm text-gray-500 ml-2">{formatCurrency(draft.total_amount)}</span>
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={async () => {
-                              try {
-                                const { generatePdf } = await import("@/lib/pdf-generator")
-
-                                // Obtener datos completos de la factura
-                                const { data: fullInvoiceData, error: invoiceError } = await supabase
-                                  .from("invoices")
-                                  .select(`
-                                    *,
-                                    organization:organizations(*),
-                                    client:clients(*),
-                                    invoice_lines(*)
-                                  `)
-                                  .eq("id", draft.invoice_id)
-                                  .single()
-
-                                if (invoiceError || !fullInvoiceData) {
-                                  throw new Error("No se pudieron obtener los datos de la factura")
-                                }
-
-                                const invoiceForPdf = {
-                                  ...fullInvoiceData,
-                                  client_data: {
-                                    name: fullInvoiceData.client.name,
-                                    tax_id: fullInvoiceData.client.tax_id || "",
-                                    address: fullInvoiceData.client.address || "",
-                                    postal_code: fullInvoiceData.client.postal_code || "",
-                                    city: fullInvoiceData.client.city || "",
-                                    province: fullInvoiceData.client.province || "",
-                                    country: "España",
-                                    email: fullInvoiceData.client.email || "",
-                                    phone: fullInvoiceData.client.phone || "",
-                                    client_type: "private",
-                                  },
-                                }
-
-                                const filename = `borrador-${draft.invoice_id}.pdf`
-                                const pdfBlob = await generatePdf(
-                                  invoiceForPdf,
-                                  fullInvoiceData.invoice_lines,
-                                  filename,
-                                  true,
-                                )
-
-                                if (pdfBlob && pdfBlob instanceof Blob) {
-                                  const url = window.URL.createObjectURL(pdfBlob)
-                                  const link = document.createElement("a")
-                                  link.href = url
-                                  link.download = filename
-                                  document.body.appendChild(link)
-                                  link.click()
-                                  document.body.removeChild(link)
-                                  window.URL.revokeObjectURL(url)
-                                }
-                              } catch (error) {
-                                console.error("Error downloading draft:", error)
-                                toast({
-                                  title: "Error",
-                                  description: "No se pudo descargar el borrador",
-                                  variant: "destructive",
-                                })
-                              }
-                            }}
-                            className="h-7 w-7 p-0"
-                          >
-                            <Download className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm text-gray-600">
-                        Total: {formatCurrency(draftInvoices.reduce((sum, draft) => sum + draft.total_amount, 0))}
-                      </div>
-                      <Button
-                        onClick={issueAllDrafts}
-                        disabled={issuing || generating}
-                        className="gap-2 bg-green-600 hover:bg-green-700"
-                      >
-                        {issuing ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            Emitiendo...
-                          </>
-                        ) : (
-                          <>
-                            <Zap className="h-4 w-4" />
-                            Emitir {draftInvoices.length} Facturas
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
 
               {/* Summary Cards */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
@@ -1382,176 +984,136 @@ export function GroupActivityBillingModal({
 
               {/* Controls */}
               <div className="flex gap-2 mb-4">
-                <Button variant="outline" size="sm" onClick={handleSelectAll} disabled={generating || issuing}>
-                  Seleccionar Válidos (
-                  {participantsData.filter((p) => p.has_complete_data && p.invoice_status === "none").length})
+                <Button variant="outline" size="sm" onClick={handleSelectAll} disabled={generating}>
+                  Seleccionar Válidos ({participantsData.filter((p) => p.has_complete_data).length})
                 </Button>
-                <Button variant="outline" size="sm" onClick={handleDeselectAll} disabled={generating || issuing}>
+                <Button variant="outline" size="sm" onClick={handleDeselectAll} disabled={generating}>
                   Deseleccionar Todos
                 </Button>
               </div>
 
               {/* Lista de participantes */}
               <div className="space-y-3">
-                {participantsData.map((participant) => {
-                  // ✅ DETERMINAR COLOR DE FONDO SEGÚN ESTADO
-                  const getParticipantCardStyle = () => {
-                    switch (participant.invoice_status) {
-                      case "draft":
-                        return "border-amber-200 bg-amber-50"
-                      case "issued":
-                        return "border-blue-200 bg-blue-50 opacity-75"
-                      case "verified":
-                        return "border-green-200 bg-green-50 opacity-75"
-                      case "none":
-                        if (!participant.has_complete_data) {
-                          return "border-red-200 bg-red-50"
-                        } else if (selectedParticipants.has(participant.participant_id)) {
-                          return "border-purple-200 bg-purple-50"
-                        }
-                        return ""
-                      default:
-                        return ""
-                    }
-                  }
+                {participantsData.map((participant) => (
+                  <Card
+                    key={participant.participant_id}
+                    className={`${
+                      !participant.has_complete_data
+                        ? "border-red-200 bg-red-50"
+                        : selectedParticipants.has(participant.participant_id)
+                          ? "border-purple-200 bg-purple-50"
+                          : ""
+                    }`}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-start gap-3">
+                        <Checkbox
+                          checked={selectedParticipants.has(participant.participant_id)}
+                          onCheckedChange={(checked) =>
+                            handleParticipantToggle(participant.participant_id, checked as boolean)
+                          }
+                          disabled={
+                            !participant.has_complete_data || generating || existingInvoices.has(participant.client_id)
+                          }
+                          className="mt-1"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <h3 className="font-medium text-gray-900">{participant.client_name}</h3>
+                            {getStatusBadge(participant.status)}
+                            {existingInvoices.has(participant.client_id) ? (
+                              <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
+                                <AlertTriangle className="h-3 w-3 mr-1" />
+                                Ya facturado
+                              </Badge>
+                            ) : participant.has_complete_data ? (
+                              <Badge variant="secondary" className="bg-green-100 text-green-800">
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Datos completos
+                              </Badge>
+                            ) : (
+                              <Badge variant="destructive">
+                                <AlertTriangle className="h-3 w-3 mr-1" />
+                                Datos incompletos
+                              </Badge>
+                            )}
+                          </div>
 
-                  return (
-                    <Card key={participant.participant_id} className={getParticipantCardStyle()}>
-                      <CardContent className="p-4">
-                        <div className="flex items-start gap-3">
-                          <Checkbox
-                            checked={selectedParticipants.has(participant.participant_id)}
-                            onCheckedChange={(checked) =>
-                              handleParticipantToggle(participant.participant_id, checked as boolean)
-                            }
-                            disabled={
-                              !participant.has_complete_data ||
-                              generating ||
-                              issuing ||
-                              participant.invoice_status !== "none"
-                            }
-                            className="mt-1"
-                          />
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
-                              <h3 className="font-medium text-gray-900">{participant.client_name}</h3>
-                              {getStatusBadge(participant.status)}
-                              {getInvoiceStatusBadge(participant)}
+                          {!participant.has_complete_data && (
+                            <div className="mb-3 p-2 bg-red-100 rounded text-sm text-red-800">
+                              <strong>Faltan datos:</strong> {participant.missing_fields.join(", ")}
                             </div>
+                          )}
 
-                            {/* ✅ MOSTRAR INFORMACIÓN DE FACTURACIÓN DETALLADA */}
-                            {participant.invoice_status !== "none" && (
-                              <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded text-sm text-blue-800">
-                                <div className="flex items-center gap-1 mb-1">
-                                  <AlertTriangle className="h-3 w-3" />
-                                  <strong>Estado de facturación:</strong>
-                                </div>
-                                <div className="space-y-1">
-                                  {participant.invoice_status === "draft" && <p>• Borrador creado</p>}
-                                  {participant.invoice_status === "issued" && (
-                                    <p>• Factura emitida #{participant.invoice_info?.invoice_number}</p>
-                                  )}
-                                  {participant.invoice_status === "verified" && (
-                                    <p>• Factura verificada en VeriFactu #{participant.invoice_info?.invoice_number}</p>
-                                  )}
-                                  {participant.invoice_info && (
-                                    <p>• Total: {formatCurrency(participant.invoice_info.total_amount)}</p>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-
-                            {!participant.has_complete_data && (
-                              <div className="mb-3 p-2 bg-red-100 rounded text-sm text-red-800">
-                                <strong>Faltan datos:</strong> {participant.missing_fields.join(", ")}
-                              </div>
-                            )}
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600 mb-3">
-                              <div>
-                                <p>
-                                  <strong>CIF/NIF:</strong> {participant.client_tax_id || "No especificado"}
-                                </p>
-                                <p>
-                                  <strong>Email:</strong> {participant.client_email || "No especificado"}
-                                </p>
-                              </div>
-                              <div>
-                                <p>
-                                  <strong>Teléfono:</strong> {participant.client_phone || "No especificado"}
-                                </p>
-                                <p>
-                                  <strong>Ciudad:</strong> {participant.client_city || "No especificado"}
-                                </p>
-                              </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600 mb-3">
+                            <div>
+                              <p>
+                                <strong>CIF/NIF:</strong> {participant.client_tax_id || "No especificado"}
+                              </p>
+                              <p>
+                                <strong>Email:</strong> {participant.client_email || "No especificado"}
+                              </p>
                             </div>
-
-                            {/* Método de Pago - Solo mostrar si no tiene factura */}
-                            {participant.has_complete_data && participant.invoice_status === "none" && (
-                              <div className="mb-3 p-3 bg-gray-50 rounded-lg border">
-                                <div className="flex items-center gap-2 mb-2">
-                                  <Label className="text-sm font-medium text-gray-700">Método de Pago</Label>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                  <Select
-                                    value={participant.payment_method}
-                                    onValueChange={(
-                                      value: "tarjeta" | "efectivo" | "transferencia" | "paypal" | "bizum" | "otro",
-                                    ) => updatePaymentMethod(participant.participant_id, value)}
-                                    disabled={generating || issuing}
-                                  >
-                                    <SelectTrigger className="h-8">
-                                      <SelectValue placeholder="Seleccionar método" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="tarjeta">Tarjeta</SelectItem>
-                                      <SelectItem value="efectivo">Efectivo</SelectItem>
-                                      <SelectItem value="transferencia">Transferencia</SelectItem>
-                                      <SelectItem value="paypal">PayPal</SelectItem>
-                                      <SelectItem value="bizum">Bizum</SelectItem>
-                                      <SelectItem value="otro">Otro</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                  {participant.payment_method === "otro" && (
-                                    <Input
-                                      placeholder="Especificar método..."
-                                      value={participant.payment_method_other}
-                                      onChange={(e) =>
-                                        updatePaymentMethod(participant.participant_id, "otro", e.target.value)
-                                      }
-                                      disabled={generating || issuing}
-                                      className="h-8 text-sm"
-                                    />
-                                  )}
-                                </div>
-                              </div>
-                            )}
-
-                            <div className="flex justify-between items-center">
-                              <div className="text-sm text-gray-600">
-                                Participante {participant.status === "attended" ? "que asistió" : "registrado"}
-                              </div>
-                              <div className="text-right">
-                                <div
-                                  className={`text-lg font-semibold ${
-                                    participant.invoice_status !== "none"
-                                      ? "text-gray-500 line-through"
-                                      : "text-green-600"
-                                  }`}
-                                >
-                                  {formatCurrency(service.price)}
-                                </div>
-                                {participant.invoice_status !== "none" && (
-                                  <span className="text-xs text-gray-500 block">Ya facturado</span>
-                                )}
-                              </div>
+                            <div>
+                              <p>
+                                <strong>Teléfono:</strong> {participant.client_phone || "No especificado"}
+                              </p>
+                              <p>
+                                <strong>Ciudad:</strong> {participant.client_city || "No especificado"}
+                              </p>
                             </div>
                           </div>
+
+                          {/* Método de Pago */}
+                          <div className="mb-3 p-3 bg-gray-50 rounded-lg border">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Label className="text-sm font-medium text-gray-700">Método de Pago</Label>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <Select
+                                value={participant.payment_method}
+                                onValueChange={(
+                                  value: "tarjeta" | "efectivo" | "transferencia" | "paypal" | "bizum" | "otro",
+                                ) => updatePaymentMethod(participant.participant_id, value)}
+                                disabled={generating || existingInvoices.has(participant.client_id)}
+                              >
+                                <SelectTrigger className="h-8">
+                                  <SelectValue placeholder="Seleccionar método" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="tarjeta">Tarjeta</SelectItem>
+                                  <SelectItem value="efectivo">Efectivo</SelectItem>
+                                  <SelectItem value="transferencia">Transferencia</SelectItem>
+                                  <SelectItem value="paypal">PayPal</SelectItem>
+                                  <SelectItem value="bizum">Bizum</SelectItem>
+                                  <SelectItem value="otro">Otro</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              {participant.payment_method === "otro" && (
+                                <Input
+                                  placeholder="Especificar método..."
+                                  value={participant.payment_method_other}
+                                  onChange={(e) =>
+                                    updatePaymentMethod(participant.participant_id, "otro", e.target.value)
+                                  }
+                                  disabled={generating || existingInvoices.has(participant.client_id)}
+                                  className="h-8 text-sm"
+                                />
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex justify-between items-center">
+                            <div className="text-sm text-gray-600">
+                              Participante {participant.status === "attended" ? "que asistió" : "registrado"}
+                            </div>
+                            <div className="text-lg font-semibold text-green-600">{formatCurrency(service.price)}</div>
+                          </div>
                         </div>
-                      </CardContent>
-                    </Card>
-                  )
-                })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
             </>
           )}
@@ -1563,34 +1125,18 @@ export function GroupActivityBillingModal({
             <div className="flex justify-between items-center">
               <div className="text-sm text-gray-600">
                 {selectedParticipants.size} participantes seleccionados • {formatCurrency(getTotalSelected())} total
-                {participantsData.filter((p) => p.invoice_status !== "none").length > 0 && (
-                  <span className="block text-xs text-gray-500 mt-1">
-                    {participantsData.filter((p) => p.invoice_status === "draft").length} borradores,{" "}
-                    {participantsData.filter((p) => p.invoice_status === "issued").length} emitidas,{" "}
-                    {participantsData.filter((p) => p.invoice_status === "verified").length} verificadas
-                  </span>
-                )}
               </div>
               <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    // Solo permitir cerrar si no está generando ni emitiendo
-                    if (!generating && !issuing) {
-                      onClose()
-                    }
-                  }}
-                  disabled={generating || issuing}
-                >
+                <Button variant="outline" onClick={onClose} disabled={generating}>
                   Cancelar
                 </Button>
                 <Button
-                  onClick={generateDraftInvoices}
-                  disabled={selectedParticipants.size === 0 || generating || issuing}
+                  onClick={generateInvoices}
+                  disabled={selectedParticipants.size === 0 || generating}
                   className="gap-2"
                 >
                   <FileText className="h-4 w-4" />
-                  {generating ? "Creando borradores..." : `Crear ${selectedParticipants.size} Borradores`}
+                  {generating ? "Generando..." : `Generar ${selectedParticipants.size} Facturas`}
                 </Button>
                 {progress?.phase === "completed" && generatedInvoices.length > 0 && (
                   <Button onClick={downloadZipAgain} variant="outline" className="gap-2 bg-transparent">
