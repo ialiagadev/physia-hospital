@@ -705,28 +705,50 @@ export function GroupActivitiesProvider({ children, organizationId, users }: Gro
               },
             })
           } else if (payload.eventType === "INSERT" && payload.new) {
-            const professional = users.find((u) => u.id === payload.new.professional_id)
-            const newActivity: GroupActivity = {
-              id: payload.new.id,
-              organization_id: payload.new.organization_id,
-              name: payload.new.name,
-              description: payload.new.description,
-              date: payload.new.date,
-              start_time: payload.new.start_time,
-              end_time: payload.new.end_time,
-              service_id: payload.new.service_id,
-              professional_id: payload.new.professional_id,
-              consultation_id: payload.new.consultation_id,
-              max_participants: payload.new.max_participants,
-              current_participants: payload.new.current_participants,
-              status: payload.new.status,
-              color: payload.new.color,
-              created_at: payload.new.created_at,
-              updated_at: payload.new.updated_at,
-              professional: professional ? { id: professional.id, name: professional.name } : undefined,
-              participants: [],
+            const existingActivity = state.activities.find(
+              (activity) =>
+                activity.id === payload.new.id ||
+                (activity.id.startsWith("temp-") &&
+                  activity.name === payload.new.name &&
+                  activity.date === payload.new.date &&
+                  activity.start_time === payload.new.start_time &&
+                  activity.professional_id === payload.new.professional_id),
+            )
+
+            if (!existingActivity) {
+              const professional = users.find((u) => u.id === payload.new.professional_id)
+              const newActivity: GroupActivity = {
+                id: payload.new.id,
+                organization_id: payload.new.organization_id,
+                name: payload.new.name,
+                description: payload.new.description,
+                date: payload.new.date,
+                start_time: payload.new.start_time,
+                end_time: payload.new.end_time,
+                service_id: payload.new.service_id,
+                professional_id: payload.new.professional_id,
+                consultation_id: payload.new.consultation_id,
+                max_participants: payload.new.max_participants,
+                current_participants: payload.new.current_participants,
+                status: payload.new.status,
+                color: payload.new.color,
+                created_at: payload.new.created_at,
+                updated_at: payload.new.updated_at,
+                professional: professional ? { id: professional.id, name: professional.name } : undefined,
+                participants: [],
+              }
+              dispatch({ type: "ADD_ACTIVITY", payload: newActivity })
+            } else {
+              if (existingActivity.id.startsWith("temp-")) {
+                dispatch({
+                  type: "UPDATE_ACTIVITY",
+                  payload: {
+                    id: existingActivity.id,
+                    updates: { id: payload.new.id },
+                  },
+                })
+              }
             }
-            dispatch({ type: "ADD_ACTIVITY", payload: newActivity })
           } else if (payload.eventType === "DELETE" && payload.old) {
             dispatch({ type: "DELETE_ACTIVITY", payload: payload.old.id })
           }
@@ -748,35 +770,42 @@ export function GroupActivitiesProvider({ children, organizationId, users }: Gro
           console.log("[v0] Cambio en group_activity_participants:", payload)
 
           if (payload.eventType === "INSERT" && payload.new) {
-            // Obtener datos del cliente para el nuevo participante
-            const { data: clientData } = await supabase
-              .from("clients")
-              .select("id, name, phone, email")
-              .eq("id", payload.new.client_id)
-              .single()
+            const activity = state.activities.find((a) => a.id === payload.new.group_activity_id)
+            const existingParticipant = activity?.participants?.find(
+              (p) => p.id === payload.new.id || (p.id.startsWith("temp-") && p.client_id === payload.new.client_id),
+            )
 
-            const newParticipant: GroupActivityParticipant = {
-              id: payload.new.id,
-              group_activity_id: payload.new.group_activity_id,
-              client_id: payload.new.client_id,
-              status: payload.new.status,
-              registration_date: payload.new.registration_date,
-              notes: payload.new.notes,
-              client: clientData || {
-                id: payload.new.client_id,
-                name: "Cliente",
-                phone: null,
-                email: null,
-              },
+            if (!existingParticipant) {
+              // Obtener datos del cliente para el nuevo participante
+              const { data: clientData } = await supabase
+                .from("clients")
+                .select("id, name, phone, email")
+                .eq("id", payload.new.client_id)
+                .single()
+
+              const newParticipant: GroupActivityParticipant = {
+                id: payload.new.id,
+                group_activity_id: payload.new.group_activity_id,
+                client_id: payload.new.client_id,
+                status: payload.new.status,
+                registration_date: payload.new.registration_date,
+                notes: payload.new.notes,
+                client: clientData || {
+                  id: payload.new.client_id,
+                  name: "Cliente",
+                  phone: null,
+                  email: null,
+                },
+              }
+
+              dispatch({
+                type: "ADD_PARTICIPANT",
+                payload: {
+                  activityId: payload.new.group_activity_id,
+                  participant: newParticipant,
+                },
+              })
             }
-
-            dispatch({
-              type: "ADD_PARTICIPANT",
-              payload: {
-                activityId: payload.new.group_activity_id,
-                participant: newParticipant,
-              },
-            })
           } else if (payload.eventType === "DELETE" && payload.old) {
             dispatch({
               type: "REMOVE_PARTICIPANT",
@@ -805,7 +834,7 @@ export function GroupActivitiesProvider({ children, organizationId, users }: Gro
       supabase.removeChannel(activitiesSubscription)
       supabase.removeChannel(participantsSubscription)
     }
-  }, [organizationId, userProfile, users])
+  }, [organizationId, userProfile, users, state.activities])
 
   const value: GroupActivitiesContextType = {
     activities: state.activities,
