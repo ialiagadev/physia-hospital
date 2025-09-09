@@ -5,7 +5,7 @@ import { useState } from "react"
 import { loadStripe } from "@stripe/stripe-js"
 import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js"
 import { Button } from "@/components/ui/button"
-import { Loader2, CreditCard } from "lucide-react"
+import { Loader2, CreditCard, MailWarning } from "lucide-react"
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
 
@@ -168,9 +168,17 @@ export function PaymentSetup({
 
   return (
     <div className="space-y-6">
+      {/* ⚠️ Aviso de confirmación de correo */}
+      <div className="flex items-start gap-2 p-3 border border-yellow-300 bg-yellow-50 text-yellow-800 rounded-lg text-sm">
+        <MailWarning className="w-5 h-5 mt-0.5 flex-shrink-0" />
+        <p>
+          <strong>No te olvides de confirmar tu correo</strong>.  
+          Revisa también la carpeta de <span className="font-medium">spam</span> o <span className="font-medium">correo no deseado</span>.
+        </p>
+      </div>
+
       <div className="text-center space-y-2">
         <h3 className="text-xl font-semibold text-gray-900">Configurar método de pago</h3>
-        
       </div>
 
       <Elements stripe={stripePromise}>
