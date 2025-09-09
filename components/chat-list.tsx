@@ -2,19 +2,7 @@
 
 import type React from "react"
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
-import {
-  Search,
-  MoreVertical,
-  Users,
-  MessageCircle,
-  Plus,
-  Phone,
-  FileText,
-  AlertTriangle,
-  Loader2,
-  Tag,
-  X,
-} from "lucide-react"
+import { Search, Users, MessageCircle, Plus, Phone, FileText, AlertTriangle, Loader2, Tag, X } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -1412,21 +1400,19 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
     )
   }
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 bg-gray-50 border-b border-gray-200">
+      <div className="flex items-center justify-between p-4 bg-gray-50 border-b border-gray-200 flex-shrink-0">
         <h1 className="text-xl font-semibold text-gray-800 flex items-center gap-2">Chats</h1>
         <div className="flex items-center gap-2">
           <UnifiedNewConversationModal onConversationCreated={refetch} />
-          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-          </Button>
-          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-          </Button>
+          <Button variant="ghost" size="sm" className="h-8 w-8 p-0"></Button>
+          <Button variant="ghost" size="sm" className="h-8 w-8 p-0"></Button>
         </div>
       </div>
 
       {/* Filtros principales */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="bg-white border-b border-gray-200 flex-shrink-0">
         {/* Asignados */}
         <div
           className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-50 ${
@@ -1463,7 +1449,7 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
       </div>
 
       {/* Barra de búsqueda */}
-      <div className="p-3 bg-white border-b border-gray-200">
+      <div className="p-3 bg-white border-b border-gray-200 flex-shrink-0">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
           <Input
@@ -1476,10 +1462,12 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
       </div>
 
       {/* Filtro de etiquetas */}
-      <TagFilter organizationId={organizationIdNumber} selectedTags={selectedTags} onTagsChange={setSelectedTags} />
+      <div className="flex-shrink-0">
+        <TagFilter organizationId={organizationIdNumber} selectedTags={selectedTags} onTagsChange={setSelectedTags} />
+      </div>
 
       {/* Lista de chats */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto min-h-0" style={{ maxHeight: "calc(100vh - 400px)" }}>
         {filteredConversations.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-32 text-gray-500 p-4">
             <p className="text-center mb-2">
