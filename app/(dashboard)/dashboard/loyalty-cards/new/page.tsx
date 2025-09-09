@@ -238,15 +238,9 @@ function NewLoyaltyCardForm() {
       case "client_id":
         if (!value) return "Debes seleccionar un cliente"
         break
-      case "business_name":
-        if (!value || value.trim() === "") return "Debes ingresar el nombre del negocio"
-        break
       case "total_sessions":
         if (!value || value < 1) return "El número de sesiones debe ser mayor a 0"
         if (value > 20) return "El número máximo de sesiones es 20"
-        break
-      case "reward":
-        if (!value || value.trim() === "") return "Debes ingresar una recompensa"
         break
     }
     return undefined
@@ -262,14 +256,8 @@ function NewLoyaltyCardForm() {
     const clientError = validateField("client_id", formData.client_id)
     if (clientError) newErrors.client_id = clientError
 
-    const businessNameError = validateField("business_name", formData.business_name)
-    if (businessNameError) newErrors.business_name = businessNameError
-
     const sessionsError = validateField("total_sessions", formData.total_sessions)
     if (sessionsError) newErrors.total_sessions = sessionsError
-
-    const rewardError = validateField("reward", formData.reward)
-    if (rewardError) newErrors.reward = rewardError
 
     return newErrors
   }
@@ -456,9 +444,7 @@ function NewLoyaltyCardForm() {
     setTouched({
       organization_id: true,
       client_id: true,
-      business_name: true,
       total_sessions: true,
-      reward: true,
     })
 
     // Validar formulario
@@ -670,9 +656,7 @@ function NewLoyaltyCardForm() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="business_name" className="flex items-center gap-1">
-                    Nombre del Negocio <span className="text-red-500">*</span>
-                  </Label>
+                  <Label htmlFor="business_name">Nombre del Negocio</Label>
                   <Input
                     id="business_name"
                     value={formData.business_name}
@@ -716,9 +700,7 @@ function NewLoyaltyCardForm() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="reward" className="flex items-center gap-1">
-                    Recompensa <span className="text-red-500">*</span>
-                  </Label>
+                  <Label htmlFor="reward">Recompensa</Label>
                   <Textarea
                     id="reward"
                     value={formData.reward}
