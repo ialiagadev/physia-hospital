@@ -428,7 +428,7 @@ export default function ProfessionalsPage() {
               <DialogHeader>
                 <DialogTitle>Invitar Nuevo Profesional</DialogTitle>
                 <DialogDescription>
-                  Se enviará un Magic Link al email para que el profesional pueda acceder y establecer su contraseña.
+                  Se enviará un Magic Link al email para que el profesional pueda acceder y establecer su contraseña. PUEDE LLEGAR A SPAM
                   <br />
                   <strong>
                     Organización:{" "}
@@ -513,7 +513,7 @@ export default function ProfessionalsPage() {
                           <div className="bg-blue-50 p-2 rounded">
                             <p className="text-blue-800 font-medium">📧 Magic Link enviado</p>
                             <p className="text-xs text-blue-600">
-                              El profesional recibirá un email con un enlace para acceder y establecer su contraseña.
+                              El profesional recibirá un email con un enlace para acceder y establecer su contraseña. REVISAR SPAM SI NO LLEGA
                             </p>
                           </div>
                           {/* NUEVO AVISO SOBRE SERVICIOS */}

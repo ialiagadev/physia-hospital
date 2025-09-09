@@ -1352,13 +1352,21 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
 
     const date = new Date(timestamp)
     const now = new Date()
-    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60)
 
-    if (diffInHours < 24) {
+    // Obtener solo la fecha sin hora para comparación precisa
+    const messageDate = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const yesterday = new Date(today)
+    yesterday.setDate(yesterday.getDate() - 1)
+
+    if (messageDate.getTime() === today.getTime()) {
+      // Mensaje de hoy - mostrar hora
       return date.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })
-    } else if (diffInHours < 48) {
+    } else if (messageDate.getTime() === yesterday.getTime()) {
+      // Mensaje de ayer - mostrar "Ayer"
       return "Ayer"
     } else {
+      // Mensaje más antiguo - mostrar fecha
       return date.toLocaleDateString("es-ES", { day: "numeric", month: "short" })
     }
   }
