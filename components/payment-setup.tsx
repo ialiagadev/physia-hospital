@@ -172,7 +172,7 @@ export function PaymentSetup({
       <div className="flex items-start gap-2 p-3 border border-yellow-300 bg-yellow-50 text-yellow-800 rounded-lg text-sm">
         <MailWarning className="w-5 h-5 mt-0.5 flex-shrink-0" />
         <p>
-          <strong>No te olvides de confirmar tu correo</strong>.  
+          <strong>No te olvides de confirmar tu correo al confirmar la tarjeta</strong>.  
           Revisa también la carpeta de <span className="font-medium">spam</span> o <span className="font-medium">correo no deseado</span>.
         </p>
       </div>
