@@ -208,13 +208,7 @@ export function MainSidebar() {
       icon: Calendar,
       isActive: isInSection("public-calendar"),
     },
-    {
-      id: "etiquetas",
-      label: "Etiquetas",
-      href: "/dashboard/etiquetas",
-      icon: Tag,
-      isActive: isInSection("etiquetas"),
-    },
+   
   ]
 
   // Sección General
