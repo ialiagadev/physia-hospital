@@ -1,5 +1,5 @@
 // Cliente HTTP para VeriFactu API
-
+/*
 import { VERIFACTU_CONFIG, validateVeriFactuConfig, type VeriFactuEndpoint } from "./config"
 import type { VeriFactuErrorResponse, VeriFactuRequestOptions } from "./types"
 
@@ -23,7 +23,7 @@ export class VeriFactuClient {
 
   /**
    * Realizar petición HTTP a VeriFactu
-   */
+   
   async request<T = any>(endpoint: VeriFactuEndpoint | string, options: VeriFactuRequestOptions = {}): Promise<T> {
     const {
       method = "GET",
@@ -155,7 +155,7 @@ export class VeriFactuClient {
 
   /**
    * Construir URL del endpoint
-   */
+   
   private buildEndpointUrl(endpoint: VeriFactuEndpoint | string): string {
     if (endpoint in VERIFACTU_CONFIG.ENDPOINTS) {
       return VERIFACTU_CONFIG.ENDPOINTS[endpoint as VeriFactuEndpoint]
@@ -165,21 +165,21 @@ export class VeriFactuClient {
 
   /**
    * Actualizar token de acceso
-   */
+   
   setAccessToken(token: string) {
     this.accessToken = token
   }
 
   /**
    * Obtener token actual
-   */
+   
   getAccessToken(): string | undefined {
     return this.accessToken
   }
 
   /**
    * Verificar si el cliente tiene token
-   */
+   
   hasAccessToken(): boolean {
     return !!this.accessToken
   }
@@ -229,14 +229,14 @@ export class VeriFactuClient {
 
 /**
  * Factory function para crear cliente VeriFactu
- */
+ 
 export function getVeriFactuClient(accessToken?: string): VeriFactuClient {
   return new VeriFactuClient(accessToken)
 }
 
 /**
  * Cliente singleton para operaciones sin autenticación
- */
+ 
 let publicClient: VeriFactuClient | null = null
 
 export function getPublicVeriFactuClient(): VeriFactuClient {
@@ -248,7 +248,11 @@ export function getPublicVeriFactuClient(): VeriFactuClient {
 
 /**
  * Limpiar cliente singleton (útil para tests)
- */
+ 
 export function clearClientCache(): void {
   publicClient = null
 }
+
+
+
+*/

@@ -3,9 +3,22 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { Plus, Bot, Edit, Trash2, MessageSquare, AlertTriangle, Loader2, Settings, Crown, Lock } from "lucide-react"
+import {
+  Plus,
+  Bot,
+  Edit,
+  Trash2,
+  MessageSquare,
+  AlertTriangle,
+  Loader2,
+  Settings,
+  Crown,
+  Lock,
+  CheckSquare,
+  Square,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -15,6 +28,7 @@ import { useAgents } from "@/hooks/use-agents"
 import { useAuth } from "@/app/contexts/auth-context"
 import { supabase } from "@/lib/supabase/client"
 import type { User } from "@/types/chat"
+import { AgentTemplateSelector } from "@/components/agent-template/agent-template-selector"
 
 interface AIFunction {
   id: string
@@ -144,6 +158,19 @@ function AgentDialog({
     }
   }
 
+  const handleToggleAllFunctions = () => {
+    const allFunctionIds = aiFunctions.map((func) => func.id)
+    const allSelected = allFunctionIds.every((id) => selectedFunctions.includes(id))
+
+    if (allSelected) {
+      // If all are selected, deselect all
+      setSelectedFunctions([])
+    } else {
+      // If not all are selected, select all
+      setSelectedFunctions(allFunctionIds)
+    }
+  }
+
   useEffect(() => {
     if (open && agent) {
       console.log("Loading agent data for editing:", agent)
@@ -236,13 +263,36 @@ function AgentDialog({
                     <p className="text-sm text-gray-600">Selecciona las funciones disponibles para este agente</p>
                   </div>
                 </div>
-                {!loadingFunctions && aiFunctions.length > 0 && (
-                  <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm font-medium">
-                    <span>
-                      {selectedFunctions.length}/{aiFunctions.length}
-                    </span>
-                  </div>
-                )}
+                <div className="flex items-center gap-3">
+                  {!loadingFunctions && aiFunctions.length > 0 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleToggleAllFunctions}
+                      className="flex items-center gap-2 text-xs bg-transparent"
+                    >
+                      {aiFunctions.every((func) => selectedFunctions.includes(func.id)) ? (
+                        <>
+                          <Square className="h-3 w-3" />
+                          Deseleccionar todas
+                        </>
+                      ) : (
+                        <>
+                          <CheckSquare className="h-3 w-3" />
+                          Seleccionar todas
+                        </>
+                      )}
+                    </Button>
+                  )}
+                  {!loadingFunctions && aiFunctions.length > 0 && (
+                    <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm font-medium">
+                      <span>
+                        {selectedFunctions.length}/{aiFunctions.length}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {loadingFunctions ? (
@@ -338,83 +388,121 @@ function AgentDialog({
 }
 
 function AgentCard({ agent, onEdit, onDelete }: { agent: User; onEdit: () => void; onDelete: () => void }) {
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+
+  const handleDeleteClick = () => {
+    setShowDeleteConfirm(true)
+  }
+
+  const handleConfirmDelete = () => {
+    onDelete()
+    setShowDeleteConfirm(false)
+  }
+
   return (
-    <LiquidGlass
-      variant="card"
-      intensity="medium"
-      className="group relative flex flex-col h-full transition-all duration-300 hover:shadow-xl"
-      style={{
-        background: "rgba(255, 255, 255, 0.7)",
-        backdropFilter: "blur(20px)",
-        border: "1px solid rgba(0, 0, 0, 0.1)",
-        boxShadow: "0 8px 32px rgba(0, 0, 0, 0.1)",
-      }}
-      rippleEffect={true}
-      flowOnHover={true}
-    >
-      <div className="flex items-center justify-between p-6 pb-3">
-        <div className="flex items-center space-x-3">
-          <LiquidGlass
-            variant="floating"
-            intensity="subtle"
-            className="w-12 h-12 flex items-center justify-center"
-            style={{
-              background: "rgba(147, 51, 234, 0.15)",
-              backdropFilter: "blur(10px)",
-              border: "1px solid rgba(147, 51, 234, 0.3)",
-              boxShadow: "0 4px 16px rgba(147, 51, 234, 0.1)",
-            }}
-          >
-            <Bot className="h-6 w-6 text-purple-600" />
-          </LiquidGlass>
-          <div>
-            <h3 className="text-lg font-semibold text-gray-800 group-hover:text-purple-700 transition-colors">
-              {agent.name}
-            </h3>
-            <div className="flex items-center text-sm text-gray-500">
-              <MessageSquare className="h-3 w-3 mr-1" />
-              Agente IA
+    <>
+      <LiquidGlass
+        variant="card"
+        intensity="medium"
+        className="group relative flex flex-col h-full transition-all duration-300 hover:shadow-xl"
+        style={{
+          background: "rgba(255, 255, 255, 0.7)",
+          backdropFilter: "blur(20px)",
+          border: "1px solid rgba(0, 0, 0, 0.1)",
+          boxShadow: "0 8px 32px rgba(0, 0, 0, 0.1)",
+        }}
+        rippleEffect={true}
+        flowOnHover={true}
+      >
+        <div className="flex items-center justify-between p-6 pb-3">
+          <div className="flex items-center space-x-3">
+            <LiquidGlass
+              variant="floating"
+              intensity="subtle"
+              className="w-12 h-12 flex items-center justify-center"
+              style={{
+                background: "rgba(147, 51, 234, 0.15)",
+                backdropFilter: "blur(10px)",
+                border: "1px solid rgba(147, 51, 234, 0.3)",
+                boxShadow: "0 4px 16px rgba(147, 51, 234, 0.1)",
+              }}
+            >
+              <Bot className="h-6 w-6 text-purple-600" />
+            </LiquidGlass>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-800 group-hover:text-purple-700 transition-colors">
+                {agent.name}
+              </h3>
+              <div className="flex items-center text-sm text-gray-500">
+                <MessageSquare className="h-3 w-3 mr-1" />
+                Agente IA
+              </div>
             </div>
           </div>
+          <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onEdit}
+              className="h-8 w-8 p-0 hover:bg-blue-100 hover:text-blue-600"
+            >
+              <Edit className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleDeleteClick}
+              className="h-8 w-8 p-0 hover:bg-red-100 hover:text-red-600"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
-        <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onEdit}
-            className="h-8 w-8 p-0 hover:bg-blue-100 hover:text-blue-600"
-          >
-            <Edit className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onDelete}
-            className="h-8 w-8 p-0 hover:bg-red-100 hover:text-red-600"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
 
-      <div className="px-6 pb-6 flex-1">
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-gray-700">Prompt:</p>
-          <LiquidGlass
-            variant="card"
-            intensity="subtle"
-            className="p-3"
-            style={{
-              background: "rgba(255, 255, 255, 0.5)",
-              backdropFilter: "blur(10px)",
-              border: "1px solid rgba(0, 0, 0, 0.05)",
-            }}
-          >
-            <p className="text-sm text-gray-600 line-clamp-3">{agent.prompt || "Sin prompt configurado"}</p>
-          </LiquidGlass>
+        <div className="px-6 pb-6 flex-1">
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-gray-700">Prompt:</p>
+            <LiquidGlass
+              variant="card"
+              intensity="subtle"
+              className="p-3"
+              style={{
+                background: "rgba(255, 255, 255, 0.5)",
+                backdropFilter: "blur(10px)",
+                border: "1px solid rgba(0, 0, 0, 0.05)",
+              }}
+            >
+              <p className="text-sm text-gray-600 line-clamp-3">{agent.prompt || "Sin prompt configurado"}</p>
+            </LiquidGlass>
+          </div>
         </div>
-      </div>
-    </LiquidGlass>
+      </LiquidGlass>
+
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5" />
+              Confirmar eliminación
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-gray-700">
+              ¿Estás seguro de que quieres eliminar el agente <strong>"{agent.name}"</strong>?
+            </p>
+            <p className="text-sm text-gray-500 mt-2">Esta acción no se puede deshacer.</p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmDelete}>
+              Eliminar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
@@ -423,6 +511,8 @@ export default function AgentsPage() {
   const [editingAgent, setEditingAgent] = useState<User | null>(null)
   const [organization, setOrganization] = useState<Organization | null>(null)
   const [loadingOrganization, setLoadingOrganization] = useState(true)
+  const [showTemplateSelector, setShowTemplateSelector] = useState(false)
+  const [deleteMessage, setDeleteMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
   const { userProfile } = useAuth()
 
   const { agents, loading, error, createAgent, updateAgent, deleteAgent } = useAgents(
@@ -509,14 +599,18 @@ export default function AgentsPage() {
     }
   }
 
-  const handleDeleteAgent = async (agentId: string) => {
-    if (confirm("¿Estás seguro de que quieres eliminar este agente?")) {
-      try {
-        await deleteAgent(agentId)
-      } catch (error) {
-        console.error("Error deleting agent:", error)
-        alert("Error al eliminar el agente. Por favor, inténtalo de nuevo.")
-      }
+  const handleDeleteAgent = async (agentId: string, agentName: string) => {
+    try {
+      await deleteAgent(agentId)
+      setDeleteMessage({ type: "success", text: `El agente "${agentName}" ha sido eliminado correctamente.` })
+      setTimeout(() => setDeleteMessage(null), 5000)
+    } catch (error) {
+      console.error("Error deleting agent:", error)
+      setDeleteMessage({
+        type: "error",
+        text: `Error al eliminar el agente "${agentName}". Por favor, inténtalo de nuevo.`,
+      })
+      setTimeout(() => setDeleteMessage(null), 5000)
     }
   }
 
@@ -575,28 +669,24 @@ export default function AgentsPage() {
                 <span className="text-gray-600">Cargando...</span>
               </div>
             ) : canCreateMoreAgents() ? (
-              <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-                <DialogTrigger asChild>
-                  <LiquidGlass
-                    variant="button"
-                    intensity="medium"
-                    className="cursor-pointer px-6 py-3"
-                    style={{
-                      background: "rgba(147, 51, 234, 0.15)",
-                      backdropFilter: "blur(10px)",
-                      border: "1px solid rgba(147, 51, 234, 0.3)",
-                      boxShadow: "0 4px 16px rgba(147, 51, 234, 0.1)",
-                    }}
-                    rippleEffect={true}
-                  >
-                    <div className="flex items-center text-purple-700 font-medium">
-                      <Plus className="mr-2.5 h-5 w-5" />
-                      Crear Agente
-                    </div>
-                  </LiquidGlass>
-                </DialogTrigger>
-                <AgentDialog open={createDialogOpen} onOpenChange={setCreateDialogOpen} onSave={handleCreateAgent} />
-              </Dialog>
+              <LiquidGlass
+                variant="button"
+                intensity="medium"
+                className="cursor-pointer px-6 py-3"
+                style={{
+                  background: "rgba(147, 51, 234, 0.15)",
+                  backdropFilter: "blur(10px)",
+                  border: "1px solid rgba(147, 51, 234, 0.3)",
+                  boxShadow: "0 4px 16px rgba(147, 51, 234, 0.1)",
+                }}
+                rippleEffect={true}
+                onClick={() => setShowTemplateSelector(true)}
+              >
+                <div className="flex items-center text-purple-700 font-medium">
+                  <Plus className="mr-2.5 h-5 w-5" />
+                  Crear Agente
+                </div>
+              </LiquidGlass>
             ) : (
               <div className="text-center">
                 <LiquidGlass
@@ -699,7 +789,7 @@ export default function AgentsPage() {
                   boxShadow: "0 4px 16px rgba(147, 51, 234, 0.1)",
                 }}
                 rippleEffect={true}
-                onClick={() => setCreateDialogOpen(true)}
+                onClick={() => setShowTemplateSelector(true)}
               >
                 <div className="flex items-center text-purple-700 font-medium">
                   <Plus className="mr-2 h-5 w-5" />
@@ -737,11 +827,53 @@ export default function AgentsPage() {
                 key={agent.id}
                 agent={agent}
                 onEdit={() => handleEditAgent(agent)}
-                onDelete={() => handleDeleteAgent(agent.id)}
+                onDelete={() => handleDeleteAgent(agent.id, agent.name || "Sin nombre")}
               />
             ))}
           </div>
         )}
+
+        {deleteMessage && (
+          <LiquidGlass
+            variant="card"
+            intensity="medium"
+            className={`mb-6 p-4 ${
+              deleteMessage.type === "success" ? "border-green-200 bg-green-50/80" : "border-red-200 bg-red-50/80"
+            }`}
+            style={{
+              backdropFilter: "blur(20px)",
+              border: `1px solid ${deleteMessage.type === "success" ? "rgba(34, 197, 94, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
+              boxShadow: `0 8px 32px ${deleteMessage.type === "success" ? "rgba(34, 197, 94, 0.1)" : "rgba(239, 68, 68, 0.1)"}`,
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <div
+                className={`flex items-center ${deleteMessage.type === "success" ? "text-green-700" : "text-red-700"}`}
+              >
+                {deleteMessage.type === "success" ? (
+                  <CheckSquare className="h-5 w-5 mr-2" />
+                ) : (
+                  <AlertTriangle className="h-5 w-5 mr-2" />
+                )}
+                <p className="font-medium">{deleteMessage.text}</p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setDeleteMessage(null)}
+                className="h-6 w-6 p-0 hover:bg-transparent"
+              >
+                ×
+              </Button>
+            </div>
+          </LiquidGlass>
+        )}
+
+        <AgentTemplateSelector
+          open={showTemplateSelector}
+          onOpenChange={setShowTemplateSelector}
+          onCreateAgent={handleCreateAgent}
+        />
 
         <AgentDialog
           agent={editingAgent || undefined}
