@@ -304,12 +304,28 @@ export default function AiSensyTemplatesPage() {
   }
 
   if (error) {
+    const isChannelConfigError = error.includes("No se encontró configuración de canal para esta organización")
+
     return (
       <div className="container mx-auto p-6 max-w-6xl">
         <Alert className="border-red-200 bg-red-50">
           <XCircle className="h-4 w-4 text-red-500" />
           <AlertDescription className="text-red-700">
-            <strong>Error al cargar las plantillas:</strong> {error}
+            <div className="space-y-3">
+              <div>
+                <strong>Error al cargar las plantillas:</strong> {error}
+              </div>
+              {isChannelConfigError && (
+                <div>
+                  <p className="text-sm mb-3">
+                    Para usar las plantillas de WhatsApp, primero necesitas configurar un canal de comunicación.
+                  </p>
+                  <Link href="/dashboard/canales/1">
+                    <Button className="bg-blue-600 hover:bg-blue-700 text-white">Configurar Canal Ahora</Button>
+                  </Link>
+                </div>
+              )}
+            </div>
           </AlertDescription>
         </Alert>
       </div>
