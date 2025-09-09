@@ -1419,10 +1419,8 @@ export default function ChatList({ selectedChatId, onChatSelect }: ChatListProps
         <div className="flex items-center gap-2">
           <UnifiedNewConversationModal onConversationCreated={refetch} />
           <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-            <Users className="h-4 w-4" />
           </Button>
           <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-            <MoreVertical className="h-4 w-4" />
           </Button>
         </div>
       </div>
