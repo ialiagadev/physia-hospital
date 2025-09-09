@@ -31,7 +31,7 @@ export async function POST(request: Request) {
     })
 
     // URL base del sitio
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://app.healthmate.tech"
 
     // ✅ CORREGIDO: Quité "/auth" y agregué role
     const redirectUrl = `${siteUrl}/invite-callback?type=invite&organization_id=${organizationId}&role=${role}`
