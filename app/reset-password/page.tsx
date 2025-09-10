@@ -20,43 +20,59 @@ function ResetPasswordForm() {
   const [error, setError] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [sessionLoading, setSessionLoading] = useState(true)
   const router = useRouter()
   const searchParams = useSearchParams()
 
   useEffect(() => {
     const initSession = async () => {
-      const code = searchParams.get("code")
-  
-      if (code) {
-        // Flujo PKCE con ?code=...
-        const { error } = await supabase.auth.exchangeCodeForSession(code)
-        if (error) {
-          setError("El enlace de recuperación no es válido o ha expirado.")
-        }
-      } else {
-        // Flujo clásico con #access_token
-        const hashParams = new URLSearchParams(window.location.hash.substring(1))
-        const accessToken = hashParams.get("access_token")
-        const refreshToken = hashParams.get("refresh_token")
-  
-        if (accessToken && refreshToken) {
-          const { error } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          })
+      try {
+        const code = searchParams.get("code")
+
+        if (code) {
+          // PKCE flow with ?code=...
+          const { error } = await supabase.auth.exchangeCodeForSession(code)
           if (error) {
+            console.error("PKCE exchange error:", error)
             setError("El enlace de recuperación no es válido o ha expirado.")
           }
         } else {
-          setError("Enlace de recuperación inválido o expirado")
+          // Check if we already have a session
+          const {
+            data: { session },
+          } = await supabase.auth.getSession()
+
+          if (!session) {
+            // Try legacy flow with hash fragments
+            const hashParams = new URLSearchParams(window.location.hash.substring(1))
+            const accessToken = hashParams.get("access_token")
+            const refreshToken = hashParams.get("refresh_token")
+            const type = hashParams.get("type")
+
+            if (accessToken && refreshToken && type === "recovery") {
+              const { error } = await supabase.auth.setSession({
+                access_token: accessToken,
+                refresh_token: refreshToken,
+              })
+              if (error) {
+                console.error("Legacy session error:", error)
+                setError("El enlace de recuperación no es válido o ha expirado.")
+              }
+            } else {
+              setError("Enlace de recuperación inválido o expirado. Por favor, solicita un nuevo enlace.")
+            }
+          }
         }
+      } catch (err) {
+        console.error("Session initialization error:", err)
+        setError("Error al inicializar la sesión. Por favor, intenta nuevamente.")
+      } finally {
+        setSessionLoading(false)
       }
     }
-  
+
     initSession()
   }, [searchParams])
-  
-  
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -84,7 +100,6 @@ function ResetPasswordForm() {
         setError(error.message)
       } else {
         setSuccess(true)
-        // Redirigir al login después de 3 segundos
         
       }
     } catch (err: any) {
@@ -92,6 +107,19 @@ function ResetPasswordForm() {
     } finally {
       setLoading(false)
     }
+  }
+
+  if (sessionLoading) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center px-4">
+        <Card className="w-full max-w-md">
+          <CardContent className="text-center py-8">
+            <div className="w-8 h-8 border-2 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-600">Verificando enlace de recuperación...</p>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   if (success) {
@@ -108,6 +136,7 @@ function ResetPasswordForm() {
           </CardHeader>
           <CardContent className="text-center">
             <p className="text-gray-600 mb-4">Tu contraseña ha sido actualizada exitosamente.</p>
+            <p className="text-sm text-gray-500">Serás redirigido al login en unos segundos...</p>
           </CardContent>
         </Card>
       </div>
