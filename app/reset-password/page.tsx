@@ -27,8 +27,11 @@ function ResetPasswordForm() {
   useEffect(() => {
     const handlePasswordReset = async () => {
       const code = searchParams.get("code")
+      const type = searchParams.get("type")
 
-      if (!code) {
+      console.log("[v0] URL params:", { code: code?.substring(0, 10) + "...", type })
+
+      if (!code || type !== "recovery") {
         setError("Enlace de recuperación inválido o expirado")
         return
       }
@@ -36,15 +39,26 @@ function ResetPasswordForm() {
       try {
         const { data, error } = await supabase.auth.exchangeCodeForSession(code)
 
+        console.log("[v0] Exchange result:", { hasSession: !!data.session, error: error?.message })
+
         if (error) {
-          setError("Enlace de recuperación inválido o expirado")
+          console.log("[v0] Exchange error:", error)
+          if (error.message.includes("expired") || error.message.includes("invalid")) {
+            setError("El enlace de recuperación ha expirado. Solicita uno nuevo.")
+          } else {
+            setError("Enlace de recuperación inválido o expirado")
+          }
           return
         }
 
         if (data.session) {
+          console.log("[v0] Session established successfully")
           setSessionReady(true)
+        } else {
+          setError("No se pudo establecer la sesión. Intenta solicitar un nuevo enlace.")
         }
       } catch (err: any) {
+        console.log("[v0] Unexpected error:", err)
         setError("Error al verificar el enlace de recuperación")
       }
     }
@@ -70,13 +84,16 @@ function ResetPasswordForm() {
     }
 
     try {
+      console.log("[v0] Updating password...")
       const { error } = await supabase.auth.updateUser({
         password: password,
       })
 
       if (error) {
+        console.log("[v0] Update password error:", error)
         setError(error.message)
       } else {
+        console.log("[v0] Password updated successfully")
         setSuccess(true)
         await supabase.auth.signOut()
         setTimeout(() => {
@@ -84,6 +101,7 @@ function ResetPasswordForm() {
         }, 3000)
       }
     } catch (err: any) {
+      console.log("[v0] Unexpected error updating password:", err)
       setError("Error inesperado: " + err.message)
     } finally {
       setLoading(false)
