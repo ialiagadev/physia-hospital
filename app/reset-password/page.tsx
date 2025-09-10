@@ -93,7 +93,6 @@ function ResetPasswordForm() {
           </CardHeader>
           <CardContent className="text-center">
             <p className="text-gray-600 mb-4">Tu contraseña ha sido actualizada exitosamente.</p>
-            <p className="text-sm text-gray-500">Redirigiendo al login en unos segundos...</p>
           </CardContent>
         </Card>
       </div>
