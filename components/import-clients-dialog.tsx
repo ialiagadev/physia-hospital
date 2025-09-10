@@ -16,7 +16,7 @@ import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge" // ✅ Añadir Badge
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Upload, AlertCircle, CheckCircle, Download, FileSpreadsheet, Phone } from 'lucide-react'
+import { Upload, AlertCircle, CheckCircle, Download, FileSpreadsheet, Phone } from "lucide-react"
 import type { ClientImportData } from "@/utils/file-parser"
 import { useToast } from "@/hooks/use-toast"
 
@@ -77,7 +77,7 @@ export function ImportClientsDialog({
       }, 500)
 
       // Enviar archivo a la API
-      const response = await fetch("/api/ai-import", { 
+      const response = await fetch("/api/ai-import", {
         method: "POST",
         body: formData,
       })
@@ -149,14 +149,19 @@ export function ImportClientsDialog({
     try {
       console.log("Iniciando importación con organizationId:", organizationId)
 
-      // Verificar duplicados en la base de datos por Tax ID
-      const taxIds = clientsData.map((client) => client.tax_id)
-      const { data: existingClientsByTaxId } = await supabase
-        .from("clients")
-        .select("tax_id, name")
-        .in("tax_id", taxIds)
+      const validTaxIds = clientsData.map((client) => client.tax_id).filter((taxId) => taxId && taxId.trim() !== "")
 
-      const existingTaxIds = new Set(existingClientsByTaxId?.map((c) => c.tax_id) || [])
+      let existingTaxIds = new Set<string>()
+
+      // Solo consultar la base de datos si hay tax_ids válidos
+      if (validTaxIds.length > 0) {
+        const { data: existingClientsByTaxId } = await supabase
+          .from("clients")
+          .select("tax_id, name")
+          .in("tax_id", validTaxIds)
+
+        existingTaxIds = new Set(existingClientsByTaxId?.map((c) => c.tax_id).filter(Boolean) || [])
+      }
 
       // Verificar duplicados por teléfono (solo para teléfonos válidos)
       const validPhones = clientsData.map((client) => client.phone).filter((phone) => phone && phone.length > 6)
@@ -173,8 +178,7 @@ export function ImportClientsDialog({
 
       // Filtrar clientes que no existen
       const newClients = clientsData.filter((client) => {
-        // Verificar duplicado por Tax ID
-        if (existingTaxIds.has(client.tax_id)) {
+        if (client.tax_id && client.tax_id.trim() !== "" && existingTaxIds.has(client.tax_id)) {
           duplicates.push(`${client.name} (${client.tax_id}) ya existe en la base de datos`)
           return false
         }
@@ -188,16 +192,18 @@ export function ImportClientsDialog({
         return true
       })
 
-      // Verificar duplicados dentro del mismo archivo (ya se hace en la API, pero por seguridad)
       const seenTaxIds = new Set<string>()
       const seenPhones = new Set<string>()
 
       const uniqueClients = newClients.filter((client) => {
-        if (seenTaxIds.has(client.tax_id)) {
-          duplicates.push(`${client.name} (${client.tax_id}) está duplicado en el archivo`)
-          return false
+        // Solo verificar duplicados de tax_id si no es null ni vacío
+        if (client.tax_id && client.tax_id.trim() !== "") {
+          if (seenTaxIds.has(client.tax_id)) {
+            duplicates.push(`${client.name} (${client.tax_id}) está duplicado en el archivo`)
+            return false
+          }
+          seenTaxIds.add(client.tax_id)
         }
-        seenTaxIds.add(client.tax_id)
 
         if (client.phone && seenPhones.has(client.phone)) {
           duplicates.push(`${client.name} (teléfono: ${client.phone}) está duplicado en el archivo`)
@@ -420,8 +426,8 @@ Marie,Dubois,FR987654321,Rue de la Paix 45,75001,Paris,Ile-de-France,Francia,mar
             <Alert className="border-orange-200 bg-orange-50">
               <Phone className="h-4 w-4 text-orange-600" />
               <AlertDescription className="text-orange-800">
-                <strong>Prefijos telefónicos:</strong> Si tu archivo no incluye prefijos <strong>(IMPORTANTE PONER EL '+')</strong>, 
-                se asignará +34 (España) por defecto.
+                <strong>Prefijos telefónicos:</strong> Si tu archivo no incluye prefijos{" "}
+                <strong>(IMPORTANTE PONER EL '+')</strong>, se asignará +34 (España) por defecto.
               </AlertDescription>
             </Alert>
           </div>
@@ -533,34 +539,35 @@ Marie,Dubois,FR987654321,Rue de la Paix 45,75001,Paris,Ile-de-France,Francia,mar
                         <TableCell className="max-w-32 truncate" title={client.email || ""}>
                           {client.email || "-"}
                         </TableCell>
-                        
+
                         {/* ✅ TELÉFONO COMPLETO FORMATEADO */}
                         <TableCell className="font-mono text-sm">
                           <div className="flex flex-col">
                             <span className="font-medium">
-                              {client.phone_formatted || `${client.phone_prefix || '+34'}${client.phone}`}
+                              {client.phone_formatted || `${client.phone_prefix || "+34"}${client.phone}`}
                             </span>
                             {client.phone_formatted && (
                               <span className="text-xs text-gray-500">
-                                {client.phone_prefix || '+34'}{client.phone}
+                                {client.phone_prefix || "+34"}
+                                {client.phone}
                               </span>
                             )}
                           </div>
                         </TableCell>
-                        
+
                         {/* ✅ PREFIJO CON BADGE */}
                         <TableCell>
-                          <Badge 
-                            variant={(client.phone_prefix || '+34') === '+34' ? 'default' : 'secondary'}
+                          <Badge
+                            variant={(client.phone_prefix || "+34") === "+34" ? "default" : "secondary"}
                             className="font-mono text-xs"
                           >
-                            {client.phone_prefix || '+34'}
+                            {client.phone_prefix || "+34"}
                           </Badge>
                         </TableCell>
-                        
+
                         {/* ✅ NÚMERO SIN PREFIJO */}
                         <TableCell className="font-mono text-sm">{client.phone}</TableCell>
-                        
+
                         {/* ✅ PAÍS DEL TELÉFONO */}
                         <TableCell>
                           {client.phone_country && (
@@ -569,7 +576,7 @@ Marie,Dubois,FR987654321,Rue de la Paix 45,75001,Paris,Ile-de-France,Francia,mar
                             </Badge>
                           )}
                         </TableCell>
-                        
+
                         <TableCell>{formatDate(client.birth_date)}</TableCell>
                         <TableCell>{formatGender(client.gender)}</TableCell>
                         <TableCell>
@@ -601,11 +608,14 @@ Marie,Dubois,FR987654321,Rue de la Paix 45,75001,Paris,Ile-de-France,Francia,mar
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {/* Contar por prefijo */}
                     {Object.entries(
-                      aiAnalysisResult.data.reduce((acc, client) => {
-                        const prefix = client.phone_prefix || '+34'
-                        acc[prefix] = (acc[prefix] || 0) + 1
-                        return acc
-                      }, {} as Record<string, number>)
+                      aiAnalysisResult.data.reduce(
+                        (acc, client) => {
+                          const prefix = client.phone_prefix || "+34"
+                          acc[prefix] = (acc[prefix] || 0) + 1
+                          return acc
+                        },
+                        {} as Record<string, number>,
+                      ),
                     ).map(([prefix, count]) => (
                       <div key={prefix} className="text-center p-2 bg-white rounded border">
                         <div className="text-lg font-bold text-green-600">{count}</div>
@@ -613,18 +623,21 @@ Marie,Dubois,FR987654321,Rue de la Paix 45,75001,Paris,Ile-de-France,Francia,mar
                       </div>
                     ))}
                   </div>
-                  
+
                   {/* Contar por país de teléfono */}
                   <div className="mt-3">
                     <div className="text-sm font-medium mb-1">Por País:</div>
                     <div className="flex flex-wrap gap-1">
                       {Object.entries(
-                        aiAnalysisResult.data.reduce((acc, client) => {
-                          if (client.phone_country) {
-                            acc[client.phone_country] = (acc[client.phone_country] || 0) + 1
-                          }
-                          return acc
-                        }, {} as Record<string, number>)
+                        aiAnalysisResult.data.reduce(
+                          (acc, client) => {
+                            if (client.phone_country) {
+                              acc[client.phone_country] = (acc[client.phone_country] || 0) + 1
+                            }
+                            return acc
+                          },
+                          {} as Record<string, number>,
+                        ),
                       ).map(([country, count]) => (
                         <Badge key={country} variant="secondary" className="text-xs">
                           {country}: {count}
