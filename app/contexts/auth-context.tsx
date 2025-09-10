@@ -2,7 +2,6 @@
 
 import type React from "react"
 import { createContext, useContext, useEffect, useState, useRef } from "react"
-import { usePathname } from "next/navigation"   // 👈 añadido
 import { supabase } from "@/lib/supabase/client"
 import type { User } from "@supabase/supabase-js"
 
@@ -38,25 +37,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  const pathname = usePathname() // 👈 saber en qué ruta estamos
-
+  // 🚀 NUEVO: Ref para evitar doble inicialización
   const isInitializedRef = useRef(false)
   const currentUserIdRef = useRef<string | null>(null)
   const currentUserRef = useRef<User | null>(null)
   const subscriptionRef = useRef<any>(null)
 
   useEffect(() => {
-    // 🚨 Excepción: no validar sesión inmediatamente en /reset-password
-    if (
-      pathname.startsWith("/reset-password") ||
-      pathname.startsWith("/invite-callback")
-    ) {
-      console.log("⏭ Saltando validación inicial en", pathname)
-      setIsLoading(false)
-      return
-    }
-    
-
     // 🚀 PREVENIR DOBLE INICIALIZACIÓN
     if (isInitializedRef.current) {
       console.log("⚠️ AuthProvider ya inicializado, saltando...")
@@ -68,6 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const initializeAuth = async () => {
       try {
+        // Get initial session
         const {
           data: { session },
         } = await supabase.auth.getSession()
@@ -87,7 +75,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setIsLoading(false)
         }
 
+        // 🚀 OPTIMIZADO: Solo crear suscripción si no existe
         if (!subscriptionRef.current) {
+          // Listen for auth changes
           const {
             data: { subscription },
           } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -96,10 +86,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const previousUserId = currentUserIdRef.current
             const previousUser = currentUserRef.current
 
+            // Solo actualizar si realmente cambió el usuario
             const userChanged =
-              (!previousUser && newUser) ||
-              (previousUser && !newUser) ||
-              previousUser?.id !== newUser?.id
+              (!previousUser && newUser) || (previousUser && !newUser) || previousUser?.id !== newUser?.id
 
             if (userChanged) {
               console.log("🔄 Usuario cambió:", {
@@ -111,6 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               currentUserRef.current = newUser
 
               if (newUser && newUserId) {
+                // Si es un usuario diferente, limpiar el perfil anterior inmediatamente
                 if (newUserId !== previousUserId) {
                   console.log("🧹 Limpiando perfil anterior")
                   setUserProfile(null)
@@ -119,6 +109,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 currentUserIdRef.current = newUserId
                 getUserProfile(newUserId)
               } else {
+                // No hay usuario, limpiar todo
                 currentUserIdRef.current = null
                 setUserProfile(null)
                 setIsLoading(false)
@@ -136,16 +127,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     initializeAuth()
 
+    // Cleanup function
     return () => {
       if (subscriptionRef.current) {
         subscriptionRef.current.unsubscribe()
         subscriptionRef.current = null
       }
     }
-  }, [pathname]) // 👈 dependemos también de la ruta
+  }, []) // 🚀 DEPENDENCIAS VACÍAS - solo se ejecuta una vez
 
   const getUserProfile = async (userId: string) => {
     try {
+      // Verificar que este userId sigue siendo el actual antes de hacer la petición
       if (currentUserIdRef.current !== userId) {
         console.log("⚠️ Cancelando petición obsoleta")
         return
@@ -154,12 +147,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(true)
       console.log("📡 Obteniendo perfil...")
 
-      const { data, error } = await supabase
-        .from("users")
-        .select("*")
-        .eq("id", userId)
-        .single()
+      const { data, error } = await supabase.from("users").select("*").eq("id", userId).single()
 
+      // Verificar nuevamente que este userId sigue siendo el actual después de la petición
       if (currentUserIdRef.current !== userId) {
         console.log("⚠️ Ignorando resultado obsoleto")
         return
@@ -192,6 +182,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error("❌ Error en logout:", error)
     }
 
+    // Limpiar estado local
     currentUserIdRef.current = null
     currentUserRef.current = null
     setUser(null)
@@ -215,9 +206,5 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refreshUserProfile,
   }
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  )
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
