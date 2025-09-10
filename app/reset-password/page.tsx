@@ -24,11 +24,21 @@ function ResetPasswordForm() {
   const searchParams = useSearchParams()
 
   useEffect(() => {
-    // Verificar si hay un token de reset en la URL
-    const code = searchParams.get("code")
-    if (!code) {
-      setError("Enlace de recuperación inválido o expirado")
+    const exchangeSession = async () => {
+      const code = searchParams.get("code")
+
+      if (!code) {
+        setError("Enlace de recuperación inválido o expirado")
+        return
+      }
+
+      const { error } = await supabase.auth.exchangeCodeForSession(code)
+      if (error) {
+        setError("El enlace de recuperación no es válido o ha expirado")
+      }
     }
+
+    exchangeSession()
   }, [searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -57,7 +67,6 @@ function ResetPasswordForm() {
         setError(error.message)
       } else {
         setSuccess(true)
-        // Redirigir al login después de 3 segundos
         setTimeout(() => {
           router.push("/login?message=Contraseña actualizada exitosamente")
         }, 3000)
