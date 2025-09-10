@@ -20,50 +20,15 @@ function ResetPasswordForm() {
   const [error, setError] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-  const [sessionReady, setSessionReady] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
 
   useEffect(() => {
-    const handlePasswordReset = async () => {
-      const code = searchParams.get("code")
-      const type = searchParams.get("type")
-
-      console.log("[v0] URL params:", { code: code?.substring(0, 10) + "...", type })
-
-      if (!code || type !== "recovery") {
-        setError("Enlace de recuperación inválido o expirado")
-        return
-      }
-
-      try {
-        const { data, error } = await supabase.auth.exchangeCodeForSession(code)
-
-        console.log("[v0] Exchange result:", { hasSession: !!data.session, error: error?.message })
-
-        if (error) {
-          console.log("[v0] Exchange error:", error)
-          if (error.message.includes("expired") || error.message.includes("invalid")) {
-            setError("El enlace de recuperación ha expirado. Solicita uno nuevo.")
-          } else {
-            setError("Enlace de recuperación inválido o expirado")
-          }
-          return
-        }
-
-        if (data.session) {
-          console.log("[v0] Session established successfully")
-          setSessionReady(true)
-        } else {
-          setError("No se pudo establecer la sesión. Intenta solicitar un nuevo enlace.")
-        }
-      } catch (err: any) {
-        console.log("[v0] Unexpected error:", err)
-        setError("Error al verificar el enlace de recuperación")
-      }
+    // Verificar si hay un token de reset en la URL
+    const code = searchParams.get("code")
+    if (!code) {
+      setError("Enlace de recuperación inválido o expirado")
     }
-
-    handlePasswordReset()
   }, [searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -84,41 +49,24 @@ function ResetPasswordForm() {
     }
 
     try {
-      console.log("[v0] Updating password...")
       const { error } = await supabase.auth.updateUser({
         password: password,
       })
 
       if (error) {
-        console.log("[v0] Update password error:", error)
         setError(error.message)
       } else {
-        console.log("[v0] Password updated successfully")
         setSuccess(true)
-        await supabase.auth.signOut()
+        // Redirigir al login después de 3 segundos
         setTimeout(() => {
           router.push("/login?message=Contraseña actualizada exitosamente")
         }, 3000)
       }
     } catch (err: any) {
-      console.log("[v0] Unexpected error updating password:", err)
       setError("Error inesperado: " + err.message)
     } finally {
       setLoading(false)
     }
-  }
-
-  if (!sessionReady && !error) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center px-4">
-        <Card className="w-full max-w-md">
-          <CardContent className="text-center py-8">
-            <div className="w-8 h-8 border-2 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-gray-600">Verificando enlace de recuperación...</p>
-          </CardContent>
-        </Card>
-      </div>
-    )
   }
 
   if (success) {
@@ -145,6 +93,7 @@ function ResetPasswordForm() {
   return (
     <div className="min-h-screen bg-white flex items-center justify-center px-4">
       <div className="w-full max-w-md">
+        {/* Logo */}
         <div className="flex justify-center mb-8">
           <Image
             src="/images/physia-logo.png"
