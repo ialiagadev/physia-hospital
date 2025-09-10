@@ -46,8 +46,6 @@ import { Calendar } from "@/components/ui/calendar"
 import { CalendarGroupActivitiesWrapper } from "../calendar/calendar-group-activities-wrapper"
 import { useGroupActivitiesContext } from "@/app/contexts/group-activities-context"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { useCalendarConfig } from "@/hooks/use-calendar-config"
-import { CalendarConfig } from "@/components/calendar/calendar-config"
 
 // 🆕 NUEVO: Componente del icono de Google Calendar usando el archivo SVG
 const GoogleCalendarIcon = ({ className }: { className?: string }) => (
@@ -187,13 +185,12 @@ const MedicalCalendarSystem: React.FC = () => {
   const isUserRole = userProfile?.role === "user"
   const currentUserId = userProfile?.id
 
-  const { intervaloTiempo, updateIntervaloTiempo, isLoaded: configLoaded } = useCalendarConfig()
-
   // Estados principales
   const [currentDate, setCurrentDate] = useState(new Date())
   const [tabPrincipal, setTabPrincipal] = useState<TabPrincipal>("calendario")
   const [vistaCalendario, setVistaCalendario] = useState<VistaCalendario>("dia")
   const [subVistaCalendario, setSubVistaCalendario] = useState<SubVistaCalendario>("horario")
+  const [intervaloTiempo, setIntervaloTiempo] = useState<IntervaloTiempo>(60)
 
   // Estados de UI
   const [selectedAppointment, setSelectedAppointment] = useState<AppointmentWithDetails | null>(null)
@@ -1020,12 +1017,8 @@ const MedicalCalendarSystem: React.FC = () => {
 
   const legacyUsers = convertUsersToLegacyFormat(users)
 
-  if (!configLoaded) {
-    return <Loading />
-  }
-
   return (
-    <div className="flex flex-col h-full bg-background">
+    <div className="min-h-screen flex flex-col bg-background">
       {/* Header simplificado */}
       <div className="border-b px-4 py-2 bg-white">
         <h1 className="text-lg font-semibold">Calendario Médico</h1>
@@ -1168,7 +1161,7 @@ const MedicalCalendarSystem: React.FC = () => {
                         {/* Tiempo - SOLO ICONO */}
                         <Select
                           value={intervaloTiempo.toString()}
-                          onValueChange={(value) => updateIntervaloTiempo(Number(value) as IntervaloTiempo)}
+                          onValueChange={(value) => setIntervaloTiempo(Number(value) as IntervaloTiempo)}
                         >
                           <SelectTrigger className="w-10">
                             <Clock className="h-16 w-16" />
@@ -1231,8 +1224,6 @@ const MedicalCalendarSystem: React.FC = () => {
 
                   {/* Vista del calendario */}
                   <div className="flex-1 overflow-auto">
-                    {/* Configuración del calendario */}
-                    <CalendarConfig intervaloTiempo={intervaloTiempo} onIntervaloChange={updateIntervaloTiempo} />
                     {subVistaCalendario === "horario" && (
                       <>
                         {vistaCalendario === "dia" && (
