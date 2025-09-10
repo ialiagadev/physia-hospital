@@ -20,21 +20,41 @@ function ResetPasswordForm() {
   const [error, setError] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [sessionReady, setSessionReady] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
 
   useEffect(() => {
-    // Verificar si hay un token de reset en la URL
-    const code = searchParams.get("code")
-    if (!code) {
-      setError("Enlace de recuperación inválido o expirado")
+    const exchangeSession = async () => {
+      const code = searchParams.get("code")
+
+      if (!code) {
+        setError("Enlace de recuperación inválido o expirado")
+        return
+      }
+
+      const { error } = await supabase.auth.exchangeCodeForSession(code)
+      if (error) {
+        console.error("❌ Error intercambiando código:", error.message)
+        setError("El enlace de recuperación no es válido o ha expirado")
+      } else {
+        setSessionReady(true)
+      }
     }
+
+    exchangeSession()
   }, [searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError("")
+
+    if (!sessionReady) {
+      setError("La sesión no está lista. Refresca el enlace de recuperación.")
+      setLoading(false)
+      return
+    }
 
     if (password !== confirmPassword) {
       setError("Las contraseñas no coinciden")
@@ -57,7 +77,9 @@ function ResetPasswordForm() {
         setError(error.message)
       } else {
         setSuccess(true)
-        
+        setTimeout(() => {
+          router.push("/login?message=Contraseña actualizada exitosamente")
+        }, 3000)
       }
     } catch (err: any) {
       setError("Error inesperado: " + err.message)
@@ -80,6 +102,7 @@ function ResetPasswordForm() {
           </CardHeader>
           <CardContent className="text-center">
             <p className="text-gray-600 mb-4">Tu contraseña ha sido actualizada exitosamente.</p>
+            <p className="text-sm text-gray-500">Redirigiendo al login en unos segundos...</p>
           </CardContent>
         </Card>
       </div>
@@ -163,7 +186,7 @@ function ResetPasswordForm() {
               <Button
                 type="submit"
                 className="w-full h-12 bg-purple-600 hover:bg-purple-700"
-                disabled={loading || !password || !confirmPassword}
+                disabled={loading || !password || !confirmPassword || !sessionReady}
               >
                 {loading ? (
                   <div className="flex items-center justify-center">
