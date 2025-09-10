@@ -9,7 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Shield, CheckCircle, AlertCircle, Building2, Mail, Phone, MapPin, Stethoscope } from 'lucide-react'
+import { Shield, CheckCircle, AlertCircle, Building2, Mail, Phone, MapPin, Stethoscope } from "lucide-react"
 import { SignaturePad } from "@/components/signature-pad"
 
 interface OrganizationData {
@@ -121,7 +121,7 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
     const basicFieldsValid = fullName.trim() && dni.trim() && signature
     const requiredCheckboxesValid = termsAccepted && documentReadUnderstood
     const medicalTreatmentValid = !requiresMedicalTreatment() || medicalTreatmentAccepted
-    
+
     console.log("🔍 VALIDATION DEBUG:", {
       basicFieldsValid: !!basicFieldsValid,
       termsAccepted,
@@ -130,9 +130,9 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
       medicalTreatmentRequired: requiresMedicalTreatment(),
       medicalTreatmentAccepted,
       medicalTreatmentValid,
-      finalResult: !!(basicFieldsValid && requiredCheckboxesValid && medicalTreatmentValid)
+      finalResult: !!(basicFieldsValid && requiredCheckboxesValid && medicalTreatmentValid),
     })
-    
+
     return basicFieldsValid && requiredCheckboxesValid && medicalTreatmentValid
   }
 
@@ -317,11 +317,11 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
           )}
         </div>
 
-        {/* ✅ LAYOUT SIMPLIFICADO - 2 COLUMNAS */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Consent Form Content - Más ancho */}
-          <div className="lg:col-span-2">
-            <Card>
+        {/* ✅ LAYOUT MEJORADO - MÁS ADAPTABLE */}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+          {/* Consent Form Content - Adaptable con scroll interno */}
+          <div className="lg:col-span-3">
+            <Card className="h-fit">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Shield className="h-5 w-5" />
@@ -332,18 +332,20 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
                 )}
               </CardHeader>
               <CardContent>
-                <div
-                  className="prose prose-sm max-w-none"
-                  dangerouslySetInnerHTML={{ __html: consentData.consent_form.content }}
-                />
+                <div className="max-h-[70vh] overflow-y-auto pr-2">
+                  <div
+                    className="prose prose-sm max-w-none"
+                    dangerouslySetInnerHTML={{ __html: consentData.consent_form.content }}
+                  />
+                </div>
               </CardContent>
             </Card>
           </div>
 
-          {/* ✅ FORMULARIO DE FIRMA CORREGIDO */}
-          <div className="lg:col-span-1">
-            <Card className="sticky top-8">
-              <CardHeader>
+          {/* ✅ FORMULARIO DE FIRMA MEJORADO - STICKY Y MÁS COMPACTO */}
+          <div className="lg:col-span-2">
+            <Card className="sticky top-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
+              <CardHeader className="pb-4">
                 <CardTitle className="text-lg">Firmar consentimiento</CardTitle>
                 <CardDescription>Complete los datos para firmar digitalmente</CardDescription>
               </CardHeader>
@@ -379,11 +381,11 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
 
                 <Separator />
 
-                {/* ✅ CHECKBOXES CON IDs ÚNICOS */}
+                {/* ✅ CHECKBOXES COMPACTOS */}
                 <div className="space-y-3">
                   <Label className="text-sm font-medium">Consentimientos requeridos:</Label>
 
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     {/* ✅ TRATAMIENTO DE DATOS (OBLIGATORIO) */}
                     <div className="flex items-start space-x-2">
                       <Checkbox
@@ -409,7 +411,7 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
                       </Label>
                     </div>
 
-                    {/* ✅ COMUNICACIONES DE IA (OPCIONAL) - ID ÚNICO */}
+                    {/* ✅ COMUNICACIONES DE IA (OPCIONAL) */}
                     <div className="flex items-start space-x-2">
                       <Checkbox
                         id="consent-ai-communications-optional"
@@ -417,8 +419,7 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
                         onCheckedChange={(checked) => setAiCommunicationsAccepted(checked as boolean)}
                       />
                       <Label htmlFor="consent-ai-communications-optional" className="text-xs leading-relaxed">
-                        Autorizo las comunicaciones automatizadas por asistente virtual de IA y el uso de los canales
-                        indicados.
+                        Autorizo las comunicaciones automatizadas por asistente virtual de IA.
                       </Label>
                     </div>
 
@@ -433,7 +434,7 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
                         <Label htmlFor="consent-medical-treatment-required" className="text-xs leading-relaxed">
                           <span className="text-red-500">*</span>
                           <Stethoscope className="w-3 h-3 inline mx-1" />
-                          Doy mi consentimiento para el tratamiento médico específico descrito en este documento.
+                          Doy mi consentimiento para el tratamiento médico específico.
                         </Label>
                       </div>
                     )}
@@ -446,34 +447,23 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
                         onCheckedChange={(checked) => setMarketingNotificationsAccepted(checked as boolean)}
                       />
                       <Label htmlFor="consent-marketing-optional" className="text-xs leading-relaxed">
-                        Doy mi consentimiento para recibir información comercial y promociones.
+                        Recibir información comercial y promociones.
                       </Label>
                     </div>
                   </div>
 
                   <p className="text-xs text-gray-500">
                     <span className="text-red-500">*</span> Campos obligatorios
-                    {requiresMedicalTreatment() && (
-                      <span className="block mt-1">
-                        <Stethoscope className="w-3 h-3 inline mr-1" />
-                        Incluye consentimiento para tratamiento médico específico
-                      </span>
-                    )}
                   </p>
                 </div>
 
                 <Separator />
 
-                {/* Firma */}
+                {/* Firma - Más compacta */}
                 <div>
                   <Label className="text-sm">Firma digital</Label>
-                  <SignaturePad onSignatureChange={setSignature} />
+                  <SignaturePad onSignatureChange={setSignature} width={300} height={150} className="mt-2" />
                   <p className="text-xs text-gray-500 mt-1">Firme usando su dedo o ratón</p>
-                  {signature && (
-                    <Button variant="outline" size="sm" onClick={() => setSignature(null)} className="mt-2">
-                      Borrar firma
-                    </Button>
-                  )}
                 </div>
 
                 {error && (
@@ -483,42 +473,33 @@ export default function ConsentPage({ params }: { params: { token: string } }) {
                   </Alert>
                 )}
 
-                {/* ✅ BOTÓN CON VALIDACIÓN USANDO FUNCIÓN HELPER */}
-                <Button
-                  onClick={handleSign}
-                  disabled={signing || !areRequiredFieldsValid()}
-                  className="w-full"
-                >
+                {/* ✅ BOTÓN DE FIRMA */}
+                <Button onClick={handleSign} disabled={signing || !areRequiredFieldsValid()} className="w-full">
                   {signing ? "Firmando..." : "Firmar consentimiento"}
                 </Button>
 
-                {/* ✅ DEBUG INFO - REMOVER EN PRODUCCIÓN */}
-                <div className="text-xs text-gray-400 p-2 bg-gray-50 rounded">
-                  <p>Debug: Términos={termsAccepted ? '✓' : '✗'}, Documento={documentReadUnderstood ? '✓' : '✗'}, IA={aiCommunicationsAccepted ? '✓' : '✗'}, Médico={requiresMedicalTreatment() ? (medicalTreatmentAccepted ? '✓' : '✗') : 'N/A'}</p>
-                </div>
-
-                {/* ✅ INFO ORGANIZACIÓN SIMPLIFICADA */}
+                {/* ✅ INFO ORGANIZACIÓN COMPACTA */}
                 {consentData.organization && (
-                  <div className="pt-4 border-t">
+                  <div className="pt-3 border-t">
                     <div className="text-xs text-gray-600 space-y-1">
                       <p className="font-medium">{consentData.organization.name}</p>
                       {consentData.organization.address && (
                         <div className="flex items-center gap-1">
-                          <MapPin className="h-3 w-3" />
-                          <span>
+                          <MapPin className="h-3 w-3 flex-shrink-0" />
+                          <span className="truncate">
                             {consentData.organization.address}, {consentData.organization.city}
                           </span>
                         </div>
                       )}
                       {consentData.organization.email && (
                         <div className="flex items-center gap-1">
-                          <Mail className="h-3 w-3" />
-                          <span>{consentData.organization.email}</span>
+                          <Mail className="h-3 w-3 flex-shrink-0" />
+                          <span className="truncate">{consentData.organization.email}</span>
                         </div>
                       )}
                       {consentData.organization.phone && (
                         <div className="flex items-center gap-1">
-                          <Phone className="h-3 w-3" />
+                          <Phone className="h-3 w-3 flex-shrink-0" />
                           <span>{consentData.organization.phone}</span>
                         </div>
                       )}
