@@ -8,24 +8,30 @@ const supabase = createClient(
 
 export async function POST(req: Request) {
   try {
-    const { email, newPassword } = await req.json()
+    const { id, email, newPassword } = await req.json()
 
-    if (!email || !newPassword) {
+    if ((!id && !email) || !newPassword) {
       return NextResponse.json({ error: 'Faltan parámetros' }, { status: 400 })
     }
 
-    // Buscar usuario por email en auth.users
-    const { data: { users }, error: findError } = await supabase.auth.admin.listUsers()
-    if (findError) throw findError
+    let userId = id
 
-    const user = users.find((u) => u.email === email)
-    if (!user) {
-      return NextResponse.json({ error: 'Usuario no encontrado' }, { status: 404 })
+    // Si no se pasa id, buscar por email (usando admin.listUsers)
+    if (!userId && email) {
+      const { data, error: findError } = await supabase.auth.admin.listUsers()
+      if (findError) throw findError
+
+      const user = data.users.find((u) => u.email === email)
+      if (!user) {
+        return NextResponse.json({ error: 'Usuario no encontrado' }, { status: 404 })
+      }
+      userId = user.id
     }
 
-    // Actualizar contraseña
-    const { data, error } = await supabase.auth.admin.updateUserById(user.id, {
+    // Actualizar contraseña y marcar email confirmado
+    const { data, error } = await supabase.auth.admin.updateUserById(userId!, {
       password: newPassword,
+      email_confirm: true
     })
 
     if (error) throw error

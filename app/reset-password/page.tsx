@@ -24,15 +24,23 @@ function ResetPasswordForm() {
   const searchParams = useSearchParams()
 
   useEffect(() => {
-    const code = searchParams.get("code");
+    const code = searchParams.get("code")
+  
     if (code) {
+      // Caso 1: flujo con ?code=...
       supabase.auth.exchangeCodeForSession(code).catch(() => {
-        setError("El enlace de recuperación no es válido o ha expirado.");
-      });
+        setError("El enlace de recuperación no es válido o ha expirado.")
+      })
     } else {
-      setError("Enlace de recuperación inválido o expirado");
+      // Caso 2: flujo con #access_token=...
+      supabase.auth.getSession().then(({ data, error }) => {
+        if (error || !data.session) {
+          setError("Enlace de recuperación inválido o expirado")
+        }
+      })
     }
-  }, [searchParams]);
+  }, [searchParams])
+  
   
 
   const handleSubmit = async (e: React.FormEvent) => {
