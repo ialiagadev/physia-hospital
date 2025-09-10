@@ -141,11 +141,15 @@ export function AgentTemplateSelector({ open, onOpenChange, onCreateAgent }: Age
             const colors = getColorClasses(template.color)
 
             return (
-              <LiquidGlass
+                <LiquidGlass
                 key={template.id}
                 variant="card"
                 intensity="medium"
-                className="group relative p-6 transition-all duration-300 cursor-pointer hover:shadow-xl"
+                className={`group relative p-6 transition-all duration-300 ${
+                  template.id === "debt-management"
+                    ? "opacity-50 cursor-not-allowed"
+                    : "cursor-pointer hover:shadow-xl"
+                }`}
                 style={{
                   background: colors.background,
                   backdropFilter: "blur(20px)",
@@ -153,8 +157,9 @@ export function AgentTemplateSelector({ open, onOpenChange, onCreateAgent }: Age
                   boxShadow: "0 8px 32px rgba(0, 0, 0, 0.1)",
                 }}
                 rippleEffect
-                onClick={() => handleTemplateSelect(template)}
+                onClick={() => template.id !== "debt-management" && handleTemplateSelect(template)} // 🚫 bloqueada
               >
+              
                 <div className="flex items-start gap-4 mb-4">
                   <LiquidGlass
                     variant="floating"
