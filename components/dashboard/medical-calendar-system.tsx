@@ -190,8 +190,16 @@ const MedicalCalendarSystem: React.FC = () => {
   const [tabPrincipal, setTabPrincipal] = useState<TabPrincipal>("calendario")
   const [vistaCalendario, setVistaCalendario] = useState<VistaCalendario>("dia")
   const [subVistaCalendario, setSubVistaCalendario] = useState<SubVistaCalendario>("horario")
-  const [intervaloTiempo, setIntervaloTiempo] = useState<IntervaloTiempo>(60)
-
+  const [intervaloTiempo, setIntervaloTiempo] = useState<IntervaloTiempo>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("intervaloTiempo")
+      return saved ? (Number(saved) as IntervaloTiempo) : 60
+    }
+    return 60
+  })
+  useEffect(() => {
+    localStorage.setItem("intervaloTiempo", intervaloTiempo.toString())
+  }, [intervaloTiempo])
   // Estados de UI
   const [selectedAppointment, setSelectedAppointment] = useState<AppointmentWithDetails | null>(null)
   const [showNewAppointmentModal, setShowNewAppointmentModal] = useState(false)
