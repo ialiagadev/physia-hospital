@@ -20,58 +20,36 @@ function ResetPasswordForm() {
   const [error, setError] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-  const [sessionLoading, setSessionLoading] = useState(true)
+  const [sessionReady, setSessionReady] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
 
   useEffect(() => {
-    const initSession = async () => {
+    const handlePasswordReset = async () => {
+      const code = searchParams.get("code")
+
+      if (!code) {
+        setError("Enlace de recuperación inválido o expirado")
+        return
+      }
+
       try {
-        const code = searchParams.get("code")
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code)
 
-        if (code) {
-          // PKCE flow with ?code=...
-          const { error } = await supabase.auth.exchangeCodeForSession(code)
-          if (error) {
-            console.error("PKCE exchange error:", error)
-            setError("El enlace de recuperación no es válido o ha expirado.")
-          }
-        } else {
-          // Check if we already have a session
-          const {
-            data: { session },
-          } = await supabase.auth.getSession()
-
-          if (!session) {
-            // Try legacy flow with hash fragments
-            const hashParams = new URLSearchParams(window.location.hash.substring(1))
-            const accessToken = hashParams.get("access_token")
-            const refreshToken = hashParams.get("refresh_token")
-            const type = hashParams.get("type")
-
-            if (accessToken && refreshToken && type === "recovery") {
-              const { error } = await supabase.auth.setSession({
-                access_token: accessToken,
-                refresh_token: refreshToken,
-              })
-              if (error) {
-                console.error("Legacy session error:", error)
-                setError("El enlace de recuperación no es válido o ha expirado.")
-              }
-            } else {
-              setError("Enlace de recuperación inválido o expirado. Por favor, solicita un nuevo enlace.")
-            }
-          }
+        if (error) {
+          setError("Enlace de recuperación inválido o expirado")
+          return
         }
-      } catch (err) {
-        console.error("Session initialization error:", err)
-        setError("Error al inicializar la sesión. Por favor, intenta nuevamente.")
-      } finally {
-        setSessionLoading(false)
+
+        if (data.session) {
+          setSessionReady(true)
+        }
+      } catch (err: any) {
+        setError("Error al verificar el enlace de recuperación")
       }
     }
 
-    initSession()
+    handlePasswordReset()
   }, [searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -100,7 +78,10 @@ function ResetPasswordForm() {
         setError(error.message)
       } else {
         setSuccess(true)
-        
+        await supabase.auth.signOut()
+        setTimeout(() => {
+          router.push("/login?message=Contraseña actualizada exitosamente")
+        }, 3000)
       }
     } catch (err: any) {
       setError("Error inesperado: " + err.message)
@@ -109,7 +90,7 @@ function ResetPasswordForm() {
     }
   }
 
-  if (sessionLoading) {
+  if (!sessionReady && !error) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center px-4">
         <Card className="w-full max-w-md">
@@ -136,7 +117,7 @@ function ResetPasswordForm() {
           </CardHeader>
           <CardContent className="text-center">
             <p className="text-gray-600 mb-4">Tu contraseña ha sido actualizada exitosamente.</p>
-            <p className="text-sm text-gray-500">Serás redirigido al login en unos segundos...</p>
+            <p className="text-sm text-gray-500">Redirigiendo al login en unos segundos...</p>
           </CardContent>
         </Card>
       </div>
@@ -146,7 +127,6 @@ function ResetPasswordForm() {
   return (
     <div className="min-h-screen bg-white flex items-center justify-center px-4">
       <div className="w-full max-w-md">
-        {/* Logo */}
         <div className="flex justify-center mb-8">
           <Image
             src="/images/physia-logo.png"
