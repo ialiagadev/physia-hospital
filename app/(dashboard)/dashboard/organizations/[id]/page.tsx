@@ -38,8 +38,10 @@ import {
 import { Plus, Edit, Trash2, Save, AlertTriangle, CheckCircle } from "lucide-react"
 
 interface Organization {
+  comercial_name: string
   id: number
   name: string
+  comercial: string | null   
   tax_id: string
   address: string
   postal_code: string
@@ -191,6 +193,7 @@ export default function EditOrganizationPage({ params }: { params: { id: string 
       const formData = new FormData(e.target as HTMLFormElement)
       const updatedOrg: any = {
         name: formData.get("name"),
+       comercial_name: formData.get("comercial_name") || null, // 👈 nuevo
         tax_id: formData.get("tax_id"),
         address: formData.get("address"),
         postal_code: formData.get("postal_code"),
@@ -468,6 +471,17 @@ export default function EditOrganizationPage({ params }: { params: { id: string 
                     <Label htmlFor="name">Nombre o Razón Social</Label>
                     <Input id="name" name="name" defaultValue={organization?.name} required />
                   </div>
+
+                  <div className="space-y-2">
+  <Label htmlFor="trade_name">Nombre Comercial</Label>
+  <Input
+    id="trade_name"
+    name="trade_name"
+    defaultValue={organization?.comercial_name || ""}
+    placeholder="Ej: Clínica Salud Natural"
+  />
+</div>
+
 
                   <div className="space-y-2">
                     <Label htmlFor="tax_id">CIF/NIF</Label>
