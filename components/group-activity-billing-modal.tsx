@@ -286,9 +286,7 @@ export function GroupActivityBillingModal({
         const missingFields: string[] = []
         if (!client?.name?.trim()) missingFields.push("Nombre")
         if (!(client as any)?.tax_id?.trim()) missingFields.push("CIF/NIF")
-        if (!(client as any)?.address?.trim()) missingFields.push("Dirección")
-        if (!(client as any)?.postal_code?.trim()) missingFields.push("Código Postal")
-        if (!(client as any)?.city?.trim()) missingFields.push("Ciudad")
+    
 
         const hasCompleteData = missingFields.length === 0
 

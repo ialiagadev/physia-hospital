@@ -457,9 +457,7 @@ export function DailyBillingModal({ isOpen, onClose, selectedDate }: DailyBillin
           const missingFields: string[] = []
           if (!client.name?.trim()) missingFields.push("Nombre")
           if (!client.tax_id?.trim()) missingFields.push("CIF/NIF")
-          if (!client.address?.trim()) missingFields.push("Dirección")
-          if (!client.postal_code?.trim()) missingFields.push("Código Postal")
-          if (!client.city?.trim()) missingFields.push("Ciudad")
+          
 
           clientsMap.set(clientId, {
             client_id: clientId,
