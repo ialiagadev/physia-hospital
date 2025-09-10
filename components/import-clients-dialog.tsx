@@ -180,11 +180,7 @@ export function ImportClientsDialog({
           return false
         }
 
-        // Verificar duplicado por teléfono
-        if (client.phone && existingPhones.has(client.phone)) {
-          duplicates.push(`${client.name} (teléfono: ${client.phone}) ya existe en la base de datos`)
-          return false
-        }
+     
 
         return true
       })
