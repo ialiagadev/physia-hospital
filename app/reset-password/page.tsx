@@ -27,17 +27,26 @@ function ResetPasswordForm() {
     const code = searchParams.get("code")
   
     if (code) {
-      // Caso 1: flujo con ?code=...
+      // Flujo PKCE con ?code=...
       supabase.auth.exchangeCodeForSession(code).catch(() => {
         setError("El enlace de recuperación no es válido o ha expirado.")
       })
     } else {
-      // Caso 2: flujo con #access_token=...
-      supabase.auth.getSession().then(({ data, error }) => {
-        if (error || !data.session) {
-          setError("Enlace de recuperación inválido o expirado")
-        }
-      })
+      // Flujo clásico con #access_token
+      const hashParams = new URLSearchParams(window.location.hash.substring(1))
+      const accessToken = hashParams.get("access_token")
+      const refreshToken = hashParams.get("refresh_token")
+  
+      if (accessToken && refreshToken) {
+        supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        }).catch(() => {
+          setError("El enlace de recuperación no es válido o ha expirado.")
+        })
+      } else {
+        setError("Enlace de recuperación inválido o expirado")
+      }
     }
   }, [searchParams])
   
