@@ -3,8 +3,6 @@ import { generateObject, generateText } from "ai"
 import { openai } from "@ai-sdk/openai"
 import { z } from "zod"
 import * as XLSX from "xlsx"
-import { parsePhoneNumber, isValidPhoneNumber } from "libphonenumber-js"
-import type { CountryCode } from "libphonenumber-js"
 
 // Schema para validar el mapeo de columnas
 const ColumnMappingSchema = z.object({
@@ -24,107 +22,51 @@ const ColumnMappingSchema = z.object({
   gender: z.string().nullable(),
 })
 
-// ✅ Función para extraer teléfono y prefijo usando libphonenumber-js
-function extractPhoneAndPrefix(
-  phone: string,
-  defaultCountry: CountryCode = "ES",
-): {
+function extractPhoneAndPrefix(phone: string): {
   phone: string
   prefix: string
   isValid: boolean
-  country?: CountryCode
-  formatted?: string
 } {
   if (!phone) return { phone: "", prefix: "+34", isValid: false }
 
-  try {
-    // Intentar parsear con país por defecto
-    let phoneNumber = parsePhoneNumber(phone, defaultCountry)
-
-    // Si no funciona, intentar sin país por defecto
-    if (!phoneNumber) {
-      phoneNumber = parsePhoneNumber(phone)
-    }
-
-    if (phoneNumber) {
-      return {
-        phone: phoneNumber.nationalNumber,
-        prefix: `+${phoneNumber.countryCallingCode}`,
-        isValid: phoneNumber.isValid(),
-        country: phoneNumber.country,
-        formatted: phoneNumber.format("INTERNATIONAL"),
-      }
-    }
-  } catch (error) {
-    console.warn(`Error parsing phone ${phone}:`, error)
-  }
-
-  // Fallback manual para casos edge
+  // Limpiar el teléfono de espacios y caracteres especiales
   const cleanPhone = phone.replace(/[\s\-()]/g, "").trim()
 
-  if (cleanPhone.startsWith("+34")) {
-    return {
-      phone: cleanPhone.substring(3),
-      prefix: "+34",
-      isValid: false,
-      country: "ES",
+  // Si ya tiene prefijo internacional
+  if (cleanPhone.startsWith("+")) {
+    const match = cleanPhone.match(/^\+(\d{1,4})(.+)/)
+    if (match) {
+      const prefix = `+${match[1]}`
+      const phoneNumber = match[2]
+      return {
+        phone: phoneNumber,
+        prefix: prefix,
+        isValid: phoneNumber.length >= 6 && phoneNumber.length <= 15,
+      }
     }
   }
 
-  if (cleanPhone.startsWith("+1")) {
-    return {
-      phone: cleanPhone.substring(2),
-      prefix: "+1",
-      isValid: false,
-      country: "US",
+  // Si empieza con 00 (formato internacional alternativo)
+  if (cleanPhone.startsWith("00")) {
+    const withoutZeros = cleanPhone.substring(2)
+    const match = withoutZeros.match(/^(\d{1,4})(.+)/)
+    if (match) {
+      const prefix = `+${match[1]}`
+      const phoneNumber = match[2]
+      return {
+        phone: phoneNumber,
+        prefix: prefix,
+        isValid: phoneNumber.length >= 6 && phoneNumber.length <= 15,
+      }
     }
   }
 
-  if (cleanPhone.startsWith("+33")) {
-    return {
-      phone: cleanPhone.substring(3),
-      prefix: "+33",
-      isValid: false,
-      country: "FR",
-    }
-  }
-
-  // Por defecto España
+  // Asumir que es un teléfono español si no tiene prefijo
   return {
     phone: cleanPhone,
     prefix: "+34",
-    isValid: false,
-    country: "ES",
+    isValid: cleanPhone.length >= 9 && cleanPhone.length <= 15,
   }
-}
-
-// ✅ Función para validar teléfono
-function isValidPhone(phone: string, country?: CountryCode): boolean {
-  try {
-    if (country) {
-      return isValidPhoneNumber(phone, country)
-    }
-    return isValidPhoneNumber(phone)
-  } catch {
-    return false
-  }
-}
-
-// ✅ Función para normalizar teléfono para detectar duplicados
-function normalizePhoneForDuplicateCheck(phone: string, prefix: string): string {
-  try {
-    const fullPhone = prefix.startsWith("+") ? `${prefix}${phone}` : `+${prefix}${phone}`
-    const phoneNumber = parsePhoneNumber(fullPhone)
-    if (phoneNumber) {
-      return phoneNumber.format("E.164")
-    }
-  } catch {
-    // Fallback manual
-  }
-
-  const cleanPhone = phone.replace(/[\s\-()]/g, "").trim()
-  const cleanPrefix = prefix.startsWith("+") ? prefix : `+${prefix}`
-  return `${cleanPrefix}${cleanPhone}`
 }
 
 // Función para limpiar texto con problemas de encoding
@@ -234,30 +176,13 @@ function normalizeGender(gender: string): string | null {
   return null
 }
 
-// Función para validar formato de Tax ID
 function isValidTaxId(taxId: string): boolean {
-  if (taxId.length < 3 || taxId.length > 20) {
-    return false
+  if (!taxId || taxId.trim() === "") {
+    return true
   }
 
-  const patterns = [
-    // España: NIF/CIF/NIE
-    /^[A-Z]?\d{8}[A-Z]?$/,
-    // Francia: SIREN/SIRET
-    /^\d{9}(\d{5})?$/,
-    // Reino Unido: Company Number
-    /^[A-Z]{2}\d{6}$|^\d{8}$/,
-    // Alemania: Steuernummer
-    /^\d{10,11}$/,
-    // Italia: Codice Fiscale
-    /^[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]$/,
-    // Estados Unidos: EIN
-    /^\d{2}-?\d{7}$/,
-    // Genérico: Solo letras y números
-    /^[A-Z0-9]+$/,
-  ]
-
-  return patterns.some((pattern) => pattern.test(taxId.toUpperCase()))
+  // Validación básica: solo letras y números, longitud razonable
+  return /^[A-Z0-9]{3,20}$/i.test(taxId.trim())
 }
 
 // Función para generar CSV de errores
@@ -284,63 +209,41 @@ function generateErrorCSV(invalidRows: string[], headers: string[], originalData
   return csvRows.join("\n")
 }
 
+function isValidPhone(phone: string): boolean {
+  const cleanPhone = phone.replace(/[\s\-()]/g, "").trim()
+
+  // Debe tener entre 6 y 20 caracteres y solo números (después del prefijo)
+  if (cleanPhone.startsWith("+")) {
+    const phoneWithoutPrefix = cleanPhone.substring(1).replace(/^\d{1,4}/, "")
+    return phoneWithoutPrefix.length >= 6 && phoneWithoutPrefix.length <= 15 && /^\d+$/.test(phoneWithoutPrefix)
+  }
+
+  return cleanPhone.length >= 9 && cleanPhone.length <= 15 && /^\d+$/.test(cleanPhone)
+}
+
+function normalizePhoneForDuplicateCheck(phone: string, prefix: string): string {
+  const cleanPhone = phone.replace(/[\s\-()]/g, "").trim()
+  const cleanPrefix = prefix.startsWith("+") ? prefix : `+${prefix}`
+  return `${cleanPrefix}${cleanPhone}`
+}
+
 export async function POST(request: NextRequest) {
   try {
-    console.log("[v0] Iniciando procesamiento de archivo CSV")
-
     const formData = await request.formData()
     const file = formData.get("file") as File
 
     if (!file) {
-      console.log("[v0] Error: No se proporcionó archivo")
       return NextResponse.json({ error: "No se proporcionó ningún archivo" }, { status: 400 })
-    }
-
-    console.log("[v0] Archivo recibido:", { name: file.name, size: file.size, type: file.type })
-
-    if (file.size > 10 * 1024 * 1024) {
-      console.log("[v0] Error: Archivo demasiado grande:", file.size)
-      return NextResponse.json({ error: "El archivo es demasiado grande. Máximo 10MB permitido." }, { status: 400 })
-    }
-
-    const allowedTypes = [
-      "text/csv",
-      "application/vnd.ms-excel",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    ]
-
-    if (!allowedTypes.includes(file.type) && !file.name.match(/\.(csv|xlsx|xls)$/i)) {
-      console.log("[v0] Error: Tipo de archivo no soportado:", file.type)
-      return NextResponse.json(
-        {
-          error: "Tipo de archivo no soportado. Use CSV, XLS o XLSX.",
-        },
-        { status: 400 },
-      )
     }
 
     // Leer el archivo con mejor manejo de encoding
     const buffer = await file.arrayBuffer()
-    console.log("[v0] Buffer leído, tamaño:", buffer.byteLength)
-
-    let workbook
-    try {
-      workbook = XLSX.read(buffer, {
-        type: "buffer",
-        codepage: 65001, // UTF-8
-        cellText: false,
-        cellDates: true,
-      })
-      console.log("[v0] Workbook leído exitosamente, hojas:", workbook.SheetNames)
-    } catch (xlsxError) {
-      console.log("[v0] Error al leer archivo XLSX:", xlsxError)
-      return NextResponse.json(
-        {
-          error: "Error al leer el archivo. Verifique que no esté corrupto y que sea un archivo Excel/CSV válido.",
-        },
-        { status: 400 },
-      )
-    }
+    const workbook = XLSX.read(buffer, {
+      type: "buffer",
+      codepage: 65001, // UTF-8
+      cellText: false,
+      cellDates: true,
+    })
 
     const sheetName = workbook.SheetNames[0]
     const worksheet = workbook.Sheets[sheetName]
@@ -352,10 +255,7 @@ export async function POST(request: NextRequest) {
       blankrows: false,
     }) as string[][]
 
-    console.log("[v0] Datos JSON extraídos, filas totales:", jsonData.length)
-
     if (jsonData.length === 0) {
-      console.log("[v0] Error: Archivo vacío")
       return NextResponse.json({ error: "El archivo está vacío" }, { status: 400 })
     }
 
@@ -363,25 +263,9 @@ export async function POST(request: NextRequest) {
     const headers = jsonData[0].map((header) => cleanText(header?.toString() || ""))
     const dataRows = jsonData.slice(1).filter((row) => row.some((cell) => cell && cell.toString().trim() !== ""))
 
-    console.log("[v0] Headers encontrados:", headers)
-    console.log("[v0] Filas de datos válidas:", dataRows.length)
-
     if (dataRows.length === 0) {
-      console.log("[v0] Error: No hay datos válidos")
       return NextResponse.json({ error: "No se encontraron datos válidos en el archivo" }, { status: 400 })
     }
-
-    if (headers.length < 3) {
-      console.log("[v0] Error: Muy pocas columnas:", headers.length)
-      return NextResponse.json(
-        {
-          error: "El archivo debe tener al menos 3 columnas (nombre, identificación fiscal, teléfono)",
-        },
-        { status: 400 },
-      )
-    }
-
-    console.log("[v0] Preparando prompt para IA...")
 
     // Crear un prompt para que la IA analice las cabeceras
     const headersText = headers.join(", ")
@@ -422,43 +306,15 @@ IMPORTANTE:
 Devuelve el mapeo de cada campo estándar a la cabecera original correspondiente.`
 
     // Usar IA para mapear las columnas
-    let mapping
-    try {
-      console.log("[v0] Enviando prompt a OpenAI...")
-      const result = await generateObject({
-        model: openai("gpt-4o"),
-        prompt,
-        schema: ColumnMappingSchema,
-      })
-      mapping = result.object
-      console.log("[v0] Mapeo recibido de IA:", mapping)
-    } catch (aiError) {
-      console.error("[v0] Error en análisis de IA:", aiError)
-      return NextResponse.json(
-        {
-          error:
-            "Error al analizar las columnas del archivo. Verifique que las cabeceras estén en español o inglés y sean descriptivas.",
-        },
-        { status: 400 },
-      )
-    }
-
-    // Añadir validación de que se hayan mapeado campos críticos
-    if (!mapping.name && !mapping.phone) {
-      console.log("[v0] Error: Campos críticos no mapeados")
-      return NextResponse.json(
-        {
-          error:
-            "No se pudieron identificar las columnas básicas (nombre, teléfono). Verifique que las cabeceras sean descriptivas.",
-        },
-        { status: 400 },
-      )
-    }
+    const { object: mapping } = await generateObject({
+      model: openai("gpt-4o"),
+      prompt,
+      schema: ColumnMappingSchema,
+    })
 
     // Procesar los datos usando el mapeo
     const processedData: any[] = []
     const invalidRows: string[] = []
-    const duplicateTracker = new Set<string>() // Para detectar duplicados por Tax ID
     const phoneTracker = new Set<string>() // Para detectar duplicados por teléfono completo
     let duplicateCount = 0
 
@@ -476,20 +332,30 @@ Devuelve el mapeo de cada campo estándar a la cabecera original correspondiente
 
             // Procesar campos específicos
             if (standardField === "tax_id" && value) {
-              // Mantener normalización básica del tax_id
               value = value.replace(/[-\s]/g, "").toUpperCase().trim()
-            } else if (standardField === "phone" && value) {
-              // ✅ Extraer teléfono y prefijo automáticamente usando libphonenumber-js
-              const phoneResult = extractPhoneAndPrefix(value, "ES")
-              client.phone = phoneResult.phone
-              client.phone_prefix = phoneResult.prefix
-              client.phone_country = phoneResult.country
-              client.phone_is_valid = phoneResult.isValid
-              client.phone_formatted = phoneResult.formatted
-
-              // Solo asignar prefijo si no se mapeó específicamente
-              if (!mapping.phone_prefix) {
+              // Si está vacío después de limpiar, asignar null
+              if (value === "") {
+                client.tax_id = null
+              } else {
+                client.tax_id = value
+              }
+              return
+            } else if (standardField === "phone") {
+              if (value && value.trim() !== "") {
+                const phoneResult = extractPhoneAndPrefix(value)
+                client.phone = phoneResult.phone
                 client.phone_prefix = phoneResult.prefix
+                client.phone_is_valid = phoneResult.isValid
+
+                // Solo asignar prefijo si no se mapeó específicamente
+                if (!mapping.phone_prefix) {
+                  client.phone_prefix = phoneResult.prefix
+                }
+              } else {
+                // Si no hay teléfono, asignar valores vacíos
+                client.phone = ""
+                client.phone_prefix = "+34"
+                client.phone_is_valid = false
               }
               return // Salir temprano para evitar sobrescribir
             } else if (standardField === "phone_prefix" && value) {
@@ -525,6 +391,10 @@ Devuelve el mapeo de cada campo estándar a la cabecera original correspondiente
         }
       })
 
+      if (!client.hasOwnProperty("tax_id")) {
+        client.tax_id = null
+      }
+
       // Combinar nombre y apellidos si ambos existen
       if (client.name && client.last_name) {
         client.name = `${client.name} ${client.last_name}`.trim()
@@ -535,39 +405,34 @@ Devuelve el mapeo de cada campo estándar a la cabecera original correspondiente
         delete client.last_name
       }
 
-      // ✅ Asegurar que hay prefijo por defecto
+      // Asegurar que hay prefijo por defecto
       if (!client.phone_prefix && client.phone) {
         client.phone_prefix = "+34" // Por defecto España
       }
 
-      if (!client.name || client.name.trim() === "") {
-        invalidRows.push(`Fila ${rowNumber}: El nombre es obligatorio y no puede estar vacío`)
+      // Validar campos obligatorios
+      if (!client.name) {
+        invalidRows.push(`Fila ${rowNumber}: Falta el campo obligatorio nombre`)
         continue
       }
 
-      // Teléfono obligatorio
       if (!client.phone || client.phone.trim() === "") {
-        invalidRows.push(`Fila ${rowNumber}: El teléfono es obligatorio y no puede estar vacío`)
+        invalidRows.push(`Fila ${rowNumber}: Registro omitido - no tiene teléfono válido`)
         continue
       }
 
-      if (client.tax_id && client.tax_id.trim() !== "" && !isValidTaxId(client.tax_id)) {
+      if (client.tax_id && !isValidTaxId(client.tax_id)) {
         invalidRows.push(`Fila ${rowNumber}: La identificación fiscal "${client.tax_id}" no tiene un formato válido`)
         continue
       }
 
-      if (client.tax_id && client.tax_id.trim() !== "") {
-        if (duplicateTracker.has(client.tax_id)) {
-          invalidRows.push(
-            `Fila ${rowNumber}: La identificación fiscal "${client.tax_id}" está duplicada en el archivo`,
-          )
-          duplicateCount++
-          continue
-        }
-        duplicateTracker.add(client.tax_id)
+      const fullPhoneForValidation = `${client.phone_prefix}${client.phone}`
+      if (!isValidPhone(fullPhoneForValidation)) {
+        invalidRows.push(`Fila ${rowNumber}: El teléfono "${fullPhoneForValidation}" no tiene un formato válido`)
+        continue
       }
 
-      // ✅ Detectar duplicados por teléfono completo usando normalización
+      // Detectar duplicados por teléfono completo usando normalización
       const normalizedFullPhone = normalizePhoneForDuplicateCheck(client.phone, client.phone_prefix)
       if (phoneTracker.has(normalizedFullPhone)) {
         invalidRows.push(`Fila ${rowNumber}: El teléfono "${normalizedFullPhone}" está duplicado en el archivo`)
@@ -575,6 +440,8 @@ Devuelve el mapeo de cada campo estándar a la cabecera original correspondiente
         continue
       }
       phoneTracker.add(normalizedFullPhone)
+
+      client.full_phone = normalizedFullPhone
 
       // Aplicar valores por defecto
       client.country = client.country || "España"
@@ -675,18 +542,6 @@ IMPORTANTE: Solo incluye códigos postales que reconozcas con alta certeza.`
       }
     }
 
-    if (processedData.length === 0) {
-      console.log("[v0] Error: No hay registros válidos")
-      return NextResponse.json(
-        {
-          error:
-            "No se encontraron registros válidos en el archivo. Revise que los datos cumplan con los requisitos mínimos.",
-          details: invalidRows.slice(0, 10), // Mostrar primeros 10 errores
-        },
-        { status: 400 },
-      )
-    }
-
     // Generar CSV de errores si hay errores
     let errorCSV = null
     if (invalidRows.length > 0) {
@@ -704,34 +559,6 @@ IMPORTANTE: Solo incluye códigos postales que reconozcas con alta certeza.`
       errorCSV, // CSV de errores
     })
   } catch (error) {
-    console.error("[v0] Error general en API:", error)
-
-    if (error instanceof Error) {
-      console.error("[v0] Detalles del error:", {
-        message: error.message,
-        stack: error.stack,
-        name: error.name,
-      })
-
-      if (error.message.includes("fetch")) {
-        return NextResponse.json(
-          {
-            error: "Error de conexión con el servicio de análisis. Inténtelo de nuevo.",
-          },
-          { status: 500 },
-        )
-      }
-
-      if (error.message.includes("API key")) {
-        return NextResponse.json(
-          {
-            error: "Error de configuración del servicio. Contacte al administrador.",
-          },
-          { status: 500 },
-        )
-      }
-    }
-
     return NextResponse.json(
       {
         error: `Error al procesar el archivo: ${error instanceof Error ? error.message : "Error desconocido"}`,

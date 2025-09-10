@@ -14,9 +14,8 @@ import {
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge" // ✅ Añadir Badge
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Upload, AlertCircle, CheckCircle, Download, FileSpreadsheet, Phone } from "lucide-react"
+import { Upload, AlertCircle, CheckCircle, Download, FileSpreadsheet } from "lucide-react"
 import type { ClientImportData } from "@/utils/file-parser"
 import { useToast } from "@/hooks/use-toast"
 
@@ -149,18 +148,16 @@ export function ImportClientsDialog({
     try {
       console.log("Iniciando importación con organizationId:", organizationId)
 
-      const validTaxIds = clientsData.map((client) => client.tax_id).filter((taxId) => taxId && taxId.trim() !== "")
-
+      const taxIds = clientsData.map((client) => client.tax_id).filter((taxId) => taxId != null && taxId.trim() !== "")
       let existingTaxIds = new Set<string>()
 
-      // Solo consultar la base de datos si hay tax_ids válidos
-      if (validTaxIds.length > 0) {
+      if (taxIds.length > 0) {
         const { data: existingClientsByTaxId } = await supabase
           .from("clients")
           .select("tax_id, name")
-          .in("tax_id", validTaxIds)
+          .in("tax_id", taxIds)
 
-        existingTaxIds = new Set(existingClientsByTaxId?.map((c) => c.tax_id).filter(Boolean) || [])
+        existingTaxIds = new Set(existingClientsByTaxId?.map((c) => c.tax_id) || [])
       }
 
       // Verificar duplicados por teléfono (solo para teléfonos válidos)
@@ -192,37 +189,12 @@ export function ImportClientsDialog({
         return true
       })
 
-      const seenTaxIds = new Set<string>()
-      const seenPhones = new Set<string>()
-
-      const uniqueClients = newClients.filter((client) => {
-        // Solo verificar duplicados de tax_id si no es null ni vacío
-        if (client.tax_id && client.tax_id.trim() !== "") {
-          if (seenTaxIds.has(client.tax_id)) {
-            duplicates.push(`${client.name} (${client.tax_id}) está duplicado en el archivo`)
-            return false
-          }
-          seenTaxIds.add(client.tax_id)
-        }
-
-        if (client.phone && seenPhones.has(client.phone)) {
-          duplicates.push(`${client.name} (teléfono: ${client.phone}) está duplicado en el archivo`)
-          return false
-        }
-        if (client.phone) {
-          seenPhones.add(client.phone)
-        }
-
-        return true
-      })
-
-      console.log("Clientes únicos a importar:", uniqueClients.length)
+      console.log("Clientes únicos a importar:", newClients.length)
 
       // Procesar en lotes de 50
       const batchSize = 50
-      for (let i = 0; i < uniqueClients.length; i += batchSize) {
-        const batch = uniqueClients.slice(i, i + batchSize)
-
+      for (let i = 0; i < newClients.length; i += batchSize) {
+        const batch = newClients.slice(i, i + batchSize)
         const clientsToInsert = batch.map((client) => ({
           organization_id: organizationId,
           name: client.name,
@@ -234,7 +206,6 @@ export function ImportClientsDialog({
           country: client.country || "España",
           email: client.email || null,
           phone: client.phone || null,
-          phone_prefix: client.phone_prefix || "+34", // ✅ Incluir prefijo
           client_type: client.client_type || "private",
           birth_date: client.birth_date || null,
           gender: client.gender || null,
@@ -286,7 +257,6 @@ export function ImportClientsDialog({
 
       clearInterval(progressInterval)
       setProgress(100)
-
       setImportResult(result)
       setStep("results")
 
@@ -309,13 +279,13 @@ export function ImportClientsDialog({
   }
 
   const downloadTemplate = () => {
-    const csvContent = `Nombre,Apellidos,CIF/NIF,Direccion,Codigo Postal,Ciudad,Provincia,Pais,Email,Telefono,Prefijo,Tipo Cliente,Fecha Nacimiento,Genero
-Empresa Ejemplo,,B12345678,Calle Mayor 123,28001,Madrid,Madrid,España,info@ejemplo.com,912345678,+34,private,1980-05-15,male
-Juan,Perez,12345678Z,Avenida Sol 45,08001,Barcelona,Barcelona,España,juan@email.com,666123456,+34,private,1975-12-20,male
-Maria,Garcia,87654321Y,Plaza Central 10,41001,Sevilla,Sevilla,España,maria@email.com,655987654,+34,private,1990-03-08,female
-Ayuntamiento Demo,,P1234567A,Plaza Mayor 1,28002,Madrid,Madrid,España,contacto@ayto.es,913456789,+34,public,,
-John,Smith,US123456789,123 Main Street,10001,New York,NY,Estados Unidos,john@email.com,2345678901,+1,private,1985-01-10,male
-Marie,Dubois,FR987654321,Rue de la Paix 45,75001,Paris,Ile-de-France,Francia,marie@email.com,123456789,+33,private,1992-06-25,female`
+    const csvContent = `Nombre,Apellidos,CIF/NIF,Direccion,Codigo Postal,Ciudad,Provincia,Pais,Email,Telefono,Tipo Cliente,Fecha Nacimiento,Genero
+Empresa Ejemplo,,B12345678,Calle Mayor 123,28001,Madrid,Madrid,España,info@ejemplo.com,912345678,private,1980-05-15,male
+Juan,Perez,12345678Z,Avenida Sol 45,08001,Barcelona,Barcelona,España,juan@email.com,666123456,private,1975-12-20,male
+Maria,Garcia,87654321Y,Plaza Central 10,41001,Sevilla,Sevilla,España,maria@email.com,655987654,private,1990-03-08,female
+Ayuntamiento Demo,,P1234567A,Plaza Mayor 1,28002,Madrid,Madrid,España,contacto@ayto.es,913456789,public,,
+John,Smith,US123456789,123 Main Street,10001,New York,NY,Estados Unidos,john@email.com,+1234567890,private,1985-01-10,male
+Marie,Dubois,FR987654321,Rue de la Paix 45,75001,Paris,Ile-de-France,Francia,marie@email.com,+33123456789,private,1992-06-25,female`
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
     const link = document.createElement("a")
@@ -418,16 +388,7 @@ Marie,Dubois,FR987654321,Rue de la Paix 45,75001,Paris,Ile-de-France,Francia,mar
               <AlertDescription>
                 <strong>Importación inteligente:</strong> El sistema detectará automáticamente las columnas, normalizará
                 las identificaciones fiscales (NIF/CIF/Tax ID) y detectará duplicados. Compatible con clientes
-                nacionales e internacionales. Teléfono obligatorio.
-              </AlertDescription>
-            </Alert>
-
-            {/* ✅ NUEVO AVISO SOBRE PREFIJOS TELEFÓNICOS */}
-            <Alert className="border-orange-200 bg-orange-50">
-              <Phone className="h-4 w-4 text-orange-600" />
-              <AlertDescription className="text-orange-800">
-                <strong>Prefijos telefónicos:</strong> Si tu archivo no incluye prefijos{" "}
-                <strong>(IMPORTANTE PONER EL '+')</strong>, se asignará +34 (España) por defecto.
+                nacionales e internacionales. ID fiscal y teléfono obligatorios.
               </AlertDescription>
             </Alert>
           </div>
@@ -514,11 +475,7 @@ Marie,Dubois,FR987654321,Rue de la Paix 45,75001,Paris,Ile-de-France,Francia,mar
                       <TableHead>Provincia</TableHead>
                       <TableHead>País</TableHead>
                       <TableHead>Email</TableHead>
-                      {/* ✅ COLUMNAS DE TELÉFONO MEJORADAS */}
-                      <TableHead>Teléfono Completo</TableHead>
-                      <TableHead>Prefijo</TableHead>
-                      <TableHead>Número</TableHead>
-                      <TableHead>País Tel.</TableHead>
+                      <TableHead>Teléfono</TableHead>
                       <TableHead>Fecha Nac.</TableHead>
                       <TableHead>Género</TableHead>
                       <TableHead>Tipo</TableHead>
@@ -539,53 +496,19 @@ Marie,Dubois,FR987654321,Rue de la Paix 45,75001,Paris,Ile-de-France,Francia,mar
                         <TableCell className="max-w-32 truncate" title={client.email || ""}>
                           {client.email || "-"}
                         </TableCell>
-
-                        {/* ✅ TELÉFONO COMPLETO FORMATEADO */}
-                        <TableCell className="font-mono text-sm">
-                          <div className="flex flex-col">
-                            <span className="font-medium">
-                              {client.phone_formatted || `${client.phone_prefix || "+34"}${client.phone}`}
-                            </span>
-                            {client.phone_formatted && (
-                              <span className="text-xs text-gray-500">
-                                {client.phone_prefix || "+34"}
-                                {client.phone}
-                              </span>
-                            )}
-                          </div>
-                        </TableCell>
-
-                        {/* ✅ PREFIJO CON BADGE */}
-                        <TableCell>
-                          <Badge
-                            variant={(client.phone_prefix || "+34") === "+34" ? "default" : "secondary"}
-                            className="font-mono text-xs"
-                          >
-                            {client.phone_prefix || "+34"}
-                          </Badge>
-                        </TableCell>
-
-                        {/* ✅ NÚMERO SIN PREFIJO */}
-                        <TableCell className="font-mono text-sm">{client.phone}</TableCell>
-
-                        {/* ✅ PAÍS DEL TELÉFONO */}
-                        <TableCell>
-                          {client.phone_country && (
-                            <Badge variant="outline" className="text-xs">
-                              {client.phone_country}
-                            </Badge>
-                          )}
-                        </TableCell>
-
+                        <TableCell>{client.phone || "-"}</TableCell>
                         <TableCell>{formatDate(client.birth_date)}</TableCell>
                         <TableCell>{formatGender(client.gender)}</TableCell>
                         <TableCell>
-                          <Badge
-                            variant={client.client_type === "public" ? "destructive" : "default"}
-                            className="text-xs"
+                          <span
+                            className={`px-2 py-1 rounded-full text-xs ${
+                              client.client_type === "public"
+                                ? "bg-blue-100 text-blue-800"
+                                : "bg-green-100 text-green-800"
+                            }`}
                           >
                             {client.client_type === "public" ? "Público" : "Privado"}
-                          </Badge>
+                          </span>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -597,56 +520,6 @@ Marie,Dubois,FR987654321,Rue de la Paix 45,75001,Paris,Ile-de-France,Francia,mar
                   </div>
                 )}
               </div>
-            )}
-
-            {/* ✅ ESTADÍSTICAS DE TELÉFONOS */}
-            {aiAnalysisResult.data.length > 0 && (
-              <Alert className="bg-green-50 border-green-200">
-                <Phone className="h-4 w-4 text-green-600" />
-                <AlertDescription>
-                  <div className="font-semibold mb-2">Estadísticas de Teléfonos:</div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {/* Contar por prefijo */}
-                    {Object.entries(
-                      aiAnalysisResult.data.reduce(
-                        (acc, client) => {
-                          const prefix = client.phone_prefix || "+34"
-                          acc[prefix] = (acc[prefix] || 0) + 1
-                          return acc
-                        },
-                        {} as Record<string, number>,
-                      ),
-                    ).map(([prefix, count]) => (
-                      <div key={prefix} className="text-center p-2 bg-white rounded border">
-                        <div className="text-lg font-bold text-green-600">{count}</div>
-                        <div className="text-xs text-gray-600">Prefijo {prefix}</div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Contar por país de teléfono */}
-                  <div className="mt-3">
-                    <div className="text-sm font-medium mb-1">Por País:</div>
-                    <div className="flex flex-wrap gap-1">
-                      {Object.entries(
-                        aiAnalysisResult.data.reduce(
-                          (acc, client) => {
-                            if (client.phone_country) {
-                              acc[client.phone_country] = (acc[client.phone_country] || 0) + 1
-                            }
-                            return acc
-                          },
-                          {} as Record<string, number>,
-                        ),
-                      ).map(([country, count]) => (
-                        <Badge key={country} variant="secondary" className="text-xs">
-                          {country}: {count}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                </AlertDescription>
-              </Alert>
             )}
           </div>
         )}
@@ -720,6 +593,7 @@ Marie,Dubois,FR987654321,Rue de la Paix 45,75001,Paris,Ile-de-France,Francia,mar
               Cancelar
             </Button>
           )}
+
           {step === "preview" && (
             <>
               <Button variant="outline" onClick={() => setStep("upload")}>
@@ -730,6 +604,7 @@ Marie,Dubois,FR987654321,Rue de la Paix 45,75001,Paris,Ile-de-France,Francia,mar
               </Button>
             </>
           )}
+
           {step === "results" && <Button onClick={handleClose}>Cerrar</Button>}
         </DialogFooter>
       </DialogContent>
