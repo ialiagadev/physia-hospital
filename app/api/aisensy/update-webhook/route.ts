@@ -68,24 +68,34 @@ export async function POST(req: Request) {
       )
     }
 
-    // ✅ 2. Plantilla aviso_cita
-    const avisoTemplate = {
-      name: "aviso_cita",
+    // ✅ 2. Plantilla recordatorio_1 (sustituye a aviso_cita)
+    const recordatorioTemplate = {
+      name: "recordatorio_1",
       category: "UTILITY",
       language: "es",
       components: [
         {
           type: "BODY",
-          text: "Hola {{1}}, te informamos que tienes una cita en {{2}} el día {{3}} a las {{4}}. Si necesitas modificarla o cancelarla, responde a este mensaje.",
+          text: `Hola {{1}},
+
+Te recordamos que tienes una cita en {{2}}:
+
+- Día: {{3}} 
+- Hora: {{4}}.  
+
+Por favor, confirma tu cita cuando puedas.
+Para cambios o cancelaciones aplica la política del centro.
+
+Gracias!`,
           example: {
             body_text: [["Juan", "Clínica Physia", "15 de Octubre", "11:00"]],
           },
         },
       ],
     }
-    const avisoResult = await createTemplate(token, avisoTemplate)
+    const recordatorioResult = await createTemplate(token, recordatorioTemplate)
 
-    // ✅ 3. Plantilla revision_cita
+    // ✅ 3. Plantilla revision_cita (se mantiene igual)
     const revisionTemplate = {
       name: "revision_cita",
       category: "UTILITY",
@@ -119,7 +129,7 @@ export async function POST(req: Request) {
       )
     }
 
-    return NextResponse.json({ success: true, result, avisoResult, revisionResult })
+    return NextResponse.json({ success: true, result, recordatorioResult, revisionResult })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Error desconocido" }, { status: 500 })
   }
