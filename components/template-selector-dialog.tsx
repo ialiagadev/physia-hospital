@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useState, useEffect } from "react"
-import { FileText, Send, Loader2, AlertCircle, CheckCircle, Clock, XCircle, Eye } from "lucide-react"
+import { FileText, Send, Loader2, AlertCircle, CheckCircle, Clock, XCircle, Eye, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -67,6 +67,7 @@ export function TemplateSelectorDialog({
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState<string | null>(null)
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
   const [wabaConfig, setWabaConfig] = useState<WabaConfig | null>(null)
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null)
   const [variableValues, setVariableValues] = useState<Record<string, string>>({})
@@ -269,8 +270,12 @@ export function TemplateSelectorDialog({
   // Obtener categorías únicas
   const categories = Array.from(new Set(templates.map((t) => t.category)))
 
-  // Filtrar plantillas por categoría
-  const filteredTemplates = selectedCategory ? templates.filter((t) => t.category === selectedCategory) : templates
+  // Filtrar plantillas por categoría y búsqueda
+  const filteredTemplates = templates.filter((template) => {
+    const matchesCategory = selectedCategory ? template.category === selectedCategory : true
+    const matchesSearch = searchQuery ? template.name.toLowerCase().includes(searchQuery.toLowerCase()) : true
+    return matchesCategory && matchesSearch
+  })
 
   const getStatusIcon = (status: string) => {
     switch (status.toLowerCase()) {
@@ -335,7 +340,7 @@ export function TemplateSelectorDialog({
       })
       return
     }
-  
+
     if (!userProfile?.organization_id) {
       toast({
         title: "Error",
@@ -344,18 +349,18 @@ export function TemplateSelectorDialog({
       })
       return
     }
-  
+
     setSending(template.id)
-  
+
     try {
       const api = new TemplateAPI(wabaConfig)
       const formattedPhone = formatPhoneNumber(recipientPhone)
-  
+
       const headerComponent = template.components?.find((c) => c.type === "HEADER")
-  
+
       // 👇 construimos los parámetros que se mandarán
       const components: any[] = []
-  
+
       if (headerComponent?.format === "DOCUMENT") {
         const docUrl = headerComponent.example?.header_handle?.[0] || template.mediaUrl // 👈 tu campo real
         if (docUrl) {
@@ -399,8 +404,7 @@ export function TemplateSelectorDialog({
           })
         }
       }
-      
-  
+
       // BODY: parámetros de texto
       if (parameters.length > 0) {
         components.push({
@@ -411,7 +415,7 @@ export function TemplateSelectorDialog({
           })),
         })
       }
-  
+
       // 👇 payload final para Aisensy
       const templateData = {
         to: formattedPhone,
@@ -426,23 +430,23 @@ export function TemplateSelectorDialog({
           components: components.length > 0 ? components : undefined,
         },
       }
-  
+
       console.log("📤 Payload final:", JSON.stringify(templateData, null, 2))
-  
+
       // Enviar plantilla
       await api.sendTemplate(templateData, userProfile.organization_id)
-  
+
       toast({
         title: "Plantilla enviada",
         description: `La plantilla "${template.name}" se ha enviado correctamente`,
       })
-  
+
       const templateWithVariables: TemplateWithVariables = {
         ...template,
         variableValues,
         finalContent: buildFinalTemplateContent(template, variableValues),
       }
-  
+
       onTemplateSent?.(templateWithVariables)
       setOpen(false)
       setShowVariableForm(false)
@@ -459,30 +463,31 @@ export function TemplateSelectorDialog({
       setSending(null)
     }
   }
-  
+
   const handleClose = () => {
     setOpen(false)
     setShowVariableForm(false)
     setSelectedTemplate(null)
     setVariableValues({})
     setSelectedCategory(null)
+    setSearchQuery("")
     setError(null)
   }
-  
+
   const handleOpenChange = (newOpen: boolean) => {
     setOpen(newOpen)
     if (!newOpen) {
       handleClose()
     }
   }
-  
+
   // Debug del botón trigger
   const handleTriggerClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (disabled) {
       e.preventDefault()
       return
     }
-  
+
     if (!userProfile?.organization_id) {
       toast({
         title: "Error",
@@ -493,7 +498,6 @@ export function TemplateSelectorDialog({
       return
     }
   }
-  
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -607,6 +611,18 @@ export function TemplateSelectorDialog({
               </Alert>
             )}
 
+            {!loading && !error && templates.length > 0 && (
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  placeholder="Buscar plantilla por nombre..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+            )}
+
             {/* Filtros por categoría */}
             {!loading && !error && templates.length > 0 && (
               <div className="flex flex-wrap gap-2">
@@ -616,10 +632,14 @@ export function TemplateSelectorDialog({
                   onClick={() => setSelectedCategory(null)}
                   className="h-8"
                 >
-                  Todas ({templates.length})
+                  Todas ({filteredTemplates.length})
                 </Button>
                 {categories.map((category) => {
-                  const count = templates.filter((t) => t.category === category).length
+                  const count = templates.filter((t) => {
+                    const matchesCategory = t.category === category
+                    const matchesSearch = searchQuery ? t.name.toLowerCase().includes(searchQuery.toLowerCase()) : true
+                    return matchesCategory && matchesSearch
+                  }).length
                   return (
                     <Button
                       key={category}
@@ -655,8 +675,14 @@ export function TemplateSelectorDialog({
             ) : filteredTemplates.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                <p>No hay plantillas aprobadas disponibles</p>
-                {selectedCategory && <p className="text-sm mt-1">en la categoría "{selectedCategory}"</p>}
+                <p>
+                  {searchQuery
+                    ? `No se encontraron plantillas que coincidan con "${searchQuery}"`
+                    : "No hay plantillas aprobadas disponibles"}
+                </p>
+                {selectedCategory && !searchQuery && (
+                  <p className="text-sm mt-1">en la categoría "{selectedCategory}"</p>
+                )}
                 {templates.length === 0 && (
                   <p className="text-sm mt-2 text-blue-600">
                     Crea plantillas en la sección de plantillas para poder enviarlas
