@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { formatPhoneForWhatsApp } from "@/lib/whatsapp/sendMessage"
+import { CountryCode, parsePhoneNumber } from "libphonenumber-js"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,6 +14,27 @@ function renderTemplate(templateText: string, params: string[]) {
     result = result.replace(placeholder, param)
   })
   return result
+}
+
+function splitPhone(phone: string, defaultCountry: CountryCode = "ES") {
+    try {
+      const parsed = parsePhoneNumber(phone, defaultCountry)
+      if (parsed && parsed.isValid()) {
+        return {
+          prefix: `+${parsed.countryCallingCode}`,
+          local: parsed.nationalNumber,
+          full: parsed.number, // E.164 (+34..., +33..., etc.)
+        }
+      }
+    } catch (e) {
+      console.error("❌ Error parsing phone:", phone, e)
+    }
+  // fallback → tratamos como español
+  return {
+    prefix: "+34",
+    local: phone.replace(/^\+34/, "").replace(/^34/, ""),
+    full: `+34${phone.replace(/^\+34/, "").replace(/^34/, "")}`,
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -35,13 +56,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 🔍 Buscar cliente
+    // ✅ Normalizar teléfono
+    const { prefix, local, full } = splitPhone(phone)
+
+    // 🔍 Buscar cliente por full_phone
     let client
-    const { data: existingClient, error: clientSearchError } = await supabase
+    const { data: existingClient } = await supabase
       .from("clients")
       .select("*")
       .eq("organization_id", organizationId)
-      .or(`phone.eq.${phone},full_phone.eq.${phone}`)
+      .eq("full_phone", full)
       .maybeSingle()
 
     if (!existingClient) {
@@ -50,7 +74,8 @@ export async function POST(request: NextRequest) {
         .insert({
           organization_id: organizationId,
           name: name || "Cliente",
-          phone: phone,
+          phone: local,
+          phone_prefix: prefix,
           last_interaction_at: new Date().toISOString(),
           channel: "whatsapp",
         })
@@ -90,14 +115,13 @@ export async function POST(request: NextRequest) {
 
     // 🔍 Buscar conversación activa
     let conversation: { id: any }
-    const { data: existingConversation, error: conversationSearchError } =
-      await supabase
-        .from("conversations")
-        .select("*")
-        .eq("organization_id", organizationId)
-        .eq("client_id", client.id)
-        .eq("status", "active")
-        .maybeSingle()
+    const { data: existingConversation } = await supabase
+      .from("conversations")
+      .select("*")
+      .eq("organization_id", organizationId)
+      .eq("client_id", client.id)
+      .eq("status", "active")
+      .maybeSingle()
 
     if (!existingConversation) {
       const { data: newConversation, error: newConvError } = await supabase
@@ -117,26 +141,18 @@ export async function POST(request: NextRequest) {
       if (newConvError) throw newConvError
       conversation = newConversation
 
-      // ⭐ NEW: Asignar todos los usuarios vinculados al WABA
-      const { data: wabaUsers, error: wabaUsersError } = await supabase
+      // ⭐ Asignar usuarios del WABA
+      const { data: wabaUsers } = await supabase
         .from("users_waba")
         .select("user_id")
         .eq("waba_id", wabaConfigData.id)
 
-      if (wabaUsersError) {
-        console.error("❌ Error fetching waba users:", wabaUsersError)
-      } else if (wabaUsers?.length) {
+      if (wabaUsers?.length) {
         const conversationUsers = wabaUsers.map((u) => ({
           conversation_id: conversation.id,
           user_id: u.user_id,
         }))
-        const { error: convUsersError } = await supabase
-          .from("users_conversations")
-          .insert(conversationUsers)
-
-        if (convUsersError) {
-          console.error("❌ Error inserting users_conversations:", convUsersError)
-        }
+        await supabase.from("users_conversations").insert(conversationUsers)
       }
     } else {
       conversation = existingConversation
@@ -161,7 +177,7 @@ export async function POST(request: NextRequest) {
     try {
       if (templateParams.length > 0) {
         response = await templateAPI.sendTemplateWithTextParams(
-          formatPhoneForWhatsApp(phone),
+          full, // 👈 E.164
           templateName,
           templateParams,
           "es",
@@ -169,7 +185,7 @@ export async function POST(request: NextRequest) {
         )
       } else {
         response = await templateAPI.sendSimpleTemplate(
-          formatPhoneForWhatsApp(phone),
+          full, // 👈 E.164
           templateName,
           "es",
           deductBalance ? organizationId : undefined
@@ -194,12 +210,12 @@ export async function POST(request: NextRequest) {
     const templateButtons =
       tpl?.components?.find((c: any) => c.type === "BUTTONS")?.buttons || []
 
-    const { data: messageData, error: messageError } = await supabase
+    const { data: messageData } = await supabase
       .from("messages")
       .insert({
         conversation_id: conversation.id,
         sender_type: "agent",
-        user_id: null, // 👈 mensaje enviado “por el sistema”
+        user_id: null,
         content: renderedContent,
         message_type: "text",
         is_read: false,
@@ -211,15 +227,11 @@ export async function POST(request: NextRequest) {
           balance_deducted: deductBalance,
           whatsapp_sent: true,
           whatsapp_sent_at: new Date().toISOString(),
-          whatsapp_phone: formatPhoneForWhatsApp(phone),
+          whatsapp_phone: full,
         },
       })
       .select()
       .single()
-
-    if (messageError) {
-      console.error("❌ Error saving message:", messageError)
-    }
 
     // 🔄 Actualizar conversación
     await supabase
