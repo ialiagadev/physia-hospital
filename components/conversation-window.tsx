@@ -184,6 +184,58 @@ export function ConversationWindow({ chatId, currentUser, onBack, onTagsChange }
     }
   }, [isWindowVisible, unreadCount, chatId, markAsRead])
 
+  useEffect(() => {
+    if (chatId) {
+      setIsInitialLoad(true)
+    }
+  }, [chatId])
+
+  useLayoutEffect(() => {
+    if (conversation?.client && isInitialLoad && messagesContainerRef.current && messages.length > 0) {
+      // Esperar a que todos los mensajes estén renderizados
+      const timer = setTimeout(() => {
+        if (messagesContainerRef.current) {
+          messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+          setIsInitialLoad(false)
+          setIsNearBottom(true)
+        }
+      }, 200) // Tiempo suficiente para chats largos
+
+      return () => clearTimeout(timer)
+    }
+  }, [conversation, isInitialLoad, messages.length])
+
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    if (!container) return
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container
+      const scrollPosition = scrollHeight - scrollTop - clientHeight
+      const isNear = scrollPosition < 50
+
+      setIsNearBottom(isNear)
+
+      // Load more messages when scrolling near the top
+      if (scrollTop < 100 && hasMore && !loadingMore && !messagesLoading) {
+        const previousScrollHeight = scrollHeight
+        loadMoreMessages().then(() => {
+          // Maintain scroll position after loading more messages
+          setTimeout(() => {
+            if (container) {
+              const newScrollHeight = container.scrollHeight
+              const scrollDifference = newScrollHeight - previousScrollHeight
+              container.scrollTop = scrollTop + scrollDifference
+            }
+          }, 50)
+        })
+      }
+    }
+
+    container.addEventListener("scroll", handleScroll)
+    return () => container.removeEventListener("scroll", handleScroll)
+  }, [hasMore, loadingMore, messagesLoading, loadMoreMessages])
+
   // Marcar como leído cuando el usuario hace scroll hasta abajo
   useEffect(() => {
     const container = messagesContainerRef.current
@@ -304,7 +356,10 @@ export function ConversationWindow({ chatId, currentUser, onBack, onTagsChange }
   const scrollToBottomInstant = () => {
     const container = messagesContainerRef.current
     if (container) {
-      container.scrollTop = container.scrollHeight
+      requestAnimationFrame(() => {
+        container.scrollTop = container.scrollHeight
+        setIsNearBottom(true)
+      })
     }
   }
 
@@ -312,7 +367,10 @@ export function ConversationWindow({ chatId, currentUser, onBack, onTagsChange }
   const scrollToBottom = () => {
     const container = messagesContainerRef.current
     if (container) {
-      container.scrollTop = container.scrollHeight
+      requestAnimationFrame(() => {
+        container.scrollTop = container.scrollHeight
+        setIsNearBottom(true)
+      })
     }
   }
 
@@ -1354,16 +1412,15 @@ export function ConversationWindow({ chatId, currentUser, onBack, onTagsChange }
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Botón de scroll siempre visible */}
-      <div className="fixed bottom-24 right-6 z-10">
+      {!isNearBottom && messages.length > 0 && (
         <button
           onClick={scrollToBottom}
-          className="p-2 text-gray-400 hover:text-gray-600 transition-colors opacity-60 hover:opacity-100"
+          className="absolute bottom-20 right-4 bg-blue-500 hover:bg-blue-600 text-white p-2 rounded-full shadow-lg transition-all duration-200 z-10"
           title="Ir al final"
         >
-          <ChevronDown className="h-5 w-5" />
+          <ChevronDown className="h-4 w-4" />
         </button>
-      </div>
+      )}
 
       {/* Preview de archivo */}
       {filePreview && (
