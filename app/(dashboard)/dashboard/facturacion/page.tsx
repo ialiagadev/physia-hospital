@@ -241,7 +241,7 @@ export default function DashboardPage() {
         .select("total_amount, client_id")
         .gte("issue_date", startDate.toISOString().split("T")[0])
         .lte("issue_date", endDate.toISOString().split("T")[0])
-        .in("status", ["issued"]) // Solo facturas válidas
+        .in("status", ["issued", "sent", "paid"]) // 👈 incluir estos estados
 
       // Construir query base para gastos
       let expensesQuery = supabase
@@ -361,13 +361,18 @@ export default function DashboardPage() {
         }
 
         const getInvoicesData = async () => {
-          let invoicesQuery = supabase.from("invoices").select("total_amount, client_id").in("status", ["issued"])
+          let invoicesQuery = supabase
+            .from("invoices")
+            .select("total_amount, client_id")
+            .in("status", ["issued", "sent", "paid"]) // ✅ incluir todos los estados válidos
+        
           if (userProfile?.organization_id) {
             invoicesQuery = invoicesQuery.eq("organization_id", userProfile.organization_id)
           }
+        
           return await invoicesQuery
         }
-
+        
         const getExpensesData = async () => {
           let expensesQuery = supabase.from("expenses").select("amount")
           if (userProfile?.organization_id) {
@@ -422,21 +427,21 @@ export default function DashboardPage() {
           return await recentExpensesQuery
         }
 
-        const getTopClients = async () => {
-          let topClientsQuery = supabase
-            .from("invoices")
-            .select(`
-              client_id,
-              total_amount,
-              clients (id, name)
-            `)
-            .in("status", ["issued"])
-
-          if (userProfile?.organization_id) {
-            topClientsQuery = topClientsQuery.eq("organization_id", userProfile.organization_id)
-          }
-          return await topClientsQuery
-        }
+       
+const getTopClients = async () => {
+  let topClientsQuery = supabase
+    .from("invoices")
+    .select(`
+      client_id,
+      total_amount,
+      clients (id, name)
+    `)
+    .in("status", ["issued", "sent", "paid"]) // 👈 igual aquí
+  if (userProfile?.organization_id) {
+    topClientsQuery = topClientsQuery.eq("organization_id", userProfile.organization_id)
+  }
+  return await topClientsQuery
+}
 
         // Calcular fechas para estadísticas
         const currentMonth = new Date()
