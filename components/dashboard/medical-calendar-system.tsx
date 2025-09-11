@@ -10,7 +10,7 @@ import { CalendarSearch } from "@/components/calendar/calendar-search"
 import { ProfesionalesLegend } from "@/components/calendar/profesionales-legend"
 import { AppointmentFormModal } from "@/components/calendar/appointment-form-modal"
 import { AppointmentDetailsModal } from "@/components/calendar/appointment-details-modal"
-import { DailyBillingModal } from "../calendar/daily-billing-modal"
+import { DailyBillingModal } from "@/components/calendar/daily-billing-modal"
 import { ListView } from "@/components/calendar/list-view"
 import { ProfesionalesView } from "@/components/calendar/profesionales-view"
 import { ConsultationsView } from "@/components/calendar/consultations-view"
@@ -26,7 +26,7 @@ import { useWorkSchedules } from "@/hooks/use-work-schedules"
 import { useAuth } from "@/app/contexts/auth-context"
 import Loading from "@/components/loading"
 import { supabase } from "@/lib/supabase/client"
-import { WaitingListView } from "../waiting-list/waiting-list-view"
+import { WaitingListView } from "@/components/waiting-list/waiting-list-view"
 import type {
   IntervaloTiempo,
   VistaCalendario,
@@ -35,17 +35,17 @@ import type {
   AppointmentInsert,
   EstadoCita,
 } from "@/types/calendar"
-import { WeekView } from "@/components/calendar/week-view"
 import { MonthView } from "@/components/calendar/month-view"
-import { HorarioViewDynamic } from "@/components/calendar/horario-view-dynamic"
+import HorarioViewWeekly from "../calendar/week-view"
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select"
-import { GroupActivitiesWrapper } from "../group-activities-wrapper"
+import { GroupActivitiesWrapper } from "@/components/group-activities-wrapper"
 import { toast } from "sonner"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
-import { CalendarGroupActivitiesWrapper } from "../calendar/calendar-group-activities-wrapper"
+import { CalendarGroupActivitiesWrapper } from "@/components/calendar/calendar-group-activities-wrapper"
 import { useGroupActivitiesContext } from "@/app/contexts/group-activities-context"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { HorarioViewDynamic } from "../calendar/horario-view-dynamic"
 
 // 🆕 NUEVO: Componente del icono de Google Calendar usando el archivo SVG
 const GoogleCalendarIcon = ({ className }: { className?: string }) => (
@@ -1271,11 +1271,13 @@ const MedicalCalendarSystem: React.FC = () => {
                         )}
 
                         {vistaCalendario === "semana" && (
-                          <WeekView
+                          <HorarioViewWeekly
                             date={currentDate}
                             citas={combinedAppointments}
                             profesionales={wrapperLegacyUsers}
+                            users={users.filter((user) => usuariosSeleccionados.includes(user.id))}
                             onSelectCita={handleSelectLegacyAppointment}
+                            profesionalSeleccionado="todos"
                             profesionalesSeleccionados={usuariosSeleccionados.map((id) => {
                               try {
                                 return Number.parseInt(id.slice(-8), 16)
@@ -1286,10 +1288,11 @@ const MedicalCalendarSystem: React.FC = () => {
                             intervaloTiempo={intervaloTiempo}
                             onUpdateCita={handleUpdateLegacyAppointment}
                             onAddCita={handleAddAppointment}
-                            onDateSelect={handleDateSelect}
                             vacationRequests={vacationRequests}
                             isUserOnVacationDate={isUserOnVacationHook}
                             getUserVacationOnDate={getUserVacationOnDate}
+                            workSchedules={allWorkSchedules}
+                            onDayClick={handleDateSelect}
                           />
                         )}
 
