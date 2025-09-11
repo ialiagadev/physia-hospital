@@ -83,10 +83,12 @@ export default function ConsentFormsPage() {
 
       // Cargar formularios de la organización
       const { data: orgData, error: orgError } = await supabase
-        .from("consent_forms")
-        .select("*")
-        .eq("organization_id", userProfile?.organization_id)
-        .order("created_at", { ascending: false })
+      .from("consent_forms")
+      .select("*")
+      .eq("organization_id", userProfile?.organization_id)
+      .eq("is_active", true) // 👈 añade este filtro
+      .order("created_at", { ascending: false })
+    
 
       if (orgError) throw orgError
 
@@ -176,27 +178,28 @@ export default function ConsentFormsPage() {
     try {
       const { error } = await supabase
         .from("consent_forms")
-        .delete()
+        .update({ is_active: false })
         .eq("id", formId)
-        .eq("organization_id", userProfile?.organization_id) // Solo permitir eliminar formularios propios
-
+        .eq("organization_id", userProfile?.organization_id)
+  
       if (error) throw error
-
+  
       toast({
         title: "Éxito",
-        description: "Formulario eliminado correctamente",
+        description: "Formulario desactivado correctamente",
       })
-
+  
       loadConsentForms()
     } catch (error) {
-      console.error("Error deleting form:", error)
+      console.error("Error deactivating form:", error)
       toast({
         title: "Error",
-        description: "No se pudo eliminar el formulario",
+        description: "No se pudo desactivar el formulario",
         variant: "destructive",
       })
     }
   }
+  
 
   const filterForms = (forms: ConsentForm[]) => {
     return forms.filter((form) => {
