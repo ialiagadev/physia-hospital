@@ -780,7 +780,7 @@ export function HorarioViewDynamic({
                     style={{
                       backgroundColor: isOnVacation ? "#fef3c7" : colorStyles.backgroundColor,
                       borderColor: isOnVacation ? "#f59e0b" : colorStyles.borderColor,
-                      color: isOnVacation ? "#92400e" : colorStyles.color,
+                      color: "#000", // 👈 siempre texto negro
                     }}
                   >
                     <div className="flex flex-col items-center justify-center py-2 px-2" style={{ height: 56 }}>

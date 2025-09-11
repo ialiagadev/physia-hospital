@@ -1,4 +1,5 @@
 import type React from "react"
+import { ReactNode } from "react"
 
 export interface AppointmentUpdate {
   date?: string
@@ -439,6 +440,7 @@ export interface ClientMatch {
 
 // Actualizar el tipo Cita para incluir actividades grupales
 export interface Cita {
+  nombreServicio: ReactNode
   id: string | number
   fecha: Date | string
   horaInicio: string
