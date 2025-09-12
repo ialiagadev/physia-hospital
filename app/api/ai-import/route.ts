@@ -441,7 +441,6 @@ Devuelve el mapeo de cada campo estándar a la cabecera original correspondiente
       }
       phoneTracker.add(normalizedFullPhone)
 
-      client.full_phone = normalizedFullPhone
 
       // Aplicar valores por defecto
       client.country = client.country || "España"
