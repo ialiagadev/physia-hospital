@@ -202,6 +202,7 @@ export function ImportClientsDialog({
           country: client.country || "España",
           email: client.email || null,
           phone: client.phone || null,
+          phone_prefix: client.phone_prefix || "+34",
           client_type: client.client_type || "private",
           birth_date: client.birth_date || null,
           gender: client.gender || null,
