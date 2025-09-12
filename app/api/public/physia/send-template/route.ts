@@ -1,11 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { CountryCode, parsePhoneNumber } from "libphonenumber-js"
+import { type CountryCode, parsePhoneNumber } from "libphonenumber-js"
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
 function renderTemplate(templateText: string, params: string[]) {
   let result = templateText
@@ -17,75 +14,120 @@ function renderTemplate(templateText: string, params: string[]) {
 }
 
 function splitPhone(phone: string, defaultCountry: CountryCode = "ES") {
-    try {
-      const parsed = parsePhoneNumber(phone, defaultCountry)
+  try {
+    // Limpiar el número de entrada
+    const cleanPhone = phone.trim().replace(/\s+/g, "")
+
+    // Si ya tiene +, intentar parsear directamente
+    if (cleanPhone.startsWith("+")) {
+      const parsed = parsePhoneNumber(cleanPhone)
       if (parsed && parsed.isValid()) {
         return {
           prefix: `+${parsed.countryCallingCode}`,
-          local: parsed.nationalNumber,
-          full: parsed.number, // E.164 (+34..., +33..., etc.)
+          local: parsed.nationalNumber.toString(),
+          full: parsed.number,
         }
       }
-    } catch (e) {
-      console.error("❌ Error parsing phone:", phone, e)
     }
-  // fallback → tratamos como español
+
+    // Si empieza con 34 pero no con +34, podría ser español con código incluido
+    if (cleanPhone.startsWith("34") && cleanPhone.length > 2) {
+      // Intentar como número español completo (+34...)
+      const withPlus = `+${cleanPhone}`
+      const parsed = parsePhoneNumber(withPlus)
+      if (parsed && parsed.isValid() && parsed.countryCallingCode === "34") {
+        return {
+          prefix: `+${parsed.countryCallingCode}`,
+          local: parsed.nationalNumber.toString(),
+          full: parsed.number,
+        }
+      }
+    }
+
+    // Intentar con país por defecto
+    const parsed = parsePhoneNumber(cleanPhone, defaultCountry)
+    if (parsed && parsed.isValid()) {
+      return {
+        prefix: `+${parsed.countryCallingCode}`,
+        local: parsed.nationalNumber.toString(),
+        full: parsed.number,
+      }
+    }
+  } catch (e) {
+    console.error("❌ Error parsing phone:", phone, e)
+  }
+
+  // Fallback mejorado para España
+  let cleaned = phone.replace(/\s+/g, "").replace(/^(\+34|34)/, "")
+
+  // Asegurar que el número local no esté vacío
+  if (!cleaned || cleaned.length < 6) {
+    console.warn("⚠️ Phone number too short after cleaning:", phone, "->", cleaned)
+    cleaned = phone.replace(/\s+/g, "").replace(/^\+/, "")
+  }
+
   return {
     prefix: "+34",
-    local: phone.replace(/^\+34/, "").replace(/^34/, ""),
-    full: `+34${phone.replace(/^\+34/, "").replace(/^34/, "")}`,
+    local: cleaned,
+    full: `+34${cleaned}`,
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const {
-      organizationId,
-      phone,
-      name = "",
-      templateName,
-      templateParams = [],
-      deductBalance = false,
-    } = body
+    const { organizationId, phone, name = "", templateName, templateParams = [], deductBalance = false } = body
 
     if (!organizationId || !phone || !templateName) {
-      return NextResponse.json(
-        { error: "organizationId, phone, and templateName are required" },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: "organizationId, phone, and templateName are required" }, { status: 400 })
     }
 
     // ✅ Normalizar teléfono
     const { prefix, local, full } = splitPhone(phone)
+// 🔍 Buscar cliente por full_phone
+let client
+const { data: existingClient, error: searchError } = await supabase
+  .from("clients")
+  .select("*")
+  .eq("organization_id", organizationId)
+  .eq("full_phone", full)
+  .maybeSingle()
 
-    // 🔍 Buscar cliente por full_phone
-    let client
-    const { data: existingClient } = await supabase
-      .from("clients")
-      .select("*")
-      .eq("organization_id", organizationId)
-      .eq("full_phone", full)
-      .maybeSingle()
+if (searchError) {
+  console.error("❌ Error buscando cliente:", searchError)
+}
 
-    if (!existingClient) {
-      const { data: newClient, error: createClientError } = await supabase
-        .from("clients")
-        .insert({
-          organization_id: organizationId,
-          name: name || "Cliente",
-          phone: local,
-          phone_prefix: prefix,
-          last_interaction_at: new Date().toISOString(),
-          channel: "whatsapp",
-        })
-        .select()
-        .single()
-      if (createClientError) throw createClientError
-      client = newClient
-    } else {
-      client = existingClient
-    }
+if (!existingClient) {
+  console.log(`🔍 No se encontró coincidencia: full="${full}" no existe en DB para org=${organizationId}`)
+  console.log(`👤 Creando nuevo cliente con full="${full}" (prefix=${prefix}, local=${local})`)
+
+  const { data: newClient, error: createClientError } = await supabase
+    .from("clients")
+    .insert({
+      organization_id: organizationId,
+      name: name || "Cliente",
+      phone: local,
+      phone_prefix: prefix,
+      last_interaction_at: new Date().toISOString(),
+      channel: "whatsapp",
+    })
+    .select()
+    .single()
+
+  if (createClientError) {
+    console.error("❌ Error creando cliente:", createClientError)
+    throw createClientError
+  }
+
+  console.log(`✅ Cliente creado: id=${newClient.id}, full="${newClient.full_phone}"`)
+  client = newClient
+} else {
+  console.log(
+    `🔁 Cliente ya existía: recibido="${full}" | DB="${existingClient.full_phone}" | id=${existingClient.id}`
+  )
+  client = existingClient
+}
+
 
     // 🔍 Configuración de WhatsApp
     const { data: wabaConfigData, error: wabaError } = await supabase
@@ -98,7 +140,7 @@ export async function POST(request: NextRequest) {
           id_organization,
           canal:canales(id, nombre)
         )
-      `
+      `,
       )
       .eq("canales_organizations.id_organization", organizationId)
       .eq("estado", 1)
@@ -107,10 +149,7 @@ export async function POST(request: NextRequest) {
       .maybeSingle()
 
     if (wabaError || !wabaConfigData?.token_proyecto) {
-      return NextResponse.json(
-        { error: "WhatsApp configuration not found for this organization" },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: "WhatsApp configuration not found for this organization" }, { status: 400 })
     }
 
     // 🔍 Buscar conversación activa
@@ -142,10 +181,7 @@ export async function POST(request: NextRequest) {
       conversation = newConversation
 
       // ⭐ Asignar usuarios del WABA
-      const { data: wabaUsers } = await supabase
-        .from("users_waba")
-        .select("user_id")
-        .eq("waba_id", wabaConfigData.id)
+      const { data: wabaUsers } = await supabase.from("users_waba").select("user_id").eq("waba_id", wabaConfigData.id)
 
       if (wabaUsers?.length) {
         const conversationUsers = wabaUsers.map((u) => ({
@@ -167,9 +203,7 @@ export async function POST(request: NextRequest) {
 
     const templatesResp = await templateAPI.getTemplates()
     const tpl = templatesResp?.data?.find((t: any) => t.name === templateName)
-    const bodyText =
-      tpl?.components?.find((c: any) => c.type === "BODY")?.text ||
-      templateName
+    const bodyText = tpl?.components?.find((c: any) => c.type === "BODY")?.text || templateName
 
     const renderedContent = renderTemplate(bodyText, templateParams)
 
@@ -181,34 +215,30 @@ export async function POST(request: NextRequest) {
           templateName,
           templateParams,
           "es",
-          deductBalance ? organizationId : undefined
+          deductBalance ? organizationId : undefined,
         )
       } else {
         response = await templateAPI.sendSimpleTemplate(
           full, // 👈 E.164
           templateName,
           "es",
-          deductBalance ? organizationId : undefined
+          deductBalance ? organizationId : undefined,
         )
       }
     } catch (error: any) {
-      if (
-        error.message?.includes("Insufficient balance") ||
-        error.message?.includes("Saldo insuficiente")
-      ) {
+      if (error.message?.includes("Insufficient balance") || error.message?.includes("Saldo insuficiente")) {
         return NextResponse.json(
           {
             error: "Saldo insuficiente para enviar la plantilla",
             details: error.message,
           },
-          { status: 400 }
+          { status: 400 },
         )
       }
       throw error
     }
 
-    const templateButtons =
-      tpl?.components?.find((c: any) => c.type === "BUTTONS")?.buttons || []
+    const templateButtons = tpl?.components?.find((c: any) => c.type === "BUTTONS")?.buttons || []
 
     const { data: messageData } = await supabase
       .from("messages")
@@ -261,7 +291,7 @@ export async function POST(request: NextRequest) {
         error: "Internal server error",
         details: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }
