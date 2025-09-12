@@ -3,6 +3,7 @@ import { generateObject, generateText } from "ai"
 import { openai } from "@ai-sdk/openai"
 import { z } from "zod"
 import * as XLSX from "xlsx"
+import { parsePhoneNumberFromString } from "libphonenumber-js"
 
 // Schema para validar el mapeo de columnas
 const ColumnMappingSchema = z.object({
@@ -29,43 +30,21 @@ function extractPhoneAndPrefix(phone: string): {
 } {
   if (!phone) return { phone: "", prefix: "+34", isValid: false }
 
-  // Limpiar el teléfono de espacios y caracteres especiales
-  const cleanPhone = phone.replace(/[\s\-()]/g, "").trim()
+  const parsed = parsePhoneNumberFromString(phone, "ES") // "ES" = España por defecto
 
-  // Si ya tiene prefijo internacional
-  if (cleanPhone.startsWith("+")) {
-    const match = cleanPhone.match(/^\+(\d{1,4})(.+)/)
-    if (match) {
-      const prefix = `+${match[1]}`
-      const phoneNumber = match[2]
-      return {
-        phone: phoneNumber,
-        prefix: prefix,
-        isValid: phoneNumber.length >= 6 && phoneNumber.length <= 15,
-      }
+  if (parsed) {
+    return {
+      phone: parsed.nationalNumber,             // 👈 solo el número limpio
+      prefix: `+${parsed.countryCallingCode}`,  // 👈 prefijo internacional
+      isValid: parsed.isValid(),
     }
   }
 
-  // Si empieza con 00 (formato internacional alternativo)
-  if (cleanPhone.startsWith("00")) {
-    const withoutZeros = cleanPhone.substring(2)
-    const match = withoutZeros.match(/^(\d{1,4})(.+)/)
-    if (match) {
-      const prefix = `+${match[1]}`
-      const phoneNumber = match[2]
-      return {
-        phone: phoneNumber,
-        prefix: prefix,
-        isValid: phoneNumber.length >= 6 && phoneNumber.length <= 15,
-      }
-    }
-  }
-
-  // Asumir que es un teléfono español si no tiene prefijo
+  // fallback si no se puede parsear
   return {
-    phone: cleanPhone,
+    phone: phone.replace(/\D/g, ""),
     prefix: "+34",
-    isValid: cleanPhone.length >= 9 && cleanPhone.length <= 15,
+    isValid: false,
   }
 }
 
