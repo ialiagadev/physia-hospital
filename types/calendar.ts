@@ -1,5 +1,4 @@
 import type React from "react"
-import { ReactNode } from "react"
 
 export interface AppointmentUpdate {
   date?: string
@@ -42,10 +41,13 @@ export interface RecurrencePreview {
 
 // 🆕 TIPO PARA DATOS DE CLIENTE NUEVO
 export interface NewClientData {
-  phonePrefix: string
+  phone: string            // 👈 solo el número (ej. "612345678")
+  phone_prefix: string     // 👈 debe coincidir con el campo en la DB
+  organization_id: number
   taxId?: string
-  fullPhone: string
 }
+
+
 
 export interface Database {
   public: {
@@ -441,6 +443,7 @@ export interface ClientMatch {
 // Actualizar el tipo Cita para incluir actividades grupales
 export interface Cita {
   nombreServicio: ReactNode
+  servicio: React.JSX.Element
   id: string | number
   fecha: Date | string
   horaInicio: string

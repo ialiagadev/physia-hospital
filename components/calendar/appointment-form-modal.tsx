@@ -796,12 +796,16 @@ export function AppointmentFormModal({
 
       // 🆕 CREAR OBJETO newClientData CON LOGS
       const newClientData = !clienteEncontrado
-        ? {
-            phonePrefix: phonePrefix,
-            taxId: taxId.trim() || undefined,
-            fullPhone: phonePrefix + phoneNumber,
-          }
-        : undefined
+      ? {
+          phone: phoneNumber,                 // "612345678"
+          phone_prefix: phonePrefix,          // "+34"
+          organization_id: organizationId!,
+          taxId: taxId.trim() || undefined,
+        }
+      : undefined
+    
+    
+    
 
       console.log("=== CREANDO newClientData ===")
       console.log("newClientData:", newClientData)
