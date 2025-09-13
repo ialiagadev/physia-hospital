@@ -79,7 +79,6 @@ export function ConversationWindow({ chatId, currentUser, onBack, onTagsChange }
   const [message, setMessage] = useState("")
   const [sending, setSending] = useState(false)
   const [isNearBottom, setIsNearBottom] = useState(true)
-  const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [showProfilePanel, setShowProfilePanel] = useState(false)
   const [isWindowVisible, setIsWindowVisible] = useState(true)
   const [filePreview, setFilePreview] = useState<FilePreview | null>(null)
@@ -174,36 +173,42 @@ export function ConversationWindow({ chatId, currentUser, onBack, onTagsChange }
   // Auto-marcar como leído cuando la ventana es visible y hay mensajes no leídos
   useEffect(() => {
     if (isWindowVisible && unreadCount > 0 && chatId) {
-      const timer = setTimeout(() => {
-        if (messagesContainerRef.current) {
-          messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
-        }
-      }, 1000) // Delay de 1 segundo para mejor UX
-
-      return () => clearTimeout(timer)
+      markAsRead()
     }
   }, [isWindowVisible, unreadCount, chatId, markAsRead])
 
+  useLayoutEffect(() => {
+    if (conversation?.client && messagesContainerRef.current && messages.length > 0) {
+      // Usar requestAnimationFrame para mejor sincronización con el renderizado
+      const scrollToBottom = () => {
+        requestAnimationFrame(() => {
+          if (messagesContainerRef.current) {
+            messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+            setIsNearBottom(true)
+          }
+        })
+      }
+
+      // Timeout mínimo para asegurar que el DOM esté completamente renderizado
+      const timer = setTimeout(scrollToBottom, 50)
+      return () => clearTimeout(timer)
+    }
+  }, [conversation?.client, messages.length])
+
   useEffect(() => {
-    if (chatId) {
-      setIsInitialLoad(true)
+    if (chatId && messagesContainerRef.current) {
+      // Scroll directo sin animación, como WhatsApp
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+      setIsNearBottom(true)
     }
   }, [chatId])
 
-  useLayoutEffect(() => {
-    if (conversation?.client && isInitialLoad && messagesContainerRef.current && messages.length > 0) {
-      // Esperar a que todos los mensajes estén renderizados
-      const timer = setTimeout(() => {
-        if (messagesContainerRef.current) {
-          messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
-          setIsInitialLoad(false)
-          setIsNearBottom(true)
-        }
-      }, 200) // Tiempo suficiente para chats largos
-
-      return () => clearTimeout(timer)
+  useEffect(() => {
+    if (isNearBottom && messagesContainerRef.current && messages.length > 0) {
+      // Scroll directo sin animación
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
     }
-  }, [conversation, isInitialLoad, messages.length])
+  }, [messages.length, isNearBottom])
 
   useEffect(() => {
     const container = messagesContainerRef.current
@@ -221,78 +226,30 @@ export function ConversationWindow({ chatId, currentUser, onBack, onTagsChange }
         const previousScrollHeight = scrollHeight
         loadMoreMessages().then(() => {
           // Maintain scroll position after loading more messages
-          setTimeout(() => {
+          requestAnimationFrame(() => {
             if (container) {
               const newScrollHeight = container.scrollHeight
               const scrollDifference = newScrollHeight - previousScrollHeight
               container.scrollTop = scrollTop + scrollDifference
             }
-          }, 50)
+          })
         })
       }
     }
 
-    container.addEventListener("scroll", handleScroll)
-    return () => container.removeEventListener("scroll", handleScroll)
-  }, [hasMore, loadingMore, messagesLoading, loadMoreMessages])
-
-  // Marcar como leído cuando el usuario hace scroll hasta abajo
-  useEffect(() => {
-    const container = messagesContainerRef.current
-    if (!container) return
-
-    const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = container
-      const scrollPosition = scrollHeight - scrollTop - clientHeight
-      const isNear = scrollPosition < 100
-
-      setIsNearBottom(isNear)
-
-      // Load more messages when scrolling near the top
-      if (scrollTop < 100 && hasMore && !loadingMore && !messagesLoading) {
-        const previousScrollHeight = scrollHeight
-        loadMoreMessages().then(() => {
-          // Maintain scroll position after loading more messages
-          setTimeout(() => {
-            if (container) {
-              const newScrollHeight = container.scrollHeight
-              const scrollDifference = newScrollHeight - previousScrollHeight
-              container.scrollTop = scrollTop + scrollDifference
-            }
-          }, 50)
-        })
-      }
-    }
-
-    container.addEventListener("scroll", handleScroll)
+    container.addEventListener("scroll", handleScroll, { passive: true })
     return () => container.removeEventListener("scroll", handleScroll)
   }, [hasMore, loadingMore, messagesLoading, loadMoreMessages])
 
   useEffect(() => {
-    if (chatId) {
-      setIsInitialLoad(true)
-    }
-  }, [chatId])
-
-  useLayoutEffect(() => {
-    if (conversation?.client && isInitialLoad && messagesContainerRef.current) {
-      // Scroll inmediato sin setTimeout para evitar pestañeo
-      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
-      setIsInitialLoad(false)
-    }
-  }, [conversation, isInitialLoad])
-
-  useEffect(() => {
-    if (!isInitialLoad && isNearBottom && messages.length > 0) {
-      const timer = setTimeout(() => {
+    if (isNearBottom && messages.length > 0) {
+      requestAnimationFrame(() => {
         if (messagesContainerRef.current) {
           messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
         }
-      }, 100)
-
-      return () => clearTimeout(timer)
+      })
     }
-  }, [messages.length, isNearBottom, isInitialLoad])
+  }, [messages.length, isNearBottom])
 
   // Format timestamp to readable time
   const formatTime = (dateStr: string | null | undefined) => {
@@ -356,10 +313,8 @@ export function ConversationWindow({ chatId, currentUser, onBack, onTagsChange }
   const scrollToBottomInstant = () => {
     const container = messagesContainerRef.current
     if (container) {
-      requestAnimationFrame(() => {
-        container.scrollTop = container.scrollHeight
-        setIsNearBottom(true)
-      })
+      container.scrollTop = container.scrollHeight
+      setIsNearBottom(true)
     }
   }
 
@@ -367,10 +322,8 @@ export function ConversationWindow({ chatId, currentUser, onBack, onTagsChange }
   const scrollToBottom = () => {
     const container = messagesContainerRef.current
     if (container) {
-      requestAnimationFrame(() => {
-        container.scrollTop = container.scrollHeight
-        setIsNearBottom(true)
-      })
+      container.scrollTop = container.scrollHeight
+      setIsNearBottom(true)
     }
   }
 
