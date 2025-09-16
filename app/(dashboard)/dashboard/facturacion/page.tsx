@@ -243,6 +243,14 @@ export default function DashboardPage() {
         .lte("issue_date", endDate.toISOString().split("T")[0])
         .in("status", ["issued", "sent", "paid"]) // 👈 incluir estos estados
 
+      let appointmentsQuery = supabase
+        .from("appointments")
+        .select("payment_amount, client_id")
+        .eq("payment_status", "paid")
+        .not("payment_amount", "is", null)
+        .gte("payment_date", startDate.toISOString().split("T")[0])
+        .lte("payment_date", endDate.toISOString().split("T")[0])
+
       // Construir query base para gastos
       let expensesQuery = supabase
         .from("expenses")
@@ -253,24 +261,40 @@ export default function DashboardPage() {
       // Filtrar por organización del usuario
       if (userProfile?.organization_id) {
         invoicesQuery = invoicesQuery.eq("organization_id", userProfile.organization_id)
+        appointmentsQuery = appointmentsQuery.eq("organization_id", userProfile.organization_id) // Filter appointments by organization
         expensesQuery = expensesQuery.eq("organization_id", userProfile.organization_id)
       }
 
-      const [invoicesResult, expensesResult] = await Promise.all([invoicesQuery, expensesQuery])
+      const [invoicesResult, appointmentsResult, expensesResult] = await Promise.all([
+        invoicesQuery,
+        appointmentsQuery, // Add appointments query
+        expensesQuery,
+      ])
 
       if (invoicesResult.error) {
         console.error("Error fetching period invoices:", invoicesResult.error)
+      }
+      if (appointmentsResult.error) {
+        // Handle appointments error
+        console.error("Error fetching period appointments:", appointmentsResult.error)
       }
       if (expensesResult.error) {
         console.error("Error fetching period expenses:", expensesResult.error)
       }
 
       const invoices = invoicesResult.data || []
+      const appointments = appointmentsResult.data || [] // Get appointments data
       const expenses = expensesResult.data || []
 
-      const revenue = invoices.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0)
+      const invoiceRevenue = invoices.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0)
+      const appointmentRevenue = appointments.reduce((sum, appointment) => sum + (appointment.payment_amount || 0), 0)
+      const revenue = invoiceRevenue + appointmentRevenue
+
       const invoiceCount = invoices.length
-      const uniqueClients = new Set(invoices.map((inv) => inv.client_id).filter(Boolean)).size
+      const uniqueClients = new Set([
+        ...invoices.map((inv) => inv.client_id).filter(Boolean),
+        ...appointments.map((app) => app.client_id).filter(Boolean), // Include appointment clients
+      ]).size
       const totalExpenses = expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0)
       const expenseCount = expenses.length
 
@@ -365,14 +389,28 @@ export default function DashboardPage() {
             .from("invoices")
             .select("total_amount, client_id")
             .in("status", ["issued", "sent", "paid"]) // ✅ incluir todos los estados válidos
-        
+
           if (userProfile?.organization_id) {
             invoicesQuery = invoicesQuery.eq("organization_id", userProfile.organization_id)
           }
-        
+
           return await invoicesQuery
         }
-        
+
+        const getPaidAppointmentsData = async () => {
+          let appointmentsQuery = supabase
+            .from("appointments")
+            .select("payment_amount, client_id, payment_date")
+            .eq("payment_status", "paid")
+            .not("payment_amount", "is", null)
+
+          if (userProfile?.organization_id) {
+            appointmentsQuery = appointmentsQuery.eq("organization_id", userProfile.organization_id)
+          }
+
+          return await appointmentsQuery
+        }
+
         const getExpensesData = async () => {
           let expensesQuery = supabase.from("expenses").select("amount")
           if (userProfile?.organization_id) {
@@ -427,21 +465,20 @@ export default function DashboardPage() {
           return await recentExpensesQuery
         }
 
-       
-const getTopClients = async () => {
-  let topClientsQuery = supabase
-    .from("invoices")
-    .select(`
-      client_id,
-      total_amount,
-      clients (id, name)
-    `)
-    .in("status", ["issued", "sent", "paid"]) // 👈 igual aquí
-  if (userProfile?.organization_id) {
-    topClientsQuery = topClientsQuery.eq("organization_id", userProfile.organization_id)
-  }
-  return await topClientsQuery
-}
+        const getTopClients = async () => {
+          let topClientsQuery = supabase
+            .from("invoices")
+            .select(`
+              client_id,
+              total_amount,
+              clients (id, name)
+            `)
+            .in("status", ["issued", "sent", "paid"]) // 👈 igual aquí
+          if (userProfile?.organization_id) {
+            topClientsQuery = topClientsQuery.eq("organization_id", userProfile.organization_id)
+          }
+          return await topClientsQuery
+        }
 
         // Calcular fechas para estadísticas
         const currentMonth = new Date()
@@ -457,6 +494,7 @@ const getTopClients = async () => {
         const [
           clientsResult,
           invoicesResult,
+          paidAppointmentsResult, // Add paid appointments query
           expensesResult,
           currentMonthStats,
           previousMonthStats,
@@ -467,6 +505,7 @@ const getTopClients = async () => {
         ] = await Promise.all([
           getClientsCount(),
           getInvoicesData(),
+          getPaidAppointmentsData(), // Add paid appointments query
           getExpensesData(),
           getPeriodStats(currentMonthStart, currentMonthEnd),
           getPeriodStats(previousMonthStart, previousMonthEnd),
@@ -479,13 +518,19 @@ const getTopClients = async () => {
         // Procesar resultados
         const clientsCount = clientsResult?.count || 0
         const invoicesData = (invoicesResult?.data as InvoiceData[]) || []
+        const paidAppointmentsData = (paidAppointmentsResult?.data || []) as any[] // Add paid appointments data
         const expensesData = (expensesResult?.data as ExpenseData[]) || []
         const recentInvoicesData = (recentInvoicesResult?.data || []) as unknown as RecentInvoice[]
         const recentClientsData = (recentClientsResult?.data as RecentClient[]) || []
         const recentExpensesData = (recentExpensesResult?.data as RecentExpense[]) || []
 
-        // Calcular métricas de facturas
-        const totalRevenue = invoicesData.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0)
+        const invoiceRevenue = invoicesData.reduce((sum, invoice) => sum + (invoice.total_amount || 0), 0)
+        const appointmentRevenue = paidAppointmentsData.reduce(
+          (sum, appointment) => sum + (appointment.payment_amount || 0),
+          0,
+        )
+        const totalRevenue = invoiceRevenue + appointmentRevenue // Include appointment revenue
+
         const invoicesCount = invoicesData.length
         const averageTicket = invoicesCount > 0 ? totalRevenue / invoicesCount : 0
 

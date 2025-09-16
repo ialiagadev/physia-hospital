@@ -46,6 +46,7 @@ import { CalendarGroupActivitiesWrapper } from "@/components/calendar/calendar-g
 import { useGroupActivitiesContext } from "@/app/contexts/group-activities-context"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { HorarioViewDynamic } from "../calendar/horario-view-dynamic"
+import { WeeklyBillingModal } from "../calendar/weekly-billing-modal"
 
 // 🆕 NUEVO: Componente del icono de Google Calendar usando el archivo SVG
 const GoogleCalendarIcon = ({ className }: { className?: string }) => (
@@ -66,6 +67,7 @@ const mapEstadoToStatus = (estado: string): "confirmed" | "pending" | "cancelled
   } as const
   return mapping[estado as keyof typeof mapping] || "confirmed"
 }
+
 
 // Mapeo inverso para mostrar en la UI
 const mapStatusToEstado = (status: string): EstadoCita => {
@@ -207,6 +209,8 @@ const MedicalCalendarSystem: React.FC = () => {
   const [usuariosSeleccionados, setUsuariosSeleccionados] = useState<string[]>([])
   const [showSearch, setShowSearch] = useState(false)
   const [showDailyBillingModal, setShowDailyBillingModal] = useState(false)
+  const [showWeeklyBillingModal, setShowWeeklyBillingModal] = useState(false)
+
 
   // Estados para actividades grupales
   const [showGroupActivityDetails, setShowGroupActivityDetails] = useState(false)
@@ -1198,7 +1202,21 @@ const MedicalCalendarSystem: React.FC = () => {
                             Facturar Día
                           </Button>
                         )}
+                        {/* ✅ BOTÓN FACTURAR SEMANA - Solo en vista semana y si no es usuario 'user' */}
+{vistaCalendario === "semana" && !isUserRole && (
+  <Button
+    onClick={() => setShowWeeklyBillingModal(true)}
+    size="sm"
+    className="bg-purple-600 hover:bg-purple-700 text-white gap-2"
+  >
+    <CalendarIcon className="h-4 w-4" />
+    Facturar Semana
+  </Button>
+)}
+
+                        
                       </div>
+                      
                     </div>
                   </div>
 
@@ -1447,6 +1465,14 @@ const MedicalCalendarSystem: React.FC = () => {
           selectedDate={currentDate}
         />
       )}
+      {showWeeklyBillingModal && (
+  <WeeklyBillingModal
+    isOpen={showWeeklyBillingModal}
+    onClose={() => setShowWeeklyBillingModal(false)}
+    selectedDate={currentDate}
+  />
+)}
+
 
       {/* 🆕 NUEVO: Modal de Google Calendar */}
       <Dialog open={showGoogleCalendarModal} onOpenChange={setShowGoogleCalendarModal}>

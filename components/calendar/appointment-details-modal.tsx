@@ -4,12 +4,27 @@ import { useState, useEffect } from "react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import Link from "next/link"
-import { Calendar, Clock, User, Phone, FileText, Edit2, Trash2, Save, X, DollarSign, AlertTriangle } from "lucide-react"
+import {
+  Calendar,
+  Clock,
+  User,
+  Phone,
+  FileText,
+  Edit2,
+  Trash2,
+  Save,
+  X,
+  DollarSign,
+  AlertTriangle,
+  CheckCircle,
+  Info,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Label } from "@/components/ui/label"
 import {
   Dialog,
   DialogContent,
@@ -58,6 +73,11 @@ export function AppointmentDetailsModal({
   // 🆕 Estado para controlar cuando se están verificando conflictos después de un cambio
   const [isVerifyingConflicts, setIsVerifyingConflicts] = useState(false)
 
+  const [paymentStatus, setPaymentStatus] = useState<string | null>(null)
+  const [paymentAmount, setPaymentAmount] = useState<number | null>(null)
+  const [paymentDate, setPaymentDate] = useState<string | null>(null)
+  const [paymentMethod, setPaymentMethod] = useState<string>("efectivo")
+
   // Determinar si el usuario es coordinador
   const isCoordinator = userProfile?.role === "coordinador"
 
@@ -65,14 +85,108 @@ export function AppointmentDetailsModal({
   const { conflicts, loading: conflictsLoading, checkConflicts } = useAppointmentConflicts(userProfile?.organization_id)
 
   // Form states
-  const [editedAppointment, setEditedAppointment] = useState<AppointmentWithDetails>(appointment)
+  const [editedAppointment, setEditedAppointment] = useState<AppointmentWithDetails>({ ...appointment })
 
   useEffect(() => {
-    setEditedAppointment(appointment)
+    setEditedAppointment({ ...appointment })
     setIsEditing(false)
+    loadPaymentData()
   }, [appointment])
 
-  // Cargar servicios disponibles cuando se abre el modal de edición
+  const loadPaymentData = async () => {
+    if (!appointment.id || !userProfile?.organization_id) return
+
+    try {
+      const { data, error } = await supabase
+        .from("appointments")
+        .select("payment_status, payment_amount, payment_date, payment_method")
+        .eq("id", appointment.id)
+        .eq("organization_id", userProfile.organization_id)
+        .single()
+
+      if (error) throw error
+
+      if (data) {
+        setPaymentStatus(data.payment_status)
+        setPaymentAmount(data.payment_amount)
+        setPaymentDate(data.payment_date)
+        setPaymentMethod(data.payment_method || "efectivo")
+      }
+    } catch (error) {
+      console.error("Error loading payment data:", error)
+    }
+  }
+
+  const savePaymentData = async () => {
+    if (!appointment.id || !userProfile?.organization_id) return
+
+    try {
+      const updateData: any = {
+        payment_status: paymentStatus,
+        payment_amount: paymentAmount,
+        payment_date: paymentDate,
+        payment_method: paymentMethod,
+      }
+
+      const { error } = await supabase
+        .from("appointments")
+        .update(updateData)
+        .eq("id", appointment.id)
+        .eq("organization_id", userProfile.organization_id)
+
+      if (error) throw error
+
+      // setAppointment(prev => ({
+      //   ...prev,
+      //   payment_status: paymentStatus,
+      //   payment_amount: paymentAmount,
+      //   payment_date: paymentDate,
+      //   payment_method: paymentMethod,
+      // }))
+    } catch (error) {
+      console.error("Error saving payment data:", error)
+    }
+  }
+
+  const togglePaymentStatus = async () => {
+    if (!appointment.service?.price) {
+      return
+    }
+
+    const isCurrentlyPaid = paymentStatus === "paid"
+    const newStatus = isCurrentlyPaid ? "pending" : "paid"
+
+    const newPaymentData = {
+      payment_status: newStatus,
+      payment_amount: isCurrentlyPaid ? null : appointment.service.price,
+      payment_date: isCurrentlyPaid ? null : new Date().toISOString().split("T")[0],
+      payment_method: paymentMethod,
+    }
+
+    try {
+      const { error } = await supabase
+        .from("appointments")
+        .update(newPaymentData)
+        .eq("id", appointment.id)
+        .eq("organization_id", userProfile?.organization_id)
+
+      if (error) throw error
+
+      setPaymentStatus(newStatus)
+      setPaymentAmount(isCurrentlyPaid ? null : appointment.service.price)
+      setPaymentDate(isCurrentlyPaid ? null : new Date().toISOString().split("T")[0])
+
+      // Mostrar toast de confirmación
+      if (!isCurrentlyPaid) {
+        // Toast para marcar como pagada
+      } else {
+        // Toast para desmarcar
+      }
+    } catch (error) {
+      console.error("Error toggling payment status:", error)
+    }
+  }
+
   useEffect(() => {
     if (isEditing && userProfile?.organization_id) {
       loadAvailableServices()
@@ -129,6 +243,16 @@ export function AppointmentDetailsModal({
     checkConflicts,
     appointment.id,
   ])
+
+  useEffect(() => {
+    if (paymentMethod && paymentMethod !== appointment.payment_method) {
+      const timer = setTimeout(() => {
+        savePaymentData()
+      }, 500) // Debounce de 500ms
+
+      return () => clearTimeout(timer)
+    }
+  }, [paymentMethod])
 
   const checkExistingInvoice = async () => {
     if (!userProfile?.organization_id || !appointment.id) {
@@ -271,12 +395,6 @@ export function AppointmentDetailsModal({
 
   // 🆕 FUNCIÓN DE ACTUALIZACIÓN MEJORADA CON MEJOR MANEJO DE ERRORES
   const handleSave = async () => {
-    // Verificar conflictos antes de guardar
-    if (conflicts.length > 0) {
-      toast.error("No se puede guardar: hay conflictos de horario")
-      return
-    }
-
     setIsSaving(true)
     try {
       console.log("🔍 DEBUG - Updating appointment:", {
@@ -365,6 +483,11 @@ export function AppointmentDetailsModal({
         // Usar los datos completos
         await onUpdate(fullAppointment)
       }
+
+      // Save appointment changes
+      // await onUpdate(editedAppointment)
+
+      await savePaymentData()
 
       setIsEditing(false)
       toast.success("Cita actualizada correctamente")
@@ -470,7 +593,7 @@ export function AppointmentDetailsModal({
   }
 
   const handleCancel = () => {
-    setEditedAppointment(appointment)
+    setEditedAppointment({ ...appointment })
     setIsEditing(false)
     setIsVerifyingConflicts(false) // 🆕 Resetear estado de verificación
   }
@@ -994,7 +1117,82 @@ export function AppointmentDetailsModal({
                   </div>
                 )}
 
-                {/* SECCIÓN 6: ENLACE VIRTUAL - Solo si la modalidad es virtual */}
+                {/* SECCIÓN 6: ESTADO DE PAGO - Nueva sección */}
+                {!isEditing && !existingInvoice && appointment.service?.price && (
+                  <div
+                    className={`p-3 rounded-lg space-y-3 ${paymentStatus === "paid" ? "bg-green-50" : "bg-emerald-50"}`}
+                  >
+                    <div className="flex items-start gap-2 p-2 bg-blue-50 rounded-md border border-blue-200">
+                      <Info className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                      <p className="text-xs text-blue-700">
+                        <strong>Información:</strong> El estado de pago se utiliza únicamente para el seguimiento de
+                        KPIs y estadísticas internas. No afecta la facturación ni los registros contables.
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label
+                        htmlFor="payment_method"
+                        className={`text-sm font-medium ${paymentStatus === "paid" ? "text-green-700" : "text-emerald-700"}`}
+                      >
+                        Método de Pago
+                      </Label>
+                      <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                        <SelectTrigger
+                          className={`bg-white ${paymentStatus === "paid" ? "border-green-200" : "border-emerald-200"}`}
+                        >
+                          <SelectValue placeholder="Selecciona método de pago" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="efectivo">Efectivo</SelectItem>
+                          <SelectItem value="tarjeta">Tarjeta</SelectItem>
+                          <SelectItem value="transferencia">Transferencia</SelectItem>
+                          <SelectItem value="bizum">Bizum</SelectItem>
+                          <SelectItem value="paypal">PayPal</SelectItem>
+                          <SelectItem value="otro">Otro</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={togglePaymentStatus}
+                      className={`gap-2 w-full ${
+                        paymentStatus === "paid"
+                          ? "text-green-600 hover:text-green-700 hover:bg-green-50 bg-transparent border-green-200"
+                          : "text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 bg-transparent border-emerald-200"
+                      }`}
+                    >
+                      {paymentStatus === "paid" ? (
+                        <>
+                          <CheckCircle className="h-4 w-4" />
+                          Marcado como Pagada (Click para desmarcar)
+                        </>
+                      ) : (
+                        <>
+                          <DollarSign className="h-4 w-4" />
+                          Marcar como Pagada
+                        </>
+                      )}
+                    </Button>
+
+                    {paymentStatus === "paid" && (
+                      <div className="text-xs text-green-600 bg-green-100 p-2 rounded border border-green-200">
+                        <div className="flex justify-between">
+                          <span>Importe:</span>
+                          <span className="font-medium">{paymentAmount}€</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Fecha:</span>
+                          <span className="font-medium">{paymentDate}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* SECCIÓN 7: ENLACE VIRTUAL - Solo si la modalidad es virtual */}
                 {(appointment.modalidad === "virtual" || (isEditing && editedAppointment.modalidad === "virtual")) && (
                   <div className="flex items-center gap-4 p-3 bg-blue-50 rounded-lg">
                     <div className="flex items-center gap-2">
@@ -1052,18 +1250,18 @@ export function AppointmentDetailsModal({
                   Cancelar
                 </Button>
                 <Button
+                  type="submit"
                   onClick={(e) => {
-                    e.stopPropagation()
+                    e.preventDefault()
                     handleSave()
                   }}
-                  disabled={isSaveDisabled()} // 🆕 Usar función mejorada
+                  disabled={isSaveDisabled()}
                   className={`gap-2 ${isSaveDisabled() ? "opacity-50 cursor-not-allowed" : ""}`}
-                  title={getSaveButtonTitle()} // 🆕 Usar función para título
                 >
                   <Save className="h-4 w-4" />
                   {conflicts.length > 0 && <AlertTriangle className="h-3 w-3" />}
-                  {isVerifyingConflicts && <Clock className="h-3 w-3 animate-spin" />} {/* 🆕 Icono de verificación */}
-                  {getSaveButtonText()} {/* 🆕 Usar función para texto */}
+                  {isVerifyingConflicts && <Clock className="h-3 w-3 animate-spin" />}
+                  {getSaveButtonText()}
                 </Button>
               </div>
             )}

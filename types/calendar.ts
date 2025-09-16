@@ -1,4 +1,5 @@
 import type React from "react"
+import { ReactNode } from "react"
 
 export interface AppointmentUpdate {
   date?: string
@@ -240,6 +241,7 @@ export interface Database {
 }
 
 export interface AppointmentWithDetails {
+  payment_method: string
   id: string
   user_id: string
   organization_id: number
