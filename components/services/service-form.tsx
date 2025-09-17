@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Loader2 } from "lucide-react"
@@ -357,26 +356,16 @@ export function ServiceForm({ organizationId, service, onSuccess, onCancel }: Se
         </div>
         <div className="space-y-2">
           <Label htmlFor="duration">Duración (min) *</Label>
-          <Select
-            key={`duration-${formData.duration}`}
+          <Input
+            id="duration"
+            name="duration"
+            type="number"
+            min="1"
             value={formData.duration}
-            onValueChange={(value) => handleSelectChange("duration", value)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Seleccionar duración" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="15">15 min</SelectItem>
-              <SelectItem value="30">30 min</SelectItem>
-              <SelectItem value="45">45 min</SelectItem>
-              <SelectItem value="60">60 min</SelectItem>
-              <SelectItem value="75">75 min</SelectItem>
-              <SelectItem value="90">90 min</SelectItem>
-              <SelectItem value="120">120 min</SelectItem>
-              <SelectItem value="150">150 min</SelectItem>
-              <SelectItem value="180">180 min</SelectItem>
-            </SelectContent>
-          </Select>
+            onChange={handleChange}
+            placeholder="Duración en minutos"
+            required
+          />
         </div>
       </div>
 
