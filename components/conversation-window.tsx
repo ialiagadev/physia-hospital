@@ -903,7 +903,7 @@ export function ConversationWindow({ chatId, currentUser, onBack, onTagsChange }
       .filter((m) => m.sender_type === "contact")
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
 
-    if (!lastContactMessage) return false
+    if (!lastContactMessage) return true
 
     const lastMessageTime = new Date(lastContactMessage.created_at).getTime()
     const now = new Date().getTime()
