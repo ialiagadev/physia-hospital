@@ -117,9 +117,11 @@ export async function POST(req: Request) {
       .eq("id", invoice.id)
       .single()
 
-    if (invoiceWithRelations) {
-      invoiceWithRelations.organization = issuerOrg
-    }
+      if (invoiceWithRelations) {
+        invoiceWithRelations.issuer = issuerOrg        // 👈 Emisor fijo (org 61)
+        invoiceWithRelations.client = invoiceWithRelations.clients // 👈 Cliente real (org que recargó saldo)
+      }
+      
 
     const { data: invoiceLines } = await supabase.from("invoice_lines").select("*").eq("invoice_id", invoice.id)
 
