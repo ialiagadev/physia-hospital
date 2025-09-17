@@ -118,8 +118,21 @@ export async function POST(req: Request) {
       .single()
 
       if (invoiceWithRelations) {
-        invoiceWithRelations.issuer = issuerOrg        // 👈 Emisor fijo (org 61)
-        invoiceWithRelations.client = invoiceWithRelations.clients // 👈 Cliente real (org que recargó saldo)
+        invoiceWithRelations.organization = issuerOrg
+      
+        if (invoiceWithRelations.clients) {
+          invoiceWithRelations.client_data = {
+            name: invoiceWithRelations.clients.name,
+            tax_id: invoiceWithRelations.clients.tax_id,
+            address: invoiceWithRelations.clients.address,
+            postal_code: invoiceWithRelations.clients.postal_code,
+            city: invoiceWithRelations.clients.city,
+            province: invoiceWithRelations.clients.province,
+            country: invoiceWithRelations.clients.country,
+            email: invoiceWithRelations.clients.email,
+            client_type: invoiceWithRelations.clients.client_type || "private",
+          }
+        }
       }
       
 
