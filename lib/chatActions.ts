@@ -374,6 +374,16 @@ export async function createConversation({
       return existingConversation
     }
 
+    const { data: canalOrg, error: canalError } = await supabase
+      .from("canales_organizations")
+      .select(`
+        id,
+        canal:canales(nombre)
+      `)
+      .eq("id_organization", organizationId)
+      .eq("canales.nombre", "WhatsApp")
+      .single()
+
     // Crear nueva conversación
     const { data: conversation, error: convError } = await supabase
       .from("conversations")
@@ -384,6 +394,7 @@ export async function createConversation({
         unread_count: 0,
         last_message_at: new Date().toISOString(),
         title: `Conversación con ${client.name}`,
+        ...(canalOrg && { id_canales_organization: canalOrg.id }),
       })
       .select()
       .single()
