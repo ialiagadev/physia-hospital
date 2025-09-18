@@ -6,32 +6,24 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { useVacationRequests } from "@/hooks/use-vacation-requests"
 import { useAuth } from "@/app/contexts/auth-context"
 import {
   LayoutDashboard,
-  FileText,
-  MessageSquare,
-  BarChart2,
-  User,
   PanelLeft,
   CheckSquare,
-  Bot,
-  Radio,
-  Clock,
   Users,
-  Package,
   UserCog,
   Brain,
   LogOut,
   HelpCircle,
   BookTemplate as FileTemplate,
-  CreditCard,
   FileCheck,
+  Radio,
+  BarChart2,
+  User,
+  MessageSquare,
+  Bot,
   Megaphone,
-  Warehouse,
-  Calendar,
-  Tag,
 } from "lucide-react"
 
 interface MenuItem {
@@ -48,14 +40,6 @@ export function MainSidebar() {
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false)
   const pathname = usePathname()
   const { userProfile } = useAuth()
-
-  // Hook para obtener solicitudes de vacaciones
-  const { requests, loading } = useVacationRequests(
-    userProfile?.organization_id ? Number(userProfile.organization_id) : undefined,
-  )
-
-  // Calcular solicitudes pendientes
-  const pendingRequestsCount = requests.filter((request) => request.status === "pending").length
 
   // Cargar el estado de colapso guardado al iniciar
   useEffect(() => {
@@ -80,7 +64,6 @@ export function MainSidebar() {
     return pathname.startsWith(`/dashboard/${section}`)
   }
 
-  // Sección Principal
   const principalItems: MenuItem[] = [
     {
       id: "dashboard",
@@ -97,24 +80,6 @@ export function MainSidebar() {
       isActive: isInSection("clients"),
     },
     {
-      id: "facturacion",
-      label: "Facturación",
-      href: "/dashboard/facturacion",
-      icon: FileText,
-      isActive: isInSection("facturacion"),
-      // Solo mostrar si NO es user
-      hidden: userProfile?.role === "user",
-    },
-    {
-      id: "fichaje",
-      label: "Fichaje",
-      href: "/dashboard/fichaje",
-      icon: Clock,
-      isActive: isInSection("fichaje"),
-      // Agregar badge para solicitudes pendientes
-      badge: pendingRequestsCount > 0 ? pendingRequestsCount : null,
-    },
-    {
       id: "tareas",
       label: "Tareas",
       href: "/dashboard/tareas",
@@ -123,7 +88,6 @@ export function MainSidebar() {
     },
   ]
 
-  // Sección AI
   const aiItems: MenuItem[] = [
     {
       id: "chat",
@@ -157,21 +121,13 @@ export function MainSidebar() {
     },
   ]
 
-  // Sección Configuración
   const configItems: MenuItem[] = [
     {
       id: "equipo",
-      label: "Equipos",
+      label: "Equipo",
       href: "/dashboard/professionals",
       icon: UserCog,
       isActive: isInSection("professionals"),
-    },
-    {
-      id: "servicios",
-      label: "Servicios",
-      href: "/dashboard/services",
-      icon: Package,
-      isActive: isInSection("services"),
     },
     {
       id: "templates",
@@ -188,30 +144,14 @@ export function MainSidebar() {
       isActive: isInSection("consent-forms"),
     },
     {
-      id: "loyalty-cards",
-      label: "Bonos", // Cambié el nombre de "Tarjetas de Fidelización" a "Bonos"
-      href: "/dashboard/loyalty-cards",
-      icon: CreditCard,
-      isActive: isInSection("loyalty-cards"),
-    },
-    {
       id: "canales",
       label: "Canales",
       href: "/dashboard/canales",
       icon: Radio,
       isActive: isInSection("canales"),
     },
-    {
-      id: "public-booking",
-      label: "Reservas Públicas",
-      href: "/dashboard/public-calendar",
-      icon: Calendar,
-      isActive: isInSection("public-calendar"),
-    },
-   
   ]
 
-  // Sección General
   const generalItems: MenuItem[] = [
     {
       id: "organizations",
@@ -219,13 +159,6 @@ export function MainSidebar() {
       href: "/dashboard/organizations",
       icon: BarChart2,
       isActive: isInSection("organizations"),
-    },
-    {
-      id: "stock",
-      label: "Stock",
-      href: "/dashboard/stock",
-      icon: Warehouse,
-      isActive: isInSection("stock"),
     },
     {
       id: "profile",
@@ -373,12 +306,8 @@ export function MainSidebar() {
                       item.isActive
                         ? "text-purple-600 bg-purple-50"
                         : "text-gray-400 hover:text-gray-600 hover:bg-gray-50",
-                      item.id === "marketing"
-                        ? "opacity-60 cursor-not-allowed hover:bg-transparent hover:text-gray-400"
-                        : "",
                     )}
                     title={item.label}
-                    onClick={item.id === "marketing" ? (e) => e.preventDefault() : undefined}
                   >
                     <Icon className="h-5 w-5" />
                   </Link>
